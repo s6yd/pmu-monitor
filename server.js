@@ -3,6 +3,15 @@ const http = require('http');
 const url = require('url');
 
 const PORT = 3000;
+const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+
+async function sendTelegram(msg) {
+  if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) return;
+  const text = encodeURIComponent(msg);
+  const tUrl = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage?chat_id=${TELEGRAM_CHAT_ID}&text=${text}`;
+  https.get(tUrl, () => {}).on('error', () => {});
+}
 
 // Fetch token + cookie from PMU homepage, then call getData
 async function fetchPMUData(termList, collegeList, genderList) {
@@ -130,6 +139,11 @@ const server = http.createServer(async (req, res) => {
       const courses = parseHTML(html);
       console.log(`Got ${courses.length} courses`);
       res.writeHead(200);
+      const openCourses = courses.filter(c => c.status === 'OPEN');
+if (openCourses.length > 0) {
+  sendTelegram('🟢 يوجد ' + openCourses.length + ' مادة مفتوحة!\n' + openCourses.map(c => c.courseCode + ' Sec ' + c.section).join('\n'));
+}
+
       res.end(JSON.stringify({ success: true, count: courses.length, courses }));
     } catch (err) {
       console.error('Error:', err.message);
