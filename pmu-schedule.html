@@ -564,7 +564,8 @@ async function doSearch() {
   setStatus('يبحث...', false);
 
   try {
-    const res = await fetch(`${API}?term=${term}&college=${college}&gender=${gender}`);
+    const filter = document.getElementById('courseFilter').value.trim();
+    const res = await fetch(`${API}?term=${term}&college=${college}&gender=${gender}&filter=${encodeURIComponent(filter)}`);
     const data = await res.json();
 
     if (!data.success) throw new Error(data.error);
