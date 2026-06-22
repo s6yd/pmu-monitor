@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PMU Schedule</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --bg: #080b12;
+  --surface: #0e1420;
+  --card: #131928;
+  --border: #1e2740;
+  --border2: #253050;
+  --accent: #3d6fff;
+  --accent2: #6b8fff;
+  --open: #10b981;
+  --open-bg: rgba(16,185,129,0.08);
+  --open-border: rgba(16,185,129,0.25);
+  --close: #f43f5e;
+  --close-bg: rgba(244,63,94,0.08);
+  --close-border: rgba(244,63,94,0.25);
+  --text: #e2e8f8;
+  --text2: #8b96b8;
+  --text3: #4a5580;
+  --mono: 'JetBrains Mono', monospace;
+  --sans: 'IBM Plex Sans Arabic', sans-serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  min-height: 100vh;
+}
+
+/* ── TOP BAR ── */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: rgba(8,11,18,0.92);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+  padding: 0 20px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+
+.logo-icon {
+  width: 32px; height: 32px;
+  background: var(--accent);
+  border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+}
+
+.status-pill {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--text2);
+  background: var(--card);
+  border: 1px solid var(--border);
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-family: var(--mono);
+}
+
+.pulse-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--text3);
+}
+.pulse-dot.active {
+  background: var(--open);
+  animation: blink 1.4s ease-in-out infinite;
+}
+@keyframes blink {
+  0%,100% { opacity:1; }
+  50% { opacity:0.3; }
+}
+
+/* ── MAIN ── */
+.main { padding: 24px 16px 80px; max-width: 600px; margin: 0 auto; }
+
+/* ── SEARCH CARD ── */
+.search-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.sc-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 16px;
+}
+
+.fields { display: flex; flex-direction: column; gap: 12px; }
+
+.field-label {
+  font-size: 12px;
+  color: var(--text2);
+  margin-bottom: 6px;
+  display: block;
+}
+
+select, input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 11px;
+  padding: 11px 14px;
+  font-size: 14px;
+  font-family: var(--sans);
+  outline: none;
+  transition: border-color 0.15s;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+select { 
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%234a5580' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: left 13px center;
+  padding-left: 36px;
+}
+
+select:focus, input:focus { border-color: var(--accent); }
+
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+.search-input-wrap { position: relative; }
+.search-input-wrap input { padding-right: 44px; }
+.clear-btn {
+  position: absolute;
+  left: 12px; top: 50%;
+  transform: translateY(-50%);
+  background: none; border: none;
+  color: var(--text3); cursor: pointer;
+  font-size: 16px; padding: 2px;
+  display: none;
+}
+
+.btn-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; margin-top: 4px; }
+
+.btn-search {
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 11px;
+  padding: 12px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: var(--sans);
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.btn-search:active { opacity: 0.85; transform: scale(0.98); }
+.btn-search:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-monitor {
+  background: transparent;
+  color: var(--accent2);
+  border: 1px solid var(--accent);
+  border-radius: 11px;
+  padding: 12px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--sans);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.btn-monitor:hover { background: rgba(61,111,255,0.1); }
+.btn-monitor.monitoring {
+  color: var(--close);
+  border-color: var(--close);
+}
+.btn-monitor.monitoring:hover { background: var(--close-bg); }
+
+/* ── STATS BAR ── */
+.stats-bar {
+  display: none;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.stats-bar.visible { display: grid; }
+
+.stat-box {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  text-align: center;
+}
+.stat-num {
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1;
+}
+.stat-num.open-color { color: var(--open); }
+.stat-num.close-color { color: var(--close); }
+.stat-label { font-size: 11px; color: var(--text3); margin-top: 5px; }
+
+/* ── MONITOR BANNER ── */
+.monitor-banner {
+  display: none;
+  align-items: center;
+  gap: 14px;
+  background: var(--open-bg);
+  border: 1px solid var(--open-border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+.monitor-banner.visible { display: flex; }
+.monitor-banner.alert {
+  background: rgba(16,185,129,0.15);
+  animation: alertPulse 0.6s ease 3;
+}
+@keyframes alertPulse {
+  0%,100% { opacity:1; } 50% { opacity:0.5; }
+}
+.mb-icon { font-size: 24px; flex-shrink: 0; }
+.mb-text h3 { font-size: 14px; font-weight: 600; color: var(--open); }
+.mb-text p { font-size: 12px; color: var(--text2); margin-top: 2px; }
+
+/* ── FILTER BAR ── */
+.filter-bar {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.filter-bar.visible { display: flex; }
+
+.filter-label { font-size: 12px; color: var(--text2); flex-shrink: 0; }
+
+.filter-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.ftab {
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text2);
+  cursor: pointer;
+  font-family: var(--sans);
+  transition: all 0.15s;
+}
+.ftab.active { 
+  background: var(--accent); 
+  border-color: var(--accent); 
+  color: white; 
+}
+.ftab.open-tab.active { background: var(--open); border-color: var(--open); }
+.ftab.close-tab.active { background: var(--close); border-color: var(--close); }
+
+/* ── RESULTS ── */
+.results-header {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.results-header.visible { display: flex; }
+.results-count { font-size: 13px; color: var(--text2); }
+.results-count span { color: var(--text); font-weight: 600; }
+.results-time { font-size: 11px; color: var(--text3); font-family: var(--mono); }
+
+.results-list { display: flex; flex-direction: column; gap: 8px; }
+
+.course-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  transition: border-color 0.15s;
+  cursor: default;
+}
+.course-card:hover { border-color: var(--border2); }
+.course-card.is-open { border-right: 3px solid var(--open); }
+.course-card.is-close { border-right: 3px solid var(--border2); }
+
+.cc-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.cc-code {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+.cc-title {
+  font-size: 12px;
+  color: var(--text2);
+  margin-top: 2px;
+}
+
+.badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-family: var(--mono);
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+}
+.badge.open { background: var(--open-bg); color: var(--open); border: 1px solid var(--open-border); }
+.badge.close { background: var(--close-bg); color: var(--close); border: 1px solid var(--close-border); }
+
+.cc-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 16px;
+}
+.cc-meta-item { font-size: 11px; color: var(--text3); }
+.cc-meta-item span { color: var(--text2); }
+.cc-crn { font-family: var(--mono); font-size: 11px; color: var(--accent2); margin-top: 8px; }
+
+/* ── EMPTY / LOADING ── */
+.state-box {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  padding: 48px 24px;
+  text-align: center;
+}
+.state-box.visible { display: flex; }
+.state-icon { font-size: 40px; margin-bottom: 14px; }
+.state-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+.state-sub { font-size: 13px; color: var(--text2); }
+
+.spinner {
+  width: 32px; height: 32px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  margin-bottom: 14px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── NEXT CHECK ── */
+.next-check {
+  display: none;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text3);
+  padding: 12px;
+  font-family: var(--mono);
+}
+.next-check.visible { display: block; }
+.next-check span { color: var(--accent2); }
+
+/* ── TOAST ── */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(80px);
+  background: var(--open);
+  color: white;
+  padding: 12px 20px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 8px 32px rgba(16,185,129,0.4);
+  transition: transform 0.3s ease;
+  z-index: 999;
+  white-space: nowrap;
+}
+.toast.show { transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo">
+    <div class="logo-icon">🎓</div>
+    PMU Schedule
+  </div>
+  <div class="status-pill">
+    <div class="pulse-dot" id="statusDot"></div>
+    <span id="statusText">جاهز</span>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- Search Card -->
+  <div class="search-card">
+    <div class="sc-title">البحث عن المواد</div>
+    <div class="fields">
+      <div>
+        <label class="field-label">السيمستر</label>
+        <select id="term">
+          <option value="202630">Summer Semester 2025/2026</option>
+          <option value="202730">Summer Semester 2026/2027</option>
+          <option value="202720">Spring Semester 2026/2027</option>
+          <option value="202620">Spring Semester 2025/2026</option>
+        </select>
+      </div>
+      <div class="row2">
+        <div>
+          <label class="field-label">الكلية</label>
+          <select id="college">
+            <option value="ALL">الكل</option>
+            <option value="EN" selected>Engineering (EN)</option>
+            <option value="IT">Computer Eng & Science (IT)</option>
+            <option value="BA">Business Admin (BA)</option>
+            <option value="CS">Computer Science (CS)</option>
+            <option value="CC">Core Curriculum (CC)</option>
+            <option value="PR">Preparatory (PR)</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label">الجنس</label>
+          <select id="gender">
+            <option value="M1" selected>Male</option>
+            <option value="F1">Female</option>
+            <option value="ALL">الكل</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <label class="field-label">فلتر المادة (اختياري)</label>
+        <div class="search-input-wrap">
+          <input type="text" id="courseFilter" placeholder="مثلاً: MEEN 3395 أو 30547">
+          <button class="clear-btn" id="clearFilter" onclick="clearFilter()">✕</button>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-search" id="btnSearch" onclick="doSearch()">
+          <span id="searchBtnText">🔍 ابحث</span>
+        </button>
+        <button class="btn-monitor" id="btnMonitor" onclick="toggleMonitor()">📡 راقب</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-bar" id="statsBar">
+    <div class="stat-box">
+      <div class="stat-num" id="statTotal">—</div>
+      <div class="stat-label">إجمالي</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-num open-color" id="statOpen">—</div>
+      <div class="stat-label">مفتوح</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-num close-color" id="statClose">—</div>
+      <div class="stat-label">مغلق</div>
+    </div>
+  </div>
+
+  <!-- Monitor Banner -->
+  <div class="monitor-banner" id="monitorBanner">
+    <div class="mb-icon">🟢</div>
+    <div class="mb-text">
+      <h3 id="mbTitle">مراقبة نشطة</h3>
+      <p id="mbSub">يفحص كل دقيقتين</p>
+    </div>
+  </div>
+
+  <!-- Filter Tabs -->
+  <div class="filter-bar" id="filterBar">
+    <div class="filter-label">عرض:</div>
+    <div class="filter-tabs">
+      <button class="ftab active" onclick="setFilter('all', this)">الكل</button>
+      <button class="ftab open-tab" onclick="setFilter('open', this)">مفتوح فقط</button>
+      <button class="ftab close-tab" onclick="setFilter('close', this)">مغلق فقط</button>
+    </div>
+  </div>
+
+  <!-- Results Header -->
+  <div class="results-header" id="resultsHeader">
+    <div class="results-count">عرض <span id="visibleCount">0</span> مادة</div>
+    <div class="results-time" id="lastUpdate">—</div>
+  </div>
+
+  <!-- Loading -->
+  <div class="state-box" id="loadingBox">
+    <div class="spinner"></div>
+    <div class="state-title">جاري البحث...</div>
+    <div class="state-sub">يجيب البيانات من موقع PMU</div>
+  </div>
+
+  <!-- Empty -->
+  <div class="state-box" id="emptyBox">
+    <div class="state-icon">🔍</div>
+    <div class="state-title">ما في نتائج</div>
+    <div class="state-sub">جرب تغير الفلتر أو البحث</div>
+  </div>
+
+  <!-- Initial -->
+  <div class="state-box visible" id="initialBox">
+    <div class="state-icon">📚</div>
+    <div class="state-title">ابدأ البحث</div>
+    <div class="state-sub">اختار السيمستر والكلية واضغط ابحث</div>
+  </div>
+
+  <!-- Results -->
+  <div class="results-list" id="resultsList"></div>
+
+  <!-- Next Check -->
+  <div class="next-check" id="nextCheck">
+    الفحص القادم خلال <span id="countdown">—</span>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = 'http://localhost:3000/api/courses';
+
+let allCourses = [];
+let filterMode = 'all';
+let monitorTimer = null;
+let countdownTimer = null;
+let isMonitoring = false;
+let checkCount = 0;
+
+// ── Search ──
+async function doSearch() {
+  const term = document.getElementById('term').value;
+  const college = document.getElementById('college').value;
+  const gender = document.getElementById('gender').value;
+
+  showLoading(true);
+  setStatus('يبحث...', false);
+
+  try {
+    const res = await fetch(`${API}?term=${term}&college=${college}&gender=${gender}`);
+    const data = await res.json();
+
+    if (!data.success) throw new Error(data.error);
+
+    allCourses = data.courses;
+    renderResults();
+    setStatus(`${data.count} مادة`, true);
+    updateTime();
+
+    if (isMonitoring) checkOpenCourses();
+
+  } catch (err) {
+    showLoading(false);
+    setStatus('خطأ في الاتصال', false);
+    document.getElementById('initialBox').classList.add('visible');
+    document.getElementById('initialBox').querySelector('.state-icon').textContent = '❌';
+    document.getElementById('initialBox').querySelector('.state-title').textContent = 'خطأ في الاتصال';
+    document.getElementById('initialBox').querySelector('.state-sub').textContent = 'تأكد إن السيرفر شغال على الكمبيوتر';
+  }
+}
+
+function renderResults() {
+  const filter = document.getElementById('courseFilter').value.trim().toUpperCase();
+  const list = document.getElementById('resultsList');
+
+  let courses = allCourses;
+
+  // Text filter
+  if (filter) {
+    courses = courses.filter(c =>
+      c.courseCode.toUpperCase().includes(filter) ||
+      c.courseTitle.toUpperCase().includes(filter) ||
+      c.crn.includes(filter) ||
+      c.section.includes(filter)
+    );
+  }
+
+  // Status filter
+  if (filterMode === 'open') courses = courses.filter(c => c.status === 'OPEN');
+  if (filterMode === 'close') courses = courses.filter(c => c.status === 'CLOSE');
+
+  // Stats
+  const openCount = allCourses.filter(c => {
+    if (!filter) return c.status === 'OPEN';
+    const match = c.courseCode.toUpperCase().includes(filter) || c.courseTitle.toUpperCase().includes(filter) || c.crn.includes(filter);
+    return match && c.status === 'OPEN';
+  }).length;
+  const filtered = filter ? allCourses.filter(c => c.courseCode.toUpperCase().includes(filter) || c.courseTitle.toUpperCase().includes(filter) || c.crn.includes(filter)) : allCourses;
+
+  document.getElementById('statTotal').textContent = filtered.length;
+  document.getElementById('statOpen').textContent = openCount;
+  document.getElementById('statClose').textContent = filtered.length - openCount;
+
+  showLoading(false);
+  document.getElementById('initialBox').classList.remove('visible');
+  document.getElementById('statsBar').classList.add('visible');
+  document.getElementById('filterBar').classList.add('visible');
+  document.getElementById('resultsHeader').classList.add('visible');
+  document.getElementById('visibleCount').textContent = courses.length;
+
+  if (courses.length === 0) {
+    document.getElementById('emptyBox').classList.add('visible');
+    list.innerHTML = '';
+    return;
+  }
+
+  document.getElementById('emptyBox').classList.remove('visible');
+
+  list.innerHTML = courses.map(c => `
+    <div class="course-card ${c.status === 'OPEN' ? 'is-open' : 'is-close'}">
+      <div class="cc-top">
+        <div>
+          <div class="cc-code">${c.courseCode} <span style="color:var(--text2);font-weight:400">— Sec ${c.section}</span></div>
+          <div class="cc-title">${c.courseTitle}</div>
+        </div>
+        <span class="badge ${c.status === 'OPEN' ? 'open' : 'close'}">${c.status}</span>
+      </div>
+      <div class="cc-meta">
+        <div class="cc-meta-item">📅 <span>${c.courseDate}</span></div>
+        <div class="cc-meta-item">⏰ <span>${c.courseTiming}</span></div>
+        <div class="cc-meta-item">👤 <span>${c.instructor || '—'}</span></div>
+        <div class="cc-meta-item">🏛️ <span>${c.room}</span></div>
+      </div>
+      <div class="cc-crn">CRN: ${c.crn}</div>
+    </div>
+  `).join('');
+}
+
+// ── Filter ──
+function setFilter(mode, el) {
+  filterMode = mode;
+  document.querySelectorAll('.ftab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  renderResults();
+}
+
+function clearFilter() {
+  document.getElementById('courseFilter').value = '';
+  document.getElementById('clearFilter').style.display = 'none';
+  if (allCourses.length) renderResults();
+}
+
+document.getElementById('courseFilter').addEventListener('input', function() {
+  document.getElementById('clearFilter').style.display = this.value ? 'block' : 'none';
+  if (allCourses.length) renderResults();
+});
+
+document.getElementById('courseFilter').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') doSearch();
+});
+
+// ── Monitor ──
+function toggleMonitor() {
+  isMonitoring ? stopMonitor() : startMonitor();
+}
+
+function startMonitor() {
+  isMonitoring = true;
+  document.getElementById('btnMonitor').textContent = '⏹ أوقف';
+  document.getElementById('btnMonitor').classList.add('monitoring');
+  document.getElementById('monitorBanner').classList.add('visible');
+  document.getElementById('statusDot').classList.add('active');
+  document.getElementById('nextCheck').classList.add('visible');
+
+  requestNotif();
+  doSearch();
+  scheduleNext();
+}
+
+function stopMonitor() {
+  isMonitoring = false;
+  clearTimeout(monitorTimer);
+  clearInterval(countdownTimer);
+  document.getElementById('btnMonitor').textContent = '📡 راقب';
+  document.getElementById('btnMonitor').classList.remove('monitoring');
+  document.getElementById('monitorBanner').classList.remove('visible');
+  document.getElementById('statusDot').classList.remove('active');
+  document.getElementById('nextCheck').classList.remove('visible');
+}
+
+function scheduleNext() {
+  const INTERVAL = 120; // 2 minutes
+  let left = INTERVAL;
+
+  clearInterval(countdownTimer);
+  countdownTimer = setInterval(() => {
+    left--;
+    const m = String(Math.floor(left/60)).padStart(2,'0');
+    const s = String(left%60).padStart(2,'0');
+    document.getElementById('countdown').textContent = `${m}:${s}`;
+    if (left <= 0) clearInterval(countdownTimer);
+  }, 1000);
+
+  clearTimeout(monitorTimer);
+  monitorTimer = setTimeout(() => {
+    if (isMonitoring) {
+      doSearch();
+      scheduleNext();
+    }
+  }, INTERVAL * 1000);
+}
+
+function checkOpenCourses() {
+  const filter = document.getElementById('courseFilter').value.trim().toUpperCase();
+  if (!filter) return;
+
+  const opens = allCourses.filter(c =>
+    (c.courseCode.toUpperCase().includes(filter) || c.crn.includes(filter)) &&
+    c.status === 'OPEN'
+  );
+
+  if (opens.length > 0) {
+    playSound();
+    showToast(`🟢 ${opens[0].courseCode} Sec ${opens[0].section} — مفتوحة!`);
+    sendNotif(opens[0]);
+    document.getElementById('monitorBanner').classList.add('alert');
+    setTimeout(() => document.getElementById('monitorBanner').classList.remove('alert'), 2000);
+    document.getElementById('mbTitle').textContent = `🟢 ${opens[0].courseCode} مفتوحة!`;
+    document.getElementById('mbSub').textContent = 'سجّل الحين!';
+  }
+}
+
+// ── Utils ──
+function showLoading(show) {
+  document.getElementById('loadingBox').classList.toggle('visible', show);
+  document.getElementById('btnSearch').disabled = show;
+  document.getElementById('searchBtnText').textContent = show ? 'جاري البحث...' : '🔍 ابحث';
+}
+
+function setStatus(text, active) {
+  document.getElementById('statusText').textContent = text;
+  document.getElementById('statusDot').classList.toggle('active', active || isMonitoring);
+}
+
+function updateTime() {
+  document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString('ar-SA');
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 4000);
+}
+
+function playSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [523, 659, 784].forEach((f, i) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.frequency.value = f; o.type = 'sine';
+      g.gain.setValueAtTime(0.25, ctx.currentTime + i*0.18);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i*0.18 + 0.25);
+      o.start(ctx.currentTime + i*0.18);
+      o.stop(ctx.currentTime + i*0.18 + 0.25);
+    });
+  } catch(e) {}
+}
+
+async function requestNotif() {
+  if ('Notification' in window && Notification.permission === 'default') {
+    await Notification.requestPermission();
+  }
+}
+
+function sendNotif(course) {
+  if ('Notification' in window && Notification.permission === 'granted') {
+    new Notification(`🟢 ${course.courseCode} Sec ${course.section} مفتوحة!`, {
+      body: `${course.courseTitle}\nسجّل الحين!`
+    });
+  }
+}
+</script>
+</body>
+</html>
