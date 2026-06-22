@@ -139,8 +139,18 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  res.writeHead(404);
-  res.end(JSON.stringify({ error: 'Not found' }));
+  const fs = require('fs');
+const path = require('path');
+if (parsed.pathname === '/' || parsed.pathname === '/index.html') {
+  const html = fs.readFileSync(path.join(__dirname, 'pmu-schedule.html'), 'utf8');
+  res.setHeader('Content-Type', 'text/html');
+  res.writeHead(200);
+  res.end(html);
+  return;
+}
+res.writeHead(404);
+res.end(JSON.stringify({ error: 'Not found' }));
+
 });
 
 server.listen(PORT, () => {
