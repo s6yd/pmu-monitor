@@ -131,7 +131,8 @@ const server = http.createServer(async (req, res) => {
   const parsed = url.parse(req.url, true);
   
   if (parsed.pathname === '/api/courses') {
-    const { term = '202630', college = 'ALL', gender = 'M1' } = parsed.query;
+    const { term = '202630', college = 'ALL', gender = 'M1', filter = '' } = parsed.query;
+
     
     try {
       console.log(`Fetching: term=${term} college=${college} gender=${gender}`);
@@ -139,7 +140,8 @@ const server = http.createServer(async (req, res) => {
       const courses = parseHTML(html);
       console.log(`Got ${courses.length} courses`);
       res.writeHead(200);
-      const openCourses = courses.filter(c => c.status === 'OPEN');
+      const openCourses = courses.filter(c => c.status === 'OPEN' && (!filter || c.courseCode.toUpperCase().includes(filter.toUpperCase()) || c.crn.includes(filter)));
+
 if (openCourses.length > 0) {
   sendTelegram('🟢 يوجد ' + openCourses.length + ' مادة مفتوحة!\n' + openCourses.map(c => c.courseCode + ' Sec ' + c.section).join('\n'));
 }
