@@ -805,7 +805,9 @@ updateBadge();
 /* ================= SUPABASE AUTH & SYNC ================= */
 const SB_URL='https://komdznyfqmheaqywenbf.supabase.co';
 const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtvbWR6bnlmcW1oZWFxeXdlbmJmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY1NTYzMTgsImV4cCI6MjEwMjEzMjMxOH0.zUKbv9HgPdeFgK6-_4VPB2gz0wYvZ2auQF_AC36r3jw';
-const sb=window.supabase.createClient(SB_URL,SB_KEY);
+const sb=window.supabase.createClient(SB_URL,SB_KEY,{
+  auth:{flowType:'implicit',detectSessionInUrl:true,persistSession:true,autoRefreshToken:true}
+});
 let USER=null, PROFILE=null, syncing=false;
 
 async function handleAuth(){
@@ -886,7 +888,20 @@ async function pushSchedule(){
 
 /* بدء الجلسة */
 (async function initAuth(){
-  const {data:{session}}=await sb.auth.getSession();
+  /* اعرض أي خطأ راجع من جوجل */
+  const hp=new URLSearchParams(location.hash.replace(/^#/,''));
+  const qp=new URLSearchParams(location.search);
+  const err=hp.get('error_description')||qp.get('error_description');
+  if(err)setTimeout(()=>showToast('خطأ دخول: '+decodeURIComponent(err),'err'),600);
+
+  let {data:{session}}=await sb.auth.getSession();
+  /* انتظر لحظة لو التوكن لسا يتعالج من الرابط */
+  if(!session&&(location.hash.includes('access_token')||qp.get('code'))){
+    await new Promise(r=>setTimeout(r,900));
+    session=(await sb.auth.getSession()).data.session;
+  }
+  if(session&&(location.hash||location.search))
+    history.replaceState({},'',location.pathname);
   USER=session?session.user:null;
   setAuthUI();
   if(USER){await pullCloud();setAuthUI();renderPlan();
