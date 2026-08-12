@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PMU Schedule</title>
+<title>جدولك — Jadwalik</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 :root{
@@ -19,9 +19,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 
 .topbar{position:sticky;top:0;z-index:100;background:rgba(8,11,18,.94);backdrop-filter:blur(16px);
 border-bottom:1px solid var(--border);padding:0 16px;height:52px;display:flex;align-items:center;justify-content:space-between}
-.logo{display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600}
+.logo{display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;line-height:1.15}
+.brand-sub{font-size:9.5px;font-family:var(--mono);color:var(--text3);letter-spacing:.5px;margin-top:2px}
+.lang-btn{background:transparent;border:1px solid var(--border2);color:var(--text2);border-radius:20px;
+padding:5px 11px;font-size:11px;font-weight:600;font-family:var(--mono);cursor:pointer}
 .logo-icon{width:29px;height:29px;background:var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px}
-.status-pill{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);background:var(--card);
+.status-pill{display:none;align-items:center;gap:6px;font-size:11px;color:var(--text2);background:var(--card);
 border:1px solid var(--border);padding:4px 10px;border-radius:20px;font-family:var(--mono)}
 .pulse-dot{width:6px;height:6px;border-radius:50%;background:var(--text3)}
 .pulse-dot.active{background:var(--open);animation:blink 1.4s infinite}
@@ -206,6 +209,24 @@ cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:cen
 .pc-name{font-size:11px;color:var(--text2);margin-top:2px}
 .pc-req{font-size:10.5px;color:var(--warn);margin-top:3px}
 .pc-cr{font-family:var(--mono);font-size:11px;color:var(--text3);flex-shrink:0}
+.grade-sel{width:72px;background:var(--card);border:1px solid var(--border2);color:var(--text);
+border-radius:8px;padding:6px 4px;font-size:12px;font-family:var(--mono);text-align:center;
+padding-left:4px;background-image:none;flex-shrink:0}
+.grade-sel.empty{color:var(--text3);border-style:dashed}
+.uni-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:15px;margin-bottom:14px}
+.uni-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.uni-field select{font-size:12.5px;padding:10px 12px;padding-left:30px}
+.gpa-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:17px;margin-bottom:15px}
+.gpa-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.gpa-val{font-family:var(--mono);font-size:30px;font-weight:500;line-height:1}
+.gpa-val small{font-size:13px;color:var(--text3)}
+.gpa-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px}
+.gpa-right{text-align:left}
+.gpa-scale{display:flex;gap:5px;margin-top:4px}
+.gpa-pill{font-size:10.5px;font-family:var(--mono);padding:2px 8px;border-radius:20px;background:var(--bg);color:var(--text2)}
+.gpa-hint{font-size:11.5px;color:var(--text3);line-height:1.6;border-top:1px solid var(--border);padding-top:11px}
+.gpa-bar{height:7px;background:var(--bg);border-radius:20px;overflow:hidden;margin-top:10px}
+.gpa-fill{height:100%;border-radius:20px;transition:width .4s,background .4s}
 
 .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(90px);background:var(--accent);
 color:#fff;padding:11px 20px;border-radius:12px;font-size:13px;font-weight:600;
@@ -223,17 +244,21 @@ body{background:#fff;color:#000}.day-block,.slot{background:#fff;border:1px soli
 <body>
 
 <div class="topbar">
-  <div class="logo"><div class="logo-icon">🎓</div> PMU Schedule</div>
+  <div class="logo">
+    <div class="logo-icon">🎓</div>
+    <div><div id="brandName">جدولك</div><div class="brand-sub" id="brandUni">PMU</div></div>
+  </div>
   <div style="display:flex;align-items:center;gap:8px">
     <div class="status-pill"><div class="pulse-dot" id="statusDot"></div><span id="statusText">جاهز</span></div>
+    <button class="lang-btn" id="langBtn" onclick="toggleLang()">EN</button>
     <button class="auth-btn" id="authBtn" onclick="handleAuth()">دخول</button>
   </div>
 </div>
 
 <div class="tabs">
-  <button class="tab active" id="tabSearch" onclick="switchTab('search')">🔍 البحث</button>
-  <button class="tab" id="tabSched" onclick="switchTab('sched')">📅 جدولي <span class="tab-badge" id="schedBadge">0</span></button>
-  <button class="tab" id="tabPlan" onclick="switchTab('plan')">📋 خطتي</button>
+  <button class="tab active" id="tabSearch" onclick="switchTab('search')"data-i18n="tabSearch">🔍 البحث</button>
+  <button class="tab" id="tabSched" onclick="switchTab('sched')"data-i18n="tabSched">📅 جدولي <span class="tab-badge" id="schedBadge">0</span></button>
+  <button class="tab" id="tabPlan" onclick="switchTab('plan')"data-i18n="tabPlan">📋 خطتي</button>
 </div>
 
 <div class="main">
@@ -241,10 +266,10 @@ body{background:#fff;color:#000}.day-block,.slot{background:#fff;border:1px soli
 <!-- SEARCH -->
 <div class="page active" id="pageSearch">
   <div class="search-card">
-    <div class="sc-title">البحث عن المواد</div>
+    <div class="sc-title" data-i18n="searchTitle">البحث عن المواد</div>
     <div class="fields">
       <div>
-        <label class="field-label">السيمستر</label>
+        <label class="field-label" data-i18n="semester">السيمستر</label>
         <select id="term">
           <option value="202710">Fall Semester 2026/2027</option>
           <option value="202630" selected>Summer Semester 2025/2026</option>
@@ -256,7 +281,7 @@ body{background:#fff;color:#000}.day-block,.slot{background:#fff;border:1px soli
       </div>
       <div class="row2">
         <div>
-          <label class="field-label">الكلية</label>
+          <label class="field-label" data-i18n="college">الكلية</label>
           <select id="college">
             <option value="ALL">الكل</option>
             <option value="EN" selected>Engineering (EN)</option>
@@ -270,7 +295,7 @@ body{background:#fff;color:#000}.day-block,.slot{background:#fff;border:1px soli
           </select>
         </div>
         <div>
-          <label class="field-label">الجنس</label>
+          <label class="field-label" data-i18n="gender">الجنس</label>
           <select id="gender">
             <option value="M1" selected>Male</option>
             <option value="F1">Female</option>
@@ -279,7 +304,7 @@ body{background:#fff;color:#000}.day-block,.slot{background:#fff;border:1px soli
         </div>
       </div>
       <div>
-        <label class="field-label">فلتر المادة (اختياري)</label>
+        <label class="field-label" data-i18n="filterLabel">فلتر المادة (اختياري)</label>
         <div class="search-input-wrap">
           <input type="text" id="courseFilter" placeholder="مثلاً: MEEN 3395 أو 30547">
           <button class="clear-btn" id="clearFilter" onclick="clearFilter()">✕</button>
@@ -293,9 +318,9 @@ body{background:#fff;color:#000}.day-block,.slot{background:#fff;border:1px soli
   </div>
 
   <div class="stats-bar" id="statsBar">
-    <div class="stat-box"><div class="stat-num" id="statTotal">—</div><div class="stat-label">إجمالي</div></div>
-    <div class="stat-box"><div class="stat-num open-color" id="statOpen">—</div><div class="stat-label">مفتوح</div></div>
-    <div class="stat-box"><div class="stat-num close-color" id="statClose">—</div><div class="stat-label">مغلق</div></div>
+    <div class="stat-box"><div class="stat-num" id="statTotal">—</div><div class="stat-label" data-i18n="total">إجمالي</div></div>
+    <div class="stat-box"><div class="stat-num open-color" id="statOpen">—</div><div class="stat-label" data-i18n="open">مفتوح</div></div>
+    <div class="stat-box"><div class="stat-num close-color" id="statClose">—</div><div class="stat-label" data-i18n="closed">مغلق</div></div>
   </div>
 
   <div class="monitor-banner" id="monitorBanner">
@@ -304,14 +329,14 @@ body{background:#fff;color:#000}.day-block,.slot{background:#fff;border:1px soli
   </div>
 
   <div class="filter-bar" id="filterBar">
-    <div class="filter-label">عرض:</div>
-    <button class="ftab active" onclick="setFilter('all',this)">الكل</button>
-    <button class="ftab open-tab" onclick="setFilter('open',this)">مفتوح فقط</button>
-    <button class="ftab close-tab" onclick="setFilter('close',this)">مغلق فقط</button>
+    <div class="filter-label" data-i18n="show">عرض:</div>
+    <button class="ftab active" onclick="setFilter('all',this)" data-i18n="all">الكل</button>
+    <button class="ftab open-tab" onclick="setFilter('open',this)" data-i18n="onlyOpen">مفتوح فقط</button>
+    <button class="ftab close-tab" onclick="setFilter('close',this)" data-i18n="onlyClosed">مغلق فقط</button>
   </div>
 
   <div class="results-header" id="resultsHeader">
-    <div class="results-count">عرض <span id="visibleCount">0</span> مادة</div>
+    <div class="results-count"><span id="visibleCount">0</span> <span data-i18n="courseUnit">مادة</span></div>
     <div class="results-time" id="lastUpdate">—</div>
   </div>
 
@@ -326,17 +351,17 @@ body{background:#fff;color:#000}.day-block,.slot{background:#fff;border:1px soli
 <!-- SCHEDULE -->
 <div class="page" id="pageSched">
   <div class="sched-summary">
-    <div class="sum-box"><div class="sum-num" id="sumCourses">0</div><div class="sum-label">مادة</div></div>
-    <div class="sum-box"><div class="sum-num" id="sumHours">0</div><div class="sum-label">ساعة معتمدة</div></div>
-    <div class="sum-box"><div class="sum-num" id="sumClashes" style="color:var(--warn)">0</div><div class="sum-label">تعارض</div></div>
+    <div class="sum-box"><div class="sum-num" id="sumCourses">0</div><div class="sum-label" data-i18n="courses">مادة</div></div>
+    <div class="sum-box"><div class="sum-num" id="sumHours">0</div><div class="sum-label" data-i18n="credits">ساعة معتمدة</div></div>
+    <div class="sum-box"><div class="sum-num" id="sumClashes" style="color:var(--warn)">0</div><div class="sum-label" data-i18n="clashes">تعارض</div></div>
   </div>
   <div class="conflict-alert" id="conflictAlert">
     <div class="ca-icon">⚠️</div>
-    <div class="ca-text"><h3>يوجد تعارض في الجدول</h3><p id="conflictList"></p></div>
+    <div class="ca-text"><h3 data-i18n="clashTitle">يوجد تعارض في الجدول</h3><p id="conflictList"></p></div>
   </div>
   <div class="sched-actions">
-    <button class="btn-ghost" onclick="window.print()">🖨️ اطبع الجدول</button>
-    <button class="btn-ghost danger" onclick="clearSchedule()">🗑️ امسح الكل</button>
+    <button class="btn-ghost" onclick="window.print()" data-i18n="print">🖨️ اطبع الجدول</button>
+    <button class="btn-ghost danger" onclick="clearSchedule()" data-i18n="clearAll">🗑️ امسح الكل</button>
   </div>
   <div class="state-box visible" id="schedEmpty">
     <div class="state-icon">📅</div><div class="state-title">جدولك فاضي</div>
@@ -347,10 +372,47 @@ body{background:#fff;color:#000}.day-block,.slot{background:#fff;border:1px soli
 
 <!-- PLAN -->
 <div class="page" id="pagePlan">
+  <div class="uni-card">
+    <div class="uni-row">
+      <div class="uni-field">
+        <label class="field-label" data-i18n="uni">الجامعة</label>
+        <select id="uniSelect" onchange="onUniChange()">
+          <option value="PMU" selected>Prince Mohammad Bin Fahd University</option>
+          <option value="SOON" disabled>جامعات ثانية — قريباً</option>
+        </select>
+      </div>
+      <div class="uni-field">
+        <label class="field-label" data-i18n="major">التخصص</label>
+        <select id="majorSelect" onchange="onMajorChange()">
+          <option value="MEEN" selected>Mechanical Engineering</option>
+          <option value="SOON" disabled>تخصصات ثانية — قريباً</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
   <div class="sync-note" id="syncNote">
     <span style="font-size:18px">☁️</span>
     <span id="syncText">سجّل دخول عشان تنحفظ خطتك وجدولك ويجونك من أي جهاز</span>
   </div>
+  <div class="gpa-card">
+    <div class="gpa-top">
+      <div>
+        <div class="gpa-label" data-i18n="gpaLabel">المعدل التراكمي</div>
+        <div class="gpa-val" id="gpaVal">—<small> / 4.00</small></div>
+      </div>
+      <div class="gpa-right">
+        <div class="gpa-label" data-i18n="countedHrs">ساعات محسوبة</div>
+        <div class="gpa-scale">
+          <span class="gpa-pill" id="gpaHrs">0 ساعة</span>
+          <span class="gpa-pill" id="gpaCount">0 مادة</span>
+        </div>
+      </div>
+    </div>
+    <div class="gpa-bar"><div class="gpa-fill" id="gpaFill" style="width:0%"></div></div>
+    <div class="gpa-hint" id="gpaHint">حط درجة أي مادة خلصتها تحت — والمواد بدون درجة أو بتقدير P / TR / W ما تدخل الحساب</div>
+  </div>
+
   <div class="progress-card">
     <div class="prog-top">
       <div class="prog-num" id="progDone">0<small> / 139 ساعة</small></div>
@@ -365,13 +427,13 @@ body{background:#fff;color:#000}.day-block,.slot{background:#fff;border:1px soli
 
   <div class="suggest-card">
     <div class="suggest-head">
-      <h3>💡 المقترح للترم الجاي</h3>
+      <h3 data-i18n="suggestTitle">💡 المقترح للترم الجاي</h3>
       <span class="suggest-hrs" id="sugHours">0 ساعة</span>
     </div>
     <div id="sugList"></div>
   </div>
 
-  <div class="sc-title" style="margin:20px 0 10px">الخطة الدراسية — Mechanical Engineering</div>
+  <div class="sc-title" style="margin:20px 0 10px"><span data-i18n="planTitle">الخطة الدراسية</span> — Mechanical Engineering</div>
   <div id="planSemesters"></div>
 </div>
 
@@ -465,7 +527,7 @@ const TECH_ELECTIVES={
 
 const TOTAL_CR=139;
 
-let allCourses=[],schedule=[],completed=[],filterMode='all';
+let allCourses=[],schedule=[],completed=[],grades={},filterMode='all';
 let PRO_KEY=null;
 let monitorTimer=null,countdownTimer=null,isMonitoring=false;
 const DAY_KEYS=['U','M','T','W','R'];
@@ -569,8 +631,8 @@ async function doSearch(){
     showLoading(false);setStatus('خطأ');
     const b=document.getElementById('initialBox');b.classList.add('visible');
     b.querySelector('.state-icon').textContent='❌';
-    b.querySelector('.state-title').textContent='خطأ في الاتصال';
-    b.querySelector('.state-sub').textContent='السيرفر قد يكون نايم — انتظر 30 ثانية وجرب مرة ثانية';
+    b.querySelector('.state-title').textContent=t('errConn');
+    b.querySelector('.state-sub').textContent=t('errConnSub');
   }
 }
 
@@ -603,15 +665,15 @@ function renderResults(){
     const pre=prereqCheck(c.courseCode);
     let tags='';
     if(pre.known&&!pre.ok){
-      let msg='🔒 ما خلصت المتطلب: ';
+      let msg=t('prereqMiss')+' ';
       if(pre.missing.length)msg+=pre.missing.join('، ');
-      if(pre.needCr)msg+=(pre.missing.length?' + ':'')+`تحتاج ${pre.needCr} ساعة (عندك ${pre.haveCr})`;
+      if(pre.needCr)msg+=(pre.missing.length?' + ':'')+`${pre.needCr} ${t('needHrs')} ${pre.haveCr})`;
       tags+=`<div class="tag err">${msg}</div>`;
     }
-    if(inSch)tags+=`<div class="tag ok">✓ مضافة في جدولك</div>`;
-    else if(clash.length)tags+=`<div class="tag warn">⚠️ يتعارض مع: ${clash.map(x=>x.courseCode+' §'+x.section).join('، ')}</div>`;
-    else if(schedule.length&&parseTime(c.courseTiming))tags+=`<div class="tag ok">✓ ما يتعارض مع جدولك</div>`;
-    if(pre.known&&pre.ok&&isDone(c.courseCode))tags+=`<div class="tag ok">✓ خلصت هذي المادة</div>`;
+    if(inSch)tags+=`<div class="tag ok">${t('inSchedule')}</div>`;
+    else if(clash.length)tags+=`<div class="tag warn">${t('clashWith')} ${clash.map(x=>x.courseCode+' §'+x.section).join('، ')}</div>`;
+    else if(schedule.length&&parseTime(c.courseTiming))tags+=`<div class="tag ok">${t('noClash')}</div>`;
+    if(pre.known&&pre.ok&&isDone(c.courseCode))tags+=`<div class="tag ok">${t('alreadyDone')}</div>`;
 
     const lock=pre.known&&!pre.ok;
     return `<div class="course-card ${c.status==='OPEN'?'is-open':'is-close'} ${inSch?'in-schedule':''}">
@@ -636,25 +698,25 @@ function renderResults(){
 /* ===== Schedule ===== */
 function toggleCourse(crn){
   const i=schedule.findIndex(s=>s.crn===crn);
-  if(i>-1){const r=schedule.splice(i,1)[0];save('pmu_schedule',schedule);pushSchedule();updateBadge();renderResults();showToast(`أزلت ${r.courseCode}`);return}
+  if(i>-1){const r=schedule.splice(i,1)[0];save('pmu_schedule',schedule);pushSchedule();updateBadge();renderResults();showToast(`${t('removed')} ${r.courseCode}`);return}
   const c=allCourses.find(x=>x.crn===crn);if(!c)return;
   const pre=prereqCheck(c.courseCode);
   if(pre.known&&!pre.ok){
-    showToast(`🔒 ما تقدر تسجلها — ينقصك: ${pre.missing.join('، ')||pre.needCr+' ساعة'}`,'err');
+    showToast(`${t('cantAdd')} ${pre.missing.join('، ')||pre.needCr+' '+t('hrsUnit')}`,'err');
     return;
   }
   const clash=findConflicts(c,schedule);
   schedule.push(c);save('pmu_schedule',schedule);pushSchedule();updateBadge();renderResults();
-  if(clash.length)showToast(`⚠️ أضفتها — بس تتعارض مع ${clash[0].courseCode}`,'warn');
-  else showToast(`✓ أضفت ${c.courseCode} للجدول`);
+  if(clash.length)showToast(`${t('addedButClash')} ${clash[0].courseCode}`,'warn');
+  else showToast(`${t('addedTo')} ${c.courseCode} ${t('toSchedule')}`);
 }
 function removeFromSchedule(crn){
   const i=schedule.findIndex(s=>s.crn===crn);
-  if(i>-1){const r=schedule.splice(i,1)[0];save('pmu_schedule',schedule);pushSchedule();updateBadge();renderSchedule();renderResults();showToast(`أزلت ${r.courseCode}`)}
+  if(i>-1){const r=schedule.splice(i,1)[0];save('pmu_schedule',schedule);pushSchedule();updateBadge();renderSchedule();renderResults();showToast(`${t('removed')} ${r.courseCode}`)}
 }
 function clearSchedule(){
   if(!schedule.length)return;
-  schedule=[];save('pmu_schedule',schedule);pushSchedule();updateBadge();renderSchedule();renderResults();showToast('مسحت الجدول');
+  schedule=[];save('pmu_schedule',schedule);pushSchedule();updateBadge();renderSchedule();renderResults();showToast(t('clearedSched'));
 }
 function updateBadge(){document.getElementById('schedBadge').textContent=schedule.length}
 
@@ -685,19 +747,19 @@ function renderSchedule(){
         <div class="slot-info"><div class="slot-name">${c.courseCode} §${c.section}</div>
         <div class="slot-sub">${c.room||'—'} · ${c.instructor||'—'}</div></div>
         <button class="slot-remove" onclick="removeFromSchedule('${c.crn}')">✕</button>
-      </div>`).join('')}</div>`:`<div class="empty-day">ما في محاضرات ✓</div>`;
-    return `<div class="day-block"><div class="day-head"><span>${DAY_AR[day]}</span>
-      <span class="cnt">${items.length} محاضرة</span></div>${body}</div>`;
+      </div>`).join('')}</div>`:`<div class="empty-day">${t('noClass')}</div>`;
+    return `<div class="day-block"><div class="day-head"><span>${t('days')[day]}</span>
+      <span class="cnt">${items.length} ${t('lecture')}</span></div>${body}</div>`;
   }).join('');
 }
 
 /* ===== Plan ===== */
 function toggleDone(code){
   const i=completed.indexOf(code);
-  if(i>-1)completed.splice(i,1);
+  if(i>-1){completed.splice(i,1);delete grades[code];save('pmu_grades',grades);}
   else{
     const chk=prereqCheck(code);
-    if(chk.known&&!chk.ok)showToast(`سجّلتها كمكتملة رغم إن متطلبها ناقص`,'warn');
+    if(chk.known&&!chk.ok)showToast(t('markedAnyway'),'warn');
     completed.push(code);
   }
   save('pmu_completed',completed);pushCompleted();
@@ -706,30 +768,31 @@ function toggleDone(code){
 }
 
 function renderPlan(){
+  renderGPA();
   const cr=doneCredits(),pct=Math.round(cr/TOTAL_CR*100);
-  document.getElementById('progDone').innerHTML=`${cr}<small> / ${TOTAL_CR} ساعة</small>`;
+  document.getElementById('progDone').innerHTML=`${cr}<small> / ${TOTAL_CR} ${t('hrsUnit')}</small>`;
   document.getElementById('progPct').textContent=pct+'%';
   document.getElementById('progFill').style.width=pct+'%';
-  document.getElementById('progRemain').textContent=`باقي ${TOTAL_CR-cr} ساعة`;
+  document.getElementById('progRemain').textContent=(LANG==='ar'?`${t('remain')} ${TOTAL_CR-cr} ${t('hrsUnit')}`:`${TOTAL_CR-cr} ${t('hrsUnit')} ${t('remain')}`);
   document.getElementById('progLevel').textContent=level(cr);
 
   const sug=suggestNext();
-  document.getElementById('sugHours').textContent=sug.hours+' ساعة';
+  document.getElementById('sugHours').textContent=sug.hours+' '+t('hrsUnit');
   const row=(c,crit)=>`<div class="sug-item">
     <span class="sug-code">${c.c}</span>
-    <span class="sug-name">${c.n}${crit?`<span class="sug-badge">يفتح ${c.unlocks} مادة</span>`:''}</span>
+    <span class="sug-name">${c.n}${crit?`<span class="sug-badge">${t('unlocks')} ${c.unlocks} ${t('unlocks2')}</span>`:''}</span>
     <span class="sug-cr">${c.h}H</span></div>`;
   let html='';
-  if(sug.crit.length)html+=`<div class="sug-group crit">🔴 لا تأجلها — تفتح لك مواد الترم الجاي</div>`+sug.crit.map(c=>row(c,1)).join('');
-  if(sug.opt.length)html+=`<div class="sug-group">⚪ اختيارية — لك الخيار تنزلها أو تأجلها</div>`+sug.opt.map(c=>row(c,0)).join('');
-  document.getElementById('sugList').innerHTML=html||`<div style="font-size:12.5px;color:var(--text2);padding:6px 0">حدد المواد اللي خلصتها تحت وبيطلع لك المقترح</div>`;
+  if(sug.crit.length)html+=`<div class="sug-group crit">${t('critGroup')}</div>`+sug.crit.map(c=>row(c,1)).join('');
+  if(sug.opt.length)html+=`<div class="sug-group">${t('optGroup')}</div>`+sug.opt.map(c=>row(c,0)).join('');
+  document.getElementById('sugList').innerHTML=html||`<div style="font-size:12.5px;color:var(--text2);padding:6px 0">${t('sugEmpty')}</div>`;
 
   document.getElementById('planSemesters').innerHTML=PLAN.map((s,i)=>{
     const done=s.courses.filter(c=>isDone(c.c)).length;
     const allDone=done===s.courses.length;
     return `<div class="sem-block ${allDone?'':(i<2?'open':'')}" id="sem-${s.id}">
       <div class="sem-head" onclick="document.getElementById('sem-${s.id}').classList.toggle('open')">
-        <div class="sem-head-l"><span class="sem-title">${s.label}</span>
+        <div class="sem-head-l"><span class="sem-title">${t('sem')[s.id]||s.label}</span>
         <span class="sem-chip ${allDone?'done':''}">${done}/${s.courses.length}</span></div>
         <span class="sem-arrow">▼</span>
       </div>
@@ -740,14 +803,19 @@ function renderPlan(){
         if(locked){
           const parts=[];
           if(chk.missing.length)parts.push(chk.missing.join('، '));
-          if(chk.needCr)parts.push(`${chk.needCr} ساعة`);
-          req=`<div class="pc-req">🔒 يحتاج: ${parts.join(' + ')}</div>`;
+          if(chk.needCr)parts.push(`${chk.needCr} ${t('hrsUnit')}`);
+          req=`<div class="pc-req">🔒 ${t('needs')}: ${parts.join(' + ')}</div>`;
         }
+        const g=grades[c.c]||'';
+        const gradeSel=d?`<select class="grade-sel ${g?'':'empty'}" onchange="setGrade('${c.c}',this.value)">
+            <option value="">—</option>
+            ${GRADE_LIST.map(x=>`<option value="${x}" ${g===x?'selected':''}>${x}</option>`).join('')}
+          </select>`:`<div class="pc-cr">${c.h}H</div>`;
         return `<div class="pc ${d?'done':''} ${locked?'locked':''}">
           <button class="pc-check" onclick="toggleDone('${c.c}')">✓</button>
-          <div class="pc-info"><div class="pc-code">${c.c}</div>
+          <div class="pc-info"><div class="pc-code">${c.c} <span style="color:var(--text3);font-family:var(--mono);font-size:10.5px">${c.h}H</span></div>
           <div class="pc-name">${c.n}</div>${req}</div>
-          <div class="pc-cr">${c.h}H</div></div>`;
+          ${gradeSel}</div>`;
       }).join('')}</div></div>`;
   }).join('');
 }
@@ -800,7 +868,210 @@ function showToast(m,type){
 /* ===== Init ===== */
 schedule=load('pmu_schedule',[]);
 completed=load('pmu_completed',[]);
+grades=load('pmu_grades',{});
 updateBadge();
+setTimeout(applyLang,0);
+
+
+
+/* ================= i18n ================= */
+const I18N={
+ar:{brand:'جدولك',tabSearch:'🔍 البحث',tabSched:'📅 جدولي ',tabPlan:'📋 خطتي',
+searchTitle:'البحث عن المواد',semester:'السيمستر',college:'الكلية',gender:'الجنس',
+filterLabel:'فلتر المادة (اختياري)',filterPh:'مثلاً: MEEN 3395 أو 30547',
+search:'🔍 ابحث',searching:'جاري البحث...',monitor:'📡 راقب',stopMonitor:'⏹ أوقف',
+total:'إجمالي',open:'مفتوح',closed:'مغلق',show:'عرض:',all:'الكل',onlyOpen:'مفتوح فقط',onlyClosed:'مغلق فقط',
+courses:'مادة',credits:'ساعة معتمدة',clashes:'تعارض',clashTitle:'يوجد تعارض في الجدول',
+print:'🖨️ اطبع الجدول',clearAll:'🗑️ امسح الكل',
+gpaLabel:'المعدل التراكمي',countedHrs:'ساعات محسوبة',
+suggestTitle:'💡 المقترح للترم الجاي',planTitle:'الخطة الدراسية',
+uni:'الجامعة',major:'التخصص',login:'دخول',
+schedEmptyT:'جدولك فاضي',schedEmptyS:'روح لصفحة البحث واضغط ➕ على أي مادة',
+initT:'ابدأ البحث',initS:'اختار السيمستر والكلية واضغط ابحث',
+loadT:'جاري البحث...',loadS:'يجيب البيانات من موقع الجامعة',
+emptyT:'ما في نتائج',emptyS:'جرب تغير الفلتر أو البحث',
+noClass:'ما في محاضرات ✓',lecture:'محاضرة',hrsUnit:'ساعة',courseUnit:'مادة',
+syncOut:'سجّل دخول عشان تنحفظ خطتك وجدولك ويجونك من أي جهاز',
+syncIn:'محفوظ في حسابك',syncIn2:'— بيجيك من أي جهاز تسجل فيه',
+gpaHintEmpty:'حط درجة أي مادة خلصتها تحت — والمواد بدون درجة أو بتقدير P / TR / W ما تدخل الحساب',
+gpaRank:'التقدير',gpaFrom:'محسوب من',gpaFrom2:'مادة بدرجات مدخلة',
+critGroup:'🔴 لا تأجلها — تفتح لك مواد الترم الجاي',
+optGroup:'⚪ اختيارية — لك الخيار تنزلها أو تأجلها',
+unlocks:'يفتح',unlocks2:'مادة',
+sugEmpty:'حدد المواد اللي خلصتها تحت وبيطلع لك المقترح',
+needs:'يحتاج',remain:'باقي',
+ranks:['ممتاز مرتفع','ممتاز','جيد جداً','جيد','مقبول','تحت الحد'],
+inSchedule:'✓ مضافة في جدولك',noClash:'✓ ما يتعارض مع جدولك',
+clashWith:'⚠️ يتعارض مع:',prereqMiss:'🔒 ما خلصت المتطلب:',
+alreadyDone:'✓ خلصت هذي المادة',needHrs:'ساعة (عندك',
+addedTo:'✓ أضفت',removed:'أزلت',toSchedule:'للجدول',
+cantAdd:'🔒 ما تقدر تسجلها — ينقصك:',addedButClash:'⚠️ أضفتها — بس تتعارض مع',
+clearedSched:'مسحت الجدول',markedAnyway:'سجّلتها كمكتملة رغم إن متطلبها ناقص',
+errConn:'خطأ في الاتصال',errConnSub:'السيرفر قد يكون نايم — انتظر 30 ثانية وجرب مرة ثانية',
+crn:'CRN',sec:'شعبة',
+days:{U:'الأحد',M:'الاثنين',T:'الثلاثاء',W:'الأربعاء',R:'الخميس',F:'الجمعة',S:'السبت'},
+sem:{F1:'السنة الأولى — الترم الأول',F2:'السنة الأولى — الترم الثاني',
+S1:'السنة الثانية — الترم الأول',S2:'السنة الثانية — الترم الثاني',
+J1:'السنة الثالثة — الترم الأول',J2:'السنة الثالثة — الترم الثاني',
+SU:'الصيف — التدريب',R1:'السنة الرابعة — الترم الأول',R2:'السنة الرابعة — الترم الثاني'}},
+
+en:{brand:'Jadwalik',tabSearch:'🔍 Search',tabSched:'📅 Schedule ',tabPlan:'📋 My Plan',
+searchTitle:'Course Search',semester:'Semester',college:'College',gender:'Gender',
+filterLabel:'Course filter (optional)',filterPh:'e.g. MEEN 3395 or 30547',
+search:'🔍 Search',searching:'Searching...',monitor:'📡 Monitor',stopMonitor:'⏹ Stop',
+total:'Total',open:'Open',closed:'Closed',show:'Show:',all:'All',onlyOpen:'Open only',onlyClosed:'Closed only',
+courses:'Courses',credits:'Credit hours',clashes:'Conflicts',clashTitle:'Schedule conflict detected',
+print:'🖨️ Print schedule',clearAll:'🗑️ Clear all',
+gpaLabel:'Cumulative GPA',countedHrs:'Counted hours',
+suggestTitle:'💡 Suggested next term',planTitle:'Study Plan',
+uni:'University',major:'Major',login:'Sign in',
+schedEmptyT:'Your schedule is empty',schedEmptyS:'Go to Search and tap ➕ on any course',
+initT:'Start searching',initS:'Pick a semester and college, then tap Search',
+loadT:'Searching...',loadS:'Fetching data from the university site',
+emptyT:'No results',emptyS:'Try changing the filter or search',
+noClass:'No classes ✓',lecture:'class',hrsUnit:'hrs',courseUnit:'courses',
+syncOut:'Sign in to save your plan and schedule across devices',
+syncIn:'Saved to your account',syncIn2:'— available on any device you sign in from',
+gpaHintEmpty:'Add a grade to any completed course below — courses without a grade or marked P / TR / W are excluded',
+gpaRank:'Standing',gpaFrom:'based on',gpaFrom2:'graded courses',
+critGroup:'🔴 Do not delay — these unlock next term',
+optGroup:'⚪ Optional — take them or postpone',
+unlocks:'unlocks',unlocks2:'courses',
+sugEmpty:'Mark the courses you finished below to get your suggestion',
+needs:'Needs',remain:'remaining',
+ranks:['Excellent (High)','Excellent','Very Good','Good','Pass','Below minimum'],
+inSchedule:'✓ In your schedule',noClash:'✓ No conflict with your schedule',
+clashWith:'⚠️ Conflicts with:',prereqMiss:'🔒 Missing prerequisite:',
+alreadyDone:'✓ You completed this course',needHrs:'hrs (you have',
+addedTo:'✓ Added',removed:'Removed',toSchedule:'to schedule',
+cantAdd:'🔒 Cannot register — you need:',addedButClash:'⚠️ Added — but conflicts with',
+clearedSched:'Schedule cleared',markedAnyway:'Marked complete although a prerequisite is missing',
+errConn:'Connection error',errConnSub:'The server may be asleep — wait 30 seconds and try again',
+crn:'CRN',sec:'Sec',
+days:{U:'Sunday',M:'Monday',T:'Tuesday',W:'Wednesday',R:'Thursday',F:'Friday',S:'Saturday'},
+sem:{F1:'Freshman — 1st Term',F2:'Freshman — 2nd Term',
+S1:'Sophomore — 1st Term',S2:'Sophomore — 2nd Term',
+J1:'Junior — 1st Term',J2:'Junior — 2nd Term',
+SU:'Summer — Internship',R1:'Senior — 1st Term',R2:'Senior — 2nd Term'}}
+};
+
+let LANG=load('pmu_lang','ar');
+const t=k=>I18N[LANG][k]||k;
+
+function toggleLang(){
+  LANG=LANG==='ar'?'en':'ar';
+  save('pmu_lang',LANG);
+  applyLang();
+}
+
+function applyLang(){
+  const L=I18N[LANG];
+  document.documentElement.lang=LANG;
+  document.documentElement.dir=LANG==='ar'?'rtl':'ltr';
+  document.getElementById('langBtn').textContent=LANG==='ar'?'EN':'ع';
+  document.getElementById('brandName').textContent=L.brand;
+
+  document.querySelectorAll('[data-i18n]').forEach(el=>{
+    const k=el.getAttribute('data-i18n');
+    if(L[k]===undefined)return;
+    if(k==='tabSched'){el.childNodes[0].nodeValue=L[k];return}
+    el.textContent=L[k];
+  });
+
+  document.getElementById('courseFilter').placeholder=L.filterPh;
+  document.getElementById('searchBtnText').textContent=L.search;
+  document.getElementById('btnMonitor').textContent=isMonitoring?L.stopMonitor:L.monitor;
+  if(!USER)document.getElementById('authBtn').textContent=L.login;
+
+  setStateBox('initialBox',L.initT,L.initS);
+  setStateBox('loadingBox',L.loadT,L.loadS);
+  setStateBox('emptyBox',L.emptyT,L.emptyS);
+  setStateBox('schedEmpty',L.schedEmptyT,L.schedEmptyS);
+
+  if(typeof setAuthUI==='function')setAuthUI();
+  if(allCourses.length)renderResults();
+  renderPlan();
+  if(document.getElementById('pageSched').classList.contains('active'))renderSchedule();
+}
+
+function setStateBox(id,title,sub){
+  const b=document.getElementById(id);if(!b)return;
+  const tt=b.querySelector('.state-title'),ss=b.querySelector('.state-sub');
+  if(tt)tt.textContent=title;if(ss)ss.innerHTML=sub;
+}
+
+function onUniChange(){
+  const v=document.getElementById('uniSelect').value;
+  if(v==='SOON'){document.getElementById('uniSelect').value='PMU';return}
+  document.getElementById('brandUni').textContent=v;
+}
+function onMajorChange(){
+  const el=document.getElementById('majorSelect');
+  if(el.value==='SOON')el.value='MEEN';
+}
+
+/* ================= GPA ================= */
+/* نظام التقديرات الرسمي في PMU */
+const GRADE_POINTS={'A+':4.00,'A':3.75,'B+':3.50,'B':3.00,
+'C+':2.50,'C':2.00,'D+':1.50,'D':1.00,'F':0.00,'WF':0.00};
+/* تقديرات لا تدخل في حساب المعدل */
+const GRADE_SKIP=['I','IP','AU','EX','TR','W','N','P','AW'];
+const GRADE_LIST=['A+','A','B+','B','C+','C','D+','D','F','WF','P','TR','W'];
+
+function calcGPA(){
+  let pts=0,hrs=0,n=0;
+  Object.keys(grades).forEach(code=>{
+    const g=grades[code];
+    if(!g||GRADE_SKIP.includes(g)||!(g in GRADE_POINTS))return;
+    if(!isDone(code))return;
+    const h=creditsOf(code);
+    pts+=GRADE_POINTS[g]*h;hrs+=h;n++;
+  });
+  return {gpa:hrs?pts/hrs:null,hrs,n};
+}
+
+function setGrade(code,val){
+  if(val)grades[code]=val;else delete grades[code];
+  save('pmu_grades',grades);
+  pushGrades();
+  renderGPA();
+}
+
+function renderGPA(){
+  const {gpa,hrs,n}=calcGPA();
+  const el=document.getElementById('gpaVal');
+  const fill=document.getElementById('gpaFill');
+  document.getElementById('gpaHrs').textContent=hrs+' '+t('hrsUnit');
+  document.getElementById('gpaCount').textContent=n+' '+t('courseUnit');
+
+  if(gpa===null){
+    el.innerHTML='—<small> / 4.00</small>';
+    fill.style.width='0%';
+    document.getElementById('gpaHint').textContent=t('gpaHintEmpty');
+    return;
+  }
+  const v=gpa.toFixed(2);
+  el.innerHTML=v+'<small> / 4.00</small>';
+  const pct=Math.min(100,gpa/4*100);
+  fill.style.width=pct+'%';
+  const color=gpa>=3.5?'var(--open)':gpa>=2.5?'var(--accent)':gpa>=2?'var(--warn)':'var(--close)';
+  fill.style.background=color;
+  el.style.color=color;
+
+  const R=t('ranks');
+  const rank=gpa>=3.75?R[0]:gpa>=3.50?R[1]:gpa>=3.00?R[2]:gpa>=2.50?R[3]:gpa>=2.00?R[4]:R[5];
+  document.getElementById('gpaHint').innerHTML=
+    `${t('gpaRank')}: <b style="color:${color}">${rank}</b> — ${t('gpaFrom')} ${n} ${t('gpaFrom2')}`;
+}
+
+async function pushGrades(){
+  if(!USER||syncing)return;
+  try{
+    const rows=completed.map(c=>({user_id:USER.id,course_code:c,grade:grades[c]||null}));
+    await sb.from('completed_courses').delete().eq('user_id',USER.id);
+    if(rows.length)await sb.from('completed_courses').insert(rows);
+  }catch(e){console.log('push grades',e)}
+}
 
 /* ================= SUPABASE AUTH & SYNC ================= */
 const SB_URL='https://komdznyfqmheaqywenbf.supabase.co';
@@ -812,7 +1083,7 @@ let USER=null, PROFILE=null, syncing=false;
 
 async function handleAuth(){
   if(USER){
-    if(!confirm('تسجيل خروج؟'))return;
+    if(!confirm(LANG==='ar'?'تسجيل خروج؟':'Sign out?'))return;
     await sb.auth.signOut();
     location.reload();
   }else{
@@ -828,11 +1099,11 @@ function setAuthUI(){
     b.textContent=first.length>10?first.slice(0,10):first;
     b.classList.add('out');
     note.classList.add('visible');
-    document.getElementById('syncText').innerHTML=`محفوظ في حسابك <b>${USER.email}</b> — بيجيك من أي جهاز تسجل فيه`;
+    document.getElementById('syncText').innerHTML=`${t('syncIn')} <b>${USER.email}</b> ${t('syncIn2')}`;
   }else{
     b.textContent='دخول';b.classList.remove('out');
     note.classList.add('visible');
-    document.getElementById('syncText').textContent='سجّل دخول عشان تنحفظ خطتك وجدولك ويجونك من أي جهاز';
+    document.getElementById('syncText').textContent=t('syncOut');
   }
 }
 
@@ -842,12 +1113,16 @@ async function pullCloud(){
   try{
     const [{data:prof},{data:cc},{data:us}]=await Promise.all([
       sb.from('profiles').select('*').eq('id',USER.id).single(),
-      sb.from('completed_courses').select('course_code'),
+      sb.from('completed_courses').select('course_code,grade'),
       sb.from('user_schedule').select('*')
     ]);
     PROFILE=prof||null;
 
-    if(cc&&cc.length) completed=cc.map(r=>r.course_code);
+    if(cc&&cc.length){
+      completed=cc.map(r=>r.course_code);
+      grades={};cc.forEach(r=>{if(r.grade)grades[r.course_code]=r.grade});
+      save('pmu_grades',grades);
+    }
     else if(completed.length) await pushCompleted();   /* أول مرة: ارفع المحلي */
 
     if(us&&us.length) schedule=us.map(r=>({
@@ -870,7 +1145,7 @@ async function pushCompleted(){
   try{
     await sb.from('completed_courses').delete().eq('user_id',USER.id);
     if(completed.length)
-      await sb.from('completed_courses').insert(completed.map(c=>({user_id:USER.id,course_code:c})));
+      await sb.from('completed_courses').insert(completed.map(c=>({user_id:USER.id,course_code:c,grade:grades[c]||null})));
   }catch(e){console.log('push cc',e)}
 }
 
@@ -892,7 +1167,7 @@ async function pushSchedule(){
   const hp=new URLSearchParams(location.hash.replace(/^#/,''));
   const qp=new URLSearchParams(location.search);
   const err=hp.get('error_description')||qp.get('error_description');
-  if(err)setTimeout(()=>showToast('خطأ دخول: '+decodeURIComponent(err),'err'),600);
+  if(err)setTimeout(()=>showToast((LANG==='ar'?'خطأ دخول: ':'Sign-in error: ')+decodeURIComponent(err),'err'),600);
 
   let {data:{session}}=await sb.auth.getSession();
   /* انتظر لحظة لو التوكن لسا يتعالج من الرابط */
