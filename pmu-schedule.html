@@ -787,10 +787,16 @@ function renderPlan(){
   if(sug.opt.length)html+=`<div class="sug-group">${t('optGroup')}</div>`+sug.opt.map(c=>row(c,0)).join('');
   document.getElementById('sugList').innerHTML=html||`<div style="font-size:12.5px;color:var(--text2);padding:6px 0">${t('sugEmpty')}</div>`;
 
+  /* احفظ الترمات المفتوحة قبل إعادة الرسم */
+  const openSems=new Set();
+  document.querySelectorAll('.sem-block.open').forEach(el=>openSems.add(el.id));
+  const firstRender=!document.querySelector('.sem-block');
+
   document.getElementById('planSemesters').innerHTML=PLAN.map((s,i)=>{
     const done=s.courses.filter(c=>isDone(c.c)).length;
     const allDone=done===s.courses.length;
-    return `<div class="sem-block ${allDone?'':(i<2?'open':'')}" id="sem-${s.id}">
+    const isOpen=firstRender?(!allDone&&i<2):openSems.has('sem-'+s.id);
+    return `<div class="sem-block ${isOpen?'open':''}" id="sem-${s.id}">
       <div class="sem-head" onclick="document.getElementById('sem-${s.id}').classList.toggle('open')">
         <div class="sem-head-l"><span class="sem-title">${t('sem')[s.id]||s.label}</span>
         <span class="sem-chip ${allDone?'done':''}">${done}/${s.courses.length}</span></div>
@@ -1084,10 +1090,14 @@ let USER=null, PROFILE=null, syncing=false;
 async function handleAuth(){
   if(USER){
     if(!confirm(LANG==='ar'?'تسجيل خروج؟':'Sign out?'))return;
-    await sb.auth.signOut();
-    location.reload();
+    try{await sb.auth.signOut({scope:'global'})}catch(e){await sb.auth.signOut()}
+    try{Object.keys(localStorage).forEach(k=>{if(k.startsWith('sb-'))localStorage.removeItem(k)})}catch(e){}
+    location.href=location.pathname;
   }else{
-    await sb.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin+location.pathname}});
+    await sb.auth.signInWithOAuth({provider:'google',options:{
+      redirectTo:location.origin+location.pathname,
+      queryParams:{prompt:'select_account'}
+    }});
   }
 }
 
