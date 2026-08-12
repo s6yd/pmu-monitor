@@ -25,6 +25,13 @@ border-bottom:1px solid var(--border);padding:0 16px;height:52px;display:flex;al
 border:1px solid var(--border);padding:4px 10px;border-radius:20px;font-family:var(--mono)}
 .pulse-dot{width:6px;height:6px;border-radius:50%;background:var(--text3)}
 .pulse-dot.active{background:var(--open);animation:blink 1.4s infinite}
+.auth-btn{background:var(--accent);color:#fff;border:none;border-radius:20px;padding:6px 14px;
+font-size:12px;font-weight:600;font-family:var(--sans);cursor:pointer;white-space:nowrap}
+.auth-btn.out{background:transparent;border:1px solid var(--border2);color:var(--text2)}
+.sync-note{display:none;align-items:center;gap:10px;background:rgba(61,111,255,.08);
+border:1px solid var(--border2);border-radius:13px;padding:12px 14px;margin-bottom:14px;font-size:12.5px;color:var(--text2);line-height:1.6}
+.sync-note.visible{display:flex}
+.sync-note b{color:var(--text)}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
 
 .tabs{position:sticky;top:52px;z-index:99;background:rgba(8,11,18,.94);backdrop-filter:blur(16px);
@@ -51,7 +58,8 @@ select:focus,input:focus{border-color:var(--accent)}
 .search-input-wrap{position:relative}
 .search-input-wrap input{padding-left:40px}
 .clear-btn{position:absolute;left:12px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text3);cursor:pointer;font-size:15px;display:none}
-.btn-row{display:grid;grid-template-columns:1fr auto;gap:10px;margin-top:3px}
+.btn-row{display:grid;grid-template-columns:1fr;gap:10px;margin-top:3px}
+.btn-row.pro{grid-template-columns:1fr auto}
 .btn-search{background:var(--accent);color:#fff;border:none;border-radius:11px;padding:12px;font-size:14px;font-weight:600;font-family:var(--sans);cursor:pointer}
 .btn-search:disabled{opacity:.5}
 .btn-monitor{background:transparent;color:var(--accent2);border:1px solid var(--accent);border-radius:11px;
@@ -172,6 +180,10 @@ border-radius:16px;padding:17px;margin-bottom:15px}
 .sug-code{font-family:var(--mono);font-size:12px;color:var(--accent2);min-width:78px}
 .sug-name{font-size:12.5px;flex:1}
 .sug-cr{font-family:var(--mono);font-size:11px;color:var(--text3)}
+.sug-group{font-size:11.5px;font-weight:600;color:var(--text2);margin:12px 0 4px;padding-top:8px;border-top:1px solid var(--border)}
+.sug-group:first-child{margin-top:0;padding-top:0;border-top:none}
+.sug-group.crit{color:var(--warn)}
+.sug-badge{font-size:10px;color:var(--warn);background:var(--warn-bg);padding:1px 7px;border-radius:20px;margin-right:6px;white-space:nowrap}
 
 .sem-block{background:var(--card);border:1px solid var(--border);border-radius:14px;margin-bottom:9px;overflow:hidden}
 .sem-head{padding:12px 15px;display:flex;align-items:center;justify-content:space-between;cursor:pointer}
@@ -206,12 +218,16 @@ box-shadow:0 8px 30px rgba(61,111,255,.4);transition:transform .3s;z-index:999;m
 body{background:#fff;color:#000}.day-block,.slot{background:#fff;border:1px solid #ccc}
 .slot-name,.slot-time{color:#000}}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 
 <div class="topbar">
   <div class="logo"><div class="logo-icon">🎓</div> PMU Schedule</div>
-  <div class="status-pill"><div class="pulse-dot" id="statusDot"></div><span id="statusText">جاهز</span></div>
+  <div style="display:flex;align-items:center;gap:8px">
+    <div class="status-pill"><div class="pulse-dot" id="statusDot"></div><span id="statusText">جاهز</span></div>
+    <button class="auth-btn" id="authBtn" onclick="handleAuth()">دخول</button>
+  </div>
 </div>
 
 <div class="tabs">
@@ -271,7 +287,7 @@ body{background:#fff;color:#000}.day-block,.slot{background:#fff;border:1px soli
       </div>
       <div class="btn-row">
         <button class="btn-search" id="btnSearch" onclick="doSearch()"><span id="searchBtnText">🔍 ابحث</span></button>
-        <button class="btn-monitor" id="btnMonitor" onclick="toggleMonitor()">📡 راقب</button>
+        <button class="btn-monitor" id="btnMonitor" onclick="toggleMonitor()" style="display:none">📡 راقب</button>
       </div>
     </div>
   </div>
@@ -311,7 +327,7 @@ body{background:#fff;color:#000}.day-block,.slot{background:#fff;border:1px soli
 <div class="page" id="pageSched">
   <div class="sched-summary">
     <div class="sum-box"><div class="sum-num" id="sumCourses">0</div><div class="sum-label">مادة</div></div>
-    <div class="sum-box"><div class="sum-num" id="sumHours">0</div><div class="sum-label">ساعة أسبوعياً</div></div>
+    <div class="sum-box"><div class="sum-num" id="sumHours">0</div><div class="sum-label">ساعة معتمدة</div></div>
     <div class="sum-box"><div class="sum-num" id="sumClashes" style="color:var(--warn)">0</div><div class="sum-label">تعارض</div></div>
   </div>
   <div class="conflict-alert" id="conflictAlert">
@@ -331,6 +347,10 @@ body{background:#fff;color:#000}.day-block,.slot{background:#fff;border:1px soli
 
 <!-- PLAN -->
 <div class="page" id="pagePlan">
+  <div class="sync-note" id="syncNote">
+    <span style="font-size:18px">☁️</span>
+    <span id="syncText">سجّل دخول عشان تنحفظ خطتك وجدولك ويجونك من أي جهاز</span>
+  </div>
   <div class="progress-card">
     <div class="prog-top">
       <div class="prog-num" id="progDone">0<small> / 139 ساعة</small></div>
@@ -446,6 +466,7 @@ const TECH_ELECTIVES={
 const TOTAL_CR=139;
 
 let allCourses=[],schedule=[],completed=[],filterMode='all';
+let PRO_KEY=null;
 let monitorTimer=null,countdownTimer=null,isMonitoring=false;
 const DAY_KEYS=['U','M','T','W','R'];
 const DAY_AR={U:'الأحد',M:'الاثنين',T:'الثلاثاء',W:'الأربعاء',R:'الخميس',F:'الجمعة',S:'السبت'};
@@ -475,21 +496,30 @@ function prereqCheck(code){
   return {known:true,ok:missing.length===0&&!needCr,missing,needCr,haveCr:cr};
 }
 
+/* عدد ساعات أي مادة: من الخطة، وإلا من الرقم الثاني في كود المادة (نظام PMU) */
+function creditsOf(code){
+  const pc=findPlanCourse(code);
+  if(pc)return pc.h;
+  const m=(code||'').match(/(\d{4})/);
+  if(m){const d=parseInt(m[1][1]);if(d>=1&&d<=6)return d}
+  return 3;
+}
+/* كم مادة تنفتح لو خلصت هذي المادة */
+function unlocksCount(code){
+  return allPlanCourses().filter(c=>(c.p||[]).includes(code)).length;
+}
 function suggestNext(){
-  const cr=doneCredits();
-  const out=[];let hrs=0;
-  for(const sem of PLAN){
-    for(const c of sem.courses){
-      if(isDone(c.c))continue;
-      if(c.el)continue;
-      const chk=prereqCheck(c.c);
-      if(!chk.ok)continue;
-      if(hrs+c.h>18)continue;
-      out.push(c);hrs+=c.h;
-    }
-    if(hrs>=15)break;
-  }
-  return {courses:out,hours:hrs};
+  const cands=[];
+  PLAN.forEach((sem,si)=>sem.courses.forEach(c=>{
+    if(isDone(c.c)||c.el)return;
+    if(!prereqCheck(c.c).ok)return;
+    cands.push({...c,order:si,unlocks:unlocksCount(c.c)});
+  }));
+  cands.sort((a,b)=>(b.unlocks-a.unlocks)||(a.order-b.order));
+  const crit=[],opt=[];let hrs=0;
+  cands.filter(c=>c.unlocks>0).forEach(c=>{if(hrs+c.h<=20){crit.push(c);hrs+=c.h}});
+  cands.filter(c=>c.unlocks===0).forEach(c=>{if(hrs+c.h<=20){opt.push(c);hrs+=c.h}});
+  return {crit,opt,hours:hrs};
 }
 
 /* ===== Tabs ===== */
@@ -519,10 +549,8 @@ function conflicts(a,b){
   return ta.start<tb.end&&tb.start<ta.end;
 }
 function findConflicts(c,list){return list.filter(x=>x.crn!==c.crn&&conflicts(c,x))}
-function weeklyHours(){
-  let t=0;schedule.forEach(c=>{const tm=parseTime(c.courseTiming),d=parseDays(c.courseDate);
-  if(tm)t+=((tm.end-tm.start)/60)*d.length});
-  return Math.round(t*10)/10;
+function scheduleCredits(){
+  let t=0;schedule.forEach(c=>t+=creditsOf(c.courseCode));return t;
 }
 
 /* ===== Search ===== */
@@ -531,7 +559,8 @@ async function doSearch(){
         gender=document.getElementById('gender').value,filter=document.getElementById('courseFilter').value.trim();
   showLoading(true);setStatus('يبحث...');
   try{
-    const r=await fetch(`${API}?term=${term}&college=${college}&gender=${gender}&filter=${encodeURIComponent(filter)}`);
+    const kq=PRO_KEY?`&key=${encodeURIComponent(PRO_KEY)}`:'';
+    const r=await fetch(`${API}?term=${term}&college=${college}&gender=${gender}&filter=${encodeURIComponent(filter)}${kq}`);
     const d=await r.json();
     if(!d.success)throw new Error(d.error);
     allCourses=d.courses;renderResults();setStatus(`${d.count} مادة`);
@@ -607,7 +636,7 @@ function renderResults(){
 /* ===== Schedule ===== */
 function toggleCourse(crn){
   const i=schedule.findIndex(s=>s.crn===crn);
-  if(i>-1){const r=schedule.splice(i,1)[0];save('pmu_schedule',schedule);updateBadge();renderResults();showToast(`أزلت ${r.courseCode}`);return}
+  if(i>-1){const r=schedule.splice(i,1)[0];save('pmu_schedule',schedule);pushSchedule();updateBadge();renderResults();showToast(`أزلت ${r.courseCode}`);return}
   const c=allCourses.find(x=>x.crn===crn);if(!c)return;
   const pre=prereqCheck(c.courseCode);
   if(pre.known&&!pre.ok){
@@ -615,24 +644,24 @@ function toggleCourse(crn){
     return;
   }
   const clash=findConflicts(c,schedule);
-  schedule.push(c);save('pmu_schedule',schedule);updateBadge();renderResults();
+  schedule.push(c);save('pmu_schedule',schedule);pushSchedule();updateBadge();renderResults();
   if(clash.length)showToast(`⚠️ أضفتها — بس تتعارض مع ${clash[0].courseCode}`,'warn');
   else showToast(`✓ أضفت ${c.courseCode} للجدول`);
 }
 function removeFromSchedule(crn){
   const i=schedule.findIndex(s=>s.crn===crn);
-  if(i>-1){const r=schedule.splice(i,1)[0];save('pmu_schedule',schedule);updateBadge();renderSchedule();renderResults();showToast(`أزلت ${r.courseCode}`)}
+  if(i>-1){const r=schedule.splice(i,1)[0];save('pmu_schedule',schedule);pushSchedule();updateBadge();renderSchedule();renderResults();showToast(`أزلت ${r.courseCode}`)}
 }
 function clearSchedule(){
   if(!schedule.length)return;
-  schedule=[];save('pmu_schedule',schedule);updateBadge();renderSchedule();renderResults();showToast('مسحت الجدول');
+  schedule=[];save('pmu_schedule',schedule);pushSchedule();updateBadge();renderSchedule();renderResults();showToast('مسحت الجدول');
 }
 function updateBadge(){document.getElementById('schedBadge').textContent=schedule.length}
 
 function renderSchedule(){
   const empty=document.getElementById('schedEmpty'),wrap=document.getElementById('schedDays');
   document.getElementById('sumCourses').textContent=schedule.length;
-  document.getElementById('sumHours').textContent=weeklyHours();
+  document.getElementById('sumHours').textContent=scheduleCredits();
   const pairs=[];
   for(let i=0;i<schedule.length;i++)for(let j=i+1;j<schedule.length;j++)
     if(conflicts(schedule[i],schedule[j]))pairs.push([schedule[i],schedule[j]]);
@@ -665,8 +694,13 @@ function renderSchedule(){
 /* ===== Plan ===== */
 function toggleDone(code){
   const i=completed.indexOf(code);
-  if(i>-1)completed.splice(i,1);else completed.push(code);
-  save('pmu_completed',completed);
+  if(i>-1)completed.splice(i,1);
+  else{
+    const chk=prereqCheck(code);
+    if(chk.known&&!chk.ok)showToast(`سجّلتها كمكتملة رغم إن متطلبها ناقص`,'warn');
+    completed.push(code);
+  }
+  save('pmu_completed',completed);pushCompleted();
   renderPlan();
   if(allCourses.length)renderResults();
 }
@@ -681,10 +715,14 @@ function renderPlan(){
 
   const sug=suggestNext();
   document.getElementById('sugHours').textContent=sug.hours+' ساعة';
-  document.getElementById('sugList').innerHTML=sug.courses.length?sug.courses.map(c=>`
-    <div class="sug-item"><span class="sug-code">${c.c}</span>
-    <span class="sug-name">${c.n}</span><span class="sug-cr">${c.h}H</span></div>`).join('')
-    :`<div style="font-size:12.5px;color:var(--text2);padding:6px 0">حدد المواد اللي خلصتها تحت وبيطلع لك المقترح</div>`;
+  const row=(c,crit)=>`<div class="sug-item">
+    <span class="sug-code">${c.c}</span>
+    <span class="sug-name">${c.n}${crit?`<span class="sug-badge">يفتح ${c.unlocks} مادة</span>`:''}</span>
+    <span class="sug-cr">${c.h}H</span></div>`;
+  let html='';
+  if(sug.crit.length)html+=`<div class="sug-group crit">🔴 لا تأجلها — تفتح لك مواد الترم الجاي</div>`+sug.crit.map(c=>row(c,1)).join('');
+  if(sug.opt.length)html+=`<div class="sug-group">⚪ اختيارية — لك الخيار تنزلها أو تأجلها</div>`+sug.opt.map(c=>row(c,0)).join('');
+  document.getElementById('sugList').innerHTML=html||`<div style="font-size:12.5px;color:var(--text2);padding:6px 0">حدد المواد اللي خلصتها تحت وبيطلع لك المقترح</div>`;
 
   document.getElementById('planSemesters').innerHTML=PLAN.map((s,i)=>{
     const done=s.courses.filter(c=>isDone(c.c)).length;
@@ -763,6 +801,119 @@ function showToast(m,type){
 schedule=load('pmu_schedule',[]);
 completed=load('pmu_completed',[]);
 updateBadge();
+
+/* ================= SUPABASE AUTH & SYNC ================= */
+const SB_URL='https://komdznyfqmheaqywenbf.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtvbWR6bnlmcW1oZWFxeXdlbmJmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY1NTYzMTgsImV4cCI6MjEwMjEzMjMxOH0.zUKbv9HgPdeFgK6-_4VPB2gz0wYvZ2auQF_AC36r3jw';
+const sb=window.supabase.createClient(SB_URL,SB_KEY);
+let USER=null, PROFILE=null, syncing=false;
+
+async function handleAuth(){
+  if(USER){
+    if(!confirm('تسجيل خروج؟'))return;
+    await sb.auth.signOut();
+    location.reload();
+  }else{
+    await sb.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin+location.pathname}});
+  }
+}
+
+function setAuthUI(){
+  const b=document.getElementById('authBtn');
+  const note=document.getElementById('syncNote');
+  if(USER){
+    const first=(PROFILE&&PROFILE.name?PROFILE.name:USER.email).split(' ')[0].split('@')[0];
+    b.textContent=first.length>10?first.slice(0,10):first;
+    b.classList.add('out');
+    note.classList.add('visible');
+    document.getElementById('syncText').innerHTML=`محفوظ في حسابك <b>${USER.email}</b> — بيجيك من أي جهاز تسجل فيه`;
+  }else{
+    b.textContent='دخول';b.classList.remove('out');
+    note.classList.add('visible');
+    document.getElementById('syncText').textContent='سجّل دخول عشان تنحفظ خطتك وجدولك ويجونك من أي جهاز';
+  }
+}
+
+/* تحميل بيانات المستخدم من السحابة */
+async function pullCloud(){
+  if(!USER)return;
+  try{
+    const [{data:prof},{data:cc},{data:us}]=await Promise.all([
+      sb.from('profiles').select('*').eq('id',USER.id).single(),
+      sb.from('completed_courses').select('course_code'),
+      sb.from('user_schedule').select('*')
+    ]);
+    PROFILE=prof||null;
+
+    if(cc&&cc.length) completed=cc.map(r=>r.course_code);
+    else if(completed.length) await pushCompleted();   /* أول مرة: ارفع المحلي */
+
+    if(us&&us.length) schedule=us.map(r=>({
+      crn:r.crn,courseCode:r.course_code,courseTitle:r.course_title,section:r.section,
+      courseDate:r.course_date,courseTiming:r.course_timing,instructor:r.instructor,room:r.room}));
+    else if(schedule.length) await pushSchedule();
+
+    save('pmu_completed',completed);save('pmu_schedule',schedule);
+    updateBadge();
+    if(PROFILE&&PROFILE.is_pro){
+      PRO_KEY=PRO_KEY||'account';
+      document.getElementById('btnMonitor').style.display='block';
+      document.querySelector('.btn-row').classList.add('pro');
+    }
+  }catch(e){console.log('pull error',e)}
+}
+
+async function pushCompleted(){
+  if(!USER||syncing)return;
+  try{
+    await sb.from('completed_courses').delete().eq('user_id',USER.id);
+    if(completed.length)
+      await sb.from('completed_courses').insert(completed.map(c=>({user_id:USER.id,course_code:c})));
+  }catch(e){console.log('push cc',e)}
+}
+
+async function pushSchedule(){
+  if(!USER||syncing)return;
+  try{
+    await sb.from('user_schedule').delete().eq('user_id',USER.id);
+    if(schedule.length)
+      await sb.from('user_schedule').insert(schedule.map(c=>({
+        user_id:USER.id,crn:c.crn,course_code:c.courseCode,course_title:c.courseTitle,
+        section:c.section,course_date:c.courseDate,course_timing:c.courseTiming,
+        instructor:c.instructor,room:c.room,term:document.getElementById('term').value})));
+  }catch(e){console.log('push sch',e)}
+}
+
+/* بدء الجلسة */
+(async function initAuth(){
+  const {data:{session}}=await sb.auth.getSession();
+  USER=session?session.user:null;
+  setAuthUI();
+  if(USER){await pullCloud();setAuthUI();renderPlan();
+    if(document.getElementById('pageSched').classList.contains('active'))renderSchedule();}
+  sb.auth.onAuthStateChange(async(ev,sess)=>{
+    const was=!!USER;USER=sess?sess.user:null;
+    if(USER&&!was){await pullCloud();setAuthUI();renderPlan();}
+  });
+})();
+
+
+/* مفتاح المراقبة: من الرابط ?key=xxx أو محفوظ من قبل */
+(function(){
+  const urlKey=new URLSearchParams(location.search).get('key');
+  if(urlKey){PRO_KEY=urlKey;save('pmu_key',urlKey);
+    history.replaceState({},'',location.pathname);}
+  else PRO_KEY=load('pmu_key',null);
+  if(PRO_KEY){
+    fetch(`${API.replace('/courses','/check')}?key=${encodeURIComponent(PRO_KEY)}`)
+      .then(r=>r.json()).then(d=>{
+        if(d.valid){
+          document.getElementById('btnMonitor').style.display='block';
+          document.querySelector('.btn-row').classList.add('pro');
+        }else{PRO_KEY=null;save('pmu_key',null);}
+      }).catch(()=>{});
+  }
+})();
 </script>
 </body>
 </html>
