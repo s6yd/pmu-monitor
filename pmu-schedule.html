@@ -39,6 +39,8 @@ border:1px solid var(--border2);border-radius:13px;padding:12px 14px;margin-bott
 
 .tabs{position:sticky;top:52px;z-index:99;background:rgba(8,11,18,.94);backdrop-filter:blur(16px);
 border-bottom:1px solid var(--border);display:grid;grid-template-columns:1fr 1fr 1fr}
+.tabs.tabs4{grid-template-columns:1fr 1fr 1fr auto}
+.tabs.tabs4 .tab{font-size:12.5px;padding:12px 4px}
 .tab{background:none;border:none;color:var(--text3);font-family:var(--sans);font-size:13px;font-weight:600;
 padding:12px 0;cursor:pointer;position:relative;display:flex;align-items:center;justify-content:center;gap:6px}
 .tab.active{color:var(--accent2)}
@@ -228,6 +230,52 @@ padding-left:4px;background-image:none;flex-shrink:0}
 .gpa-bar{height:7px;background:var(--bg);border-radius:20px;overflow:hidden;margin-top:10px}
 .gpa-fill{height:100%;border-radius:20px;transition:width .4s,background .4s}
 
+/* ---- Settings / Pro ---- */
+.pro-card{background:linear-gradient(160deg,rgba(245,158,11,.14),var(--card));
+border:1px solid rgba(245,158,11,.4);border-radius:16px;padding:18px;margin-bottom:14px}
+.pro-head{display:flex;align-items:center;gap:11px;margin-bottom:12px}
+.pro-icon{font-size:24px}
+.pro-head h3{font-size:15px;font-weight:600}
+.pro-head p{font-size:11.5px;color:var(--text2);margin-top:2px}
+.pro-price{margin-right:auto;font-family:var(--mono);font-size:13px;color:var(--warn);
+background:rgba(245,158,11,.15);padding:4px 11px;border-radius:20px;white-space:nowrap}
+.pro-list{display:flex;flex-direction:column;gap:7px;margin-bottom:14px}
+.pro-item{display:flex;align-items:flex-start;gap:9px;font-size:12.5px;color:var(--text2);line-height:1.5}
+.pro-item b{color:var(--text)}
+.btn-pro{width:100%;background:var(--warn);color:#1a1200;border:none;border-radius:11px;
+padding:13px;font-size:14px;font-weight:700;font-family:var(--sans);cursor:pointer}
+.btn-pro:active{opacity:.88}
+.pro-active{background:linear-gradient(160deg,rgba(16,185,129,.14),var(--card));border-color:var(--open-border)}
+.pro-active .pro-price{color:var(--open);background:var(--open-bg)}
+
+.set-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:17px;margin-bottom:14px}
+.set-row{display:flex;align-items:center;justify-content:space-between;gap:12px;
+padding:12px 0;border-bottom:1px solid var(--border)}
+.set-row:last-child{border-bottom:none}
+.set-info h4{font-size:13px;font-weight:600}
+.set-info p{font-size:11.5px;color:var(--text3);margin-top:3px;line-height:1.5}
+.btn-sm{background:var(--accent);color:#fff;border:none;border-radius:9px;padding:8px 14px;
+font-size:12px;font-weight:600;font-family:var(--sans);cursor:pointer;white-space:nowrap;flex-shrink:0}
+.btn-sm.ghost{background:transparent;border:1px solid var(--border2);color:var(--text2)}
+.btn-sm.ok{background:var(--open)}
+.tg-code{font-family:var(--mono);font-size:17px;letter-spacing:3px;color:var(--accent2);
+background:var(--bg);border:1px dashed var(--border2);border-radius:10px;
+padding:11px;text-align:center;margin-top:10px}
+
+.pay-box{background:var(--bg);border:1px solid var(--border2);border-radius:12px;padding:14px;margin-top:12px;display:none}
+.pay-box.visible{display:block}
+.pay-line{display:flex;justify-content:space-between;align-items:center;padding:8px 0;font-size:12.5px;border-bottom:1px solid var(--border)}
+.pay-line:last-child{border-bottom:none}
+.pay-line b{font-family:var(--mono);color:var(--accent2)}
+.pay-note{font-size:11.5px;color:var(--text3);line-height:1.7;margin-top:11px}
+
+/* monitor toggle on course card */
+.btn-bell{width:34px;height:34px;border-radius:10px;border:1px solid var(--border2);
+background:transparent;color:var(--text3);font-size:15px;cursor:pointer;
+display:flex;align-items:center;justify-content:center}
+.btn-bell.on{border-color:var(--warn);color:var(--warn);background:var(--warn-bg)}
+.btn-bell.locked{opacity:.45}
+
 .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(90px);background:var(--accent);
 color:#fff;padding:11px 20px;border-radius:12px;font-size:13px;font-weight:600;
 box-shadow:0 8px 30px rgba(61,111,255,.4);transition:transform .3s;z-index:999;max-width:90%;text-align:center}
@@ -255,7 +303,7 @@ body{background:#fff;color:#000}.day-block,.slot{background:#fff;border:1px soli
   </div>
 </div>
 
-<div class="tabs">
+<div class="tabs tabs4">
   <button class="tab active" id="tabSearch" onclick="switchTab('search')"data-i18n="tabSearch">🔍 البحث</button>
   <button class="tab" id="tabSched" onclick="switchTab('sched')"data-i18n="tabSched">📅 جدولي <span class="tab-badge" id="schedBadge">0</span></button>
   <button class="tab" id="tabPlan" onclick="switchTab('plan')"data-i18n="tabPlan">📋 خطتي</button>
@@ -437,6 +485,68 @@ body{background:#fff;color:#000}.day-block,.slot{background:#fff;border:1px soli
   <div id="planSemesters"></div>
 </div>
 
+
+<!-- SETTINGS -->
+<div class="page" id="pageSet">
+
+  <div class="pro-card" id="proCard">
+    <div class="pro-head">
+      <div class="pro-icon">⚡️</div>
+      <div>
+        <h3 id="proTitle">اشتراك جدولك</h3>
+        <p id="proSub">فعّل المراقبة والحفظ السحابي</p>
+      </div>
+      <div class="pro-price" id="proPrice">19 ريال / سنة</div>
+    </div>
+    <div class="pro-list" id="proList">
+      <div class="pro-item">🔔 <span><b>مراقبة المواد</b> — إشعار تيليغرام فوري أول ما تنفتح أي شعبة</span></div>
+      <div class="pro-item">☁️ <span><b>حفظ سحابي</b> — خطتك وجدولك ومعدلك من أي جهاز</span></div>
+      <div class="pro-item">♾️ <span><b>مواد بلا حد</b> — راقب كل المواد اللي تبيها</span></div>
+    </div>
+    <button class="btn-pro" id="btnPro" onclick="togglePay()">اشترك الحين</button>
+
+    <div class="pay-box" id="payBox">
+      <div class="pay-line"><span>المبلغ</span><b>19 ريال</b></div>
+      <div class="pay-line"><span>STC Pay / تحويل</span><b id="payNum">0500000000</b></div>
+      <div class="pay-line"><span>كودك</span><b id="payCode">—</b></div>
+      <div class="pay-note">
+        حوّل المبلغ، ثم أرسل صورة الإيصال مع كودك للبوت على تيليغرام.
+        بيتفعّل حسابك خلال ساعات قليلة.
+      </div>
+      <button class="btn-sm" style="width:100%;margin-top:11px" onclick="openBot()">📩 أرسل الإيصال للبوت</button>
+    </div>
+  </div>
+
+  <div class="set-card">
+    <div class="sc-title">إشعارات تيليغرام</div>
+    <div class="set-row">
+      <div class="set-info">
+        <h4 id="tgTitle">غير مربوط</h4>
+        <p id="tgDesc">اربط حسابك عشان توصلك الإشعارات</p>
+      </div>
+      <button class="btn-sm" id="btnTg" onclick="linkTelegram()">ربط</button>
+    </div>
+    <div class="tg-code" id="tgCode" style="display:none">—</div>
+  </div>
+
+  <div class="set-card">
+    <div class="sc-title">المواد المراقبة</div>
+    <div id="monList"></div>
+  </div>
+
+  <div class="set-card">
+    <div class="sc-title">الحساب</div>
+    <div class="set-row">
+      <div class="set-info">
+        <h4 id="accEmail">غير مسجل</h4>
+        <p id="accStatus">سجّل دخول لحفظ بياناتك</p>
+      </div>
+      <button class="btn-sm ghost" onclick="handleAuth()" id="btnAcc">دخول</button>
+    </div>
+  </div>
+
+</div>
+
 </div>
 <div class="toast" id="toast"></div>
 
@@ -586,12 +696,13 @@ function suggestNext(){
 
 /* ===== Tabs ===== */
 function switchTab(n){
-  ['search','sched','plan'].forEach(t=>{
+  ['search','sched','plan','set'].forEach(t=>{
     document.getElementById('page'+t[0].toUpperCase()+t.slice(1)).classList.toggle('active',t===n);
     document.getElementById('tab'+t[0].toUpperCase()+t.slice(1)).classList.toggle('active',t===n);
   });
   if(n==='sched')renderSchedule();
   if(n==='plan')renderPlan();
+  if(n==='set')renderSettings();
   window.scrollTo(0,0);
 }
 
@@ -683,6 +794,7 @@ function renderResults(){
         <div class="cc-right">
           <span class="badge ${c.status==='OPEN'?'open':'close'}">${c.status}</span>
           <button class="btn-add ${inSch?'added':''} ${lock?'locked':clash.length?'blocked':''}" onclick="toggleCourse('${c.crn}')">${inSch?'✓':'+'}</button>
+          ${c.status==='CLOSE'?`<button class="btn-bell ${isMonitored(c.crn)?'on':''} ${isPro()?'':'locked'}" onclick="toggleMonitorCourse('${c.crn}')" title="مراقبة">${isMonitored(c.crn)?'🔔':'🔕'}</button>`:''}
         </div>
       </div>
       <div class="cc-meta">
@@ -876,9 +988,150 @@ schedule=load('pmu_schedule',[]);
 completed=load('pmu_completed',[]);
 grades=load('pmu_grades',{});
 updateBadge();
-setTimeout(applyLang,0);
+setTimeout(()=>{applyLang();renderSettings();},0);
 
 
+
+
+/* ================= PRO / MONITOR / TELEGRAM ================= */
+const BOT_USERNAME='PmuMonitor_bot';
+const PAY_NUMBER='0500000000';          /* غيّر هذا لرقمك */
+let monitored=[];
+
+function isPro(){
+  if(!PROFILE)return false;
+  if(PROFILE.is_pro)return true;
+  if(PROFILE.subscription_expires_at)
+    return new Date(PROFILE.subscription_expires_at)>new Date();
+  return false;
+}
+
+function togglePay(){
+  if(!USER){showToast(LANG==='ar'?'سجّل دخول أول':'Sign in first','warn');return}
+  document.getElementById('payBox').classList.toggle('visible');
+  document.getElementById('payNum').textContent=PAY_NUMBER;
+  document.getElementById('payCode').textContent=PROFILE?.telegram_link_code||'—';
+}
+
+function openBot(){
+  const code=PROFILE?.telegram_link_code||'';
+  window.open(`https://t.me/${BOT_USERNAME}?start=${code}`,'_blank');
+}
+
+function linkTelegram(){
+  if(!USER){showToast(LANG==='ar'?'سجّل دخول أول':'Sign in first','warn');return}
+  const code=PROFILE?.telegram_link_code;
+  if(!code){showToast(LANG==='ar'?'ما فيه كود — حدّث الصفحة':'No code — refresh','err');return}
+  document.getElementById('tgCode').style.display='block';
+  document.getElementById('tgCode').textContent=code;
+  window.open(`https://t.me/${BOT_USERNAME}?start=${code}`,'_blank');
+  setTimeout(refreshProfile,6000);
+}
+
+async function refreshProfile(){
+  if(!USER)return;
+  const {data}=await sb.from('profiles').select('*').eq('id',USER.id).single();
+  if(data){PROFILE=data;renderSettings();renderResults()}
+}
+
+/* ---- monitored courses ---- */
+async function loadMonitored(){
+  if(!USER){monitored=[];return}
+  const {data}=await sb.from('monitored_courses').select('*');
+  monitored=data||[];
+}
+
+function isMonitored(crn){return monitored.some(m=>m.crn===crn)}
+
+async function toggleMonitorCourse(crn){
+  if(!USER){showToast(LANG==='ar'?'سجّل دخول أول':'Sign in first','warn');return}
+  if(!isPro()){
+    showToast(LANG==='ar'?'🔒 المراقبة تحتاج اشتراك':'🔒 Monitoring requires a subscription','warn');
+    switchTab('set');return;
+  }
+  const c=allCourses.find(x=>x.crn===crn);if(!c)return;
+  const ex=monitored.find(m=>m.crn===crn);
+  if(ex){
+    await sb.from('monitored_courses').delete().eq('id',ex.id);
+    monitored=monitored.filter(m=>m.crn!==crn);
+    showToast(LANG==='ar'?`وقفت مراقبة ${c.courseCode}`:`Stopped watching ${c.courseCode}`);
+  }else{
+    const row={user_id:USER.id,crn:c.crn,course_code:c.courseCode,section:c.section,
+      term:document.getElementById('term').value,last_status:c.status};
+    const {data}=await sb.from('monitored_courses').insert(row).select();
+    if(data&&data[0])monitored.push(data[0]);
+    showToast(LANG==='ar'?`🔔 تراقب ${c.courseCode} — بيوصلك إشعار`:`🔔 Watching ${c.courseCode}`);
+  }
+  renderResults();renderSettings();
+}
+
+async function removeMonitor(id){
+  await sb.from('monitored_courses').delete().eq('id',id);
+  monitored=monitored.filter(m=>m.id!==id);
+  renderSettings();renderResults();
+}
+
+/* ---- settings render ---- */
+function renderSettings(){
+  const ar=LANG==='ar';
+  const pro=isPro();
+  const card=document.getElementById('proCard');
+  const btn=document.getElementById('btnPro');
+
+  card.classList.toggle('pro-active',pro);
+  if(pro){
+    document.getElementById('proTitle').textContent=ar?'اشتراكك فعّال ✅':'Subscription active ✅';
+    document.getElementById('proSub').textContent=ar?'كل الميزات مفتوحة لك':'All features unlocked';
+    const exp=PROFILE?.subscription_expires_at;
+    document.getElementById('proPrice').textContent=exp?
+      (ar?'ينتهي '+new Date(exp).toLocaleDateString('ar-SA'):'Until '+new Date(exp).toLocaleDateString('en-GB')):
+      (ar?'فعّال':'Active');
+    btn.style.display='none';
+    document.getElementById('payBox').classList.remove('visible');
+  }else{
+    document.getElementById('proTitle').textContent=ar?'اشتراك جدولك':'Jadwalik Pro';
+    document.getElementById('proSub').textContent=ar?'فعّل المراقبة والحفظ السحابي':'Unlock monitoring and cloud sync';
+    document.getElementById('proPrice').textContent=ar?'19 ريال / سنة':'SAR 19 / year';
+    btn.style.display='block';
+    btn.textContent=ar?'اشترك الحين':'Subscribe now';
+  }
+
+  /* telegram */
+  const linked=!!PROFILE?.telegram_chat_id;
+  document.getElementById('tgTitle').textContent=linked?
+    (ar?'مربوط ✅':'Linked ✅'):(ar?'غير مربوط':'Not linked');
+  document.getElementById('tgDesc').textContent=linked?
+    (ar?'بتوصلك الإشعارات على تيليغرام':'Notifications will arrive on Telegram'):
+    (ar?'اربط حسابك عشان توصلك الإشعارات':'Link your account to receive notifications');
+  const tb=document.getElementById('btnTg');
+  tb.textContent=linked?(ar?'إعادة ربط':'Relink'):(ar?'ربط':'Link');
+  tb.className='btn-sm'+(linked?' ghost':'');
+  if(linked)document.getElementById('tgCode').style.display='none';
+
+  /* monitored list */
+  const ml=document.getElementById('monList');
+  if(!monitored.length){
+    ml.innerHTML=`<div style="font-size:12.5px;color:var(--text3);padding:8px 0;line-height:1.7">${
+      ar?'ما تراقب أي مادة. روح للبحث واضغط 🔔 على أي مادة مسكّرة.':
+          'Not watching any course. Go to Search and tap 🔔 on a closed course.'}</div>`;
+  }else{
+    ml.innerHTML=monitored.map(m=>`
+      <div class="set-row">
+        <div class="set-info">
+          <h4>${m.course_code} §${m.section}</h4>
+          <p>CRN ${m.crn} · ${m.last_status==='OPEN'?'🟢 OPEN':'🔴 CLOSE'}</p>
+        </div>
+        <button class="btn-sm ghost" onclick="removeMonitor(${m.id})">${ar?'إيقاف':'Stop'}</button>
+      </div>`).join('');
+  }
+
+  /* account */
+  document.getElementById('accEmail').textContent=USER?USER.email:(ar?'غير مسجل':'Not signed in');
+  document.getElementById('accStatus').textContent=USER?
+    (pro?(ar?'حساب مشترك':'Subscribed account'):(ar?'حساب مجاني':'Free account')):
+    (ar?'سجّل دخول لحفظ بياناتك':'Sign in to save your data');
+  document.getElementById('btnAcc').textContent=USER?(ar?'خروج':'Sign out'):(ar?'دخول':'Sign in');
+}
 
 /* ================= i18n ================= */
 const I18N={
@@ -997,6 +1250,7 @@ function applyLang(){
   if(typeof setAuthUI==='function')setAuthUI();
   if(allCourses.length)renderResults();
   renderPlan();
+  if(typeof renderSettings==='function')renderSettings();
   if(document.getElementById('pageSched').classList.contains('active'))renderSchedule();
 }
 
@@ -1142,8 +1396,9 @@ async function pullCloud(){
 
     save('pmu_completed',completed);save('pmu_schedule',schedule);
     updateBadge();
-    if(PROFILE&&PROFILE.is_pro){
-      PRO_KEY=PRO_KEY||'account';
+    await loadMonitored();
+    renderSettings();
+    if(isPro()){
       document.getElementById('btnMonitor').style.display='block';
       document.querySelector('.btn-row').classList.add('pro');
     }
