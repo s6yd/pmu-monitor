@@ -246,6 +246,9 @@ background:rgba(245,158,11,.15);padding:4px 11px;border-radius:20px;white-space:
 padding:13px;font-size:14px;font-weight:700;font-family:var(--sans);cursor:pointer}
 .btn-pro:active{opacity:.88}
 .pro-active{background:linear-gradient(160deg,rgba(16,185,129,.14),var(--card));border-color:var(--open-border)}
+.pro-trial{background:linear-gradient(160deg,rgba(61,111,255,.14),var(--card));border-color:var(--accent)}
+.pro-trial .pro-price{color:var(--accent2);background:rgba(61,111,255,.15)}
+.pro-trial .btn-pro{background:var(--accent);color:#fff}
 .pro-active .pro-price{color:var(--open);background:var(--open-bg)}
 
 .set-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:17px;margin-bottom:14px}
@@ -307,6 +310,7 @@ body{background:#fff;color:#000}.day-block,.slot{background:#fff;border:1px soli
   <button class="tab active" id="tabSearch" onclick="switchTab('search')"data-i18n="tabSearch">🔍 البحث</button>
   <button class="tab" id="tabSched" onclick="switchTab('sched')"data-i18n="tabSched">📅 جدولي <span class="tab-badge" id="schedBadge">0</span></button>
   <button class="tab" id="tabPlan" onclick="switchTab('plan')"data-i18n="tabPlan">📋 خطتي</button>
+  <button class="tab" id="tabSet" onclick="switchTab('set')" style="padding:12px 14px;font-size:16px">⚙️</button>
 </div>
 
 <div class="main">
@@ -998,6 +1002,15 @@ const BOT_USERNAME='PmuMonitor_bot';
 const PAY_NUMBER='0500000000';          /* غيّر هذا لرقمك */
 let monitored=[];
 
+function daysLeft(){
+  if(!PROFILE?.subscription_expires_at)return 0;
+  const d=Math.ceil((new Date(PROFILE.subscription_expires_at)-new Date())/86400000);
+  return d>0?d:0;
+}
+/* تجربة = اشتراك فعّال بدون دفع مؤكد */
+function isTrial(){ return !PROFILE?.is_pro && daysLeft()>0 && !PROFILE?.paid_at; }
+/* ملاحظة: paid_at يتعبأ يدوياً عند تأكيد الدفع */
+
 function isPro(){
   if(!PROFILE)return false;
   if(PROFILE.is_pro)return true;
@@ -1078,8 +1091,21 @@ function renderSettings(){
   const card=document.getElementById('proCard');
   const btn=document.getElementById('btnPro');
 
-  card.classList.toggle('pro-active',pro);
-  if(pro){
+  const d=daysLeft(),trial=isTrial();
+  card.classList.toggle('pro-active',pro&&!trial);
+  card.classList.toggle('pro-trial',trial);
+
+  if(trial){
+    document.getElementById('proTitle').textContent=ar?'🎁 تجربتك المجانية شغّالة':'🎁 Free trial active';
+    document.getElementById('proSub').textContent=ar?
+      'كل الميزات مفتوحة — جدّد قبل ما تنتهي عشان ما تنقطع':
+      'All features unlocked — renew before it ends';
+    document.getElementById('proPrice').textContent=ar?
+      (d===1?'باقي يوم واحد':d===2?'باقي يومين':`باقي ${d} يوم`):
+      (d===1?'1 day left':`${d} days left`);
+    btn.style.display='block';
+    btn.textContent=ar?'جدّد بـ 19 ريال / سنة':'Renew — SAR 19 / year';
+  }else if(pro){
     document.getElementById('proTitle').textContent=ar?'اشتراكك فعّال ✅':'Subscription active ✅';
     document.getElementById('proSub').textContent=ar?'كل الميزات مفتوحة لك':'All features unlocked';
     const exp=PROFILE?.subscription_expires_at;
@@ -1089,8 +1115,12 @@ function renderSettings(){
     btn.style.display='none';
     document.getElementById('payBox').classList.remove('visible');
   }else{
-    document.getElementById('proTitle').textContent=ar?'اشتراك جدولك':'Jadwalik Pro';
-    document.getElementById('proSub').textContent=ar?'فعّل المراقبة والحفظ السحابي':'Unlock monitoring and cloud sync';
+    const everHad=!!PROFILE?.subscription_expires_at;
+    document.getElementById('proTitle').textContent=ar?
+      (everHad?'انتهت تجربتك':'اشتراك جدولك'):(everHad?'Your trial ended':'Jadwalik Pro');
+    document.getElementById('proSub').textContent=ar?
+      (everHad?'اشترك عشان ترجع المراقبة والحفظ السحابي':'فعّل المراقبة والحفظ السحابي'):
+      (everHad?'Subscribe to restore monitoring and cloud sync':'Unlock monitoring and cloud sync');
     document.getElementById('proPrice').textContent=ar?'19 ريال / سنة':'SAR 19 / year';
     btn.style.display='block';
     btn.textContent=ar?'اشترك الحين':'Subscribe now';
@@ -1128,7 +1158,8 @@ function renderSettings(){
   /* account */
   document.getElementById('accEmail').textContent=USER?USER.email:(ar?'غير مسجل':'Not signed in');
   document.getElementById('accStatus').textContent=USER?
-    (pro?(ar?'حساب مشترك':'Subscribed account'):(ar?'حساب مجاني':'Free account')):
+    (isTrial()?(ar?`تجربة مجانية — باقي ${daysLeft()} يوم`:`Free trial — ${daysLeft()} days left`):
+     pro?(ar?'حساب مشترك':'Subscribed account'):(ar?'حساب مجاني':'Free account')):
     (ar?'سجّل دخول لحفظ بياناتك':'Sign in to save your data');
   document.getElementById('btnAcc').textContent=USER?(ar?'خروج':'Sign out'):(ar?'دخول':'Sign in');
 }
@@ -1398,6 +1429,12 @@ async function pullCloud(){
     updateBadge();
     await loadMonitored();
     renderSettings();
+    if(isTrial()&&!load('pmu_seen_trial',false)){
+      save('pmu_seen_trial',true);
+      setTimeout(()=>showToast(LANG==='ar'?
+        `🎁 لك شهر مجاني — كل الميزات مفتوحة`:
+        `🎁 You have a free month — all features unlocked`),1200);
+    }
     if(isPro()){
       document.getElementById('btnMonitor').style.display='block';
       document.querySelector('.btn-row').classList.add('pro');
