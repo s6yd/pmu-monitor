@@ -363,6 +363,12 @@ textarea:focus{border-color:var(--accent)}
 font-weight:600;font-family:var(--sans);cursor:pointer;padding:6px 0;margin-bottom:10px}
 
 /* ---- Guide ---- */
+.mon-state{font-size:11.5px;line-height:1.6;padding:9px 11px;border-radius:10px;
+margin-bottom:11px;display:none}
+.mon-state.on{display:block}
+.mon-state.peak{background:var(--open-bg);border:1px solid rgba(16,185,129,.28);color:var(--open)}
+.mon-state.idle{background:var(--warn-bg);border:1px solid rgba(245,158,11,.28);color:var(--warn)}
+.mon-state.off{background:var(--bg);border:1px solid var(--border);color:var(--text2)}
 .legal-foot{text-align:center;padding:22px 10px 6px;font-size:12px;
 color:var(--text3);display:flex;flex-wrap:wrap;gap:8px;justify-content:center;align-items:center}
 .legal-foot a{color:var(--text2);text-decoration:none}
@@ -811,6 +817,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 
   <div class="set-card">
     <div class="sc-title" data-i18n="monSection">المواد المراقبة</div>
+    <div class="mon-state" id="monState"></div>
     <div id="monList"></div>
   </div>
 
@@ -2557,6 +2564,40 @@ function renderSchedule(){
   }).join('');
 }
 
+/* ═══════════ حالة المراقبة ═══════════ */
+let MON_STATE=null;
+async function loadMonitorState(){
+  try{ MON_STATE=await (await fetch(API_BASE+'/api/monitor-status')).json(); }
+  catch(e){ MON_STATE=null; }
+  renderMonitorState();
+}
+function renderMonitorState(){
+  const el=document.getElementById('monState');
+  if(!el)return;
+  const m=MON_STATE;
+  if(!m){ el.className='mon-state'; return }
+  const ar=LANG==='ar', h=m.activeHours||[7,23];
+  let cls,txt;
+  if(!m.active){
+    cls='off';
+    txt=ar?`⏸️ <b>المراقبة متوقفة الآن</b> — تشتغل من ${h[0]} صباحاً حتى ${h[1]-12} مساءً بتوقيت الرياض، وتستأنف تلقائياً.`
+          :`⏸️ <b>Monitoring paused</b> — it runs ${h[0]}am–${h[1]-12}pm Riyadh time and resumes automatically.`;
+  }else if(m.reason==='peak'){
+    cls='peak';
+    txt=ar?`🔔 <b>مراقبة مكثفة</b> — فحص كل ${m.intervalMin} دقائق، لأننا في فترة التسجيل.`
+          :`🔔 <b>Intensive monitoring</b> — checking every ${m.intervalMin} minutes during registration.`;
+  }else{
+    cls='idle';
+    const today=new Date().toISOString().slice(0,10);
+    const nx=(m.windows||[]).find(w=>today<w.from);
+    txt=ar?`🕐 <b>مراقبة مخفّفة</b> — فحص كل ${m.intervalMin} دقيقة خارج فترات التسجيل، لأن المقاعد نادراً تنفتح.`
+          +(nx?` ترجع مكثفة في <b>${escapeHtml(nx.ar)}</b>.`:'')
+          :`🕐 <b>Reduced monitoring</b> — checking every ${m.intervalMin} minutes outside registration, when seats rarely open.`;
+  }
+  el.className='mon-state on '+cls;
+  el.innerHTML=txt;
+}
+
 /* ═══════════ التقويم الأكاديمي 2026/2027 ═══════════ */
 /* المصدر: تقويم الجامعة المعتمد. t=نوع الحدث للتلوين */
 const ACAD_CAL=[
@@ -2970,6 +3011,7 @@ function toggleDone(code){
   save('pmu_completed',completed);pushCompleted();
   applyMajor(MAJOR,true);
   renderCalendar();
+  loadMonitorState();
   renderPlan();
   if(allCourses.length)renderResults();
 }
@@ -3879,6 +3921,7 @@ function applyLang(){
   if(currentDoc)renderDocDetail();else if(instructors.length)renderDocs();
   if(document.getElementById('pageSched').classList.contains('active'))renderSchedule();
   renderCalendar();
+  renderMonitorState();
   setPlanTitle();
   if(FINALS)renderFinals();
 }

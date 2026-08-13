@@ -635,6 +635,15 @@ async function adminHealth() {
     add('bad', 'ما فيه دورة مراقبة منذ فترة', 'No monitor cycle recently',
         'المفروض كل 5 دقائق. تحقق من سجل Render.');
 
+  /* ── حالة الجدولة ── */
+  const ms = monitorState();
+  if (!ms.active)
+    add('warn', 'المراقبة متوقفة الآن — ' + ms.ar, 'Monitoring paused — ' + ms.en,
+        'تستأنف تلقائياً الساعة 7 صباحاً بتوقيت الرياض.');
+  else if (ms.reason === 'idle')
+    add('warn', 'المراقبة مخفّفة — خارج فترة التسجيل', 'Reduced monitoring — outside registration',
+        'الفحص كل 30 دقيقة بدل 5. يرجع مكثفاً تلقائياً في نافذة التسجيل القادمة.');
+
   /* ── سعة تقديرية ── */
   const rate = 20 / 0.88;                       // رسالة/ثانية
   const capacity = Math.floor(280 * rate / 2.4); // طالب في أقصى ذروة
@@ -670,6 +679,14 @@ async function adminHealth() {
     tgFails: OPS.tgFails,
     pmuFails: OPS.pmuFails,
     lastError: OPS.lastError,
+
+    monitor: {
+      active: ms.active, reason: ms.reason, ar: ms.ar,
+      intervalMin: ms.intervalMin,
+      window: ms.window ? ms.window.ar : null,
+      nextWindow: MONITOR_WINDOWS.find(w => riyadhDate() < w.from) || null,
+      riyadhHour: riyadhHour()
+    },
 
     capacity,
     loadPct: capacity ? Math.min(100, Math.round(monitors / 2.4 / capacity * 100)) : 0,
@@ -874,6 +891,89 @@ async function getCourses(term, college, gender) {
   finally { inFlight.delete(key); }
 }
 
+/* ================================================================
+   ============   جدولة ذكية للمراقبة   ============
+   ================================================================
+   بدل الفحص كل 5 دقائق على مدار السنة، نفحص بكثافة في أوقات
+   التسجيل والحذف والإضافة فقط، ونهدأ في بقية الأوقات.
+   يقلّل الطلبات على موقع الجامعة بأكثر من 90% سنوياً. */
+
+/* نوافذ التسجيل من التقويم الأكاديمي المعتمد (تشمل يومين احتياط قبل وبعد) */
+const MONITOR_WINDOWS = [
+  { from: '2026-08-21', to: '2026-09-10', ar: 'تسجيل الترم الأول' },
+  { from: '2027-01-08', to: '2027-01-28', ar: 'تسجيل الترم الثاني' },
+  { from: '2027-04-09', to: '2027-04-17', ar: 'التسجيل المبكر للصيفي' },
+  { from: '2027-06-13', to: '2027-06-22', ar: 'تسجيل الصيفي' }
+];
+
+const ACTIVE_FROM_HOUR = 7;    // 7 صباحاً بتوقيت الرياض
+const ACTIVE_TO_HOUR   = 23;   // حتى 11 مساءً
+
+const INTERVAL_PEAK = 5  * 60 * 1000;   // داخل نافذة التسجيل
+const INTERVAL_IDLE = 30 * 60 * 1000;   // خارجها — المقاعد نادراً تنفتح
+const JITTER        = 0.25;             // ±25% تفادياً لنمط منتظم تماماً
+
+/* ساعة الرياض (السيرفر يعمل بتوقيت UTC) */
+function riyadhNow() {
+  return new Date(Date.now() + 3 * 3600 * 1000);
+}
+function riyadhHour() { return riyadhNow().getUTCHours(); }
+function riyadhDate() { return riyadhNow().toISOString().slice(0, 10); }
+
+function currentWindow() {
+  const d = riyadhDate();
+  return MONITOR_WINDOWS.find(w => d >= w.from && d <= w.to) || null;
+}
+
+function monitorState() {
+  const hour = riyadhHour();
+  const win = currentWindow();
+  const inHours = hour >= ACTIVE_FROM_HOUR && hour < ACTIVE_TO_HOUR;
+
+  if (!inHours) {
+    return { active: false, reason: 'hours', ar: 'خارج ساعات العمل (7 ص – 11 م)',
+             en: 'Outside active hours (7am–11pm)', window: win, intervalMin: null };
+  }
+  if (win) {
+    return { active: true, reason: 'peak', ar: 'مراقبة مكثفة — ' + win.ar,
+             en: 'Intensive monitoring — registration period',
+             window: win, intervalMin: INTERVAL_PEAK / 60000 };
+  }
+  return { active: true, reason: 'idle', ar: 'مراقبة مخفّفة (خارج فترة التسجيل)',
+           en: 'Reduced monitoring (outside registration)',
+           window: null, intervalMin: INTERVAL_IDLE / 60000 };
+}
+
+/* الفاصل القادم مع تشويش عشوائي — يمنع النمط المنتظم تماماً
+   ويوزّع الحمل بدل ما يجي كله في نفس الثانية من كل دقيقة */
+function nextDelay() {
+  const st = monitorState();
+
+  if (!st.active) {
+    /* ننام حتى 7 صباحاً بالضبط */
+    const now = riyadhNow();
+    const target = new Date(now);
+    target.setUTCHours(ACTIVE_FROM_HOUR, 0, 0, 0);
+    if (target <= now) target.setUTCDate(target.getUTCDate() + 1);
+    return Math.max(60000, target - now) + Math.random() * 120000;
+  }
+
+  const base = st.reason === 'peak' ? INTERVAL_PEAK : INTERVAL_IDLE;
+  return base * (1 + (Math.random() * 2 - 1) * JITTER);
+}
+
+function scheduleNextCycle() {
+  const delay = nextDelay();
+  const st = monitorState();
+  console.log(`next cycle in ${(delay / 60000).toFixed(1)} min — ${st.reason}`);
+  setTimeout(async () => {
+    if (monitorState().active) {
+      try { await runMonitorCycle(); } catch (e) { console.log('cycle err', e.message); }
+    }
+    scheduleNextCycle();
+  }, delay);
+}
+
 /* ============ HTTP server ============ */
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -990,6 +1090,22 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  /* حالة المراقبة — يعرضها الموقع للطالب بشفافية */
+  if (parsed.pathname === '/api/monitor-status') {
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'public, max-age=120');
+    const st = monitorState();
+    res.writeHead(200);
+    res.end(JSON.stringify({
+      active: st.active, reason: st.reason,
+      ar: st.ar, en: st.en,
+      intervalMin: st.intervalMin,
+      activeHours: [ACTIVE_FROM_HOUR, ACTIVE_TO_HOUR],
+      windows: MONITOR_WINDOWS
+    }));
+    return;
+  }
+
   /* جدول الاختبارات النهائية */
   if (parsed.pathname === '/api/finals') {
     res.setHeader('Content-Type', 'application/json');
@@ -1048,6 +1164,13 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log('Jadwalik running on ' + PORT);
-  setInterval(runMonitorCycle, CHECK_INTERVAL);
-  setTimeout(runMonitorCycle, 20000);
+  const st = monitorState();
+  console.log(`monitor: ${st.reason} — ${st.ar}`);
+  /* أول دورة بعد 20-60 ثانية عشوائياً، ثم جدولة ذكية */
+  setTimeout(async () => {
+    if (monitorState().active) {
+      try { await runMonitorCycle(); } catch (e) { console.log('cycle err', e.message); }
+    }
+    scheduleNextCycle();
+  }, 20000 + Math.random() * 40000);
 });
