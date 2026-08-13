@@ -280,6 +280,15 @@ display:flex;align-items:center;justify-content:center}
 .btn-bell.on{border-color:var(--warn);color:var(--warn);background:var(--warn-bg)}
 .btn-bell.locked{opacity:.45}
 
+.my-rev{background:var(--bg);border:1px solid var(--border);border-radius:12px;
+padding:12px 14px;margin-bottom:8px}
+.my-rev-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.my-rev-name{font-size:13px;font-weight:600}
+.my-rev-sub{font-size:11px;color:var(--text3);margin-top:3px;font-family:var(--mono)}
+.my-rev-text{font-size:12px;color:var(--text2);line-height:1.7;margin-top:8px}
+.my-rev-acts{display:flex;gap:7px;margin-top:10px}
+.my-rev-acts button{flex:1;font-size:11.5px;padding:7px}
+
 /* ---- Instructors ---- */
 .doc-search{margin-bottom:14px}
 .doc-row{background:var(--card);border:1px solid var(--border);border-radius:14px;
@@ -634,6 +643,11 @@ body{background:#fff;color:#000}.day-block,.slot{background:#fff;border:1px soli
       <button class="btn-sm" id="btnTg" onclick="linkTelegram()">ربط</button>
     </div>
     <div class="tg-code" id="tgCode" style="display:none">—</div>
+  </div>
+
+  <div class="set-card">
+    <div class="sc-title" data-i18n="myReviews">تقييماتي</div>
+    <div id="myRevList"></div>
   </div>
 
   <div class="set-card">
@@ -1311,6 +1325,8 @@ function renderSettings(){
       </div>`).join('');
   }
 
+  renderMyReviews();
+
   /* account */
   document.getElementById('accEmail').textContent=USER?USER.email:(ar?'غير مسجل':'Not signed in');
   document.getElementById('accStatus').textContent=USER?
@@ -1321,6 +1337,51 @@ function renderSettings(){
 }
 
 
+
+
+/* ================= فلتر الألفاظ ================= */
+/* قائمة مختصرة — تُوسّع لاحقاً حسب الحاجة */
+const BAD_WORDS=[
+'كلب','حمار','خنزير','غبي','احمق','أحمق','تافه','قذر','وسخ','حقير','لعين',
+'زبالة','منحط','سافل','خسيس','نذل','عديم','فاشل يستاهل','يلعن','لعنة','العن',
+'كس','طيز','زق','خرا','خره','قحب','شرموط','عاهر','متخلف','معاق','مجنون',
+'خرابيط','يخرب','هبيل','بليد','بهيمة','بغل','ثور',
+'fuck','shit','bitch','asshole','bastard','idiot','stupid','dumb','moron',
+'retard','trash','garbage','loser','damn','crap','sucks','hell','jerk'];
+
+/* تطبيع عربي: يشيل التشكيل والتطويل ويوحّد الحروف */
+function normAr(t){
+  return (t||'').toLowerCase()
+    .replace(/[\u0617-\u061A\u064B-\u0652\u0640]/g,'')
+    .replace(/[أإآ]/g,'ا').replace(/ى/g,'ي').replace(/ة/g,'ه')
+    .replace(/[^\p{L}\p{N}\s]/gu,' ')
+    .replace(/\s+/g,' ').trim();
+}
+
+function checkText(txt){
+  const t=normAr(txt);
+  if(!t)return {ok:true};
+  const words=t.split(' ');
+  for(const bad of BAD_WORDS){
+    const b=normAr(bad);
+    if(!b)continue;
+    if(b.includes(' ')){ if(t.includes(b))return {ok:false,word:bad}; }
+    else if(words.some(w=>w===b||w.startsWith(b)&&w.length<=b.length+2))
+      return {ok:false,word:bad};
+  }
+  /* منع أرقام الجوال والروابط */
+  if(/(\+?9665|05)\d{7,}/.test(t.replace(/\s/g,'')))return {ok:false,word:'phone'};
+  if(/(https?:|www\.|t\.me|@[a-z0-9_]{4,})/i.test(txt))return {ok:false,word:'link'};
+  return {ok:true};
+}
+
+/* عدّاد المخالفات — 3 محاولات ثم إيقاف مؤقت */
+function strikeCount(){return load('pmu_strikes',0)}
+function addStrike(){
+  const n=strikeCount()+1;
+  save('pmu_strikes',n);
+  return n;
+}
 
 /* ================= INSTRUCTORS & REVIEWS ================= */
 const TAGS=[
@@ -1530,8 +1591,8 @@ function openRatingForm(){
       ${mine?`<button class="btn-ghost danger" style="width:100%;margin-top:8px" onclick="deleteReview()">
         ${ar?'احذف تقييمي':'Delete my review'}</button>`:''}
       <div class="anon-note">${ar?
-        '🔒 تقييمك يظهر بدون اسمك — مجهول تماماً':
-        '🔒 Your review is posted anonymously'}</div>
+        '🔒 تقييمك يظهر بدون اسمك — مجهول تماماً<br>⚠️ الألفاظ المسيئة أو الأرقام والروابط ممنوعة، وتكرارها يوقف حسابك عن التقييم':
+        '🔒 Your review is posted anonymously<br>⚠️ Abusive language, phone numbers and links are blocked; repeated violations suspend reviewing'}</div>
     </div>`;
   renderStarPick();renderTagPick();
   f.scrollIntoView({behavior:'smooth',block:'center'});
@@ -1555,12 +1616,27 @@ function toggleTag(k){
 async function submitReview(){
   const ar=LANG==='ar';
   if(!formStars){showToast(ar?'اختر عدد النجوم أول':'Pick a star rating first','warn');return}
+
+  const comment=(document.getElementById('revComment').value||'').trim();
+  const chk=checkText(comment);
+  if(!chk.ok){
+    const n=addStrike();
+    let msg;
+    if(chk.word==='phone')msg=ar?'🚫 ما تقدر تحط أرقام تواصل في التقييم':'🚫 Phone numbers are not allowed';
+    else if(chk.word==='link')msg=ar?'🚫 ما تقدر تحط روابط أو حسابات في التقييم':'🚫 Links and handles are not allowed';
+    else msg=ar?`🚫 فيه لفظ غير لائق — عدّل رأيك بأسلوب محترم (${n}/3)`:
+                `🚫 Inappropriate language — please rephrase respectfully (${n}/3)`;
+    showToast(msg,'err');
+    if(n>=3)showToast(ar?'⚠️ تكرار المخالفة قد يوقف حسابك عن التقييم':'⚠️ Repeated violations may suspend your reviewing','err');
+    return;
+  }
+
   const row={
     user_id:USER.id,
     instructor_name:currentDoc,
     rating:formStars,
     course_code:(document.getElementById('revCourse').value||'').trim().toUpperCase()||null,
-    comment:(document.getElementById('revComment').value||'').trim()||null,
+    comment:comment||null,
     tags:formTags
   };
   const {error}=await sb.from('instructor_reviews')
@@ -1568,7 +1644,7 @@ async function submitReview(){
   if(error){showToast(ar?'صار خطأ — جرّب مرة ثانية':'Something went wrong','err');return}
   await loadReviews();
   document.getElementById('rateForm').style.display='none';
-  renderDocDetail();
+  renderDocDetail();renderMyReviews();
   showToast(ar?'✅ نُشر تقييمك':'✅ Review posted');
 }
 
@@ -1579,7 +1655,7 @@ async function deleteReview(){
     .eq('user_id',USER.id).eq('instructor_name',currentDoc);
   await loadReviews();
   document.getElementById('rateForm').style.display='none';
-  renderDocDetail();
+  renderDocDetail();renderMyReviews();
   showToast(ar?'حذفت تقييمك':'Review deleted');
 }
 
@@ -1592,6 +1668,58 @@ function docChip(name){
   return st.n
     ? `<span class="rate-chip" onclick="event.stopPropagation();openDoc('${safe}')">★ ${st.avg.toFixed(1)}</span>`
     : `<span class="rate-chip empty" onclick="event.stopPropagation();openDoc('${safe}')">${LANG==='ar'?'قيّم':'Rate'}</span>`;
+}
+
+
+/* ---------- تقييماتي ---------- */
+function renderMyReviews(){
+  const ar=LANG==='ar';
+  const box=document.getElementById('myRevList');
+  if(!box)return;
+  if(!USER){
+    box.innerHTML=`<div style="font-size:12.5px;color:var(--text3);padding:8px 0;line-height:1.7">${
+      ar?'سجّل دخول عشان تشوف تقييماتك.':'Sign in to see your reviews.'}</div>`;
+    return;
+  }
+  const mine=reviews.filter(r=>r.user_id===USER.id);
+  if(!mine.length){
+    box.innerHTML=`<div style="font-size:12.5px;color:var(--text3);padding:8px 0;line-height:1.7">${
+      ar?'ما قيّمت أي دكتور بعد. روح تبويب الدكاترة وشارك تجربتك.':
+          'You have not reviewed anyone yet. Head to the Faculty tab and share your experience.'}</div>`;
+    return;
+  }
+  box.innerHTML=mine.map(r=>`
+    <div class="my-rev">
+      <div class="my-rev-top">
+        <div style="flex:1;min-width:0">
+          <div class="my-rev-name">${r.instructor_name}</div>
+          <div class="my-rev-sub">${r.course_code||'—'} · ${new Date(r.created_at).toLocaleDateString(ar?'ar-SA':'en-GB')}</div>
+        </div>
+        <span>${starStr(r.rating)}</span>
+      </div>
+      ${r.comment?`<div class="my-rev-text">${escapeHtml(r.comment)}</div>`:''}
+      ${(r.tags&&r.tags.length)?`<div class="rev-tags">${r.tags.map(t=>
+        `<span class="rev-tag">${tagLabel(t)}</span>`).join('')}</div>`:''}
+      <div class="my-rev-acts">
+        <button class="btn-sm" onclick="editMyReview('${r.instructor_name.replace(/'/g,"\\'")}')">${ar?'تعديل':'Edit'}</button>
+        <button class="btn-sm ghost" onclick="deleteMyReview('${r.instructor_name.replace(/'/g,"\\'")}')">${ar?'حذف':'Delete'}</button>
+      </div>
+    </div>`).join('');
+}
+
+function editMyReview(name){
+  openDoc(name);
+  setTimeout(openRatingForm,250);
+}
+
+async function deleteMyReview(name){
+  const ar=LANG==='ar';
+  if(!confirm(ar?'تحذف تقييمك لهذا الدكتور؟':'Delete your review for this instructor?'))return;
+  await sb.from('instructor_reviews').delete()
+    .eq('user_id',USER.id).eq('instructor_name',name);
+  await loadReviews();
+  renderMyReviews();
+  showToast(ar?'حذفت تقييمك':'Review deleted');
 }
 
 /* ================= GUIDE ================= */
@@ -1665,7 +1793,7 @@ courses:'مادة',credits:'ساعة معتمدة',clashes:'تعارض',clashTit
 print:'🖨️ اطبع الجدول',clearAll:'🗑️ امسح الكل',
 gpaLabel:'المعدل التراكمي',countedHrs:'ساعات محسوبة',
 suggestTitle:'💡 المقترح للترم الجاي',planTitle:'الخطة الدراسية',
-uni:'الجامعة',major:'التخصص',login:'دخول',tabDocs:'👨‍🏫 دكاترة',docsTitle:'تقييمات الدكاترة',uniTitle:'جامعتك وتخصصك',docPh:'ابحث عن دكتور...',
+uni:'الجامعة',major:'التخصص',login:'دخول',tabDocs:'👨‍🏫 دكاترة',myReviews:'تقييماتي',docsTitle:'تقييمات الدكاترة',uniTitle:'جامعتك وتخصصك',docPh:'ابحث عن دكتور...',
 schedEmptyT:'جدولك فاضي',schedEmptyS:'روح لصفحة البحث واضغط ➕ على أي مادة',
 initT:'ابدأ البحث',initS:'اختار السيمستر والكلية واضغط ابحث',
 loadT:'جاري البحث...',loadS:'يجيب البيانات من موقع الجامعة',
@@ -1704,7 +1832,7 @@ courses:'Courses',credits:'Credit hours',clashes:'Conflicts',clashTitle:'Schedul
 print:'🖨️ Print schedule',clearAll:'🗑️ Clear all',
 gpaLabel:'Cumulative GPA',countedHrs:'Counted hours',
 suggestTitle:'💡 Suggested next term',planTitle:'Study Plan',
-uni:'University',major:'Major',login:'Sign in',tabDocs:'👨‍🏫 Faculty',docsTitle:'Instructor reviews',uniTitle:'Your university & major',docPh:'Search for an instructor...',
+uni:'University',major:'Major',login:'Sign in',tabDocs:'👨‍🏫 Faculty',myReviews:'My reviews',docsTitle:'Instructor reviews',uniTitle:'Your university & major',docPh:'Search for an instructor...',
 schedEmptyT:'Your schedule is empty',schedEmptyS:'Go to Search and tap ➕ on any course',
 initT:'Start searching',initS:'Pick a semester and college, then tap Search',
 loadT:'Searching...',loadS:'Fetching data from the university site',
