@@ -3,11 +3,13 @@ const http = require('http');
 const url = require('url');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const PORT = process.env.PORT || 3000;
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const SB_URL = process.env.SUPABASE_URL;
 const SB_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN;   // كلمة سر لوحة التحكم
 const CHECK_INTERVAL = 5 * 60 * 1000;   // كل 5 دقائق
 
 /* ============ Supabase REST helper ============ */
@@ -231,11 +233,216 @@ async function handleTelegramUpdate(update) {
   }
 }
 
+/* ================================================================
+   ============          لوحة التحكم (Admin)          ============
+   ================================================================ */
+
+/* --- مقارنة آمنة ضد هجمات التوقيت --- */
+function safeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const ba = Buffer.from(a), bb = Buffer.from(b);
+  if (ba.length !== bb.length) {
+    crypto.timingSafeEqual(ba, ba);   // نستهلك نفس الوقت حتى لو الطول مختلف
+    return false;
+  }
+  return crypto.timingSafeEqual(ba, bb);
+}
+
+/* --- تحديد المحاولات: 8 محاولات فاشلة لكل IP خلال 15 دقيقة --- */
+const loginTries = new Map();
+function tooManyTries(ip) {
+  const now = Date.now(), rec = loginTries.get(ip);
+  if (!rec || now - rec.first > 15 * 60 * 1000) return false;
+  return rec.count >= 8;
+}
+function noteFail(ip) {
+  const now = Date.now(), rec = loginTries.get(ip);
+  if (!rec || now - rec.first > 15 * 60 * 1000) loginTries.set(ip, { first: now, count: 1 });
+  else rec.count++;
+  if (loginTries.size > 5000) loginTries.clear();
+}
+const clientIP = req =>
+  (req.headers['x-forwarded-for'] || '').split(',')[0].trim() ||
+  req.socket.remoteAddress || 'unknown';
+
+function isAdmin(req) {
+  if (!ADMIN_TOKEN || ADMIN_TOKEN.length < 12) return false;   // مقفلة لو ما ضبطت كلمة السر
+  const given = req.headers['x-admin-token'] || '';
+  return safeEqual(String(given), ADMIN_TOKEN);
+}
+
+/* --- قراءة جسم الطلب --- */
+function readBody(req) {
+  return new Promise(resolve => {
+    let b = '';
+    req.on('data', c => { b += c; if (b.length > 1e6) b = b.slice(0, 1e6); });
+    req.on('end', () => { try { resolve(JSON.parse(b || '{}')); } catch (e) { resolve({}); } });
+  });
+}
+
+const isActive = p => !!(p.is_pro ||
+  (p.subscription_expires_at && new Date(p.subscription_expires_at) > new Date()));
+
+/* --- إحصائيات عامة --- */
+async function adminStats() {
+  const [profiles, reviews, monitors, sched] = await Promise.all([
+    sb('GET', 'profiles', { query: '?select=*' }),
+    sb('GET', 'instructor_reviews', { query: '?select=*' }),
+    sb('GET', 'monitored_courses', { query: '?select=*' }),
+    sb('GET', 'user_schedule', { query: '?select=user_id' })
+  ]);
+  const P = Array.isArray(profiles) ? profiles : [];
+  const R = Array.isArray(reviews) ? reviews : [];
+  const M = Array.isArray(monitors) ? monitors : [];
+  const S = Array.isArray(sched) ? sched : [];
+
+  const now = Date.now(), week = now - 7 * 864e5;
+  const paid = P.filter(p => p.paid_at);
+  const active = P.filter(isActive);
+
+  const dateOf = p => p.created_at || p.paid_at || null;
+  const newWeek = P.filter(p => { const d = dateOf(p); return d && new Date(d).getTime() > week; });
+
+  const expSoon = P.filter(p => {
+    if (!p.subscription_expires_at) return false;
+    const t = new Date(p.subscription_expires_at).getTime();
+    return t > now && t < now + 14 * 864e5;
+  });
+
+  const avg = R.length ? (R.reduce((s, r) => s + (Number(r.rating) || 0), 0) / R.length) : 0;
+
+  return {
+    users: P.length,
+    newThisWeek: newWeek.length,
+    activeSubs: active.length,
+    paidUsers: paid.length,
+    expiringSoon: expSoon.length,
+    telegramLinked: P.filter(p => p.telegram_chat_id).length,
+    revenue: paid.length * 19,
+    reviews: R.length,
+    avgRating: Number(avg.toFixed(2)),
+    monitors: M.length,
+    monitoringUsers: new Set(M.map(m => m.user_id)).size,
+    scheduleUsers: new Set(S.map(s => s.user_id)).size,
+    hasCreatedAt: P.some(p => p.created_at !== undefined)
+  };
+}
+
+/* --- قائمة المستخدمين --- */
+async function adminUsers() {
+  const P = await sb('GET', 'profiles', { query: '?select=*' });
+  const M = await sb('GET', 'monitored_courses', { query: '?select=user_id' });
+  const counts = {};
+  (Array.isArray(M) ? M : []).forEach(m => { counts[m.user_id] = (counts[m.user_id] || 0) + 1; });
+
+  return (Array.isArray(P) ? P : []).map(p => ({
+    id: p.id,
+    name: p.name || '—',
+    email: p.email || '—',
+    major: p.major || '—',
+    isPro: !!p.is_pro,
+    active: isActive(p),
+    expires: p.subscription_expires_at || null,
+    paidAt: p.paid_at || null,
+    createdAt: p.created_at || null,
+    telegram: p.telegram_username ? '@' + p.telegram_username : (p.telegram_chat_id ? '✓' : null),
+    monitors: counts[p.id] || 0
+  })).sort((a, b) => {
+    const da = new Date(a.createdAt || a.paidAt || 0).getTime();
+    const db = new Date(b.createdAt || b.paidAt || 0).getTime();
+    return db - da;
+  });
+}
+
+/* --- التقييمات مع اسم صاحبها --- */
+async function adminReviews() {
+  const R = await sb('GET', 'instructor_reviews', { query: '?select=*' });
+  const P = await sb('GET', 'profiles', { query: '?select=id,name,email' });
+  const map = {};
+  (Array.isArray(P) ? P : []).forEach(p => { map[p.id] = p; });
+
+  return (Array.isArray(R) ? R : []).map(r => ({
+    id: r.id !== undefined ? r.id : null,
+    userId: r.user_id,
+    author: (map[r.user_id] || {}).name || '—',
+    authorEmail: (map[r.user_id] || {}).email || '—',
+    instructor: r.instructor_name || '—',
+    rating: Number(r.rating) || 0,
+    course: r.course_code || '—',
+    comment: r.comment || '',
+    tags: Array.isArray(r.tags) ? r.tags : [],
+    createdAt: r.created_at || null
+  })).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+}
+
+/* --- المواد المراقبة، مجمّعة --- */
+async function adminMonitors() {
+  const M = await sb('GET', 'monitored_courses', { query: '?select=*' });
+  const g = {};
+  (Array.isArray(M) ? M : []).forEach(m => {
+    const k = (m.course_code || '?') + ' §' + (m.section || '?');
+    if (!g[k]) g[k] = { key: k, crn: m.crn, term: m.term, status: m.last_status || '—', watchers: 0 };
+    g[k].watchers++;
+  });
+  return Object.values(g).sort((a, b) => b.watchers - a.watchers);
+}
+
+/* --- تفعيل / تمديد اشتراك --- */
+async function adminGrant(userId, days) {
+  const rows = await sb('GET', 'profiles',
+    { query: `?id=eq.${encodeURIComponent(userId)}&select=subscription_expires_at` });
+  if (!rows || !rows.length) return { ok: false, error: 'المستخدم غير موجود' };
+
+  const cur = rows[0].subscription_expires_at ? new Date(rows[0].subscription_expires_at) : null;
+  const base = (cur && cur > new Date()) ? cur : new Date();   // يمدّد من تاريخ الانتهاء لو لسا فعّال
+  base.setDate(base.getDate() + Number(days));
+
+  await sb('PATCH', 'profiles', {
+    query: `?id=eq.${encodeURIComponent(userId)}`,
+    body: { subscription_expires_at: base.toISOString(), paid_at: new Date().toISOString() }
+  });
+  return { ok: true, expires: base.toISOString() };
+}
+
+/* --- إلغاء اشتراك --- */
+async function adminRevoke(userId) {
+  await sb('PATCH', 'profiles', {
+    query: `?id=eq.${encodeURIComponent(userId)}`,
+    body: { is_pro: false, subscription_expires_at: new Date(Date.now() - 864e5).toISOString() }
+  });
+  return { ok: true };
+}
+
+/* --- حذف تقييم مسيء --- */
+async function adminDeleteReview(r) {
+  let q;
+  if (r.id !== undefined && r.id !== null && r.id !== '') {
+    q = `?id=eq.${encodeURIComponent(r.id)}`;
+  } else if (r.userId && r.instructor) {
+    q = `?user_id=eq.${encodeURIComponent(r.userId)}` +
+        `&instructor_name=eq.${encodeURIComponent(r.instructor)}`;
+  } else {
+    return { ok: false, error: 'ما قدرت أحدد التقييم' };
+  }
+  await sb('DELETE', 'instructor_reviews', { query: q, prefer: 'return=minimal' });
+  return { ok: true };
+}
+
+/* --- إرسال رسالة تيليغرام لمستخدم --- */
+async function adminNotify(userId, text) {
+  const rows = await sb('GET', 'profiles',
+    { query: `?id=eq.${encodeURIComponent(userId)}&select=telegram_chat_id` });
+  const chat = rows && rows[0] && rows[0].telegram_chat_id;
+  if (!chat) return { ok: false, error: 'المستخدم ما ربط تيليغرام' };
+  await sendMsg(chat, String(text).slice(0, 3000));
+  return { ok: true };
+}
+
 /* ============ HTTP server ============ */
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Admin-Token');
   if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return; }
 
   const host = (req.headers.host || '').toLowerCase();
@@ -270,6 +477,62 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ success: false, error: err.message }));
     }
     return;
+  }
+
+  /* ---------- صفحة لوحة التحكم ---------- */
+  if (parsed.pathname === '/admin' || parsed.pathname === '/admin.html') {
+    try {
+      const html = fs.readFileSync(path.join(__dirname, 'admin.html'), 'utf8');
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+      res.setHeader('Cache-Control', 'no-store');
+      res.writeHead(200); res.end(html);
+    } catch (e) { res.writeHead(404); res.end('Not found'); }
+    return;
+  }
+
+  /* ---------- واجهات لوحة التحكم ---------- */
+  if (parsed.pathname.startsWith('/api/admin/')) {
+    /* لا نسمح لأي موقع خارجي يناديها */
+    res.setHeader('Access-Control-Allow-Origin', 'https://jadwalik.com');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Admin-Token');
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'no-store');
+
+    const ip = clientIP(req);
+    const send = (code, obj) => { res.writeHead(code); res.end(JSON.stringify(obj)); };
+
+    if (!ADMIN_TOKEN || ADMIN_TOKEN.length < 12) {
+      return send(503, { error: 'ADMIN_TOKEN غير مضبوط في Render (لازم 12 حرف فأكثر)' });
+    }
+    if (tooManyTries(ip)) {
+      return send(429, { error: 'محاولات كثيرة. انتظر ١٥ دقيقة.' });
+    }
+    if (!isAdmin(req)) {
+      noteFail(ip);
+      return send(401, { error: 'كلمة السر غلط' });
+    }
+
+    try {
+      const act = parsed.pathname.replace('/api/admin/', '');
+
+      if (act === 'ping')     return send(200, { ok: true });
+      if (act === 'stats')    return send(200, await adminStats());
+      if (act === 'users')    return send(200, { users: await adminUsers() });
+      if (act === 'reviews')  return send(200, { reviews: await adminReviews() });
+      if (act === 'monitors') return send(200, { monitors: await adminMonitors() });
+
+      if (req.method === 'POST') {
+        const b = await readBody(req);
+        if (act === 'grant')  return send(200, await adminGrant(b.userId, b.days || 365));
+        if (act === 'revoke') return send(200, await adminRevoke(b.userId));
+        if (act === 'delete-review') return send(200, await adminDeleteReview(b));
+        if (act === 'notify') return send(200, await adminNotify(b.userId, b.text || ''));
+      }
+      return send(404, { error: 'إجراء غير معروف' });
+    } catch (e) {
+      return send(500, { error: e.message });
+    }
   }
 
   /* تشغيل دورة فحص يدوياً (للاختبار) */

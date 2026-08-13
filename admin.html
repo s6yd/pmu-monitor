@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>لوحة التحكم — جدولك</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+:root{
+--bg:#080b12;--card:#131928;--border:#1e2740;--border2:#253050;
+--accent:#3d6fff;--accent2:#6b8fff;
+--open:#10b981;--open-bg:rgba(16,185,129,.08);
+--close:#f43f5e;--close-bg:rgba(244,63,94,.08);
+--warn:#f59e0b;--warn-bg:rgba(245,158,11,.1);
+--text:#e2e8f8;--text2:#8b96b8;--text3:#4a5580;
+--mono:'JetBrains Mono',monospace;--sans:'IBM Plex Sans Arabic',sans-serif}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh}
+
+/* ===== شاشة الدخول ===== */
+.gate{position:fixed;inset:0;z-index:500;background:var(--bg);
+display:flex;align-items:center;justify-content:center;padding:24px}
+.gate.hide{display:none}
+.gate-box{width:100%;max-width:340px;text-align:center}
+.gate-icon{width:56px;height:56px;background:var(--accent);border-radius:16px;
+display:flex;align-items:center;justify-content:center;font-size:26px;margin:0 auto 18px}
+.gate h1{font-size:19px;font-weight:700;margin-bottom:6px}
+.gate p{font-size:12.5px;color:var(--text2);margin-bottom:20px;line-height:1.6}
+.gate input{width:100%;background:var(--card);border:1px solid var(--border);color:var(--text);
+border-radius:12px;padding:13px 15px;font-size:15px;font-family:var(--mono);
+outline:none;text-align:center;letter-spacing:2px;margin-bottom:11px}
+.gate input:focus{border-color:var(--accent)}
+.gate button{width:100%;background:var(--accent);color:#fff;border:none;border-radius:12px;
+padding:13px;font-size:14px;font-weight:600;font-family:var(--sans);cursor:pointer}
+.gate button:disabled{opacity:.5}
+.gate-err{color:var(--close);font-size:12.5px;margin-top:11px;min-height:18px}
+
+/* ===== الهيكل ===== */
+.topbar{position:sticky;top:0;z-index:100;background:rgba(8,11,18,.94);
+backdrop-filter:blur(16px);border-bottom:1px solid var(--border);padding:0 15px;
+height:52px;display:flex;align-items:center;justify-content:space-between}
+.logo{display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;line-height:1.15}
+.logo-icon{width:29px;height:29px;background:var(--accent);border-radius:8px;
+display:flex;align-items:center;justify-content:center;font-size:15px}
+.brand-sub{font-size:9.5px;font-family:var(--mono);color:var(--text3);letter-spacing:.5px;margin-top:2px}
+.tb-actions{display:flex;gap:7px;align-items:center}
+.icon-btn{background:transparent;border:1px solid var(--border2);color:var(--text2);
+border-radius:20px;padding:6px 12px;font-size:12px;font-weight:600;
+font-family:var(--sans);cursor:pointer}
+.icon-btn.danger{color:var(--close);border-color:var(--close)}
+
+.tabs{position:sticky;top:52px;z-index:99;background:rgba(8,11,18,.94);
+backdrop-filter:blur(16px);border-bottom:1px solid var(--border);
+display:grid;grid-template-columns:repeat(4,1fr)}
+.tab{background:none;border:none;color:var(--text3);font-family:var(--sans);
+font-size:12px;font-weight:600;padding:12px 2px;cursor:pointer;position:relative}
+.tab.active{color:var(--accent2)}
+.tab.active::after{content:'';position:absolute;bottom:0;left:15%;right:15%;
+height:2px;background:var(--accent);border-radius:2px}
+
+.main{padding:16px 13px 60px;max-width:900px;margin:0 auto}
+.page{display:none}.page.active{display:block}
+
+/* ===== بطاقات الأرقام ===== */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(105px,1fr));gap:9px;margin-bottom:14px}
+.kpi{background:var(--card);border:1px solid var(--border);border-radius:13px;padding:13px}
+.kpi-num{font-family:var(--mono);font-size:22px;line-height:1;font-weight:500}
+.kpi-num.good{color:var(--open)}.kpi-num.warn{color:var(--warn)}.kpi-num.bad{color:var(--close)}
+.kpi-label{font-size:11px;color:var(--text3);margin-top:6px}
+.kpi-sub{font-size:10px;color:var(--text3);margin-top:3px;font-family:var(--mono)}
+
+.sec-title{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;
+letter-spacing:1px;margin:20px 0 10px}
+
+/* ===== أدوات ===== */
+.toolbar{display:flex;gap:8px;margin-bottom:12px}
+.toolbar input{flex:1;background:var(--card);border:1px solid var(--border);color:var(--text);
+border-radius:11px;padding:10px 13px;font-size:13.5px;font-family:var(--sans);outline:none}
+.toolbar input:focus{border-color:var(--accent)}
+.toolbar select{background:var(--card);border:1px solid var(--border);color:var(--text);
+border-radius:11px;padding:10px 12px;font-size:13px;font-family:var(--sans);outline:none;
+-webkit-appearance:none;appearance:none}
+
+/* ===== صفوف ===== */
+.row{background:var(--card);border:1px solid var(--border);border-radius:13px;
+padding:13px;margin-bottom:9px}
+.row-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.row-name{font-size:13.5px;font-weight:600;line-height:1.35}
+.row-sub{font-size:11.5px;color:var(--text3);margin-top:3px;word-break:break-all}
+.pill{font-size:10.5px;font-family:var(--mono);padding:3px 9px;border-radius:20px;
+white-space:nowrap;flex-shrink:0}
+.pill.on{background:var(--open-bg);color:var(--open);border:1px solid rgba(16,185,129,.25)}
+.pill.off{background:var(--close-bg);color:var(--close);border:1px solid rgba(244,63,94,.25)}
+.pill.soon{background:var(--warn-bg);color:var(--warn);border:1px solid rgba(245,158,11,.3)}
+.row-meta{display:flex;flex-wrap:wrap;gap:11px;margin-top:9px;font-size:11px;color:var(--text3)}
+.row-meta b{color:var(--text2);font-family:var(--mono);font-weight:500}
+.row-acts{display:flex;gap:7px;margin-top:11px;flex-wrap:wrap}
+.mini{background:transparent;border:1px solid var(--border2);color:var(--text2);
+border-radius:9px;padding:7px 11px;font-size:11.5px;font-weight:600;
+font-family:var(--sans);cursor:pointer}
+.mini.go{color:var(--open);border-color:rgba(16,185,129,.35)}
+.mini.no{color:var(--close);border-color:rgba(244,63,94,.35)}
+
+/* ===== تقييمات ===== */
+.stars{font-size:12px;color:var(--warn);font-family:var(--mono);letter-spacing:1px}
+.comment{background:var(--bg);border:1px solid var(--border);border-radius:10px;
+padding:10px 12px;font-size:12.5px;color:var(--text2);line-height:1.7;margin-top:9px}
+.comment.flag{border-color:rgba(244,63,94,.35);background:var(--close-bg)}
+.tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.tag{background:var(--bg);border:1px solid var(--border);border-radius:20px;
+padding:3px 9px;font-size:10.5px;color:var(--text2)}
+.flag-note{font-size:11px;color:var(--close);margin-top:7px;font-weight:600}
+
+.empty{text-align:center;padding:44px 20px;color:var(--text3)}
+.empty-icon{font-size:34px;margin-bottom:11px;opacity:.6}
+.empty-t{font-size:14px;color:var(--text2);font-weight:600}
+.empty-s{font-size:12px;margin-top:5px}
+
+.spinner{width:26px;height:26px;border:2.5px solid var(--border2);border-top-color:var(--accent);
+border-radius:50%;animation:spin .8s linear infinite;margin:40px auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(90px);
+background:var(--accent);color:#fff;padding:11px 20px;border-radius:12px;font-size:13px;
+font-weight:600;transition:transform .3s;z-index:999;max-width:90%;text-align:center}
+.toast.show{transform:translateX(-50%) translateY(0)}
+.toast.err{background:var(--close)}
+.toast.ok{background:var(--open)}
+</style>
+</head>
+<body>
+
+<!-- ══ بوابة الدخول ══ -->
+<div class="gate" id="gate">
+  <div class="gate-box">
+    <div class="gate-icon">🔐</div>
+    <h1>لوحة تحكم جدولك</h1>
+    <p>هذي الصفحة للمشرف فقط.<br>اكتب كلمة السر عشان تدخل.</p>
+    <input type="password" id="tokenInput" placeholder="••••••••••••"
+           autocomplete="off" onkeydown="if(event.key==='Enter')doLogin()">
+    <button id="loginBtn" onclick="doLogin()">دخول</button>
+    <div class="gate-err" id="gateErr"></div>
+  </div>
+</div>
+
+<!-- ══ اللوحة ══ -->
+<div class="topbar">
+  <div class="logo">
+    <div class="logo-icon">📊</div>
+    <div><div>لوحة التحكم</div><div class="brand-sub">JADWALIK ADMIN</div></div>
+  </div>
+  <div class="tb-actions">
+    <button class="icon-btn" onclick="loadAll()">🔄 تحديث</button>
+    <button class="icon-btn danger" onclick="logout()">خروج</button>
+  </div>
+</div>
+
+<div class="tabs">
+  <button class="tab active" data-p="over"  onclick="go('over')">نظرة عامة</button>
+  <button class="tab"        data-p="users" onclick="go('users')">المستخدمين</button>
+  <button class="tab"        data-p="revs"  onclick="go('revs')">التقييمات</button>
+  <button class="tab"        data-p="mons"  onclick="go('mons')">المراقبة</button>
+</div>
+
+<div class="main">
+
+  <div class="page active" id="pageOver">
+    <div id="overBody"><div class="spinner"></div></div>
+  </div>
+
+  <div class="page" id="pageUsers">
+    <div class="toolbar">
+      <input id="userSearch" placeholder="ابحث بالاسم أو الإيميل..." oninput="renderUsers()">
+      <select id="userFilter" onchange="renderUsers()">
+        <option value="all">الكل</option>
+        <option value="active">مشترك فعّال</option>
+        <option value="expired">منتهي</option>
+        <option value="soon">ينتهي قريباً</option>
+        <option value="tg">مربوط تيليغرام</option>
+      </select>
+    </div>
+    <div id="usersBody"><div class="spinner"></div></div>
+  </div>
+
+  <div class="page" id="pageRevs">
+    <div class="toolbar">
+      <input id="revSearch" placeholder="ابحث بالدكتور أو النص..." oninput="renderRevs()">
+      <select id="revFilter" onchange="renderRevs()">
+        <option value="all">الكل</option>
+        <option value="flag">تحتاج مراجعة</option>
+        <option value="low">تقييم منخفض</option>
+        <option value="txt">فيها تعليق</option>
+      </select>
+    </div>
+    <div id="revsBody"><div class="spinner"></div></div>
+  </div>
+
+  <div class="page" id="pageMons">
+    <div id="monsBody"><div class="spinner"></div></div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ══════════ الحالة ══════════ */
+let TOKEN = sessionStorage.getItem('jdw_admin') || '';
+let USERS = [], REVS = [], MONS = [], STATS = null;
+
+/* كلمات تستدعي المراجعة — مؤشر فقط، القرار لك */
+const FLAGS = ['حمار','غبي','كلب','حقير','خرا','قذر','تافه','زبالة','حيوان','لعن',
+'كذاب','فاشل','عنصري','متخلف','idiot','stupid','dumb','trash','garbage','hate',
+'موت','اقتل','fuck','shit','bitch','ass'];
+
+/* ══════════ الاتصال ══════════ */
+async function api(path, opts){
+  opts = opts || {};
+  const r = await fetch('/api/admin/' + path, {
+    method: opts.body ? 'POST' : 'GET',
+    headers: { 'Content-Type':'application/json', 'X-Admin-Token': TOKEN },
+    body: opts.body ? JSON.stringify(opts.body) : undefined
+  });
+  const j = await r.json().catch(()=>({error:'رد غير مفهوم من السيرفر'}));
+  if (r.status === 401) { logout(); throw new Error('انتهت الجلسة'); }
+  if (!r.ok) throw new Error(j.error || ('خطأ ' + r.status));
+  return j;
+}
+
+/* ══════════ الدخول ══════════ */
+async function doLogin(){
+  const inp = document.getElementById('tokenInput'),
+        btn = document.getElementById('loginBtn'),
+        err = document.getElementById('gateErr');
+  const v = inp.value.trim();
+  if(!v){ err.textContent='اكتب كلمة السر'; return }
+  btn.disabled = true; err.textContent = '';
+  TOKEN = v;
+  try{
+    await api('ping');
+    sessionStorage.setItem('jdw_admin', v);
+    document.getElementById('gate').classList.add('hide');
+    loadAll();
+  }catch(e){
+    TOKEN=''; err.textContent = e.message;
+    inp.value=''; inp.focus();
+  }finally{ btn.disabled=false }
+}
+
+function logout(){
+  TOKEN=''; sessionStorage.removeItem('jdw_admin');
+  document.getElementById('gate').classList.remove('hide');
+  document.getElementById('tokenInput').value='';
+}
+
+/* ══════════ تنقل ══════════ */
+function go(p){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.p===p));
+  const ids={over:'pageOver',users:'pageUsers',revs:'pageRevs',mons:'pageMons'};
+  document.querySelectorAll('.page').forEach(el=>el.classList.remove('active'));
+  document.getElementById(ids[p]).classList.add('active');
+}
+
+/* ══════════ أدوات ══════════ */
+const esc = s => String(s==null?'':s).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+
+function fdate(d){
+  if(!d) return '—';
+  const x=new Date(d); if(isNaN(x)) return '—';
+  return x.toLocaleDateString('ar-SA',{year:'numeric',month:'short',day:'numeric'});
+}
+function daysLeft(d){
+  if(!d) return null;
+  return Math.ceil((new Date(d)-new Date())/864e5);
+}
+function toast(msg,kind){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className='toast show '+(kind||'');
+  clearTimeout(t._x); t._x=setTimeout(()=>t.className='toast',2600);
+}
+function flagged(txt){
+  const s=String(txt||'').toLowerCase();
+  return FLAGS.some(w=>s.includes(w));
+}
+
+/* ══════════ تحميل ══════════ */
+async function loadAll(){
+  if(!TOKEN) return;
+  try{
+    const [s,u,r,m] = await Promise.all([
+      api('stats'), api('users'), api('reviews'), api('monitors')
+    ]);
+    STATS=s; USERS=u.users||[]; REVS=r.reviews||[]; MONS=m.monitors||[];
+    renderOver(); renderUsers(); renderRevs(); renderMons();
+  }catch(e){ toast(e.message,'err') }
+}
+
+/* ══════════ نظرة عامة ══════════ */
+function renderOver(){
+  const s=STATS; if(!s) return;
+  const needRev = REVS.filter(r=>flagged(r.comment)).length;
+
+  document.getElementById('overBody').innerHTML = `
+  <div class="sec-title">المستخدمين</div>
+  <div class="kpis">
+    <div class="kpi"><div class="kpi-num">${s.users}</div>
+      <div class="kpi-label">حساب مسجل</div>
+      ${s.hasCreatedAt?`<div class="kpi-sub">+${s.newThisWeek} هذا الأسبوع</div>`:''}</div>
+    <div class="kpi"><div class="kpi-num good">${s.activeSubs}</div>
+      <div class="kpi-label">اشتراك فعّال</div>
+      <div class="kpi-sub">${s.users?Math.round(s.activeSubs/s.users*100):0}% من الكل</div></div>
+    <div class="kpi"><div class="kpi-num ${s.expiringSoon?'warn':''}">${s.expiringSoon}</div>
+      <div class="kpi-label">ينتهي خلال أسبوعين</div></div>
+    <div class="kpi"><div class="kpi-num">${s.telegramLinked}</div>
+      <div class="kpi-label">ربط تيليغرام</div></div>
+  </div>
+
+  <div class="sec-title">الدخل</div>
+  <div class="kpis">
+    <div class="kpi"><div class="kpi-num good">${s.revenue}</div>
+      <div class="kpi-label">ريال (تقديري)</div>
+      <div class="kpi-sub">${s.paidUsers} × 19</div></div>
+    <div class="kpi"><div class="kpi-num">${s.paidUsers}</div>
+      <div class="kpi-label">دفعوا فعلياً</div></div>
+    <div class="kpi"><div class="kpi-num">${s.users-s.paidUsers}</div>
+      <div class="kpi-label">على التجربة المجانية</div></div>
+  </div>
+
+  <div class="sec-title">الاستخدام</div>
+  <div class="kpis">
+    <div class="kpi"><div class="kpi-num">${s.scheduleUsers}</div>
+      <div class="kpi-label">بنوا جدول</div></div>
+    <div class="kpi"><div class="kpi-num">${s.monitors}</div>
+      <div class="kpi-label">مادة مراقبة</div>
+      <div class="kpi-sub">${s.monitoringUsers} طالب</div></div>
+    <div class="kpi"><div class="kpi-num">${s.reviews}</div>
+      <div class="kpi-label">تقييم دكتور</div>
+      <div class="kpi-sub">متوسط ${s.avgRating}</div></div>
+    <div class="kpi"><div class="kpi-num ${needRev?'bad':'good'}">${needRev}</div>
+      <div class="kpi-label">يحتاج مراجعة</div></div>
+  </div>`;
+}
+
+/* ══════════ المستخدمين ══════════ */
+function renderUsers(){
+  const q=(document.getElementById('userSearch').value||'').trim().toLowerCase();
+  const f=document.getElementById('userFilter').value;
+
+  let list=USERS.filter(u=>{
+    if(q && !((u.name+' '+u.email+' '+u.major).toLowerCase().includes(q))) return false;
+    const dl=daysLeft(u.expires);
+    if(f==='active'  && !u.active) return false;
+    if(f==='expired' &&  u.active) return false;
+    if(f==='soon'    && !(u.active && dl!==null && dl<=14)) return false;
+    if(f==='tg'      && !u.telegram) return false;
+    return true;
+  });
+
+  const box=document.getElementById('usersBody');
+  if(!list.length){
+    box.innerHTML=`<div class="empty"><div class="empty-icon">👥</div>
+      <div class="empty-t">ما في نتائج</div><div class="empty-s">جرّب بحث ثاني</div></div>`;
+    return;
+  }
+
+  box.innerHTML=list.map(u=>{
+    const dl=daysLeft(u.expires);
+    let pill = u.active
+      ? (dl!==null && dl<=14 ? `<span class="pill soon">${dl} يوم</span>`
+                             : `<span class="pill on">فعّال</span>`)
+      : `<span class="pill off">منتهي</span>`;
+    if(u.isPro) pill=`<span class="pill on">PRO دائم</span>`;
+
+    return `<div class="row">
+      <div class="row-top">
+        <div style="min-width:0">
+          <div class="row-name">${esc(u.name)}</div>
+          <div class="row-sub">${esc(u.email)}</div>
+        </div>${pill}
+      </div>
+      <div class="row-meta">
+        <span>التخصص <b>${esc(u.major)}</b></span>
+        <span>ينتهي <b>${fdate(u.expires)}</b></span>
+        <span>مراقبة <b>${u.monitors}</b></span>
+        ${u.telegram?`<span>تيليغرام <b>${esc(u.telegram)}</b></span>`:''}
+        ${u.createdAt?`<span>انضم <b>${fdate(u.createdAt)}</b></span>`:''}
+      </div>
+      <div class="row-acts">
+        <button class="mini go" onclick="grant('${u.id}',365,'${esc(u.name)}')">+ سنة</button>
+        <button class="mini"    onclick="grant('${u.id}',30,'${esc(u.name)}')">+ شهر</button>
+        <button class="mini"    onclick="grant('${u.id}',7,'${esc(u.name)}')">+ أسبوع</button>
+        ${u.telegram?`<button class="mini" onclick="notify('${u.id}','${esc(u.name)}')">✉️ رسالة</button>`:''}
+        ${u.active?`<button class="mini no" onclick="revoke('${u.id}','${esc(u.name)}')">إلغاء</button>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function grant(id,days,name){
+  const label = days===365?'سنة':days===30?'شهر':'أسبوع';
+  if(!confirm(`تفعيل ${label} لـ ${name}؟`)) return;
+  try{
+    const r=await api('grant',{body:{userId:id,days}});
+    if(!r.ok) return toast(r.error||'ما ضبط','err');
+    toast(`فُعّل ${label} — ينتهي ${fdate(r.expires)}`,'ok');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
+async function revoke(id,name){
+  if(!confirm(`إلغاء اشتراك ${name}؟\nبيوقف عنه إشعارات المواد فوراً.`)) return;
+  try{
+    await api('revoke',{body:{userId:id}});
+    toast('تم الإلغاء','ok');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
+async function notify(id,name){
+  const txt=prompt(`رسالة تيليغرام لـ ${name}:`);
+  if(!txt || !txt.trim()) return;
+  try{
+    const r=await api('notify',{body:{userId:id,text:txt.trim()}});
+    toast(r.ok?'انرسلت ✓':(r.error||'ما انرسلت'), r.ok?'ok':'err');
+  }catch(e){ toast(e.message,'err') }
+}
+
+/* ══════════ التقييمات ══════════ */
+function renderRevs(){
+  const q=(document.getElementById('revSearch').value||'').trim().toLowerCase();
+  const f=document.getElementById('revFilter').value;
+
+  let list=REVS.filter(r=>{
+    if(q && !((r.instructor+' '+r.comment+' '+r.course+' '+r.author).toLowerCase().includes(q))) return false;
+    if(f==='flag' && !flagged(r.comment)) return false;
+    if(f==='low'  && r.rating>2) return false;
+    if(f==='txt'  && !String(r.comment||'').trim()) return false;
+    return true;
+  });
+
+  /* اللي تحتاج مراجعة تطلع فوق */
+  list.sort((a,b)=>(flagged(b.comment)?1:0)-(flagged(a.comment)?1:0));
+
+  const box=document.getElementById('revsBody');
+  if(!list.length){
+    box.innerHTML=`<div class="empty"><div class="empty-icon">⭐</div>
+      <div class="empty-t">ما في تقييمات</div><div class="empty-s">جرّب فلتر ثاني</div></div>`;
+    return;
+  }
+
+  box.innerHTML=list.map(r=>{
+    const bad=flagged(r.comment);
+    const stars='★'.repeat(Math.round(r.rating))+'☆'.repeat(Math.max(0,5-Math.round(r.rating)));
+    const key = r.id!==null ? `id:${r.id}` : `u:${r.userId}|${r.instructor}`;
+    return `<div class="row">
+      <div class="row-top">
+        <div style="min-width:0">
+          <div class="row-name">${esc(r.instructor)}</div>
+          <div class="stars">${stars} <span style="color:var(--text3)">${r.rating}/5</span></div>
+        </div>
+        <span class="pill ${bad?'off':'on'}">${esc(r.course)}</span>
+      </div>
+      ${String(r.comment||'').trim()
+        ? `<div class="comment${bad?' flag':''}">${esc(r.comment)}</div>` : ''}
+      ${bad?`<div class="flag-note">⚠️ فيها لفظ يحتاج مراجعتك</div>`:''}
+      ${r.tags.length?`<div class="tags">${r.tags.map(t=>`<span class="tag">${esc(t)}</span>`).join('')}</div>`:''}
+      <div class="row-meta">
+        <span>من <b>${esc(r.author)}</b></span>
+        ${r.createdAt?`<span><b>${fdate(r.createdAt)}</b></span>`:''}
+      </div>
+      <div class="row-acts">
+        <button class="mini no" onclick="delRev('${esc(key)}','${esc(r.instructor)}')">🗑️ احذف</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function delRev(key,instructor){
+  if(!confirm(`حذف التقييم عن ${instructor}؟\nما ينرجع بعد الحذف.`)) return;
+  let body;
+  if(key.startsWith('id:')) body={id:key.slice(3)};
+  else { const p=key.slice(2).split('|'); body={userId:p[0],instructor:p[1]} }
+  try{
+    const r=await api('delete-review',{body});
+    if(!r.ok) return toast(r.error||'ما انحذف','err');
+    toast('انحذف التقييم','ok');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
+/* ══════════ المراقبة ══════════ */
+function renderMons(){
+  const box=document.getElementById('monsBody');
+  if(!MONS.length){
+    box.innerHTML=`<div class="empty"><div class="empty-icon">📡</div>
+      <div class="empty-t">ما في مواد مراقبة</div>
+      <div class="empty-s">أول ما يراقب أحد مادة بتظهر هنا</div></div>`;
+    return;
+  }
+  box.innerHTML=`<div class="sec-title">أكثر المواد طلباً</div>` + MONS.map(m=>`
+    <div class="row">
+      <div class="row-top">
+        <div>
+          <div class="row-name">${esc(m.key)}</div>
+          <div class="row-sub">CRN ${esc(m.crn)} · ترم ${esc(m.term||'—')}</div>
+        </div>
+        <span class="pill ${m.status==='OPEN'?'on':'off'}">${esc(m.status)}</span>
+      </div>
+      <div class="row-meta"><span>يراقبها <b>${m.watchers}</b> طالب</span></div>
+    </div>`).join('');
+}
+
+/* ══════════ إقلاع ══════════ */
+(function(){
+  if(TOKEN){
+    api('ping').then(()=>{
+      document.getElementById('gate').classList.add('hide');
+      loadAll();
+    }).catch(()=>logout());
+  }
+})();
+</script>
+</body>
+</html>
