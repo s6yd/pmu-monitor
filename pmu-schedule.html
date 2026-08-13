@@ -529,16 +529,20 @@ break-inside:avoid;page-break-inside:avoid}
 .ps-finals{margin-top:9px;padding-top:7px;border-top:1px solid #dfe3e9;
 break-inside:avoid;page-break-inside:avoid}
 .ps-fin-t{font-size:8pt;font-weight:700;color:#111827;margin-bottom:5px}
-.ps-fin-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
-.ps-fin{padding:3px 6px;border-radius:3px;background:var(--c2);
-border-right:2.5px solid var(--c);overflow:hidden}
+.ps-fin-days{display:grid;grid-template-columns:repeat(3,1fr);gap:4px 10px;align-items:start}
+.ps-fin-day{break-inside:avoid}
+.ps-fin-dl{font-size:6.5pt;font-weight:700;color:#111827;margin-bottom:2px;
+padding-bottom:2px;border-bottom:1px solid #dfe3e9;
+display:flex;justify-content:space-between;gap:5px}
+.ps-fin-dl span{font-weight:500;color:#9aa3b0;font-family:var(--mono);font-size:5.8pt}
+.ps-fin{padding:2.5px 5px;border-radius:3px;background:var(--c2);
+border-right:2.5px solid var(--c);overflow:hidden;margin-bottom:2px;
+display:flex;align-items:baseline;gap:5px;flex-wrap:wrap}
 .ps-fin.cl{border-right-color:#b8442e;background:#fbeeeb}
-.ps-fin-code{font-size:7pt;font-weight:700;color:var(--c);direction:ltr;
-text-align:right;line-height:1.2}
+.ps-fin-h{font-size:6pt;color:#5b6472;font-family:var(--mono);direction:ltr;flex-shrink:0}
+.ps-fin-code{font-size:6.8pt;font-weight:700;color:var(--c);direction:ltr;flex:1}
 .ps-fin.cl .ps-fin-code{color:#b8442e}
-.ps-fin-when{font-size:5.8pt;color:#5b6472;direction:ltr;text-align:right;
-margin-top:1px;font-family:var(--mono)}
-.ps-fin-where{font-size:5.8pt;color:#9aa3b0;direction:ltr;text-align:right;margin-top:1px}
+.ps-fin-where{font-size:5.6pt;color:#9aa3b0;direction:ltr;width:100%}
 .ps-foot{margin-top:7px;padding-top:5px;border-top:1px solid #eef0f3;
 display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 }
@@ -735,7 +739,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     <div id="sugList"></div>
   </div>
 
-  <div class="sc-title" style="margin:20px 0 10px"><span data-i18n="planTitle">الخطة الدراسية</span> — Mechanical Engineering</div>
+  <div class="sc-title" style="margin:20px 0 10px" id="planTitleBar"><span data-i18n="planTitle">الخطة الدراسية</span> — <span id="planMajorName">Mechanical Engineering</span></div>
   <div id="planSemesters"></div>
 
 </div>
@@ -2283,6 +2287,14 @@ let PLAN=PLANS[MAJOR].sems;
 let TECH_ELECTIVES=PLANS[MAJOR].tech||{};
 let TOTAL_CR=PLANS[MAJOR].total;
 
+/* اسم التخصص المعروض فوق الخطة */
+function setPlanTitle(){
+  const el=document.getElementById('planMajorName');
+  if(!el)return;
+  const p=PLANS[MAJOR];
+  if(p)el.textContent=LANG==='ar'?p.ar:p.name;
+}
+
 function applyMajor(code,silent){
   if(!PLANS[code])return;
   MAJOR=code;
@@ -2292,6 +2304,7 @@ function applyMajor(code,silent){
   save('pmu_major',code);
   const el=document.getElementById('majorSelect');
   if(el&&el.value!==code)el.value=code;
+  setPlanTitle();
   if(!silent)renderPlan();
 }
 
@@ -2790,7 +2803,7 @@ function buildPrintSheet(clashSet){
   lo=Math.floor(lo/60)*60;hi=Math.ceil(hi/60)*60;
 
   const rows=Math.max(4,Math.round((hi-lo)/15));
-  const rowH=Math.max(3.2,Math.min(6.2,176/rows));           // مم — يخلي الشبكة بصفحة وحدة
+  const rowH=Math.max(3.0,Math.min(5.4,150/rows));           // مم — نترك مساحة للاختبارات تحت
   const rowCSS=`grid-template-rows:repeat(${rows},${rowH.toFixed(2)}mm)`;
   const rowOf=m=>Math.min(rows+1,Math.max(1,Math.round((m-lo)/15)+1));
 
@@ -2893,17 +2906,31 @@ function buildPrintSheet(clashSet){
       const eslot={};
       mine.forEach(e=>{const k=e.date+'|'+e.hour;(eslot[k]=eslot[k]||[]).push(e)});
 
+      /* تجميع بالأيام — نفس ترتيب العرض على الشاشة */
+      const fdays=[];
+      mine.forEach(e=>{
+        let d=fdays.find(x=>x.date===e.date);
+        if(!d){d={date:e.date,day:e.day,items:[]};fdays.push(d)}
+        d.items.push(e);
+      });
+
       finals=`<div class="ps-finals">
         <div class="ps-fin-t">${t('finPrint')}</div>
-        <div class="ps-fin-grid">${mine.map(e=>{
-          const col=colorOf[e.code]||PS_COLORS[0];
-          const cl=eslot[e.date+'|'+e.hour].length>1;
-          return `<div class="ps-fin${cl?' cl':''}" style="--c:${col[0]};--c2:${col[1]}">
-            <div class="ps-fin-code">${escapeHtml(e.code)} §${escapeHtml(e.section)}</div>
-            <div class="ps-fin-when">${escapeHtml(e.day).slice(0,3)} ${escapeHtml(e.date)} · ${escapeHtml(e.hour)}</div>
-            <div class="ps-fin-where">${escapeHtml(e.building)} · ${escapeHtml(e.room)}</div>
-          </div>`;
-        }).join('')}</div>
+        <div class="ps-fin-days">${fdays.map(d=>`
+          <div class="ps-fin-day">
+            <div class="ps-fin-dl">${escapeHtml(LANG==='ar'?(FIN_DAY_AR[d.day]||d.day):d.day)}
+              <span>${escapeHtml(d.date)}</span></div>
+            ${d.items.map(e=>{
+              const col=colorOf[e.code]||PS_COLORS[0];
+              const cl=eslot[e.date+'|'+e.hour].length>1;
+              return `<div class="ps-fin${cl?' cl':''}" style="--c:${col[0]};--c2:${col[1]}">
+                <span class="ps-fin-h">${escapeHtml(e.hour)}</span>
+                <span class="ps-fin-code">${escapeHtml(e.code)} §${escapeHtml(e.section)}</span>
+                <span class="ps-fin-where">${escapeHtml(e.building)} · ${escapeHtml(e.room)}</span>
+              </div>`;
+            }).join('')}
+          </div>`).join('')}
+        </div>
       </div>`;
     }
   }
@@ -3599,39 +3626,43 @@ async function deleteMyReview(name){
 
 /* ================= GUIDE ================= */
 const GUIDE={
-ar:{title:'كيف تستخدم جدولك',lead:'دليل سريع لكل ميزة — أقل من دقيقتين قراءة',
+ar:{title:'كيف تستخدم جدولك',lead:'كل ميزة بسطر — أقل من دقيقتين',
 sec1:'البداية',sec2:'الميزات المدفوعة',
 steps:[
-{n:'1',t:'اختر تخصصك أول',d:'من <b>⚙️ الإعدادات</b> اختر تخصصك من قائمة <b>20 تخصص</b> — كل كليات الجامعة موجودة. الخطة والساعات والمتطلبات تتغير تلقائياً حسب تخصصك، وتنحفظ في حسابك فتلقاها من أي جهاز.'},
-{n:'2',t:'حدّد المواد اللي خلصتها',d:'روح تبويب <b>📋 خطتي</b> وأشّر ✓ على كل مادة أنهيتها. الموقع يحسب لك الساعات المتبقية ومستواك الدراسي تلقائياً.'},
-{n:'3',t:'شوف مقترح الترم الجاي',d:'بعد ما تحدد مواد، يطلع لك مقترح ذكي مقسّم: <b>مواد لا تأجلها</b> (لأنها تفتح مواد جاية) و<b>مواد اختيارية</b>. المواد المقفلة يظهر تحتها المتطلب الناقص.'},
-{n:'4',t:'احسب معدلك',d:'أي مادة تأشرها يظهر جنبها قائمة درجات. اختر تقديرك والمعدل يتحدث فوراً حسب نظام الجامعة الرسمي. المواد بدون درجة ما تدخل الحساب.'},
-{n:'5',t:'ابحث عن المواد',d:'من تبويب <b>🔍 البحث</b> اختر السيمستر والكلية. تقدر تفلتر بكود المادة أو رقم الـ CRN أو اسم الدكتور — والمسافات ما تفرق، <code>MEEN3395</code> نفس <code>meen 3395</code>.'},
-{n:'6',t:'ابنِ جدولك',d:'اضغط <b>➕</b> على أي مادة تضيفها لجدولك. قبل ما تضيف، الموقع يقول لك إذا تتعارض مع مادة ثانية عندك، ويمنعك لو ما خلصت متطلبها.'},
-{n:'7',t:'راجع الجدول واطبعه',d:'تبويب <b>📅 جدولي</b> يعرض أسبوعك من الأحد للخميس بالأوقات والقاعات والدكاترة، مع الساعات المعتمدة وأي تعارض. وزر <b>🖨️ اطبع الجدول</b> يطلع لك ورقة منظّمة بصفحة وحدة — شبكة أسبوعية بالألوان تشوف فيها فراغاتك بنظرة.'},
-{n:'8',t:'قيّم دكاترتك',d:'تبويب <b>👨‍🏫 دكاترة</b> فيه تقييمات الطلاب لكل دكتور — نجوم ووسوم وتعليقات. تقدر تقيّم بنفسك <b>بشكل مجهول</b>، وتشوف تقييماتك أو تعدّلها من الإعدادات.'}],
+{n:'1',t:'اختر تخصصك',d:'من <b>⚙️ الإعدادات</b> اختر تخصصك — <b>20 تخصص</b>، كل كليات الجامعة. الخطة والساعات والمتطلبات تتغير معك تلقائياً.'},
+{n:'2',t:'علّم اللي خلصته',d:'في <b>📋 خطتي</b> اضغط المربّع جنب كل مادة درستها. المواد اللي متطلبها ناقص تظهر <b>مقفلة</b>، وتنفتح أول ما تعلّم متطلبها.'},
+{n:'3',t:'شوف مقترح الترم الجاي',d:'فوق الخطة يطلع لك مقترح جاهز. اللي معلّم <b>"لا تؤجلها"</b> مواد تفتح لك مواد بعدها — تأجيلها يأخّر تخرّجك.'},
+{n:'4',t:'احسب معدلك',d:'حط درجة أي مادة خلصتها، والمعدل يتحدّث فوراً بنظام الجامعة (‎A+‎ = 4.00). تقدر كمان تجرّب: كم لازم أجيب هذا الترم عشان أوصل معدل معيّن.'},
+{n:'5',t:'ابحث عن موادك',d:'في <b>🔍 البحث</b> اختر الترم واضغط ابحث. تقدر تفلتر بكود المادة أو الـ CRN أو اسم الدكتور.'},
+{n:'6',t:'ابنِ جدولك',d:'اضغط <b>+</b> على أي شعبة تضيفها. لو تعارضت مع مادة عندك، الموقع ينبّهك قبل ما تسجّل.'},
+{n:'7',t:'اطبع جدولك',d:'زر <b>🖨️ اطبع الجدول</b> يطلع ورقة واحدة منظّمة — شبكة أسبوعية ملوّنة تبيّن فراغاتك، ومعها اختباراتك النهائية.'},
+{n:'8',t:'اختباراتك النهائية',d:'في <b>📅 جدولي</b> اضغط <b>اعرض</b> تحت "اختباراتك النهائية" — يطلع لك موعد وقاعة كل اختبار من مواد جدولك، وينبّهك لو صار اختبارين بنفس الوقت.'},
+{n:'9',t:'مواعيد تهمك',d:'نفس الصفحة تعرض أقرب المواعيد بعدّاد أيام: التسجيل، بداية الدراسة، <b>آخر يوم انسحاب</b>، والاختبارات. المواعيد القريبة تتلوّن تنبيهاً.'},
+{n:'10',t:'قيّم دكاترتك',d:'في <b>👨‍🏫 دكاترة</b> شوف تقييمات الطلاب قبل ما تسجّل، وقيّم أنت <b>بشكل مجهول</b> — ما أحد يشوف اسمك.'}],
 pro:[
-{n:'★',t:'راقب المواد المسكّرة',d:'أي مادة <code>CLOSE</code> يظهر جنبها <b>🔕</b> — اضغطه يصير <b>🔔</b>. السيرفر يفحص الجامعة كل 5 دقائق <b>حتى والموقع مسكّر عندك</b>، فما تحتاج تخلي الصفحة مفتوحة. راقب كم مادة ما تبي، وتوقف أي وحدة من الإعدادات.'},
-{n:'★',t:'اربط تيليغرام',d:'من <b>⚙️ الإعدادات</b> اضغط "ربط" — يفتح البوت، تضغط Start، وخلاص. أول ما تنفتح مادتك يوصلك إشعار فوري فيه الـ CRN والوقت والقاعة.'},
-{n:'★',t:'حفظ سحابي',d:'خطتك وجدولك ومعدلك محفوظين في حسابك — تفتح من أي جهاز وتلقى كل شي زي ما تركته.'}],
-tip:'<b>🎁 لك شهر مجاني</b> أول ما تسجّل — كل الميزات مفتوحة. بعده الاشتراك 19 ريال للسنة كاملة.'},
+{n:'★',t:'راقب المواد المسكّرة',d:'أي مادة <code>CLOSE</code> جنبها <b>🔕</b> — اضغطه يصير <b>🔔</b>. السيرفر يفحص كل 5 دقائق <b>حتى والموقع مسكّر</b>، فما تحتاج تفتح الصفحة. راقب كم مادة ما تبي.'},
+{n:'★',t:'اربط تيليغرام',d:'من <b>⚙️ الإعدادات</b> اضغط "ربط" → يفتح البوت → Start. أول ما تنفتح مادتك يوصلك إشعار فيه الـ CRN والوقت والقاعة.'},
+{n:'★',t:'حفظ سحابي',d:'خطتك وجدولك ومعدلك محفوظة في حسابك — افتح من أي جهاز وتلقى كل شي زي ما تركته.'}],
+tip:'<b>🎁 لك شهر مجاني</b> أول ما تسجّل — كل الميزات مفتوحة. بعده 19 ريال للسنة كاملة.'},
 
-en:{title:'How to use Jadwalik',lead:'A quick guide to every feature — under two minutes',
+en:{title:'How to use Jadwalik',lead:'Every feature in one line — under two minutes',
 sec1:'Getting started',sec2:'Paid features',
 steps:[
-{n:'1',t:'Pick your major first',d:'In <b>⚙️ Settings</b> choose your major from <b>20 programs</b> — every college is covered. Your plan, credit hours and prerequisites switch automatically, and the choice is saved to your account so it follows you to any device.'},
-{n:'2',t:'Mark completed courses',d:'Go to <b>📋 My Plan</b> and tick ✓ every course you finished. The site calculates your remaining hours and academic level automatically.'},
-{n:'3',t:'See next term suggestion',d:'Once you mark courses, you get a smart split: <b>Do not delay</b> (courses that unlock future ones) and <b>Optional</b>. Locked courses show the missing prerequisite.'},
-{n:'4',t:'Calculate your GPA',d:'Each completed course shows a grade dropdown. Pick your grade and the GPA updates instantly using the official university scale. Ungraded courses are excluded.'},
-{n:'5',t:'Search for courses',d:'In <b>🔍 Search</b> pick a semester and college. Filter by course code, CRN, or instructor — spaces do not matter, <code>MEEN3395</code> equals <code>meen 3395</code>.'},
-{n:'6',t:'Build your schedule',d:'Tap <b>➕</b> on any course to add it. Before adding, the site tells you if it conflicts with something you already have, and blocks it if you have not met the prerequisite.'},
-{n:'7',t:'Review and print',d:'The <b>📅 Schedule</b> tab lays out Sunday to Thursday with times, rooms and instructors, plus total credits and any conflicts. Tap <b>🖨️ Print schedule</b> for a clean one-page sheet — a colour-coded weekly grid where your gaps are obvious at a glance.'},
-{n:'8',t:'Rate your instructors',d:'The <b>👨‍🏫 Faculty</b> tab collects student ratings for every instructor — stars, tags and comments. You can rate <b>anonymously</b>, and review or edit your own ratings from Settings.'}],
+{n:'1',t:'Pick your major',d:'In <b>⚙️ Settings</b> choose your major — <b>20 programs</b>, every college. Your plan, credits and prerequisites switch automatically.'},
+{n:'2',t:'Mark what you finished',d:'In <b>📋 My Plan</b> tick the box next to each course you passed. Courses missing a prerequisite show as <b>locked</b> and open the moment you tick it.'},
+{n:'3',t:'See next term suggestion',d:'A ready plan appears above your degree plan. Anything marked <b>"Do not delay"</b> unlocks later courses — delaying it delays your graduation.'},
+{n:'4',t:'Calculate your GPA',d:'Enter a grade for any finished course and your GPA updates instantly on the PMU scale (A+ = 4.00). You can also ask: what do I need this term to reach a target GPA.'},
+{n:'5',t:'Search for courses',d:'In <b>🔍 Search</b> pick the term and hit search. Filter by course code, CRN, or instructor name.'},
+{n:'6',t:'Build your schedule',d:'Tap <b>+</b> on any section to add it. If it clashes with a course you already have, you get warned before you register.'},
+{n:'7',t:'Print your schedule',d:'<b>🖨️ Print schedule</b> gives you one clean page — a colour-coded weekly grid showing your gaps, with your final exams underneath.'},
+{n:'8',t:'Your final exams',d:'In <b>📅 Schedule</b> tap <b>Show</b> under "Your final exams" — you get the date and room for every course in your schedule, and a warning if two exams collide.'},
+{n:'9',t:'Dates that matter',d:'The same page shows upcoming dates with a countdown: registration, first day of class, <b>the withdrawal deadline</b>, and finals. Near dates turn amber.'},
+{n:'10',t:'Rate your instructors',d:'In <b>👨‍🏫 Faculty</b> read student ratings before you register, and rate <b>anonymously</b> — nobody sees your name.'}],
 pro:[
-{n:'★',t:'Monitor closed sections',d:'Any <code>CLOSE</code> course shows a <b>🔕</b> — tap it to turn it <b>🔔</b>. The server checks the university every 5 minutes <b>even when the site is closed on your phone</b>, so you never need to keep the page open. Watch as many courses as you like, and stop any of them from Settings.'},
-{n:'★',t:'Link Telegram',d:'In <b>⚙️ Settings</b> tap "Link" — the bot opens, you press Start, done. The moment a seat opens you get an instant message with the CRN, time and room.'},
-{n:'★',t:'Cloud sync',d:'Your plan, schedule and GPA live in your account — open from any device and find everything exactly as you left it.'}],
-tip:'<b>🎁 You get a free month</b> when you sign up — everything unlocked. After that it is SAR 19 for a full year.'}
+{n:'★',t:'Monitor closed sections',d:'Any <code>CLOSE</code> course has a <b>🔕</b> — tap it to make it <b>🔔</b>. The server checks every 5 minutes <b>even with the site closed</b>, so you never keep the page open. Watch as many as you like.'},
+{n:'★',t:'Link Telegram',d:'In <b>⚙️ Settings</b> tap "Link" → the bot opens → Start. When your course opens you get an alert with the CRN, time and room.'},
+{n:'★',t:'Cloud sync',d:'Your plan, schedule and GPA live in your account — open from any device and find everything as you left it.'}],
+tip:'<b>🎁 One free month</b> when you sign up — all features unlocked. After that SAR 19 for a full year.'}
 };
 
 function renderGuide(){
@@ -3848,6 +3879,7 @@ function applyLang(){
   if(currentDoc)renderDocDetail();else if(instructors.length)renderDocs();
   if(document.getElementById('pageSched').classList.contains('active'))renderSchedule();
   renderCalendar();
+  setPlanTitle();
   if(FINALS)renderFinals();
 }
 
