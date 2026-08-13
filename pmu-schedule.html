@@ -400,9 +400,81 @@ box-shadow:0 8px 30px rgba(61,111,255,.4);transition:transform .3s;z-index:999;m
 .toast.warn{background:var(--warn)}
 .toast.err{background:var(--close)}
 
-@media print{.topbar,.tabs,.sched-actions,.slot-remove,.conflict-alert{display:none!important}
-body{background:#fff;color:#000}.day-block,.slot{background:#fff;border:1px solid #ccc}
-.slot-name,.slot-time{color:#000}}
+/* ---- ورقة الطباعة (مخفية على الشاشة) ---- */
+#printSheet{display:none}
+
+@media print{
+@page{size:A4 portrait;margin:9mm}
+*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;
+box-shadow:none!important;text-shadow:none!important;animation:none!important}
+html,body{background:#fff!important;color:#111827!important;
+margin:0!important;padding:0!important;min-height:0!important}
+
+/* اخفِ واجهة الشاشة كاملة */
+.topbar,.tabs,.sched-actions,.slot-remove,.conflict-alert,.sched-summary,
+.guide-fab,.guide-overlay,.toast,.state-box,.sync-note,.next-check,
+#schedDays,.modal,.overlay{display:none!important}
+.page{display:none!important}
+.main{padding:0!important;max-width:none!important;margin:0!important}
+#pageSched{display:block!important}
+#printSheet{display:block!important}
+
+/* ترويسة الورقة */
+.ps-head{display:flex;justify-content:space-between;align-items:flex-end;
+padding-bottom:6px;border-bottom:2px solid #111827;margin-bottom:2px}
+.ps-head h1{font-size:15pt;font-weight:700;color:#111827;line-height:1.2}
+.ps-sub{font-size:7.5pt;color:#5b6472;margin-top:2px}
+.ps-stats{display:flex;gap:13px;flex-shrink:0}
+.ps-stat{text-align:center}
+.ps-stat b{display:block;font-size:13pt;font-weight:700;line-height:1;
+color:#111827;font-family:var(--mono)}
+.ps-stat span{font-size:6.5pt;color:#9aa3b0}
+.ps-stat.ok b{color:#2f6b46}
+.ps-stat.bad b{color:#b8442e}
+
+/* شبكة الأسبوع */
+.ps-grid{margin-top:7px;display:grid;gap:0;break-inside:avoid;page-break-inside:avoid}
+.ps-colhead{font-size:8pt;font-weight:700;text-align:center;padding:4px 0 5px;
+border-bottom:1px solid #111827;color:#111827}
+.ps-colhead small{display:block;font-size:5.5pt;font-weight:500;color:#9aa3b0;
+letter-spacing:.06em;margin-top:1px}
+.ps-corner{border-bottom:1px solid #111827}
+
+.ps-hours{display:grid}
+.ps-hour{grid-column:1;font-size:6.5pt;color:#9aa3b0;text-align:center;
+transform:translateY(-4px);font-family:var(--mono);direction:ltr}
+
+.ps-day{display:grid;border-right:1px solid #dfe3e9}
+.ps-day.last{border-left:1px solid #dfe3e9}
+.ps-line{grid-column:1/-1;border-top:1px solid #eef0f3}
+.ps-line.hr{border-top:1px solid #dfe3e9}
+
+.ps-cls{margin:1px 2px;padding:2px 4px;border-radius:3px;overflow:hidden;
+border-right:2.5px solid var(--c);background:var(--c2)}
+.ps-cls.clash{border-right-color:#b8442e;background:#fbeeeb}
+.ps-code{font-size:7.5pt;font-weight:700;color:var(--c);line-height:1.15;
+direction:ltr;text-align:right}
+.ps-cls.clash .ps-code{color:#b8442e}
+.ps-meta{font-size:5.8pt;color:#5b6472;line-height:1.3;margin-top:1px;
+direction:ltr;text-align:right}
+.ps-time{font-size:5.8pt;color:#9aa3b0;font-family:var(--mono);
+direction:ltr;text-align:right;margin-top:1px}
+.ps-cls.sm .ps-meta,.ps-cls.sm .ps-time{display:none}
+.ps-cls.sm .ps-code{font-size:6.5pt}
+
+/* المفتاح والحواشي */
+.ps-legend{margin-top:8px;padding-top:6px;border-top:1px solid #dfe3e9;
+display:grid;grid-template-columns:repeat(4,1fr);gap:3px 10px;
+break-inside:avoid;page-break-inside:avoid}
+.ps-lg{display:flex;align-items:center;gap:5px;font-size:6.5pt;color:#5b6472}
+.ps-lg i{width:8px;height:8px;border-radius:2px;background:var(--c);flex-shrink:0}
+.ps-lg b{font-weight:700;color:#111827;direction:ltr}
+.ps-note{margin-top:6px;font-size:6.5pt;color:#5b6472;line-height:1.6;break-inside:avoid}
+.ps-note b{color:#111827;direction:ltr}
+.ps-warn{margin-top:6px;font-size:6.5pt;color:#b8442e;line-height:1.6}
+.ps-foot{margin-top:7px;padding-top:5px;border-top:1px solid #eef0f3;
+display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
+}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -527,7 +599,7 @@ body{background:#fff;color:#000}.day-block,.slot{background:#fff;border:1px soli
     <div class="ca-text"><h3 data-i18n="clashTitle">يوجد تعارض في الجدول</h3><p id="conflictList"></p></div>
   </div>
   <div class="sched-actions">
-    <button class="btn-ghost" onclick="window.print()" data-i18n="print">🖨️ اطبع الجدول</button>
+    <button class="btn-ghost" onclick="printSchedule()" data-i18n="print">🖨️ اطبع الجدول</button>
     <button class="btn-ghost danger" onclick="clearSchedule()" data-i18n="clearAll">🗑️ امسح الكل</button>
   </div>
   <div class="state-box visible" id="schedEmpty">
@@ -535,6 +607,7 @@ body{background:#fff;color:#000}.day-block,.slot{background:#fff;border:1px soli
     <div class="state-sub">روح لصفحة البحث واضغط ➕ على أي مادة</div>
   </div>
   <div id="schedDays"></div>
+  <div id="printSheet"></div>
 </div>
 
 <!-- PLAN -->
@@ -1016,9 +1089,10 @@ function renderSchedule(){
     document.getElementById('conflictList').innerHTML=pairs.map(p=>`${p[0].courseCode} §${p[0].section} ✕ ${p[1].courseCode} §${p[1].section}`).join('<br>');
   }else al.classList.remove('visible');
 
-  if(!schedule.length){empty.classList.add('visible');wrap.innerHTML='';return}
+  if(!schedule.length){empty.classList.add('visible');wrap.innerHTML='';buildPrintSheet(new Set());return}
   empty.classList.remove('visible');
   const cl=new Set();pairs.forEach(p=>{cl.add(p[0].crn);cl.add(p[1].crn)});
+  buildPrintSheet(cl);
 
   wrap.innerHTML=DAY_KEYS.map(day=>{
     const items=schedule.filter(c=>parseDays(c.courseDate).includes(day))
@@ -1034,6 +1108,153 @@ function renderSchedule(){
     return `<div class="day-block"><div class="day-head"><span>${t('days')[day]}</span>
       <span class="cnt">${items.length} ${t('lecture')}</span></div>${body}</div>`;
   }).join('');
+}
+
+/* ===== ورقة الطباعة — شبكة أسبوعية ===== */
+const PS_COLORS=[
+  ['#b8442e','#fbeeeb'],['#1f6f8b','#eaf3f6'],['#7a5a1f','#f8f2e5'],
+  ['#4a4a8f','#eeeef8'],['#2f6b46','#eaf3ed'],['#8f3f6b','#f9edf4'],
+  ['#3a5e8c','#ecf1f7'],['#6b4a2e','#f6efe9'],['#2e6b6b','#e9f3f3'],
+  ['#5c3f8f','#f1ecf8'],['#8a5a1f','#f8f0e4'],['#2f5f7a','#eaf1f5']
+];
+const PS_EN={U:'SUN',M:'MON',T:'TUE',W:'WED',R:'THU',F:'FRI',S:'SAT'};
+
+function buildPrintSheet(clashSet){
+  const el=document.getElementById('printSheet');
+  if(!el)return;
+  if(!schedule.length){el.innerHTML='';return}
+  clashSet=clashSet||new Set();
+
+  /* فصل المواد اللي لها وقت واضح عن غيرها */
+  const timed=[],untimed=[];
+  schedule.forEach(c=>{
+    const tm=parseTime(c.courseTiming),ds=parseDays(c.courseDate);
+    if(tm&&ds.length)timed.push({c,tm,ds});else untimed.push(c);
+  });
+
+  /* لون ثابت لكل كود مادة */
+  const colorOf={};let ci=0;
+  schedule.forEach(c=>{
+    if(!colorOf[c.courseCode]){colorOf[c.courseCode]=PS_COLORS[ci%PS_COLORS.length];ci++}
+  });
+
+  /* الأعمدة: الأحد–الخميس دائماً، والجمعة/السبت فقط لو فيها محاضرة */
+  const used=new Set();timed.forEach(o=>o.ds.forEach(d=>used.add(d)));
+  const cols=['U','M','T','W','R'].concat(['F','S'].filter(d=>used.has(d)));
+
+  /* حدود اليوم الدراسي */
+  let lo=24*60,hi=0;
+  timed.forEach(o=>{if(o.tm.start<lo)lo=o.tm.start;if(o.tm.end>hi)hi=o.tm.end});
+  if(hi<=lo){lo=8*60;hi=17*60}
+  lo=Math.floor(lo/60)*60;hi=Math.ceil(hi/60)*60;
+
+  const rows=Math.max(4,Math.round((hi-lo)/15));
+  const rowH=Math.max(3.2,Math.min(6.2,176/rows));           // مم — يخلي الشبكة بصفحة وحدة
+  const rowCSS=`grid-template-rows:repeat(${rows},${rowH.toFixed(2)}mm)`;
+  const rowOf=m=>Math.min(rows+1,Math.max(1,Math.round((m-lo)/15)+1));
+
+  /* خطوط الساعات */
+  let lines='';
+  for(let m=lo;m<=hi;m+=60)lines+=`<div class="ps-line hr" style="grid-row:${rowOf(m)}"></div>`;
+
+  /* عمود الساعات */
+  let hours='';
+  for(let m=lo;m<hi;m+=60)
+    hours+=`<div class="ps-hour" style="grid-row:${rowOf(m)}">${fmtTime(m)}</div>`;
+
+  /* بناء أعمدة الأيام */
+  const dayCols=cols.map((day,idx)=>{
+    const items=timed.filter(o=>o.ds.includes(day))
+      .map(o=>({o,r1:rowOf(o.tm.start),r2:rowOf(o.tm.end)}))
+      .sort((a,b)=>a.r1-b.r1||a.r2-b.r2);
+
+    /* توزيع المتعارضات على مسارات جنب بعض بدل ما تتراكب */
+    const lanes=[];
+    items.forEach(it=>{
+      let L=0;
+      while(lanes[L]&&lanes[L].some(x=>it.r1<x.r2&&x.r1<it.r2))L++;
+      if(!lanes[L])lanes[L]=[];
+      lanes[L].push(it);it.lane=L+1;
+    });
+    const nLanes=Math.max(1,lanes.length);
+
+    const blocks=items.map(it=>{
+      const c=it.o.c,col=colorOf[c.courseCode],
+            span=it.r2-it.r1,
+            small=span*rowH<9.5,
+            clash=clashSet.has(c.crn);
+      return `<div class="ps-cls${small?' sm':''}${clash?' clash':''}"
+        style="grid-row:${it.r1}/${it.r2};grid-column:${it.lane};--c:${col[0]};--c2:${col[1]}">
+        <div class="ps-code">${escapeHtml(c.courseCode)} §${escapeHtml(c.section||'')}</div>
+        <div class="ps-meta">${escapeHtml(c.room||'—')} · ${escapeHtml(shortName(c.instructor))}</div>
+        <div class="ps-time">${fmtTime(it.o.tm.start)}–${fmtTime(it.o.tm.end)}</div>
+      </div>`;
+    }).join('');
+
+    return `<div class="ps-day${idx===cols.length-1?' last':''}"
+      style="${rowCSS};grid-template-columns:repeat(${nLanes},1fr)">${lines}${blocks}</div>`;
+  }).join('');
+
+  /* الترويسة */
+  const termSel=document.getElementById('term');
+  const termName=termSel?(termSel.options[termSel.selectedIndex]||{}).text||'':'';
+  const clashes=document.getElementById('sumClashes').textContent||'0';
+
+  const head=`<div class="ps-head">
+    <div>
+      <h1>${LANG==='ar'?'الجدول الدراسي':'Class Schedule'}</h1>
+      <div class="ps-sub">Prince Mohammad Bin Fahd University${termName?' · '+escapeHtml(termName):''}</div>
+    </div>
+    <div class="ps-stats">
+      <div class="ps-stat"><b>${schedule.length}</b><span>${t('courses')}</span></div>
+      <div class="ps-stat"><b>${scheduleCredits()}</b><span>${t('credits')}</span></div>
+      <div class="ps-stat ${clashes==='0'?'ok':'bad'}"><b>${clashes}</b><span>${t('clashes')}</span></div>
+    </div>
+  </div>`;
+
+  /* رؤوس الأعمدة */
+  const heads=`<div class="ps-corner"></div>`+cols.map(d=>
+    `<div class="ps-colhead">${t('days')[d]}<small>${PS_EN[d]}</small></div>`).join('');
+
+  const grid=`<div class="ps-grid" style="grid-template-columns:30px repeat(${cols.length},1fr)">
+    ${heads}
+    <div class="ps-hours" style="${rowCSS}">${hours}</div>
+    ${dayCols}
+  </div>`;
+
+  /* المفتاح */
+  const legend=`<div class="ps-legend">${Object.keys(colorOf).map(code=>
+    `<div class="ps-lg" style="--c:${colorOf[code][0]}"><i></i><b>${escapeHtml(code)}</b></div>`).join('')}</div>`;
+
+  /* مواد بدون وقت محدد */
+  const note=untimed.length?`<div class="ps-note">${LANG==='ar'?'بدون وقت محدد:':'No fixed time:'} ${
+    untimed.map(c=>`<b>${escapeHtml(c.courseCode)} §${escapeHtml(c.section||'')}</b>`).join(' · ')}</div>`:'';
+
+  const warn=clashes!=='0'?`<div class="ps-warn">${LANG==='ar'
+    ?'⚠ يوجد تعارض في الأوقات — المواد المتعارضة معلّمة بالأحمر.'
+    :'⚠ Time conflict detected — clashing classes are marked in red.'}</div>`:'';
+
+  const foot=`<div class="ps-foot"><span>jadwalik.com</span><span>${
+    new Date().toLocaleDateString(LANG==='ar'?'ar-SA':'en-GB')}</span></div>`;
+
+  el.innerHTML=head+grid+legend+note+warn+foot;
+}
+
+function printSchedule(){
+  if(!schedule.length){
+    showToast(LANG==='ar'?'جدولك فاضي — ضيف مواد أول':'Your schedule is empty','warn');
+    return;
+  }
+  renderSchedule();                 // يضمن أن الورقة محدّثة قبل الطباعة
+  setTimeout(()=>window.print(),60);
+}
+
+/* اختصار اسم الدكتور عشان يدخل بالخانة */
+function shortName(n){
+  if(!n)return '—';
+  const p=n.trim().split(/\s+/);
+  if(p.length<2)return p[0]||'—';
+  return p[0].charAt(0)+'. '+p[p.length-1];
 }
 
 /* ===== Plan ===== */
