@@ -363,6 +363,11 @@ textarea:focus{border-color:var(--accent)}
 font-weight:600;font-family:var(--sans);cursor:pointer;padding:6px 0;margin-bottom:10px}
 
 /* ---- Guide ---- */
+.legal-foot{text-align:center;padding:22px 10px 6px;font-size:12px;
+color:var(--text3);display:flex;flex-wrap:wrap;gap:8px;justify-content:center;align-items:center}
+.legal-foot a{color:var(--text2);text-decoration:none}
+.legal-foot a:hover{color:var(--accent2)}
+.legal-note{width:100%;margin-top:9px;font-size:11px;color:var(--text3);line-height:1.6}
 .guide-fab{position:fixed;bottom:20px;left:16px;z-index:200;
 background:var(--accent);color:#fff;border:none;border-radius:50%;
 width:48px;height:48px;font-size:21px;cursor:pointer;
@@ -401,6 +406,35 @@ box-shadow:0 8px 30px rgba(61,111,255,.4);transition:transform .3s;z-index:999;m
 .toast.show{transform:translateX(-50%) translateY(0)}
 .toast.warn{background:var(--warn)}
 .toast.err{background:var(--close)}
+
+/* ---- جدول الاختبارات النهائية ---- */
+.finals-card{background:var(--card);border:1px solid var(--border);
+border-radius:15px;padding:15px;margin-top:14px}
+.fin-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.fin-title{font-size:14px;font-weight:700}
+.fin-sub{font-size:11.5px;color:var(--text3);margin-top:3px;line-height:1.5}
+.fin-day{margin-top:14px}
+.fin-daylabel{font-size:11px;font-weight:700;color:var(--text2);letter-spacing:.5px;
+margin-bottom:7px;display:flex;align-items:center;gap:7px}
+.fin-daylabel .dd{font-family:var(--mono);color:var(--text3);font-weight:500}
+.fin-row{background:var(--bg);border:1px solid var(--border);border-radius:11px;
+padding:10px 12px;display:flex;align-items:center;gap:11px;margin-bottom:6px;
+border-inline-start:3px solid var(--accent)}
+.fin-row.clash{border-inline-start-color:var(--close);background:var(--close-bg)}
+.fin-time{font-family:var(--mono);font-size:11.5px;color:var(--text2);
+min-width:62px;text-align:center;flex-shrink:0;direction:ltr}
+.fin-info{flex:1;min-width:0}
+.fin-code{font-size:12.5px;font-weight:700;direction:ltr;text-align:start}
+.fin-meta{font-size:10.5px;color:var(--text3);margin-top:2px;direction:ltr;text-align:start}
+.fin-room{font-family:var(--mono);font-size:11px;color:var(--accent2);
+flex-shrink:0;text-align:end}
+.fin-warn{background:var(--close-bg);border:1px solid rgba(244,63,94,.3);
+border-radius:11px;padding:10px 12px;margin-top:12px;font-size:12px;color:var(--close);line-height:1.6}
+.fin-note{font-size:11.5px;color:var(--text3);margin-top:12px;line-height:1.6;
+padding-top:10px;border-top:1px solid var(--border)}
+.fin-empty{font-size:12.5px;color:var(--text3);padding:14px 0;line-height:1.7}
+.fin-spin{width:20px;height:20px;border:2px solid var(--border2);border-top-color:var(--accent);
+border-radius:50%;animation:spin .8s linear infinite;margin:18px auto}
 
 /* ---- ورقة الطباعة (مخفية على الشاشة) ---- */
 #printSheet{display:none}
@@ -474,6 +508,13 @@ break-inside:avoid;page-break-inside:avoid}
 .ps-note{margin-top:6px;font-size:6.5pt;color:#5b6472;line-height:1.6;break-inside:avoid}
 .ps-note b{color:#111827;direction:ltr}
 .ps-warn{margin-top:6px;font-size:6.5pt;color:#b8442e;line-height:1.6}
+.ps-finals{margin-top:9px;padding-top:7px;border-top:1px solid #dfe3e9;
+break-inside:avoid;page-break-inside:avoid}
+.ps-fin-t{font-size:8pt;font-weight:700;color:#111827;margin-bottom:5px}
+.ps-fin-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:3px 12px}
+.ps-fin{font-size:6.5pt;color:#5b6472;line-height:1.5;
+display:flex;gap:6px;flex-wrap:wrap;align-items:baseline}
+.ps-fin b{color:#111827;font-weight:700;direction:ltr;font-size:7pt}
 .ps-foot{margin-top:7px;padding-top:5px;border-top:1px solid #eef0f3;
 display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 }
@@ -603,6 +644,19 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     <div class="state-sub">روح لصفحة البحث واضغط ➕ على أي مادة</div>
   </div>
   <div id="schedDays"></div>
+
+  <!-- جدول الاختبارات النهائية -->
+  <div class="finals-card" id="finalsCard">
+    <div class="fin-head">
+      <div>
+        <div class="fin-title" data-i18n="finTitle">📝 اختباراتك النهائية</div>
+        <div class="fin-sub" id="finSub" data-i18n="finSub">من نفس المواد اللي في جدولك</div>
+      </div>
+      <button class="btn-sm ghost" onclick="loadFinals(1)" id="finBtn" data-i18n="finLoad">اعرض</button>
+    </div>
+    <div id="finBody"></div>
+  </div>
+
   <div id="printSheet"></div>
 </div>
 
@@ -774,7 +828,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
   </div>
 
   <div class="set-card">
-    <div class="sc-title">الحساب</div>
+    <div class="sc-title" data-i18n="acctSection">الحساب</div>
     <div class="set-row">
       <div class="set-info">
         <h4 id="accEmail">غير مسجل</h4>
@@ -782,6 +836,15 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
       </div>
       <button class="btn-sm ghost" onclick="handleAuth()" id="btnAcc">دخول</button>
     </div>
+  </div>
+
+  <div class="legal-foot">
+    <a href="/privacy" target="_blank" data-i18n="legalPrivacy">سياسة الخصوصية</a>
+    <span>·</span>
+    <a href="/terms" target="_blank" data-i18n="legalTerms">الشروط والأحكام</a>
+    <span>·</span>
+    <a href="mailto:jadwalik@gmail.com">jadwalik@gmail.com</a>
+    <div class="legal-note" data-i18n="legalNote">موقع مستقل غير تابع لجامعة الأمير محمد بن فهد</div>
   </div>
 
 </div>
@@ -805,6 +868,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 
 <script>
 const API='https://pmu-monitor.onrender.com/api/courses';
+const API_BASE=API.replace(/\/api\/courses$/,'');   /* نفس السيرفر، لبقية المسارات */
 
 /* ===== STUDY PLAN (Updated Spring 2026) ===== */
 /* ===== خطط 20 تخصص — PMU ===== */
@@ -2426,6 +2490,7 @@ function renderSchedule(){
   empty.classList.remove('visible');
   const cl=new Set();pairs.forEach(p=>{cl.add(p[0].crn);cl.add(p[1].crn)});
   buildPrintSheet(cl);
+  refreshFinalsIfOpen();
 
   wrap.innerHTML=DAY_KEYS.map(day=>{
     const items=schedule.filter(c=>parseDays(c.courseDate).includes(day))
@@ -2441,6 +2506,129 @@ function renderSchedule(){
     return `<div class="day-block"><div class="day-head"><span>${t('days')[day]}</span>
       <span class="cnt">${items.length} ${t('lecture')}</span></div>${body}</div>`;
   }).join('');
+}
+
+/* ═══════════ جدول الاختبارات النهائية ═══════════ */
+let FINALS=null, finalsLoading=false;
+
+const FIN_DAY_AR={Sunday:'الأحد',Monday:'الاثنين',Tuesday:'الثلاثاء',Wednesday:'الأربعاء',
+Thursday:'الخميس',Friday:'الجمعة',Saturday:'السبت'};
+
+/* "9:00AM" → دقائق من منتصف الليل */
+function finMinutes(h){
+  const m=String(h||'').trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if(!m)return 0;
+  let hh=parseInt(m[1],10)%12;
+  if(m[3].toUpperCase()==='PM')hh+=12;
+  return hh*60+parseInt(m[2],10);
+}
+function finDateKey(d){
+  const t=Date.parse(d);
+  return isNaN(t)?0:t;
+}
+
+async function loadFinals(manual){
+  const body=document.getElementById('finBody');
+  const btn=document.getElementById('finBtn');
+  if(finalsLoading)return;
+
+  if(!schedule.length){
+    body.innerHTML=`<div class="fin-empty">${t('finNoSched')}</div>`;
+    return;
+  }
+
+  if(!FINALS){
+    finalsLoading=true;
+    btn.disabled=true;
+    body.innerHTML='<div class="fin-spin"></div>';
+    try{
+      const r=await fetch(API_BASE+'/api/finals');
+      const d=await r.json();
+      if(!d.success)throw new Error(d.error||'fail');
+      FINALS=d.exams||[];
+    }catch(e){
+      body.innerHTML=`<div class="fin-empty">${t('finErr')}</div>`;
+      return;
+    }finally{ finalsLoading=false; btn.disabled=false; }
+  }
+  renderFinals();
+}
+
+function renderFinals(){
+  const body=document.getElementById('finBody');
+  const btn=document.getElementById('finBtn');
+  if(!FINALS)return;
+
+  /* المطابقة بالـ CRN أولاً، ثم بكود المادة والشعبة احتياطاً */
+  const byCrn={},byCodeSec={};
+  FINALS.forEach(e=>{
+    byCrn[String(e.crn).trim()]=e;
+    byCodeSec[(e.code+'|'+e.section).replace(/\s+/g,'').toUpperCase()]=e;
+  });
+
+  const found=[],missing=[];
+  schedule.forEach(c=>{
+    const k=(c.courseCode+'|'+(c.section||'')).replace(/\s+/g,'').toUpperCase();
+    const e=byCrn[String(c.crn).trim()]||byCodeSec[k];
+    if(e)found.push({...e,mine:c}); else missing.push(c);
+  });
+
+  if(!found.length){
+    body.innerHTML=`<div class="fin-empty">${t('finNone')}</div>`;
+    btn.textContent=t('finReload');
+    return;
+  }
+
+  /* ترتيب زمني */
+  found.sort((a,b)=>finDateKey(a.date)-finDateKey(b.date)||finMinutes(a.hour)-finMinutes(b.hour));
+
+  /* تعارض: اختباران في نفس اليوم ونفس الساعة */
+  const slot={};
+  found.forEach(e=>{const k=e.date+'|'+e.hour;(slot[k]=slot[k]||[]).push(e)});
+  const clashKeys=Object.keys(slot).filter(k=>slot[k].length>1);
+
+  /* تجميع بالأيام */
+  const days=[];
+  found.forEach(e=>{
+    let d=days.find(x=>x.date===e.date);
+    if(!d){d={date:e.date,day:e.day,items:[]};days.push(d)}
+    d.items.push(e);
+  });
+
+  const dayName=d=>LANG==='ar'?(FIN_DAY_AR[d]||d):d;
+
+  let html=days.map(d=>`
+    <div class="fin-day">
+      <div class="fin-daylabel">${dayName(d.day)} <span class="dd">${escapeHtml(d.date)}</span></div>
+      ${d.items.map(e=>{
+        const clash=slot[e.date+'|'+e.hour].length>1;
+        return `<div class="fin-row${clash?' clash':''}">
+          <div class="fin-time">${escapeHtml(e.hour)}</div>
+          <div class="fin-info">
+            <div class="fin-code">${escapeHtml(e.code)} §${escapeHtml(e.section)}</div>
+            <div class="fin-meta">${escapeHtml(e.title)}</div>
+          </div>
+          <div class="fin-room">${escapeHtml(e.building)}<br>${escapeHtml(e.room)}</div>
+        </div>`;
+      }).join('')}
+    </div>`).join('');
+
+  if(clashKeys.length){
+    html+=`<div class="fin-warn">⚠️ ${t('finClash')}</div>`;
+  }
+  if(missing.length){
+    html+=`<div class="fin-note">${t('finMissing')} <b>${
+      missing.map(c=>escapeHtml(c.courseCode)+' §'+escapeHtml(c.section||'')).join('، ')}</b></div>`;
+  }
+  html+=`<div class="fin-note">${t('finSource')}</div>`;
+
+  body.innerHTML=html;
+  btn.textContent=t('finReload');
+}
+
+/* لو تغيّر الجدول بعد العرض، نعيد الحساب بدون طلب جديد */
+function refreshFinalsIfOpen(){
+  if(FINALS && document.getElementById('finBody').innerHTML.trim()) renderFinals();
 }
 
 /* ===== ورقة الطباعة — شبكة أسبوعية ===== */
@@ -2567,10 +2755,34 @@ function buildPrintSheet(clashSet){
     ?'⚠ يوجد تعارض في الأوقات — المواد المتعارضة معلّمة بالأحمر.'
     :'⚠ Time conflict detected — clashing classes are marked in red.'}</div>`:'';
 
+  /* الاختبارات النهائية — تُطبع مع الجدول لو كانت معروضة */
+  let finals='';
+  if(FINALS && FINALS.length){
+    const byCrn={},byCS={};
+    FINALS.forEach(e=>{byCrn[String(e.crn).trim()]=e;
+      byCS[(e.code+'|'+e.section).replace(/\s+/g,'').toUpperCase()]=e});
+    const mine=[];
+    schedule.forEach(c=>{
+      const e=byCrn[String(c.crn).trim()]||
+              byCS[(c.courseCode+'|'+(c.section||'')).replace(/\s+/g,'').toUpperCase()];
+      if(e)mine.push(e);
+    });
+    if(mine.length){
+      mine.sort((a,b)=>finDateKey(a.date)-finDateKey(b.date)||finMinutes(a.hour)-finMinutes(b.hour));
+      finals=`<div class="ps-finals">
+        <div class="ps-fin-t">${t('finPrint')}</div>
+        <div class="ps-fin-grid">${mine.map(e=>
+          `<div class="ps-fin"><b>${escapeHtml(e.code)} §${escapeHtml(e.section)}</b>
+           <span>${escapeHtml(e.day)} ${escapeHtml(e.date)} · ${escapeHtml(e.hour)}</span>
+           <span>${escapeHtml(e.building)} ${escapeHtml(e.room)}</span></div>`).join('')}</div>
+      </div>`;
+    }
+  }
+
   const foot=`<div class="ps-foot"><span>jadwalik.com</span><span>${
     new Date().toLocaleDateString(LANG==='ar'?'ar-SA':'en-GB')}</span></div>`;
 
-  el.innerHTML=head+grid+legend+note+warn+foot;
+  el.innerHTML=head+grid+legend+note+warn+finals+foot;
 }
 
 function printSchedule(){
@@ -3343,6 +3555,18 @@ gpaRank:'التقدير',gpaFrom:'محسوب من',gpaFrom2:'مادة بدرجا
 critGroup:'🔴 لا تأجلها — تفتح لك مواد الترم الجاي',
 optGroup:'⚪ اختيارية — لك الخيار تنزلها أو تأجلها',
 unlocks:'يفتح',unlocks2:'مادة',
+acctSection:'الحساب',legalPrivacy:'سياسة الخصوصية',legalTerms:'الشروط والأحكام',
+legalNote:'موقع مستقل غير تابع لجامعة الأمير محمد بن فهد',
+finTitle:'📝 اختباراتك النهائية',finSub:'من نفس المواد اللي في جدولك',
+finLoad:'اعرض',finReload:'🔄 حدّث',
+finNoSched:'ابنِ جدولك أول، وبعدها تطلع لك اختباراتك هنا تلقائياً.',
+finNone:'ما لقيت اختبارات لموادك. غالباً الجامعة ما نشرت جدول هذا الترم بعد — جرّب بعدين.',
+finErr:'ما قدرت أجيب الجدول الحين. تأكد من الاتصال وجرّب مرة ثانية.',
+finFemale:'جدول اختبارات الطالبات ما هو متاح في الموقع حالياً. راجعي موقع الجامعة.',
+finClash:'عندك اختبارين في نفس اليوم والساعة — راجع القبول والتسجيل فوراً.',
+finMissing:'مواد ما لقيت لها اختبار:',
+finSource:'المصدر: جدول الاختبارات المعلن في موقع الجامعة. المرجع الرسمي هو موقع الجامعة — راجعه قبل كل اختبار.',
+finPrint:'الاختبارات النهائية',
 optAll:'الكل',optMale:'طلاب',optFemale:'طالبات',
 docRefresh:'🔄 حدّث القائمة',uniSoon:'جامعات ثانية — قريباً',
 tgSection:'إشعارات تيليغرام',monSection:'المواد المراقبة',
@@ -3396,6 +3620,18 @@ gpaRank:'Standing',gpaFrom:'based on',gpaFrom2:'graded courses',
 critGroup:'🔴 Do not delay — these unlock next term',
 optGroup:'⚪ Optional — take them or postpone',
 unlocks:'unlocks',unlocks2:'courses',
+acctSection:'Account',legalPrivacy:'Privacy Policy',legalTerms:'Terms of Service',
+legalNote:'An independent site, not affiliated with Prince Mohammad Bin Fahd University',
+finTitle:'📝 Your final exams',finSub:'Pulled from the courses in your schedule',
+finLoad:'Show',finReload:'🔄 Refresh',
+finNoSched:'Build your schedule first — your exams will appear here automatically.',
+finNone:'No exams found for your courses. The university likely has not published this term\'s schedule yet — check back later.',
+finErr:'Could not load the schedule right now. Check your connection and try again.',
+finFemale:'The female exam schedule is not available in the app yet. Please check the university website.',
+finClash:'You have two exams at the same day and hour — contact the Registration Office immediately.',
+finMissing:'Courses with no exam found:',
+finSource:'Source: the exam schedule published on the university website. The university site is the official reference — verify before every exam.',
+finPrint:'Final Exams',
 optAll:'All',optMale:'Male',optFemale:'Female',
 docRefresh:'🔄 Refresh list',uniSoon:'More universities — soon',
 tgSection:'Telegram notifications',monSection:'Monitored courses',

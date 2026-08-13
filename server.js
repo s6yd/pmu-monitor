@@ -520,6 +520,104 @@ async function adminUserDetail(userId) {
   };
 }
 
+/* ================================================================
+   ============      جدول الاختبارات النهائية      ============
+   ================================================================ */
+
+/* صفحات الجامعة. صفحة الطالبات تُضاف هنا لما نلقى رابطها. */
+const FINALS_PAGES = {
+  M: '/admission/final_exam_schedule_ro',
+  F: '/admission/final_exam_schedule_ro?ID=2'
+};
+
+/* كاش 6 ساعات — الجدول ما يتغير كثير، وما نبي نرهق موقع الجامعة */
+const finalsCache = { M: null, F: null };
+const FINALS_TTL = 6 * 60 * 60 * 1000;
+
+function fetchPage(pathname) {
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: 'pmu.edu.sa', path: pathname, method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9'
+      }
+    }, res => {
+      let d = '';
+      res.on('data', c => d += c);
+      res.on('end', () => resolve(d));
+    });
+    req.on('error', reject);
+    req.setTimeout(25000, () => { req.destroy(); reject(new Error('timeout')); });
+    req.end();
+  });
+}
+
+/* تنظيف خلية جدول */
+const cell = td => td
+  .replace(/<[^>]+>/g, ' ')
+  .replace(/&nbsp;/gi, ' ')
+  .replace(/&amp;/g, '&')
+  .replace(/&#39;|&apos;/g, "'")
+  .replace(/&quot;/g, '"')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+function parseFinals(html) {
+  const rows = [];
+  const seen = new Set();
+  /* الصفوف قد تحمل خصائص (class/style)، فنسمح بها */
+  for (const tr of (html.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi) || [])) {
+    const tds = (tr.match(/<td[^>]*>[\s\S]*?<\/td>/gi) || []).map(cell);
+    if (tds.length < 10) continue;
+    const crn = tds[0];
+    if (!/^\d{4,6}$/.test(crn)) continue;        // يتخطى صف العناوين
+    if (seen.has(crn)) continue;
+    seen.add(crn);
+    rows.push({
+      crn,
+      code:       tds[1],
+      title:      tds[2],
+      section:    tds[3],
+      instructor: tds[4],
+      building:   tds[5],
+      room:       tds[6],
+      day:        tds[7],
+      date:       tds[8],
+      hour:       tds[9]
+    });
+  }
+  return rows;
+}
+
+async function getOne(g) {
+  const c = finalsCache[g];
+  if (c && Date.now() - c.at < FINALS_TTL) return c;
+  const page = FINALS_PAGES[g];
+  if (!page) return { at: Date.now(), exams: [] };
+  const exams = parseFinals(await fetchPage(page));
+  exams.forEach(e => { e.gender = g; });
+  const out = { at: Date.now(), exams };
+  finalsCache[g] = out;
+  return out;
+}
+
+/* نسحب جدولي الطلاب والطالبات ونضمّهم.
+   الـ CRN فريد على مستوى الجامعة، فالمطابقة تظل دقيقة بدون ما نخمّن جنس الطالب. */
+async function getFinals() {
+  const [m, f] = await Promise.all([
+    getOne('M').catch(() => ({ at: Date.now(), exams: [] })),
+    getOne('F').catch(() => ({ at: Date.now(), exams: [] }))
+  ]);
+  const exams = m.exams.concat(f.exams);
+  return {
+    at: Math.min(m.at, f.at),
+    exams,
+    unavailable: exams.length === 0
+  };
+}
+
 /* ============ HTTP server ============ */
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -619,11 +717,44 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  /* جدول الاختبارات النهائية */
+  if (parsed.pathname === '/api/finals') {
+    res.setHeader('Content-Type', 'application/json');
+    try {
+      const d = await getFinals();
+      res.writeHead(200);
+      res.end(JSON.stringify({
+        success: true,
+        unavailable: d.unavailable,
+        count: d.exams.length,
+        fetchedAt: new Date(d.at).toISOString(),
+        exams: d.exams
+      }));
+    } catch (err) {
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: false, error: err.message, exams: [] }));
+    }
+    return;
+  }
+
   /* تشغيل دورة فحص يدوياً (للاختبار) */
   if (parsed.pathname === '/api/run-check') {
     res.setHeader('Content-Type', 'application/json');
     runMonitorCycle();
     res.writeHead(200); res.end(JSON.stringify({ started: true }));
+    return;
+  }
+
+  /* الصفحات القانونية — يطلبها قوقل وبوابات الدفع */
+  if (parsed.pathname === '/privacy' || parsed.pathname === '/privacy.html' ||
+      parsed.pathname === '/terms'   || parsed.pathname === '/terms.html') {
+    const file = parsed.pathname.includes('privacy') ? 'privacy.html' : 'terms.html';
+    try {
+      const html = fs.readFileSync(path.join(__dirname, file), 'utf8');
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      res.writeHead(200); res.end(html);
+    } catch (e) { res.writeHead(404); res.end('Not found'); }
     return;
   }
 
