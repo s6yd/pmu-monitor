@@ -407,6 +407,24 @@ box-shadow:0 8px 30px rgba(61,111,255,.4);transition:transform .3s;z-index:999;m
 .toast.warn{background:var(--warn)}
 .toast.err{background:var(--close)}
 
+/* ---- المواعيد المهمة ---- */
+.cal-card{background:var(--card);border:1px solid var(--border);
+border-radius:15px;padding:15px;margin-top:14px}
+.cal-row{display:flex;align-items:center;gap:11px;padding:9px 0;
+border-bottom:1px solid var(--border)}
+.cal-row:last-of-type{border-bottom:none}
+.cal-ic{font-size:16px;width:22px;text-align:center;flex-shrink:0}
+.cal-mid{flex:1;min-width:0}
+.cal-name{font-size:12.5px;font-weight:600;line-height:1.4}
+.cal-date{font-size:11px;color:var(--text3);margin-top:2px;font-family:var(--mono)}
+.cal-badge{font-size:10.5px;font-family:var(--mono);color:var(--text3);
+white-space:nowrap;flex-shrink:0;padding:3px 9px;border-radius:20px;
+background:var(--bg);border:1px solid var(--border)}
+.cal-row.soon .cal-badge{color:var(--warn);border-color:rgba(245,158,11,.35);background:var(--warn-bg)}
+.cal-row.live .cal-badge{color:var(--open);border-color:rgba(16,185,129,.35);background:var(--open-bg)}
+.cal-row.warn .cal-name{color:var(--warn)}
+.cal-row.exam .cal-name{color:var(--close)}
+
 /* ---- جدول الاختبارات النهائية ---- */
 .finals-card{background:var(--card);border:1px solid var(--border);
 border-radius:15px;padding:15px;margin-top:14px}
@@ -449,7 +467,7 @@ margin:0!important;padding:0!important;min-height:0!important}
 /* اخفِ واجهة الشاشة كاملة */
 .topbar,.tabs,.sched-actions,.slot-remove,.conflict-alert,.sched-summary,
 .guide-fab,.guide-overlay,.toast,.state-box,.sync-note,.next-check,
-#schedDays,.modal,.overlay{display:none!important}
+#schedDays,.modal,.overlay,.finals-card,.cal-card,.legal-foot{display:none!important}
 .page{display:none!important}
 .main{padding:0!important;max-width:none!important;margin:0!important}
 #pageSched{display:block!important}
@@ -511,10 +529,16 @@ break-inside:avoid;page-break-inside:avoid}
 .ps-finals{margin-top:9px;padding-top:7px;border-top:1px solid #dfe3e9;
 break-inside:avoid;page-break-inside:avoid}
 .ps-fin-t{font-size:8pt;font-weight:700;color:#111827;margin-bottom:5px}
-.ps-fin-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:3px 12px}
-.ps-fin{font-size:6.5pt;color:#5b6472;line-height:1.5;
-display:flex;gap:6px;flex-wrap:wrap;align-items:baseline}
-.ps-fin b{color:#111827;font-weight:700;direction:ltr;font-size:7pt}
+.ps-fin-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
+.ps-fin{padding:3px 6px;border-radius:3px;background:var(--c2);
+border-right:2.5px solid var(--c);overflow:hidden}
+.ps-fin.cl{border-right-color:#b8442e;background:#fbeeeb}
+.ps-fin-code{font-size:7pt;font-weight:700;color:var(--c);direction:ltr;
+text-align:right;line-height:1.2}
+.ps-fin.cl .ps-fin-code{color:#b8442e}
+.ps-fin-when{font-size:5.8pt;color:#5b6472;direction:ltr;text-align:right;
+margin-top:1px;font-family:var(--mono)}
+.ps-fin-where{font-size:5.8pt;color:#9aa3b0;direction:ltr;text-align:right;margin-top:1px}
 .ps-foot{margin-top:7px;padding-top:5px;border-top:1px solid #eef0f3;
 display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 }
@@ -644,6 +668,17 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     <div class="state-sub">روح لصفحة البحث واضغط ➕ على أي مادة</div>
   </div>
   <div id="schedDays"></div>
+
+  <!-- المواعيد المهمة -->
+  <div class="cal-card" id="calCard">
+    <div class="fin-head">
+      <div>
+        <div class="fin-title" data-i18n="calTitle">🗓️ مواعيد تهمك</div>
+        <div class="fin-sub" data-i18n="calSub">من التقويم الأكاديمي المعتمد</div>
+      </div>
+    </div>
+    <div id="calBody"></div>
+  </div>
 
   <!-- جدول الاختبارات النهائية -->
   <div class="finals-card" id="finalsCard">
@@ -2331,6 +2366,7 @@ function switchTab(n){
   });
   if(n==='sched')renderSchedule();
   if(n==='plan')renderPlan();
+  if(n==='sched')renderCalendar();
   if(n==='set')renderSettings();
   if(n==='docs'){if(!currentDoc){document.getElementById('docsList').style.display='block';
     document.getElementById('docDetail').style.display='none';
@@ -2506,6 +2542,90 @@ function renderSchedule(){
     return `<div class="day-block"><div class="day-head"><span>${t('days')[day]}</span>
       <span class="cnt">${items.length} ${t('lecture')}</span></div>${body}</div>`;
   }).join('');
+}
+
+/* ═══════════ التقويم الأكاديمي 2026/2027 ═══════════ */
+/* المصدر: تقويم الجامعة المعتمد. t=نوع الحدث للتلوين */
+const ACAD_CAL=[
+/* ── الترم الأول ── */
+{s:'2026-08-23',e:'2026-08-27',t:'reg', ar:'فترة التسجيل',                 en:'Registration period'},
+{s:'2026-08-30',              t:'start',ar:'بداية الدراسة — الترم الأول',   en:'Classes begin — Fall'},
+{s:'2026-08-30',e:'2026-09-03',t:'add', ar:'التسجيل المتأخر والحذف والإضافة',en:'Late registration & Add/Drop'},
+{s:'2026-09-10',              t:'add',  ar:'آخر يوم للحذف بدون رسوم',       en:'Last day to drop without charge'},
+{s:'2026-09-23',e:'2026-09-26',t:'off', ar:'إجازة اليوم الوطني',            en:'National Day holiday'},
+{s:'2026-11-05',              t:'warn', ar:'آخر يوم للانسحاب بتقدير W',     en:'Last day to withdraw with "W"'},
+{s:'2026-11-22',e:'2026-11-24',t:'off', ar:'إجازة منتصف الترم',             en:'Mid-term break'},
+{s:'2026-12-17',              t:'warn', ar:'آخر يوم للانسحاب بـ WP/WF وتغيير التخصص',en:'Last day for WP/WF & major change'},
+{s:'2026-12-20',e:'2026-12-30',t:'exam',ar:'الاختبارات النهائية',           en:'Final exams'},
+{s:'2027-01-03',e:'2027-01-16',t:'off', ar:'إجازة منتصف السنة',             en:'Mid-year break'},
+{s:'2027-01-15',              t:'note', ar:'آخر يوم للتظلم على الدرجات',    en:'Last day for grade appeal'},
+/* ── الترم الثاني ── */
+{s:'2027-01-10',e:'2027-01-14',t:'reg', ar:'فترة التسجيل',                 en:'Registration period'},
+{s:'2027-01-17',              t:'start',ar:'بداية الدراسة — الترم الثاني',  en:'Classes begin — Spring'},
+{s:'2027-01-17',e:'2027-01-21',t:'add', ar:'التسجيل المتأخر والحذف والإضافة',en:'Late registration & Add/Drop'},
+{s:'2027-01-28',              t:'add',  ar:'آخر يوم للحذف بدون رسوم',       en:'Last day to drop without charge'},
+{s:'2027-02-19',e:'2027-02-22',t:'off', ar:'إجازة يوم التأسيس',             en:'Founding Day holiday'},
+{s:'2027-02-28',e:'2027-03-13',t:'off', ar:'إجازة عيد الفطر',               en:'Eid Al-Fitr holiday'},
+{s:'2027-04-08',              t:'warn', ar:'آخر يوم للانسحاب بتقدير W',     en:'Last day to withdraw with "W"'},
+{s:'2027-04-11',e:'2027-04-15',t:'reg', ar:'التسجيل المبكر للصيفي',         en:'Early registration — Summer'},
+{s:'2027-05-11',e:'2027-05-22',t:'off', ar:'إجازة عيد الأضحى',              en:'Eid Al-Adha holiday'},
+{s:'2027-05-27',              t:'warn', ar:'آخر يوم للانسحاب بـ WP/WF وتغيير التخصص',en:'Last day for WP/WF & major change'},
+{s:'2027-05-30',e:'2027-06-09',t:'exam',ar:'الاختبارات النهائية',           en:'Final exams'},
+{s:'2027-06-25',              t:'note', ar:'آخر يوم للتظلم على الدرجات',    en:'Last day for grade appeal'},
+/* ── الترم الصيفي ── */
+{s:'2027-06-15',e:'2027-06-19',t:'reg', ar:'تأكيد التسجيل للمسجّلين مسبقاً',en:'Registration confirmation'},
+{s:'2027-06-20',              t:'start',ar:'بداية الدراسة — الصيفي',        en:'Classes begin — Summer'},
+{s:'2027-06-20',e:'2027-06-22',t:'add', ar:'التسجيل المتأخر والحذف والإضافة',en:'Late registration & Add/Drop'},
+{s:'2027-07-22',              t:'warn', ar:'آخر يوم للانسحاب بتقدير W',     en:'Last day to withdraw with "W"'},
+{s:'2027-08-12',              t:'warn', ar:'آخر يوم للانسحاب بـ WP/WF وتغيير التخصص',en:'Last day for WP/WF & major change'},
+{s:'2027-08-15',e:'2027-08-17',t:'exam',ar:'الاختبارات النهائية',           en:'Final exams'},
+{s:'2027-08-29',              t:'start',ar:'بداية الترم الأول 2027/2028',   en:'Fall 2027/2028 begins'}
+];
+
+const CAL_ICON={reg:'📝',start:'🎓',add:'🔁',off:'🌴',warn:'⚠️',exam:'📕',note:'📌'};
+
+function calDays(d){
+  const now=new Date(); now.setHours(0,0,0,0);
+  return Math.round((new Date(d+'T00:00:00')-now)/864e5);
+}
+function calFmt(d){
+  return new Date(d+'T00:00:00').toLocaleDateString(LANG==='ar'?'ar-SA':'en-GB',
+    {day:'numeric',month:'short'});
+}
+
+function renderCalendar(){
+  const box=document.getElementById('calBody');
+  if(!box)return;
+
+  const items=ACAD_CAL.map(e=>{
+    const dS=calDays(e.s), dE=e.e?calDays(e.e):dS;
+    return {...e,dS,dE,live:dS<=0&&dE>=0};
+  }).filter(e=>e.dE>=0)                       /* نخفي اللي انتهى */
+    .sort((a,b)=>a.dS-b.dS)
+    .slice(0,5);
+
+  if(!items.length){
+    box.innerHTML=`<div class="fin-empty">${t('calDone')}</div>`;
+    return;
+  }
+
+  box.innerHTML=items.map(e=>{
+    const label=LANG==='ar'?e.ar:e.en;
+    const range=e.e?`${calFmt(e.s)} – ${calFmt(e.e)}`:calFmt(e.s);
+    let badge,cls='';
+    if(e.live){ badge=t('calNow'); cls='live'; }
+    else if(e.dS===0){ badge=t('calToday'); cls='live'; }
+    else if(e.dS===1){ badge=t('calTomorrow'); cls='soon'; }
+    else { badge=`${t('calIn')} ${e.dS} ${t('calDays')}`; cls=e.dS<=7?'soon':''; }
+    return `<div class="cal-row ${e.t} ${cls}">
+      <div class="cal-ic">${CAL_ICON[e.t]||'•'}</div>
+      <div class="cal-mid">
+        <div class="cal-name">${escapeHtml(label)}</div>
+        <div class="cal-date">${range}</div>
+      </div>
+      <div class="cal-badge">${badge}</div>
+    </div>`;
+  }).join('')+`<div class="fin-note">${t('calSource')}</div>`;
 }
 
 /* ═══════════ جدول الاختبارات النهائية ═══════════ */
@@ -2769,12 +2889,21 @@ function buildPrintSheet(clashSet){
     });
     if(mine.length){
       mine.sort((a,b)=>finDateKey(a.date)-finDateKey(b.date)||finMinutes(a.hour)-finMinutes(b.hour));
+      /* تعارض الاختبارات */
+      const eslot={};
+      mine.forEach(e=>{const k=e.date+'|'+e.hour;(eslot[k]=eslot[k]||[]).push(e)});
+
       finals=`<div class="ps-finals">
         <div class="ps-fin-t">${t('finPrint')}</div>
-        <div class="ps-fin-grid">${mine.map(e=>
-          `<div class="ps-fin"><b>${escapeHtml(e.code)} §${escapeHtml(e.section)}</b>
-           <span>${escapeHtml(e.day)} ${escapeHtml(e.date)} · ${escapeHtml(e.hour)}</span>
-           <span>${escapeHtml(e.building)} ${escapeHtml(e.room)}</span></div>`).join('')}</div>
+        <div class="ps-fin-grid">${mine.map(e=>{
+          const col=colorOf[e.code]||PS_COLORS[0];
+          const cl=eslot[e.date+'|'+e.hour].length>1;
+          return `<div class="ps-fin${cl?' cl':''}" style="--c:${col[0]};--c2:${col[1]}">
+            <div class="ps-fin-code">${escapeHtml(e.code)} §${escapeHtml(e.section)}</div>
+            <div class="ps-fin-when">${escapeHtml(e.day).slice(0,3)} ${escapeHtml(e.date)} · ${escapeHtml(e.hour)}</div>
+            <div class="ps-fin-where">${escapeHtml(e.building)} · ${escapeHtml(e.room)}</div>
+          </div>`;
+        }).join('')}</div>
       </div>`;
     }
   }
@@ -2813,6 +2942,7 @@ function toggleDone(code){
   }
   save('pmu_completed',completed);pushCompleted();
   applyMajor(MAJOR,true);
+  renderCalendar();
   renderPlan();
   if(allCourses.length)renderResults();
 }
@@ -3557,6 +3687,10 @@ optGroup:'⚪ اختيارية — لك الخيار تنزلها أو تأجل�
 unlocks:'يفتح',unlocks2:'مادة',
 acctSection:'الحساب',legalPrivacy:'سياسة الخصوصية',legalTerms:'الشروط والأحكام',
 legalNote:'موقع مستقل غير تابع لجامعة الأمير محمد بن فهد',
+calTitle:'🗓️ مواعيد تهمك',calSub:'من التقويم الأكاديمي المعتمد',
+calNow:'جارٍ الآن',calToday:'اليوم',calTomorrow:'بكرة',calIn:'بعد',calDays:'يوم',
+calDone:'ما في مواعيد قادمة في التقويم الحالي.',
+calSource:'المصدر: التقويم الأكاديمي المعتمد 2026/2027. التقويم قابل للتعديل — راجع موقع الجامعة.',
 finTitle:'📝 اختباراتك النهائية',finSub:'من نفس المواد اللي في جدولك',
 finLoad:'اعرض',finReload:'🔄 حدّث',
 finNoSched:'ابنِ جدولك أول، وبعدها تطلع لك اختباراتك هنا تلقائياً.',
@@ -3622,6 +3756,10 @@ optGroup:'⚪ Optional — take them or postpone',
 unlocks:'unlocks',unlocks2:'courses',
 acctSection:'Account',legalPrivacy:'Privacy Policy',legalTerms:'Terms of Service',
 legalNote:'An independent site, not affiliated with Prince Mohammad Bin Fahd University',
+calTitle:'🗓️ Dates that matter',calSub:'From the official academic calendar',
+calNow:'Now',calToday:'Today',calTomorrow:'Tomorrow',calIn:'in',calDays:'days',
+calDone:'No upcoming dates in the current calendar.',
+calSource:'Source: official 2026/2027 academic calendar. Dates may change — check the university website.',
 finTitle:'📝 Your final exams',finSub:'Pulled from the courses in your schedule',
 finLoad:'Show',finReload:'🔄 Refresh',
 finNoSched:'Build your schedule first — your exams will appear here automatically.',
@@ -3709,6 +3847,8 @@ function applyLang(){
   if(document.getElementById('guideOverlay').classList.contains('open'))renderGuide();
   if(currentDoc)renderDocDetail();else if(instructors.length)renderDocs();
   if(document.getElementById('pageSched').classList.contains('active'))renderSchedule();
+  renderCalendar();
+  if(FINALS)renderFinals();
 }
 
 function setStateBox(id,title,sub){
