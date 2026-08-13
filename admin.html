@@ -56,6 +56,50 @@ display:grid;grid-template-columns:repeat(4,1fr)}
 .tab{background:none;border:none;color:var(--text3);font-family:var(--sans);
 font-size:12px;font-weight:600;padding:12px 2px;cursor:pointer;position:relative}
 .tab.active{color:var(--accent2)}
+.tabs5{grid-template-columns:repeat(5,1fr)}
+.tabs5 .tab{font-size:11px}
+.tab-dot{display:none;width:6px;height:6px;border-radius:50%;background:var(--close);
+position:absolute;top:9px;inset-inline-end:6px}
+.tab-dot.on{display:block}
+.tab-dot.warn{background:var(--warn)}
+
+/* لوحة النظام */
+.alert{border-radius:12px;padding:12px 14px;margin-bottom:9px;
+display:flex;gap:11px;align-items:flex-start}
+.alert.bad{background:var(--close-bg);border:1px solid rgba(244,63,94,.32)}
+.alert.warn{background:var(--warn-bg);border:1px solid rgba(245,158,11,.3)}
+.alert.ok{background:var(--open-bg);border:1px solid rgba(16,185,129,.28)}
+.alert-ic{font-size:15px;flex-shrink:0;line-height:1.5}
+.alert-t{font-size:13px;font-weight:700;line-height:1.45}
+.alert.bad .alert-t{color:var(--close)}
+.alert.warn .alert-t{color:var(--warn)}
+.alert.ok .alert-t{color:var(--open)}
+.alert-h{font-size:11.5px;color:var(--text2);margin-top:4px;line-height:1.6}
+
+.gauge{background:var(--card);border:1px solid var(--border);border-radius:14px;
+padding:15px;margin-bottom:12px}
+.gauge-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:9px}
+.gauge-lbl{font-size:12px;color:var(--text2)}
+.gauge-val{font-family:var(--mono);font-size:15px;font-weight:500}
+.bar{height:7px;background:var(--bg);border-radius:20px;overflow:hidden}
+.bar span{display:block;height:100%;border-radius:20px;background:var(--open);transition:width .4s}
+.bar span.warn{background:var(--warn)}
+.bar span.bad{background:var(--close)}
+.gauge-sub{font-size:11px;color:var(--text3);margin-top:7px;line-height:1.6}
+
+.spark{display:flex;align-items:flex-end;gap:2px;height:44px;margin:10px 0 6px}
+.spark i{flex:1;background:var(--accent);border-radius:2px 2px 0 0;min-height:2px;opacity:.85}
+.spark i.warn{background:var(--warn)}
+.spark i.bad{background:var(--close)}
+.spark-ax{display:flex;justify-content:space-between;font-size:10px;
+color:var(--text3);font-family:var(--mono)}
+
+.kv{display:flex;justify-content:space-between;padding:8px 0;
+border-bottom:1px solid var(--border);font-size:12.5px}
+.kv:last-child{border-bottom:none}
+.kv span{color:var(--text3)}
+.kv b{font-family:var(--mono);font-weight:500}
+.kv b.good{color:var(--open)}.kv b.warn{color:var(--warn)}.kv b.bad{color:var(--close)}
 .tab.active::after{content:'';position:absolute;bottom:0;left:15%;right:15%;
 height:2px;background:var(--accent);border-radius:2px}
 
@@ -203,11 +247,12 @@ padding:1px 6px;border-radius:5px;color:var(--accent2)}
   </div>
 </div>
 
-<div class="tabs">
+<div class="tabs tabs5">
   <button class="tab active" data-p="over"  onclick="go('over')">نظرة عامة</button>
   <button class="tab"        data-p="users" onclick="go('users')">المستخدمين</button>
   <button class="tab"        data-p="revs"  onclick="go('revs')">التقييمات</button>
   <button class="tab"        data-p="mons"  onclick="go('mons')">المراقبة</button>
+  <button class="tab"        data-p="sys"   onclick="go('sys')">النظام<span class="tab-dot" id="sysDot"></span></button>
 </div>
 
 <div class="main">
@@ -245,6 +290,10 @@ padding:1px 6px;border-radius:5px;color:var(--accent2)}
 
   <div class="page" id="pageMons">
     <div id="monsBody"><div class="spinner"></div></div>
+  </div>
+
+  <div class="page" id="pageSys">
+    <div id="sysBody"><div class="spinner"></div></div>
   </div>
 
 </div>
@@ -312,7 +361,7 @@ function logout(){
 /* ══════════ تنقل ══════════ */
 function go(p){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.p===p));
-  const ids={over:'pageOver',users:'pageUsers',revs:'pageRevs',mons:'pageMons'};
+  const ids={over:'pageOver',users:'pageUsers',revs:'pageRevs',mons:'pageMons',sys:'pageSys'};
   document.querySelectorAll('.page').forEach(el=>el.classList.remove('active'));
   document.getElementById(ids[p]).classList.add('active');
 }
@@ -348,7 +397,7 @@ async function loadAll(){
       api('health').catch(()=>null)
     ]);
     STATS=s; USERS=u.users||[]; REVS=r.reviews||[]; MONS=m.monitors||[]; HEALTH=h;
-    renderOver(); renderUsers(); renderRevs(); renderMons();
+    renderOver(); renderUsers(); renderRevs(); renderMons(); renderSys();
   }catch(e){ toast(e.message,'err') }
 }
 
@@ -652,6 +701,113 @@ async function delRev(key,instructor){
     toast('انحذف التقييم','ok');
     await loadAll();
   }catch(e){ toast(e.message,'err') }
+}
+
+/* ══════════ لوحة النظام ══════════ */
+function renderSys(){
+  const box=document.getElementById('sysBody');
+  const h=HEALTH;
+  if(!h){ box.innerHTML='<div class="fin-empty">ما وصلت بيانات النظام.</div>'; return }
+
+  /* نقطة التنبيه على التبويب */
+  const dot=document.getElementById('sysDot');
+  const bad=(h.warnings||[]).some(w=>w.level==='bad');
+  const wrn=(h.warnings||[]).some(w=>w.level==='warn');
+  dot.className='tab-dot'+(bad?' on':wrn?' on warn':'');
+
+  /* ── التحذيرات ── */
+  let alerts='';
+  if(!h.warnings||!h.warnings.length){
+    alerts=`<div class="alert ok"><div class="alert-ic">✅</div>
+      <div><div class="alert-t">كل شي شغّال تمام</div>
+      <div class="alert-h">ما فيه أي تحذير. البوت يرسل، الجامعة تستجيب، والدورات تلحق وقتها.</div></div></div>`;
+  }else{
+    alerts=h.warnings.map(w=>`<div class="alert ${w.level}">
+      <div class="alert-ic">${w.level==='bad'?'🔴':'🟡'}</div>
+      <div><div class="alert-t">${esc(w.ar)}</div>
+      ${w.hint?`<div class="alert-h">${esc(w.hint)}</div>`:''}</div></div>`).join('');
+  }
+
+  /* ── مقياس الحمل ── */
+  const load=h.loadPct||0;
+  const loadCls=load>85?'bad':load>60?'warn':'';
+  const gauge=`<div class="gauge">
+    <div class="gauge-top"><span class="gauge-lbl">الحمل الحالي</span>
+      <span class="gauge-val ${loadCls==='bad'?'':''}">${load}%</span></div>
+    <div class="bar"><span class="${loadCls}" style="width:${load}%"></span></div>
+    <div class="gauge-sub">${h.monitorRows} صف مراقبة · السعة التقديرية ≈ ${h.capacity} طالب في أقصى ذروة</div>
+  </div>`;
+
+  /* ── رسم بياني لأزمنة الدورات ── */
+  const cy=h.cycles||[];
+  let spark='';
+  if(cy.length){
+    const mx=Math.max(60,...cy.map(c=>c.sec));
+    spark=`<div class="gauge">
+      <div class="gauge-top"><span class="gauge-lbl">زمن آخر ${cy.length} دورة</span>
+        <span class="gauge-val">${h.cycleAvgSec}ث متوسط</span></div>
+      <div class="spark">${cy.map(c=>{
+        const pct=Math.max(4,c.sec/mx*100);
+        const cls=c.sec>240?'bad':c.sec>150?'warn':'';
+        return `<i class="${cls}" style="height:${pct}%" title="${c.sec}ث · ${c.notified} إشعار"></i>`;
+      }).join('')}</div>
+      <div class="spark-ax"><span>${h.cycleMaxSec}ث أعلى</span><span>الحد 300ث</span></div>
+      <div class="gauge-sub">${h.lastCycleAgoSec!==null?`آخر دورة قبل ${h.lastCycleAgoSec} ثانية`:'ما فيه دورة بعد'}</div>
+    </div>`;
+  }
+
+  /* ── تفاصيل ── */
+  const L=h.lastCycle||{};
+  const st=(v,g,w)=>v>=w?'bad':v>=g?'warn':'good';
+
+  const detail=`
+  <div class="sec-title">آخر دورة مراقبة</div>
+  <div class="gauge">
+    <div class="kv"><span>صفوف مفحوصة</span><b>${L.rows??'—'}</b></div>
+    <div class="kv"><span>حالات تغيّرت</span><b>${L.changed??'—'}</b></div>
+    <div class="kv"><span>إشعارات أُرسلت</span><b class="good">${L.notified??'—'}</b></div>
+    <div class="kv"><span>الزمن</span><b class="${L.sec>240?'bad':L.sec>150?'warn':'good'}">${L.sec??'—'} ثانية</b></div>
+    ${L.error?`<div class="kv"><span>خطأ</span><b class="bad">${esc(L.error)}</b></div>`:''}
+  </div>
+
+  <div class="sec-title">الاتصالات الخارجية</div>
+  <div class="gauge">
+    <div class="kv"><span>بوت تيليغرام</span>
+      <b class="${h.telegramOk?'good':'bad'}">${h.telegramOk?esc(h.telegramName||'شغّال'):'متوقف'}</b></div>
+    <div class="kv"><span>موقع الجامعة</span>
+      <b class="${h.pmuOk===false?'bad':h.pmuOk?'good':''}">${h.pmuOk===false?'فشل':h.pmuOk?'يستجيب':'—'}</b></div>
+    <div class="kv"><span>Supabase</span><b class="${h.supabase==='مضبوط'?'good':'bad'}">${esc(h.supabase)}</b></div>
+    <div class="kv"><span>رسائل فشلت</span><b class="${h.tgFails?'warn':'good'}">${h.tgFails}</b></div>
+    <div class="kv"><span>فشل سحب من الجامعة</span><b class="${h.pmuFails>3?'warn':'good'}">${h.pmuFails}</b></div>
+  </div>
+
+  <div class="sec-title">البحث والكاش</div>
+  <div class="gauge">
+    <div class="kv"><span>عمليات بحث</span><b>${h.searches}</b></div>
+    <div class="kv"><span>مخدومة من الكاش</span>
+      <b class="${h.cacheHitPct===null?'':h.cacheHitPct>=60?'good':'warn'}">${h.cacheHitPct===null?'—':h.cacheHitPct+'%'}</b></div>
+    <div class="kv"><span>من نسخة قديمة</span><b class="${h.searchStale?'warn':'good'}">${h.searchStale}</b></div>
+  </div>
+
+  <div class="sec-title">السيرفر</div>
+  <div class="gauge">
+    <div class="kv"><span>يعمل منذ</span><b>${h.uptimeHours} ساعة</b></div>
+    <div class="kv"><span>الذاكرة</span>
+      <b class="${h.memPct>85?'bad':h.memPct>70?'warn':'good'}">${h.memMB} م.ب · ${h.memPct}%</b></div>
+    <div class="kv"><span>دورات تخطّت</span><b class="${h.skipped?'warn':'good'}">${h.skipped}</b></div>
+    <div class="kv"><span>دورات مسجّلة</span><b>${h.cycleCount}</b></div>
+  </div>
+
+  ${h.lastError?`<div class="sec-title">آخر خطأ</div>
+  <div class="gauge"><div class="kv"><span>${esc(h.lastError.where)}</span>
+    <b class="bad">${esc(h.lastError.msg)}</b></div>
+    <div class="gauge-sub">${fdate(new Date(h.lastError.at).toISOString())}</div></div>`:''}
+
+  <div class="fin-note" style="color:var(--text3);font-size:11px;margin-top:14px;line-height:1.7">
+    العدّادات تُصفّر مع كل إعادة نشر على Render. الدورة تشتغل كل 5 دقائق (300 ثانية).
+  </div>`;
+
+  box.innerHTML=alerts+gauge+spark+detail;
 }
 
 /* ══════════ المراقبة ══════════ */

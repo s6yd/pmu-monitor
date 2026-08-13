@@ -138,14 +138,33 @@ async function inBatches(items, size, fn) {
 
 let cycleRunning = false;
 
+/* سجل تشغيلي — يُقرأ من لوحة التحكم. في الذاكرة فقط، يُصفّر عند إعادة النشر. */
+const OPS = {
+  bootedAt: Date.now(),
+  cycles: [],          // آخر 40 دورة
+  skipped: 0,          // دورات تخطّت لأن السابقة ما خلصت
+  pmuFails: 0,         // فشل سحب من الجامعة
+  tgFails: 0,          // رسائل تيليغرام فشلت
+  searches: 0,         // عمليات بحث
+  searchesCached: 0,   // منها المخدومة من الكاش
+  searchStale: 0,      // مخدومة من نسخة قديمة (الجامعة واقعة)
+  lastError: null
+};
+function logCycle(c) {
+  OPS.cycles.push(c);
+  if (OPS.cycles.length > 40) OPS.cycles.shift();
+}
+
 async function runMonitorCycle() {
   if (!SB_URL || !SB_SERVICE_KEY) return;
 
   /* قفل: لو الدورة السابقة ما خلصت، ما نبدأ وحدة جديدة فوقها.
      بدونه الدورات تتراكم في الذروة وتاكل الذاكرة. */
-  if (cycleRunning) { console.log('cycle still running — skipped'); return; }
+  if (cycleRunning) { OPS.skipped++; console.log('cycle still running — skipped'); return; }
   cycleRunning = true;
   const t0 = Date.now();
+  const stat = { at: t0, rows: 0, changed: 0, toNotify: 0, eligible: 0,
+                 notified: 0, terms: 0, snapshot: 0, sec: 0, error: null };
 
   try {
     const monitors = await sb('GET', 'monitored_courses', { query: '?select=*' });
@@ -158,13 +177,17 @@ async function runMonitorCycle() {
       try {
         const html = await fetchPMUData(term, 'ALL', 'ALL');
         parseHTML(html).forEach(c => { snapshot[term + ':' + c.crn] = c; });
-      } catch (e) { console.log('fetch fail', term, e.message); }
+      } catch (e) { OPS.pmuFails++; console.log('fetch fail', term, e.message); }
       await new Promise(r => setTimeout(r, 1500));
     }
 
     const now = new Date().toISOString();
 
     /* ── 2. نحدد الصفوف اللي تغيّرت حالتها ── */
+    stat.rows = monitors.length;
+    stat.terms = terms.length;
+    stat.snapshot = Object.keys(snapshot).length;
+
     const changed = [];      // {m, live}
     const toNotify = [];     // {m, live}
     for (const m of monitors) {
@@ -175,6 +198,8 @@ async function runMonitorCycle() {
         if (live.status === 'OPEN' && m.last_status !== 'OPEN') toNotify.push({ m, live });
       }
     }
+    stat.changed = changed.length;
+    stat.toNotify = toNotify.length;
     if (!changed.length) return;
 
     /* ── 3. تحديث الحالة بالجملة ──
@@ -222,6 +247,7 @@ async function runMonitorCycle() {
 
     /* ── 6. إرسال على دفعات متوازية ──
        تيليغرام يسمح بحوالي 30 رسالة/ثانية، فدفعات من 20 مع فاصل بسيط آمنة. */
+    stat.eligible = sendList.length;
     const notified = [];
     await inBatches(sendList, 20, async ({ m, live }) => {
       const p = profiles[m.user_id];
@@ -234,7 +260,7 @@ async function runMonitorCycle() {
         `👤 ${live.instructor || '—'}\n` +
         `🏛️ ${live.room || '—'}\n\n` +
         `⚡️ سجّل الحين قبل ما تنسكر!`);
-      if (r && r.ok) notified.push(m.id);
+      if (r && r.ok) notified.push(m.id); else OPS.tgFails++;
       await new Promise(r2 => setTimeout(r2, 700));   // تهدئة بين الدفعات
     });
 
@@ -248,11 +274,16 @@ async function runMonitorCycle() {
       });
     }
 
+    stat.notified = notified.length;
     console.log(`cycle: ${monitors.length} rows | ${changed.length} changed | ` +
                 `${notified.length} notified | ${((Date.now() - t0) / 1000).toFixed(1)}s`);
   } catch (e) {
+    stat.error = e.message;
+    OPS.lastError = { at: Date.now(), where: 'monitorCycle', msg: e.message };
     console.log('monitor cycle error', e.message);
   } finally {
+    stat.sec = Number(((Date.now() - t0) / 1000).toFixed(1));
+    logCycle(stat);
     cycleRunning = false;
   }
 }
@@ -523,17 +554,128 @@ async function adminNotify(userId, text) {
 
 /* --- فحص صحة الإعدادات --- */
 async function adminHealth() {
-  const out = {
-    telegramToken: TELEGRAM_TOKEN ? 'مضبوط' : 'ناقص',
-    supabase: SB_URL && SB_SERVICE_KEY ? 'مضبوط' : 'ناقص',
-    telegramOk: false, telegramName: null, telegramError: null
-  };
+  const now = Date.now();
+  const C = OPS.cycles;
+  const last = C[C.length - 1] || null;
+  const recent = C.slice(-12);
+
+  const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0;
+  const secs = recent.map(c => c.sec);
+
+  /* ── تيليغرام ── */
+  let tgOk = false, tgName = null, tgErr = null;
   if (TELEGRAM_TOKEN) {
     const me = await tg('getMe', {});
-    if (me && me.ok) { out.telegramOk = true; out.telegramName = '@' + me.result.username; }
-    else out.telegramError = (me && me.description) || 'ما وصل رد من تيليغرام';
-  }
-  return out;
+    if (me && me.ok) { tgOk = true; tgName = '@' + me.result.username; }
+    else tgErr = (me && me.description) || 'ما وصل رد من تيليغرام';
+  } else tgErr = 'TELEGRAM_TOKEN غير مضبوط';
+
+  /* ── الجامعة: هل آخر سحبة نجحت؟ ── */
+  const pmuOk = last ? last.snapshot > 0 : null;
+
+  /* ── الحمل ── */
+  const monitors = await sb('GET', 'monitored_courses', { query: '?select=id' })
+    .then(r => Array.isArray(r) ? r.length : 0).catch(() => 0);
+
+  const mem = process.memoryUsage();
+  const cacheHitRate = OPS.searches ? OPS.searchesCached / OPS.searches : null;
+
+  /* ── التحذيرات ── */
+  const warn = [];
+  const add = (level, ar, en, hint) => warn.push({ level, ar, en, hint });
+
+  if (!tgOk)
+    add('bad', 'بوت تيليغرام ما يرسل', 'Telegram bot cannot send',
+        tgErr + ' — تأكد أن TELEGRAM_TOKEN في Render بدون مسافات.');
+
+  if (pmuOk === false)
+    add('bad', 'آخر سحبة من الجامعة فشلت', 'Last university fetch failed',
+        'موقع الجامعة قد يكون معطلاً أو حجب السيرفر. تحقق من masterschedule.pmu.edu.sa');
+
+  if (last && last.sec > 240)
+    add('bad', `الدورة أخذت ${last.sec} ثانية`, `Cycle took ${last.sec}s`,
+        'الحد 300 ثانية. لو تكررت، تحتاج توسعة.');
+  else if (last && last.sec > 150)
+    add('warn', `الدورة أخذت ${last.sec} ثانية`, `Cycle took ${last.sec}s`,
+        'قريبة من الحد (300 ثانية). راقبها.');
+
+  if (OPS.skipped > 0)
+    add('warn', `${OPS.skipped} دورة تخطّت`, `${OPS.skipped} cycles skipped`,
+        'الدورة السابقة ما خلصت في وقتها. الإشعارات قد تتأخر.');
+
+  if (OPS.tgFails > 0)
+    add('warn', `${OPS.tgFails} رسالة فشلت`, `${OPS.tgFails} messages failed`,
+        'غالباً طالب حظر البوت أو حذف المحادثة.');
+
+  if (OPS.pmuFails > 3)
+    add('warn', `${OPS.pmuFails} فشل في سحب بيانات الجامعة`, `${OPS.pmuFails} university fetch failures`,
+        'لو الرقم يزيد بسرعة، السيرفر قد يكون محجوباً.');
+
+  if (OPS.searchStale > 0)
+    add('warn', `${OPS.searchStale} بحث خُدم من نسخة قديمة`, `${OPS.searchStale} searches served stale`,
+        'الجامعة كانت معطلة والموقع خدم آخر نسخة محفوظة.');
+
+  if (cacheHitRate !== null && OPS.searches > 30 && cacheHitRate < 0.4)
+    add('warn', `الكاش يخدم ${Math.round(cacheHitRate * 100)}% فقط`,
+        `Cache hit rate only ${Math.round(cacheHitRate * 100)}%`,
+        'ضغط أعلى على موقع الجامعة من المتوقع.');
+
+  const memPct = mem.rss / (512 * 1024 * 1024);
+  if (memPct > 0.85)
+    add('bad', `الذاكرة ${Math.round(memPct * 100)}%`, `Memory at ${Math.round(memPct * 100)}%`,
+        'خطة Render فيها 512 ميجا. قريب من الامتلاء.');
+  else if (memPct > 0.7)
+    add('warn', `الذاكرة ${Math.round(memPct * 100)}%`, `Memory at ${Math.round(memPct * 100)}%`, '');
+
+  if (!ADMIN_TOKEN || ADMIN_TOKEN.length < 16)
+    add('warn', 'كلمة سر اللوحة قصيرة', 'Admin password is short',
+        'استخدم 16 حرف فأكثر.');
+
+  if (last && (now - last.at) > 12 * 60 * 1000)
+    add('bad', 'ما فيه دورة مراقبة منذ فترة', 'No monitor cycle recently',
+        'المفروض كل 5 دقائق. تحقق من سجل Render.');
+
+  /* ── سعة تقديرية ── */
+  const rate = 20 / 0.88;                       // رسالة/ثانية
+  const capacity = Math.floor(280 * rate / 2.4); // طالب في أقصى ذروة
+
+  return {
+    /* الإعدادات */
+    telegramOk: tgOk, telegramName: tgName, telegramError: tgErr,
+    supabase: SB_URL && SB_SERVICE_KEY ? 'مضبوط' : 'ناقص',
+    telegramToken: TELEGRAM_TOKEN ? 'مضبوط' : 'ناقص',
+
+    /* التشغيل */
+    uptimeHours: Number(((now - OPS.bootedAt) / 3600000).toFixed(1)),
+    memMB: Math.round(mem.rss / 1048576),
+    memPct: Math.round(memPct * 100),
+
+    /* الدورة */
+    pmuOk,
+    lastCycle: last,
+    lastCycleAgoSec: last ? Math.round((now - last.at) / 1000) : null,
+    cycleAvgSec: Number(avg(secs).toFixed(1)),
+    cycleMaxSec: secs.length ? Math.max(...secs) : 0,
+    cycleCount: C.length,
+    cycles: recent,
+    skipped: OPS.skipped,
+
+    /* البحث */
+    searches: OPS.searches,
+    cacheHitPct: cacheHitRate === null ? null : Math.round(cacheHitRate * 100),
+    searchStale: OPS.searchStale,
+
+    /* الحمل */
+    monitorRows: monitors,
+    tgFails: OPS.tgFails,
+    pmuFails: OPS.pmuFails,
+    lastError: OPS.lastError,
+
+    capacity,
+    loadPct: capacity ? Math.min(100, Math.round(monitors / 2.4 / capacity * 100)) : 0,
+
+    warnings: warn
+  };
 }
 
 /* --- تفاصيل حساب: جدوله + معدله --- */
@@ -702,14 +844,17 @@ const inFlight     = new Map();     // key → Promise (يمنع سحبتين م
 
 async function getCourses(term, college, gender) {
   const key = `${term}|${college}|${gender}`;
+  OPS.searches++;
   const hit = coursesCache.get(key);
   if (hit && Date.now() - hit.at < COURSES_TTL) {
+    OPS.searchesCached++;
     return { courses: hit.courses, cached: true, age: Date.now() - hit.at };
   }
 
   /* لو فيه سحبة جارية لنفس التركيبة، ننتظرها بدل ما نبدأ وحدة جديدة.
      هذي تمنع 50 طالب يضغطون "ابحث" بنفس اللحظة من إطلاق 50 سحبة. */
   if (inFlight.has(key)) {
+    OPS.searchesCached++;
     const courses = await inFlight.get(key);
     return { courses, cached: true, age: 0 };
   }
@@ -769,8 +914,10 @@ const server = http.createServer(async (req, res) => {
       }));
     } catch (err) {
       /* لو الجامعة تعطلت، نخدم آخر نسخة محفوظة بدل ما نفشل */
+      OPS.lastError = { at: Date.now(), where: 'search', msg: err.message };
       const stale = coursesCache.get(`${term}|${college}|${gender}`);
       if (stale) {
+        OPS.searchStale++;
         res.writeHead(200);
         res.end(JSON.stringify({
           success: true, count: stale.courses.length,
