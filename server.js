@@ -638,6 +638,12 @@ async function adminHealth() {
   else if (memPct > 0.7)
     add('warn', `الذاكرة ${Math.round(memPct * 100)}%`, `Memory at ${Math.round(memPct * 100)}%`, '');
 
+  const upMin = (now - OPS.bootedAt) / 60000;
+  if (upMin < 20 && OPS.searches > 3)
+    add('warn', `السيرفر أُعيد تشغيله قبل ${Math.round(upMin)} دقيقة`,
+        `Server restarted ${Math.round(upMin)} min ago`,
+        'الكاش في الذاكرة، فيُمسح مع كل إعادة تشغيل. لو تتكرر كثيراً فالخدمة على خطة تنام عند الخمول.');
+
   if (!ADMIN_TOKEN || ADMIN_TOKEN.length < 16)
     add('warn', 'كلمة سر اللوحة قصيرة', 'Admin password is short',
         'استخدم 16 حرف فأكثر.');
@@ -701,6 +707,9 @@ async function adminHealth() {
 
     env: SITE_ENV,
     freeBeta: FREE_BETA,
+    ttl: ttlReason(),
+    cache: cacheSnapshot(),
+    riyadhDate: riyadhDate(),
     monitor: {
       active: ms.active, reason: ms.reason, ar: ms.ar,
       intervalMin: ms.intervalMin,
@@ -889,6 +898,35 @@ function coursesTTL() {
   if (currentWindow()) return TTL_PEAK;
   if (nearWindow())    return TTL_NEAR;
   return TTL_OFF;
+}
+
+/* لماذا المستوى الحالي؟ — للعرض في لوحة التحكم */
+function ttlReason() {
+  const w = currentWindow();
+  if (w) return { tier: 'peak', ttlMin: 1,
+                  ar: `داخل نافذة "${w.ar}" — الجدول يتغيّر لحظياً` };
+  const nx = nextWindow();
+  if (nearWindow()) {
+    const near = MONITOR_WINDOWS.find(x =>
+      riyadhDate() >= dayShift(x.from, -NEAR_DAYS) && riyadhDate() <= dayShift(x.to, NEAR_DAYS));
+    return { tier: 'near', ttlMin: 60,
+             ar: `ضمن ${NEAR_DAYS} أيام من نافذة "${near ? near.ar : ''}" ` +
+                 `(${near ? near.from : ''} → ${near ? near.to : ''})` };
+  }
+  return { tier: 'off', ttlMin: 360,
+           ar: 'خارج كل النوافذ' + (nx ? ` — القادمة ${nx.ar} في ${nx.from}` : '') };
+}
+
+/* لقطة عن محتوى الكاش */
+function cacheSnapshot() {
+  const ttl = coursesTTL(), now = Date.now();
+  return [...coursesCache.entries()].map(([k, v]) => ({
+    key: k,
+    ageSec: Math.round((now - v.at) / 1000),
+    ttlSec: Math.round(ttl / 1000),
+    valid: (now - v.at) < ttl,
+    courses: v.courses.length
+  })).sort((a, b) => a.ageSec - b.ageSec);
 }
 const coursesCache = new Map();     // key → {at, courses}
 const inFlight     = new Map();     // key → Promise (يمنع سحبتين متزامنتين لنفس التركيبة)

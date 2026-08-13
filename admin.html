@@ -787,11 +787,24 @@ function renderSys(){
     <div class="kv"><span>مخدومة من الكاش</span>
       <b class="${h.cacheHitPct===null?'':h.cacheHitPct>=60?'good':'warn'}">${h.cacheHitPct===null?'—':h.cacheHitPct+'%'}</b></div>
     <div class="kv"><span>من نسخة قديمة</span><b class="${h.searchStale?'warn':'good'}">${h.searchStale}</b></div>
+    ${h.ttl?`<div class="kv"><span>مدة الصلاحية الحالية</span>
+      <b class="${h.ttl.tier==='peak'?'bad':h.ttl.tier==='near'?'warn':'good'}">${
+        h.ttl.ttlMin<60?h.ttl.ttlMin+' دقيقة':(h.ttl.ttlMin/60)+' ساعات'}</b></div>
+    <div class="gauge-sub">${esc(h.ttl.ar)}${h.riyadhDate?` · اليوم ${h.riyadhDate}`:''}</div>`:''}
   </div>
+
+  ${h.cache&&h.cache.length?`<div class="sec-title">النسخ المحفوظة الآن</div>
+  <div class="gauge">
+    ${h.cache.map(c=>`<div class="kv"><span style="font-family:var(--mono);font-size:11px">${esc(c.key)}</span>
+      <b class="${c.valid?'good':'warn'}">${c.ageSec<90?c.ageSec+' ث':Math.round(c.ageSec/60)+' د'} ${c.valid?'✓':'منتهية'}</b></div>`).join('')}
+    <div class="gauge-sub">تُمسح كلها مع كل إعادة تشغيل للسيرفر.</div>
+  </div>`:`<div class="sec-title">النسخ المحفوظة الآن</div>
+  <div class="gauge"><div class="fin-empty" style="padding:6px 0">الكاش فاضي — ما صار بحث بعد آخر إعادة تشغيل.</div></div>`}
 
   <div class="sec-title">السيرفر</div>
   <div class="gauge">
-    <div class="kv"><span>يعمل منذ</span><b>${h.uptimeHours} ساعة</b></div>
+    <div class="kv"><span>يعمل منذ</span>
+      <b class="${h.uptimeHours<0.5?'warn':'good'}">${h.uptimeHours<1?Math.round(h.uptimeHours*60)+' دقيقة':h.uptimeHours+' ساعة'}</b></div>
     <div class="kv"><span>الذاكرة</span>
       <b class="${h.memPct>85?'bad':h.memPct>70?'warn':'good'}">${h.memMB} م.ب · ${h.memPct}%</b></div>
     <div class="kv"><span>دورات تخطّت</span><b class="${h.skipped?'warn':'good'}">${h.skipped}</b></div>
