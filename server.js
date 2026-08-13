@@ -127,50 +127,105 @@ function parseHTML(html) {
 
 /* ============ الفحص الجماعي ============ */
 /* سحبة واحدة من الجامعة لكل ترم مطلوب، ثم توزيع على كل الطلاب */
+/* ينفّذ مهام على دفعات متوازية بدل واحدة واحدة */
+async function inBatches(items, size, fn) {
+  for (let i = 0; i < items.length; i += size) {
+    await Promise.all(items.slice(i, i + size).map(x => fn(x).catch(e => {
+      console.log('batch item failed:', e.message);
+    })));
+  }
+}
+
+let cycleRunning = false;
+
 async function runMonitorCycle() {
   if (!SB_URL || !SB_SERVICE_KEY) return;
+
+  /* قفل: لو الدورة السابقة ما خلصت، ما نبدأ وحدة جديدة فوقها.
+     بدونه الدورات تتراكم في الذروة وتاكل الذاكرة. */
+  if (cycleRunning) { console.log('cycle still running — skipped'); return; }
+  cycleRunning = true;
+  const t0 = Date.now();
+
   try {
     const monitors = await sb('GET', 'monitored_courses', { query: '?select=*' });
     if (!Array.isArray(monitors) || !monitors.length) return;
 
+    /* ── 1. سحبة واحدة لكل ترم ── */
     const terms = [...new Set(monitors.map(m => m.term || '202630'))];
     const snapshot = {};
-
     for (const term of terms) {
       try {
         const html = await fetchPMUData(term, 'ALL', 'ALL');
         parseHTML(html).forEach(c => { snapshot[term + ':' + c.crn] = c; });
       } catch (e) { console.log('fetch fail', term, e.message); }
-      await new Promise(r => setTimeout(r, 1500));  // فاصل بسيط بين الترمات
+      await new Promise(r => setTimeout(r, 1500));
     }
 
     const now = new Date().toISOString();
-    const profileCache = {};
 
+    /* ── 2. نحدد الصفوف اللي تغيّرت حالتها ── */
+    const changed = [];      // {m, live}
+    const toNotify = [];     // {m, live}
     for (const m of monitors) {
       const live = snapshot[(m.term || '202630') + ':' + m.crn];
       if (!live) continue;
-
-      const opened = live.status === 'OPEN' && m.last_status !== 'OPEN';
-
       if (live.status !== m.last_status) {
-        await sb('PATCH', 'monitored_courses',
-          { query: `?id=eq.${m.id}`, body: { last_status: live.status } });
+        changed.push({ m, live });
+        if (live.status === 'OPEN' && m.last_status !== 'OPEN') toNotify.push({ m, live });
       }
-      if (!opened) continue;
+    }
+    if (!changed.length) return;
 
-      /* تحقق من الاشتراك والتيليغرام */
-      if (!profileCache[m.user_id]) {
-        const p = await sb('GET', 'profiles',
-          { query: `?id=eq.${m.user_id}&select=telegram_chat_id,is_pro,subscription_expires_at` });
-        profileCache[m.user_id] = (p && p[0]) || {};
+    /* ── 3. تحديث الحالة بالجملة ──
+       بدل PATCH لكل صف، نجمع الصفوف حسب الحالة الجديدة ونرسل طلباً واحداً
+       لكل حالة باستخدام id=in.(...). 2000 طلب تصير 2-3 طلبات. */
+    const byStatus = {};
+    changed.forEach(({ m, live }) => {
+      (byStatus[live.status] = byStatus[live.status] || []).push(m.id);
+    });
+
+    for (const status of Object.keys(byStatus)) {
+      const ids = byStatus[status];
+      /* نقسّمها لدفعات عشان الرابط ما يطول أكثر من اللازم */
+      for (let i = 0; i < ids.length; i += 200) {
+        const chunk = ids.slice(i, i + 200);
+        await sb('PATCH', 'monitored_courses', {
+          query: `?id=in.(${chunk.join(',')})`,
+          body: { last_status: status },
+          prefer: 'return=minimal'
+        });
       }
-      const prof = profileCache[m.user_id];
-      const active = prof.is_pro ||
-        (prof.subscription_expires_at && new Date(prof.subscription_expires_at) > new Date());
-      if (!active || !prof.telegram_chat_id) continue;
+    }
 
-      await sendMsg(prof.telegram_chat_id,
+    if (!toNotify.length) return;
+
+    /* ── 4. سحب ملفات المستخدمين المعنيين دفعة واحدة ── */
+    const userIds = [...new Set(toNotify.map(x => x.m.user_id))];
+    const profiles = {};
+    for (let i = 0; i < userIds.length; i += 100) {
+      const chunk = userIds.slice(i, i + 100).map(u => `"${u}"`).join(',');
+      const rows = await sb('GET', 'profiles', {
+        query: `?id=in.(${chunk})&select=id,telegram_chat_id,is_pro,subscription_expires_at`
+      });
+      (Array.isArray(rows) ? rows : []).forEach(p => { profiles[p.id] = p; });
+    }
+
+    /* ── 5. من يستحق الإشعار فعلاً ── */
+    const nowMs = Date.now();
+    const sendList = toNotify.filter(({ m }) => {
+      const p = profiles[m.user_id];
+      if (!p || !p.telegram_chat_id) return false;
+      return p.is_pro ||
+        (p.subscription_expires_at && new Date(p.subscription_expires_at).getTime() > nowMs);
+    });
+
+    /* ── 6. إرسال على دفعات متوازية ──
+       تيليغرام يسمح بحوالي 30 رسالة/ثانية، فدفعات من 20 مع فاصل بسيط آمنة. */
+    const notified = [];
+    await inBatches(sendList, 20, async ({ m, live }) => {
+      const p = profiles[m.user_id];
+      const r = await sendMsg(p.telegram_chat_id,
         `🟢 <b>فتحت مادة!</b>\n\n` +
         `<b>${live.courseCode}</b> — شعبة ${live.section}\n` +
         `${live.courseTitle}\n\n` +
@@ -179,11 +234,27 @@ async function runMonitorCycle() {
         `👤 ${live.instructor || '—'}\n` +
         `🏛️ ${live.room || '—'}\n\n` +
         `⚡️ سجّل الحين قبل ما تنسكر!`);
+      if (r && r.ok) notified.push(m.id);
+      await new Promise(r2 => setTimeout(r2, 700));   // تهدئة بين الدفعات
+    });
 
-      await sb('PATCH', 'monitored_courses',
-        { query: `?id=eq.${m.id}`, body: { notified_at: now } });
+    /* ── 7. تعليم المُشعَرين بالجملة ── */
+    for (let i = 0; i < notified.length; i += 200) {
+      const chunk = notified.slice(i, i + 200);
+      await sb('PATCH', 'monitored_courses', {
+        query: `?id=in.(${chunk.join(',')})`,
+        body: { notified_at: now },
+        prefer: 'return=minimal'
+      });
     }
-  } catch (e) { console.log('monitor cycle error', e.message); }
+
+    console.log(`cycle: ${monitors.length} rows | ${changed.length} changed | ` +
+                `${notified.length} notified | ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+  } catch (e) {
+    console.log('monitor cycle error', e.message);
+  } finally {
+    cycleRunning = false;
+  }
 }
 
 /* ============ Telegram webhook ============ */
@@ -618,6 +689,46 @@ async function getFinals() {
   };
 }
 
+/* ================================================================
+   ============   كاش البحث + منع الطلبات المكرّرة   ============
+   ================================================================
+   بدون كاش: كل ضغطة "ابحث" = سحبة من موقع الجامعة.
+   900 طالب يوم التسجيل = مئات الطلبات بالدقيقة من IP واحد → حجب.
+   مع الكاش: طلب واحد لكل تركيبة كل 60 ثانية مهما كان عدد الطلاب. */
+
+const COURSES_TTL = 60 * 1000;
+const coursesCache = new Map();     // key → {at, courses}
+const inFlight     = new Map();     // key → Promise (يمنع سحبتين متزامنتين لنفس التركيبة)
+
+async function getCourses(term, college, gender) {
+  const key = `${term}|${college}|${gender}`;
+  const hit = coursesCache.get(key);
+  if (hit && Date.now() - hit.at < COURSES_TTL) {
+    return { courses: hit.courses, cached: true, age: Date.now() - hit.at };
+  }
+
+  /* لو فيه سحبة جارية لنفس التركيبة، ننتظرها بدل ما نبدأ وحدة جديدة.
+     هذي تمنع 50 طالب يضغطون "ابحث" بنفس اللحظة من إطلاق 50 سحبة. */
+  if (inFlight.has(key)) {
+    const courses = await inFlight.get(key);
+    return { courses, cached: true, age: 0 };
+  }
+
+  const p = (async () => {
+    const courses = parseHTML(await fetchPMUData(term, college, gender));
+    coursesCache.set(key, { at: Date.now(), courses });
+    if (coursesCache.size > 40) {                     /* تنظيف بسيط */
+      const oldest = [...coursesCache.entries()].sort((a, b) => a[1].at - b[1].at)[0];
+      if (oldest) coursesCache.delete(oldest[0]);
+    }
+    return courses;
+  })();
+
+  inFlight.set(key, p);
+  try { return { courses: await p, cached: false, age: 0 }; }
+  finally { inFlight.delete(key); }
+}
+
 /* ============ HTTP server ============ */
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -649,12 +760,27 @@ const server = http.createServer(async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     const { term = '202630', college = 'ALL', gender = 'M1' } = parsed.query;
     try {
-      const courses = parseHTML(await fetchPMUData(term, college, gender));
+      const r = await getCourses(term, college, gender);
       res.writeHead(200);
-      res.end(JSON.stringify({ success: true, count: courses.length, courses }));
+      res.end(JSON.stringify({
+        success: true, count: r.courses.length,
+        cached: r.cached, ageMs: r.age,
+        courses: r.courses
+      }));
     } catch (err) {
-      res.writeHead(500);
-      res.end(JSON.stringify({ success: false, error: err.message }));
+      /* لو الجامعة تعطلت، نخدم آخر نسخة محفوظة بدل ما نفشل */
+      const stale = coursesCache.get(`${term}|${college}|${gender}`);
+      if (stale) {
+        res.writeHead(200);
+        res.end(JSON.stringify({
+          success: true, count: stale.courses.length,
+          cached: true, stale: true, ageMs: Date.now() - stale.at,
+          courses: stale.courses
+        }));
+      } else {
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false, error: err.message }));
+      }
     }
     return;
   }
