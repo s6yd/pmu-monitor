@@ -127,6 +127,53 @@ font-weight:600;transition:transform .3s;z-index:999;max-width:90%;text-align:ce
 .toast.show{transform:translateX(-50%) translateY(0)}
 .toast.err{background:var(--close)}
 .toast.ok{background:var(--open)}
+
+/* ===== درج تفاصيل الحساب ===== */
+.drawer{position:fixed;inset:0;z-index:400;background:rgba(4,6,12,.82);
+backdrop-filter:blur(6px);display:none;align-items:flex-end;justify-content:center}
+.drawer.open{display:flex}
+.drawer-sheet{background:var(--bg);border:1px solid var(--border2);
+border-radius:22px 22px 0 0;width:100%;max-width:640px;max-height:90vh;
+overflow-y:auto;padding:16px 15px 34px;animation:up .28s ease}
+@keyframes up{from{transform:translateY(40px);opacity:.4}to{transform:none;opacity:1}}
+.drawer-grip{width:38px;height:4px;background:var(--border2);border-radius:20px;margin:0 auto 15px}
+.dw-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:4px}
+.dw-name{font-size:17px;font-weight:700}
+.dw-mail{font-size:12px;color:var(--text3);margin-top:3px;word-break:break-all}
+.dw-close{background:none;border:none;color:var(--text3);font-size:20px;cursor:pointer;padding:2px 7px}
+
+.gpa-card{background:var(--card);border:1px solid var(--border);border-radius:15px;
+padding:16px;margin:14px 0;display:flex;align-items:center;justify-content:space-between}
+.gpa-val{font-family:var(--mono);font-size:32px;font-weight:500;line-height:1}
+.gpa-val.hi{color:var(--open)}.gpa-val.mid{color:var(--warn)}.gpa-val.lo{color:var(--close)}
+.gpa-cap{font-size:11px;color:var(--text3);margin-top:6px}
+.gpa-right{text-align:left;font-size:11.5px;color:var(--text3);line-height:1.9}
+.gpa-right b{color:var(--text2);font-family:var(--mono);font-weight:500}
+
+.dw-day{margin-bottom:8px}
+.dw-daylabel{font-size:11px;font-weight:600;color:var(--text3);
+letter-spacing:.5px;margin-bottom:5px}
+.dw-slot{background:var(--card);border:1px solid var(--border);border-radius:10px;
+padding:9px 11px;display:flex;align-items:center;gap:10px;margin-bottom:5px;
+border-right:3px solid var(--accent)}
+.dw-time{font-family:var(--mono);font-size:10.5px;color:var(--text2);
+min-width:78px;direction:ltr;text-align:center}
+.dw-slot-name{font-size:12.5px;font-weight:600}
+.dw-slot-sub{font-size:10.5px;color:var(--text3);margin-top:2px}
+
+.grades{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:6px}
+.grade{background:var(--card);border:1px solid var(--border);border-radius:9px;
+padding:8px 10px;display:flex;justify-content:space-between;align-items:center;font-size:11.5px}
+.grade b{font-family:var(--mono);font-size:12px}
+.grade b.g-hi{color:var(--open)}.grade b.g-mid{color:var(--warn)}.grade b.g-lo{color:var(--close)}
+.dw-empty{font-size:12.5px;color:var(--text3);font-style:italic;padding:10px 0}
+
+.health{background:var(--card);border:1px solid var(--border);border-radius:13px;
+padding:13px;margin-bottom:14px;font-size:12.5px;line-height:1.8}
+.health.bad{border-color:rgba(244,63,94,.4);background:var(--close-bg)}
+.health b{color:var(--text)}
+.health code{font-family:var(--mono);font-size:11.5px;background:var(--bg);
+padding:1px 6px;border-radius:5px;color:var(--accent2)}
 </style>
 </head>
 <body>
@@ -204,10 +251,18 @@ font-weight:600;transition:transform .3s;z-index:999;max-width:90%;text-align:ce
 
 <div class="toast" id="toast"></div>
 
+<!-- ══ تفاصيل حساب ══ -->
+<div class="drawer" id="drawer" onclick="if(event.target===this)closeUser()">
+  <div class="drawer-sheet">
+    <div class="drawer-grip"></div>
+    <div id="drawerBody"><div class="spinner"></div></div>
+  </div>
+</div>
+
 <script>
 /* ══════════ الحالة ══════════ */
 let TOKEN = sessionStorage.getItem('jdw_admin') || '';
-let USERS = [], REVS = [], MONS = [], STATS = null;
+let USERS = [], REVS = [], MONS = [], STATS = null, HEALTH = null;
 
 /* كلمات تستدعي المراجعة — مؤشر فقط، القرار لك */
 const FLAGS = ['حمار','غبي','كلب','حقير','خرا','قذر','تافه','زبالة','حيوان','لعن',
@@ -288,10 +343,11 @@ function flagged(txt){
 async function loadAll(){
   if(!TOKEN) return;
   try{
-    const [s,u,r,m] = await Promise.all([
-      api('stats'), api('users'), api('reviews'), api('monitors')
+    const [s,u,r,m,h] = await Promise.all([
+      api('stats'), api('users'), api('reviews'), api('monitors'),
+      api('health').catch(()=>null)
     ]);
-    STATS=s; USERS=u.users||[]; REVS=r.reviews||[]; MONS=m.monitors||[];
+    STATS=s; USERS=u.users||[]; REVS=r.reviews||[]; MONS=m.monitors||[]; HEALTH=h;
     renderOver(); renderUsers(); renderRevs(); renderMons();
   }catch(e){ toast(e.message,'err') }
 }
@@ -301,7 +357,17 @@ function renderOver(){
   const s=STATS; if(!s) return;
   const needRev = REVS.filter(r=>flagged(r.comment)).length;
 
-  document.getElementById('overBody').innerHTML = `
+  let health='';
+  if(HEALTH && !HEALTH.telegramOk){
+    health=`<div class="health bad">
+      <b>⚠️ بوت تيليغرام ما يرسل</b><br>
+      ${esc(HEALTH.telegramError||'')}<br>
+      تأكد أن <code>TELEGRAM_TOKEN</code> في Render ما فيه مسافة أو سطر زائد.</div>`;
+  }else if(HEALTH && HEALTH.telegramOk){
+    health=`<div class="health">✅ البوت شغّال — <b>${esc(HEALTH.telegramName||'')}</b></div>`;
+  }
+
+  document.getElementById('overBody').innerHTML = health + `
   <div class="sec-title">المستخدمين</div>
   <div class="kpis">
     <div class="kpi"><div class="kpi-num">${s.users}</div>
@@ -374,8 +440,8 @@ function renderUsers(){
 
     return `<div class="row">
       <div class="row-top">
-        <div style="min-width:0">
-          <div class="row-name">${esc(u.name)}</div>
+        <div style="min-width:0;cursor:pointer" onclick="openUser('${u.id}')">
+          <div class="row-name">${esc(u.name)} <span style="color:var(--accent2);font-size:11px">‹ تفاصيل</span></div>
           <div class="row-sub">${esc(u.email)}</div>
         </div>${pill}
       </div>
@@ -387,6 +453,7 @@ function renderUsers(){
         ${u.createdAt?`<span>انضم <b>${fdate(u.createdAt)}</b></span>`:''}
       </div>
       <div class="row-acts">
+        <button class="mini" onclick="openUser('${u.id}')">👁️ جدوله ومعدله</button>
         <button class="mini go" onclick="grant('${u.id}',365,'${esc(u.name)}')">+ سنة</button>
         <button class="mini"    onclick="grant('${u.id}',30,'${esc(u.name)}')">+ شهر</button>
         <button class="mini"    onclick="grant('${u.id}',7,'${esc(u.name)}')">+ أسبوع</button>
@@ -424,6 +491,104 @@ async function notify(id,name){
     const r=await api('notify',{body:{userId:id,text:txt.trim()}});
     toast(r.ok?'انرسلت ✓':(r.error||'ما انرسلت'), r.ok?'ok':'err');
   }catch(e){ toast(e.message,'err') }
+}
+
+/* ══════════ تفاصيل حساب ══════════ */
+const DAY_AR={U:'الأحد',M:'الاثنين',T:'الثلاثاء',W:'الأربعاء',R:'الخميس',F:'الجمعة',S:'السبت'};
+const DAY_ORDER=['U','M','T','W','R','F','S'];
+
+function tmin(s){
+  const m=String(s||'').match(/(\d{3,4})\s*[-–]\s*(\d{3,4})/);
+  if(!m) return null;
+  const f=x=>{x=x.padStart(4,'0');return x.slice(0,2)+':'+x.slice(2)};
+  return {a:f(m[1]),b:f(m[2]),sort:parseInt(m[1].padStart(4,'0'),10)};
+}
+
+async function openUser(id){
+  const dw=document.getElementById('drawer');
+  dw.classList.add('open');
+  document.getElementById('drawerBody').innerHTML='<div class="spinner"></div>';
+  try{
+    const d=await api('user?id='+encodeURIComponent(id));
+    if(!d.ok) throw new Error(d.error||'ما لقيت الحساب');
+    renderUserDetail(d);
+  }catch(e){
+    document.getElementById('drawerBody').innerHTML=
+      `<div class="empty"><div class="empty-icon">⚠️</div>
+       <div class="empty-t">${esc(e.message)}</div></div>`;
+  }
+}
+function closeUser(){ document.getElementById('drawer').classList.remove('open') }
+
+function renderUserDetail(d){
+  const u=d.user;
+
+  /* المعدل */
+  const g=d.gpa;
+  const cls = g===null?'':(g>=3.5?'hi':g>=2.5?'mid':'lo');
+  const gpaBox=`<div class="gpa-card">
+    <div>
+      <div class="gpa-val ${cls}">${g===null?'—':g.toFixed(2)}</div>
+      <div class="gpa-cap">المعدل التراكمي · من 4.00</div>
+    </div>
+    <div class="gpa-right">
+      <div>ساعات محسوبة <b>${d.gpaHours}</b></div>
+      <div>مواد مقيّمة <b>${d.gradedCourses}</b></div>
+      <div>مواد مكتملة <b>${d.completedCount}</b></div>
+    </div>
+  </div>`;
+
+  /* الجدول مرتب بالأيام */
+  let sched='';
+  if(d.schedule.length){
+    DAY_ORDER.forEach(day=>{
+      const items=d.schedule
+        .filter(s=>String(s.days||'').toUpperCase().includes(day))
+        .map(s=>({s,t:tmin(s.time)}))
+        .sort((a,b)=>(a.t?a.t.sort:0)-(b.t?b.t.sort:0));
+      if(!items.length) return;
+      sched+=`<div class="dw-day"><div class="dw-daylabel">${DAY_AR[day]}</div>`+
+        items.map(({s,t})=>`<div class="dw-slot">
+          <div class="dw-time">${t?t.a+'–'+t.b:'—'}</div>
+          <div style="flex:1;min-width:0">
+            <div class="dw-slot-name">${esc(s.code)} §${esc(s.section||'')}</div>
+            <div class="dw-slot-sub">${esc(s.room||'—')} · ${esc(s.instructor||'—')}</div>
+          </div></div>`).join('')+`</div>`;
+    });
+  }
+  if(!sched) sched=`<div class="dw-empty">ما بنى جدول بعد</div>`;
+
+  /* الدرجات */
+  const gcls=x=>{const v={'A+':4,'A':3.75,'B+':3.5,'B':3,'C+':2.5,'C':2,'D+':1.5,'D':1,'F':0}[x];
+    return v===undefined?'':v>=3.5?'g-hi':v>=2?'g-mid':'g-lo'};
+  const grades=d.completed.length
+    ? `<div class="grades">${d.completed.map(c=>
+        `<div class="grade"><span>${esc(c.code)}</span>
+         <b class="${gcls(String(c.grade).toUpperCase())}">${esc(c.grade)}</b></div>`).join('')}</div>`
+    : `<div class="dw-empty">ما سجّل مواد مكتملة</div>`;
+
+  document.getElementById('drawerBody').innerHTML=`
+    <div class="dw-head">
+      <div style="min-width:0">
+        <div class="dw-name">${esc(u.name)}</div>
+        <div class="dw-mail">${esc(u.email)}</div>
+      </div>
+      <button class="dw-close" onclick="closeUser()">✕</button>
+    </div>
+    <div class="row-meta" style="margin-bottom:2px">
+      <span>التخصص <b>${esc(u.major)}</b></span>
+      <span>${u.active?'<b style="color:var(--open)">مشترك فعّال</b>':'<b style="color:var(--close)">منتهي</b>'}</span>
+      ${u.expires?`<span>ينتهي <b>${fdate(u.expires)}</b></span>`:''}
+      ${u.telegram?`<span>تيليغرام <b>${esc(u.telegram)}</b></span>`:''}
+    </div>
+
+    ${gpaBox}
+
+    <div class="sec-title">جدوله الحالي · ${d.scheduleCredits} ساعة</div>
+    ${sched}
+
+    <div class="sec-title">المواد المكتملة ودرجاتها</div>
+    ${grades}`;
 }
 
 /* ══════════ التقييمات ══════════ */

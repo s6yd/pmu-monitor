@@ -5,11 +5,13 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
+/* .trim() مهم: أي مسافة أو سطر زائد في متغيرات Render
+   يكسر الطلبات برسالة "Request path contains unescaped characters" */
 const PORT = process.env.PORT || 3000;
-const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
-const SB_URL = process.env.SUPABASE_URL;
-const SB_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
-const ADMIN_TOKEN = process.env.ADMIN_TOKEN;   // كلمة سر لوحة التحكم
+const TELEGRAM_TOKEN = (process.env.TELEGRAM_TOKEN || '').trim();
+const SB_URL = (process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '');
+const SB_SERVICE_KEY = (process.env.SUPABASE_SERVICE_KEY || '').trim();
+const ADMIN_TOKEN = (process.env.ADMIN_TOKEN || '').trim();   // كلمة سر لوحة التحكم
 const CHECK_INTERVAL = 5 * 60 * 1000;   // كل 5 دقائق
 
 /* ============ Supabase REST helper ============ */
@@ -44,17 +46,23 @@ function sb(method, table, { query = '', body = null, prefer = '' } = {}) {
 /* ============ Telegram ============ */
 function tg(method, payload) {
   return new Promise(resolve => {
-    if (!TELEGRAM_TOKEN) return resolve(null);
-    const data = JSON.stringify(payload);
-    const req = https.request({
-      hostname: 'api.telegram.org',
-      path: `/bot${TELEGRAM_TOKEN}/${method}`,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) }
-    }, res => { let o=''; res.on('data',c=>o+=c); res.on('end',()=>{ try{resolve(JSON.parse(o))}catch(e){resolve(null)} }); });
-    req.on('error', () => resolve(null));
-    req.write(data);
-    req.end();
+    if (!TELEGRAM_TOKEN) return resolve({ ok: false, description: 'TELEGRAM_TOKEN غير مضبوط' });
+    let req;
+    try {
+      const data = JSON.stringify(payload);
+      req = https.request({
+        hostname: 'api.telegram.org',
+        path: `/bot${TELEGRAM_TOKEN}/${method}`,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) }
+      }, res => { let o=''; res.on('data',c=>o+=c); res.on('end',()=>{ try{resolve(JSON.parse(o))}catch(e){resolve(null)} }); });
+      req.on('error', e => resolve({ ok: false, description: e.message }));
+      req.write(data);
+      req.end();
+    } catch (e) {
+      /* لا نترك الخطأ يوقف السيرفر — نرجّع سبب مفهوم */
+      resolve({ ok: false, description: 'صيغة TELEGRAM_TOKEN غلط: ' + e.message });
+    }
   });
 }
 
@@ -434,8 +442,82 @@ async function adminNotify(userId, text) {
     { query: `?id=eq.${encodeURIComponent(userId)}&select=telegram_chat_id` });
   const chat = rows && rows[0] && rows[0].telegram_chat_id;
   if (!chat) return { ok: false, error: 'المستخدم ما ربط تيليغرام' };
-  await sendMsg(chat, String(text).slice(0, 3000));
+  const r = await sendMsg(chat, String(text).slice(0, 3000));
+  /* ما نقول "انرسلت" إلا لو تيليغرام أكّد فعلاً */
+  if (!r || r.ok !== true) {
+    return { ok: false, error: (r && r.description) || 'ما وصل تأكيد من تيليغرام' };
+  }
   return { ok: true };
+}
+
+/* --- فحص صحة الإعدادات --- */
+async function adminHealth() {
+  const out = {
+    telegramToken: TELEGRAM_TOKEN ? 'مضبوط' : 'ناقص',
+    supabase: SB_URL && SB_SERVICE_KEY ? 'مضبوط' : 'ناقص',
+    telegramOk: false, telegramName: null, telegramError: null
+  };
+  if (TELEGRAM_TOKEN) {
+    const me = await tg('getMe', {});
+    if (me && me.ok) { out.telegramOk = true; out.telegramName = '@' + me.result.username; }
+    else out.telegramError = (me && me.description) || 'ما وصل رد من تيليغرام';
+  }
+  return out;
+}
+
+/* --- تفاصيل حساب: جدوله + معدله --- */
+const GRADE_POINTS = { 'A+':4.00,'A':3.75,'B+':3.50,'B':3.00,
+  'C+':2.50,'C':2.00,'D+':1.50,'D':1.00,'F':0.00,'WF':0.00 };
+
+function creditsFromCode(code) {
+  const m = String(code || '').match(/(\d{4})/);
+  if (m) { const d = parseInt(m[1][1], 10); if (d >= 1 && d <= 6) return d; }
+  return 3;
+}
+
+async function adminUserDetail(userId) {
+  const id = encodeURIComponent(userId);
+  const [prof, sched, done] = await Promise.all([
+    sb('GET', 'profiles',          { query: `?id=eq.${id}&select=*` }),
+    sb('GET', 'user_schedule',     { query: `?user_id=eq.${id}&select=*` }),
+    sb('GET', 'completed_courses', { query: `?user_id=eq.${id}&select=*` })
+  ]);
+  const p = (prof && prof[0]) || null;
+  if (!p) return { ok: false, error: 'المستخدم غير موجود' };
+
+  const S = Array.isArray(sched) ? sched : [];
+  const D = Array.isArray(done) ? done : [];
+
+  /* المعدل بنظام PMU */
+  let pts = 0, hrs = 0, counted = 0;
+  D.forEach(c => {
+    const g = String(c.grade || '').toUpperCase().trim();
+    if (!(g in GRADE_POINTS)) return;                 // I / W / P / TR لا تدخل
+    const h = creditsFromCode(c.course_code);
+    pts += GRADE_POINTS[g] * h; hrs += h; counted++;
+  });
+
+  return {
+    ok: true,
+    user: {
+      id: p.id, name: p.name || '—', email: p.email || '—', major: p.major || '—',
+      isPro: !!p.is_pro, active: isActive(p),
+      expires: p.subscription_expires_at || null,
+      telegram: p.telegram_username ? '@' + p.telegram_username : (p.telegram_chat_id ? '✓' : null)
+    },
+    gpa: hrs ? Number((pts / hrs).toFixed(2)) : null,
+    gpaHours: hrs,
+    gradedCourses: counted,
+    completedCount: D.length,
+    completed: D.map(c => ({ code: c.course_code, grade: c.grade || '—' }))
+                .sort((a, b) => String(a.code).localeCompare(String(b.code))),
+    schedule: S.map(s => ({
+      crn: s.crn, code: s.course_code, section: s.section,
+      days: s.course_date, time: s.course_timing,
+      room: s.room, instructor: s.instructor, term: s.term
+    })),
+    scheduleCredits: S.reduce((t, s) => t + creditsFromCode(s.course_code), 0)
+  };
 }
 
 /* ============ HTTP server ============ */
@@ -517,10 +599,12 @@ const server = http.createServer(async (req, res) => {
       const act = parsed.pathname.replace('/api/admin/', '');
 
       if (act === 'ping')     return send(200, { ok: true });
+      if (act === 'health')   return send(200, await adminHealth());
       if (act === 'stats')    return send(200, await adminStats());
       if (act === 'users')    return send(200, { users: await adminUsers() });
       if (act === 'reviews')  return send(200, { reviews: await adminReviews() });
       if (act === 'monitors') return send(200, { monitors: await adminMonitors() });
+      if (act === 'user')     return send(200, await adminUserDetail(parsed.query.id || ''));
 
       if (req.method === 'POST') {
         const b = await readBody(req);

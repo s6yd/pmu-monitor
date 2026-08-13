@@ -551,7 +551,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
       </div>
       <div class="btn-row">
         <button class="btn-search" id="btnSearch" onclick="doSearch()"><span id="searchBtnText">🔍 ابحث</span></button>
-        <button class="btn-monitor" id="btnMonitor" onclick="toggleMonitor()" style="display:none">📡 راقب</button>
+        
       </div>
     </div>
   </div>
@@ -560,11 +560,6 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     <div class="stat-box"><div class="stat-num" id="statTotal">—</div><div class="stat-label" data-i18n="total">إجمالي</div></div>
     <div class="stat-box"><div class="stat-num open-color" id="statOpen">—</div><div class="stat-label" data-i18n="open">مفتوح</div></div>
     <div class="stat-box"><div class="stat-num close-color" id="statClose">—</div><div class="stat-label" data-i18n="closed">مغلق</div></div>
-  </div>
-
-  <div class="monitor-banner" id="monitorBanner">
-    <div class="mb-icon">🟢</div>
-    <div class="mb-text"><h3>مراقبة نشطة</h3><p>يفحص كل دقيقتين</p></div>
   </div>
 
   <div class="filter-bar" id="filterBar">
@@ -584,7 +579,6 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
   <div class="state-box visible" id="initialBox"><div class="state-icon">📚</div><div class="state-title">ابدأ البحث</div><div class="state-sub">اختار السيمستر والكلية واضغط ابحث</div></div>
 
   <div class="results-list" id="resultsList"></div>
-  <div class="next-check" id="nextCheck">الفحص القادم خلال <span id="countdown">—</span></div>
 </div>
 
 <!-- SCHEDULE -->
@@ -871,7 +865,6 @@ const TOTAL_CR=139;
 
 let allCourses=[],schedule=[],completed=[],grades={},filterMode='all';
 let PRO_KEY=null;
-let monitorTimer=null,countdownTimer=null,isMonitoring=false;
 const DAY_KEYS=['U','M','T','W','R'];
 const DAY_AR={U:'الأحد',M:'الاثنين',T:'الثلاثاء',W:'الأربعاء',R:'الخميس',F:'الجمعة',S:'السبت'};
 
@@ -965,16 +958,16 @@ function scheduleCredits(){
 async function doSearch(){
   const term=document.getElementById('term').value,college=document.getElementById('college').value,
         gender=document.getElementById('gender').value,filter=document.getElementById('courseFilter').value.trim();
-  showLoading(true);setStatus('يبحث...');
+  showLoading(true);setStatus(t('searching'));
   try{
     const kq=PRO_KEY?`&key=${encodeURIComponent(PRO_KEY)}`:'';
     const r=await fetch(`${API}?term=${term}&college=${college}&gender=${gender}&filter=${encodeURIComponent(filter)}${kq}`);
     const d=await r.json();
     if(!d.success)throw new Error(d.error);
-    allCourses=d.courses;renderResults();setStatus(`${d.count} مادة`);
-    document.getElementById('lastUpdate').textContent=new Date().toLocaleTimeString('ar-SA');
+    allCourses=d.courses;renderResults();setStatus(`${d.count} ${t('courseUnit')}`);
+    document.getElementById('lastUpdate').textContent=new Date().toLocaleTimeString(LANG==='ar'?'ar-SA':'en-GB');
   }catch(e){
-    showLoading(false);setStatus('خطأ');
+    showLoading(false);setStatus(LANG==='ar'?'خطأ':'Error');
     const b=document.getElementById('initialBox');b.classList.add('visible');
     b.querySelector('.state-icon').textContent='❌';
     b.querySelector('.state-title').textContent=t('errConn');
@@ -1341,37 +1334,15 @@ document.getElementById('docFilter').addEventListener('input',function(){
   document.getElementById('clearDoc').style.display=this.value?'block':'none';
   renderDocs();});
 
-function toggleMonitor(){isMonitoring?stopMonitor():startMonitor()}
-function startMonitor(){
-  isMonitoring=true;const b=document.getElementById('btnMonitor');
-  b.textContent='⏹ أوقف';b.classList.add('monitoring');
-  document.getElementById('monitorBanner').classList.add('visible');
-  document.getElementById('statusDot').classList.add('active');
-  document.getElementById('nextCheck').classList.add('visible');
-  doSearch();scheduleNext();
-}
-function stopMonitor(){
-  isMonitoring=false;clearTimeout(monitorTimer);clearInterval(countdownTimer);
-  const b=document.getElementById('btnMonitor');b.textContent='📡 راقب';b.classList.remove('monitoring');
-  document.getElementById('monitorBanner').classList.remove('visible');
-  document.getElementById('statusDot').classList.remove('active');
-  document.getElementById('nextCheck').classList.remove('visible');
-}
-function scheduleNext(){
-  const I=120;let left=I;clearInterval(countdownTimer);
-  countdownTimer=setInterval(()=>{left--;
-    document.getElementById('countdown').textContent=String(Math.floor(left/60)).padStart(2,'0')+':'+String(left%60).padStart(2,'0');
-    if(left<=0)clearInterval(countdownTimer)},1000);
-  clearTimeout(monitorTimer);
-  monitorTimer=setTimeout(()=>{if(isMonitoring){doSearch();scheduleNext()}},I*1000);
-}
+/* المراقبة اللحظية من المتصفح انشالت.
+   الجرس ⏰ جنب كل مادة يسجّلها في السيرفر، والسيرفر يفحص كل 5 دقائق
+   ويرسل إشعار تيليغرام — يشتغل حتى والموقع مسكّر. */
 function showLoading(s){
   document.getElementById('loadingBox').classList.toggle('visible',s);
   document.getElementById('btnSearch').disabled=s;
-  document.getElementById('searchBtnText').textContent=s?'جاري البحث...':'🔍 ابحث';
+  document.getElementById('searchBtnText').textContent=s?t('searching'):t('search');
 }
-function setStatus(t){document.getElementById('statusText').textContent=t;
-  document.getElementById('statusDot').classList.toggle('active',isMonitoring)}
+function setStatus(t){document.getElementById('statusText').textContent=t}
 function showToast(m,type){
   const t=document.getElementById('toast');t.textContent=m;
   t.className='toast show'+(type?' '+type:'');
@@ -2111,7 +2082,6 @@ function applyLang(){
   document.getElementById('docFilter').placeholder=L.docPh;
   document.getElementById('docBtnText').textContent=LANG==='ar'?'🔄 حدّث القائمة':'🔄 Refresh list';
   document.getElementById('searchBtnText').textContent=L.search;
-  document.getElementById('btnMonitor').textContent=isMonitoring?L.stopMonitor:L.monitor;
   if(!USER)document.getElementById('authBtn').textContent=L.login;
 
   setStateBox('initialBox',L.initT,L.initS);
@@ -2280,8 +2250,7 @@ async function pullCloud(){
         `🎁 You have a free month — all features unlocked`),1200);
     }
     if(isPro()){
-      document.getElementById('btnMonitor').style.display='block';
-      document.querySelector('.btn-row').classList.add('pro');
+      /* زر "راقب" القديم انشال — الجرس ⏰ جنب كل مادة بديله */
     }
   }catch(e){console.log('pull error',e)}
 }
@@ -2344,8 +2313,7 @@ async function pushSchedule(){
     fetch(`${API.replace('/courses','/check')}?key=${encodeURIComponent(PRO_KEY)}`)
       .then(r=>r.json()).then(d=>{
         if(d.valid){
-          document.getElementById('btnMonitor').style.display='block';
-          document.querySelector('.btn-row').classList.add('pro');
+          /* زر "راقب" القديم انشال — الجرس ⏰ جنب كل مادة بديله */
         }else{PRO_KEY=null;save('pmu_key',null);}
       }).catch(()=>{});
   }
