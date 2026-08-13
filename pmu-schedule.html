@@ -181,15 +181,17 @@ border-radius:16px;padding:17px;margin-bottom:15px}
 .suggest-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .suggest-head h3{font-size:14px;font-weight:600}
 .suggest-hrs{font-family:var(--mono);font-size:12px;color:var(--accent2);background:rgba(61,111,255,.15);padding:3px 10px;border-radius:20px}
-.sug-item{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)}
+.sug-item{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)}
 .sug-item:last-child{border-bottom:none}
-.sug-code{font-family:var(--mono);font-size:12px;color:var(--accent2);min-width:78px}
-.sug-name{font-size:12.5px;flex:1}
-.sug-cr{font-family:var(--mono);font-size:11px;color:var(--text3)}
+.sug-code{font-family:var(--mono);font-size:12px;color:var(--accent2);
+min-width:74px;flex-shrink:0;padding-top:1px;white-space:nowrap}
+.sug-name{font-size:12.5px;flex:1;min-width:0;line-height:1.45}
+.sug-cr{font-family:var(--mono);font-size:11px;color:var(--text3);
+min-width:26px;text-align:end;flex-shrink:0;padding-top:2px}
 .sug-group{font-size:11.5px;font-weight:600;color:var(--text2);margin:12px 0 4px;padding-top:8px;border-top:1px solid var(--border)}
 .sug-group:first-child{margin-top:0;padding-top:0;border-top:none}
 .sug-group.crit{color:var(--warn)}
-.sug-badge{font-size:10px;color:var(--warn);background:var(--warn-bg);padding:1px 7px;border-radius:20px;margin-right:6px;white-space:nowrap}
+.sug-badge{font-size:10px;color:var(--warn);background:var(--warn-bg);padding:1px 7px;border-radius:20px;margin-inline-start:6px;white-space:nowrap;vertical-align:middle}
 
 .sem-block{background:var(--card);border:1px solid var(--border);border-radius:14px;margin-bottom:9px;overflow:hidden}
 .sem-head{padding:12px 15px;display:flex;align-items:center;justify-content:space-between;cursor:pointer}
@@ -522,7 +524,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
         <div>
           <label class="field-label" data-i18n="college">الكلية</label>
           <select id="college">
-            <option value="ALL">الكل</option>
+            <option value="ALL" data-i18n="optAll">الكل</option>
             <option value="EN" selected>Engineering (EN)</option>
             <option value="IT">Computer Eng & Science (IT)</option>
             <option value="BA">Business Administration (BA)</option>
@@ -536,9 +538,9 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
         <div>
           <label class="field-label" data-i18n="gender">الجنس</label>
           <select id="gender">
-            <option value="M1" selected>Male</option>
-            <option value="F1">Female</option>
-            <option value="ALL">الكل</option>
+            <option value="M1" selected data-i18n="optMale">Male</option>
+            <option value="F1" data-i18n="optFemale">Female</option>
+            <option value="ALL" data-i18n="optAll">الكل</option>
           </select>
         </div>
       </div>
@@ -656,11 +658,11 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     <div class="search-card doc-search">
       <div class="sc-title" data-i18n="docsTitle">تقييمات الدكاترة</div>
       <div class="search-input-wrap">
-        <input type="text" id="docFilter" placeholder="ابحث عن دكتور...">
+        <input type="text" id="docFilter" placeholder="ابحث عن دكتور…">
         <button class="clear-btn" id="clearDoc" onclick="clearDocFilter()">✕</button>
       </div>
       <button class="btn-search" style="margin-top:11px" onclick="loadInstructors()">
-        <span id="docBtnText">🔄 حدّث القائمة</span>
+        <span id="docBtnText" data-i18n="docRefresh">🔄 حدّث القائمة</span>
       </button>
     </div>
     <div id="docRows"></div>
@@ -676,32 +678,29 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     <div class="pro-head">
       <div class="pro-icon">⚡️</div>
       <div>
-        <h3 id="proTitle">اشتراك جدولك</h3>
-        <p id="proSub">فعّل المراقبة والحفظ السحابي</p>
+        <h3 id="proTitle" data-i18n="proTitle">اشتراك جدولك</h3>
+        <p id="proSub" data-i18n="proSub">فعّل المراقبة والحفظ السحابي</p>
       </div>
-      <div class="pro-price" id="proPrice">19 ريال / سنة</div>
+      <div class="pro-price" id="proPrice" data-i18n="proPrice">19 ريال / سنة</div>
     </div>
     <div class="pro-list" id="proList">
-      <div class="pro-item">🔔 <span><b>مراقبة المواد</b> — إشعار تيليغرام فوري أول ما تنفتح أي شعبة</span></div>
-      <div class="pro-item">☁️ <span><b>حفظ سحابي</b> — خطتك وجدولك ومعدلك من أي جهاز</span></div>
-      <div class="pro-item">♾️ <span><b>مواد بلا حد</b> — راقب كل المواد اللي تبيها</span></div>
+      <div class="pro-item">🔔 <span data-i18n-html="proFeat1"><b>مراقبة المواد</b> — إشعار تيليغرام فوري أول ما تنفتح أي شعبة</span></div>
+      <div class="pro-item">☁️ <span data-i18n-html="proFeat2"><b>حفظ سحابي</b> — خطتك وجدولك ومعدلك من أي جهاز</span></div>
+      <div class="pro-item">♾️ <span data-i18n-html="proFeat3"><b>مواد بلا حد</b> — راقب كل المواد اللي تبيها</span></div>
     </div>
-    <button class="btn-pro" id="btnPro" onclick="togglePay()">اشترك الحين</button>
+    <button class="btn-pro" id="btnPro" onclick="togglePay()" data-i18n="proBtn">اشترك الحين</button>
 
     <div class="pay-box" id="payBox">
-      <div class="pay-line"><span>المبلغ</span><b>19 ريال</b></div>
-      <div class="pay-line"><span>STC Pay / تحويل</span><b id="payNum">0500000000</b></div>
-      <div class="pay-line"><span>كودك</span><b id="payCode">—</b></div>
-      <div class="pay-note">
-        حوّل المبلغ، ثم أرسل صورة الإيصال مع كودك للبوت على تيليغرام.
-        بيتفعّل حسابك خلال ساعات قليلة.
-      </div>
-      <button class="btn-sm" style="width:100%;margin-top:11px" onclick="openBot()">📩 أرسل الإيصال للبوت</button>
+      <div class="pay-line"><span data-i18n="payAmount">المبلغ</span><b data-i18n="payRiyal">19 ريال</b></div>
+      <div class="pay-line"><span data-i18n="payTo">STC Pay / تحويل</span><b id="payNum">0500000000</b></div>
+      <div class="pay-line"><span data-i18n="payCodeLbl">كودك</span><b id="payCode">—</b></div>
+      <div class="pay-note" data-i18n="payNote">حوّل المبلغ، ثم أرسل صورة الإيصال مع كودك للبوت على تيليغرام. بيتفعّل حسابك خلال ساعات قليلة.</div>
+      <button class="btn-sm" style="width:100%;margin-top:11px" onclick="openBot()" data-i18n="payBot">📩 أرسل الإيصال للبوت</button>
     </div>
   </div>
 
   <div class="set-card">
-    <div class="sc-title">إشعارات تيليغرام</div>
+    <div class="sc-title" data-i18n="tgSection">إشعارات تيليغرام</div>
     <div class="set-row">
       <div class="set-info">
         <h4 id="tgTitle">غير مربوط</h4>
@@ -718,7 +717,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
   </div>
 
   <div class="set-card">
-    <div class="sc-title">المواد المراقبة</div>
+    <div class="sc-title" data-i18n="monSection">المواد المراقبة</div>
     <div id="monList"></div>
   </div>
 
@@ -729,14 +728,42 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
         <label class="field-label" data-i18n="uni">الجامعة</label>
         <select id="uniSelect" onchange="onUniChange()">
           <option value="PMU" selected>Prince Mohammad Bin Fahd University</option>
-          <option value="SOON" disabled>جامعات ثانية — قريباً</option>
+          <option value="SOON" disabled data-i18n="uniSoon">جامعات ثانية — قريباً</option>
         </select>
       </div>
       <div class="uni-field">
         <label class="field-label" data-i18n="major">التخصص</label>
         <select id="majorSelect" onchange="onMajorChange()">
-          <option value="MEEN" selected>Mechanical Engineering</option>
-          <option value="SOON" disabled>تخصصات ثانية — قريباً</option>
+          <optgroup label="كلية الهندسة">
+            <option value="MEEN" selected>الهندسة الميكانيكية — Mechanical Engineering</option>
+            <option value="EEEN">الهندسة الكهربائية — Electrical Engineering</option>
+            <option value="CVEN">الهندسة المدنية — Civil Engineering</option>
+            <option value="CHEN">الهندسة الكيميائية — Chemical Engineering</option>
+            <option value="COEN">هندسة الحاسب — Computer Engineering</option>
+          </optgroup>
+          <optgroup label="كلية علوم وهندسة الحاسب">
+            <option value="COSC">علوم الحاسب — Computer Science</option>
+            <option value="SOEN">هندسة البرمجيات — Software Engineering</option>
+            <option value="CSEC">الأمن السيبراني — Cybersecurity</option>
+            <option value="AINT">الذكاء الاصطناعي — Artificial Intelligence</option>
+            <option value="ITAP">تقنية المعلومات — Information Technology</option>
+          </optgroup>
+          <optgroup label="كلية العمارة والتصميم">
+            <option value="ARCH">العمارة — Architecture</option>
+            <option value="IDES">التصميم الداخلي — Interior Design</option>
+            <option value="GDES">التصميم الجرافيكي — Graphic Design</option>
+          </optgroup>
+          <optgroup label="كلية إدارة الأعمال">
+            <option value="BUSI">إدارة الأعمال — Business Administration</option>
+            <option value="ACCT">المحاسبة — Accounting</option>
+            <option value="FINA">التمويل — Finance</option>
+            <option value="MISY">نظم المعلومات الإدارية — Management Information Systems</option>
+            <option value="HRMT">إدارة الموارد البشرية — Human Resource Management</option>
+            <option value="MKDM">التسويق والإعلام الرقمي — Marketing & Digital Media</option>
+          </optgroup>
+          <optgroup label="كلية القانون">
+            <option value="LAWB">القانون — Law</option>
+          </optgroup>
         </select>
       </div>
     </div>
@@ -780,7 +807,20 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 const API='https://pmu-monitor.onrender.com/api/courses';
 
 /* ===== STUDY PLAN (Updated Spring 2026) ===== */
-const PLAN=[
+/* ===== خطط 20 تخصص — PMU ===== */
+const PLANS={
+
+MEEN:{name:'Mechanical Engineering',ar:'الهندسة الميكانيكية',total:139,
+tech:{
+'MEEN 4312':['GEEN 3311','MEEN 3322'],
+'MEEN 4315':['MEEN 3322','MEEN 3333'],
+'MEEN 4331':['MEEN 3322','MEEN 3333'],
+'MEEN 4332':['MEEN 3322','MEEN 3333'],
+'MEEN 4341':['MEEN 3322','MEEN 2311'],
+'MEEN 4344':['MEEN 3311','MEEN 4393'],
+'MEEN 4351':['MEEN 3395'],
+'MEEN 4394':['MEEN 4392']},
+sems:[
 {id:'F1',label:'Freshman — الترم الأول',hrs:18,courses:[
 {c:'ISLM 1221',n:'Islamic Culture, Values & Society',h:2,p:[]},
 {c:'PHED 1111',n:'Active Living Life Style',h:1,p:[]},
@@ -849,19 +889,1313 @@ const PLAN=[
 {c:'MEEN 4311',n:'Principles of HVAC',h:3,p:['MEEN 3322','MEEN 3333']},
 {c:'ELEC 2',n:'ME Technical Elective 2',h:3,p:[],el:1},
 {c:'ELEC 3',n:'Social Science Elective',h:3,p:[],el:1}]}
-];
+]},
 
-const TECH_ELECTIVES={
-'MEEN 4312':['GEEN 3311','MEEN 3322'],
-'MEEN 4315':['MEEN 3322','MEEN 3333'],
-'MEEN 4331':['MEEN 3322','MEEN 3333'],
-'MEEN 4332':['MEEN 3322','MEEN 3333'],
-'MEEN 4341':['MEEN 3322','MEEN 2311'],
-'MEEN 4344':['MEEN 3311','MEEN 4393'],
-'MEEN 4351':['MEEN 3395'],
-'MEEN 4394':['MEEN 4392']};
+COSC:{name:'Computer Science',ar:'علوم الحاسب',total:137,tech:{},sems:[
+{id:'F1',hrs:16,courses:[
+{c:'ALIS 1211',n:'Introduction to Islamic Culture',h:2,p:[]},
+{c:'COMM 1311',n:'Written Communication',h:3,p:[]},
+{c:'UNIV 1211',n:'Prof. Development and Competencies',h:2,p:[]},
+{c:'MATH 1422',n:'Calculus I',h:4,p:[]},
+{c:'GEIT 1411',n:'Computer Science I',h:4,p:[]},
+{c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]}]},
 
-const TOTAL_CR=139;
+{id:'F2',hrs:19,courses:[
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'PHYS 1421',n:'Physics for Engineers I',h:4,p:[]},
+{c:'GEIT 1412',n:'Computer Science II',h:4,p:['GEIT 1411']},
+{c:'MATH 1423',n:'Calculus II',h:4,p:['MATH 1422']}]},
+
+{id:'S1',hrs:19,courses:[
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:['UNIV 1212']},
+{c:'PHYS 1422',n:'Physics for Engineers II',h:4,p:['PHYS 1421','MATH 1422']},
+{c:'MATH 1324',n:'Calculus III',h:3,p:['MATH 1423']},
+{c:'GEIT 2421',n:'Data Structures',h:4,p:['GEIT 1412']},
+{c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+
+{id:'S2',hrs:17,courses:[
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
+{c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
+{c:'GEIT 2331',n:'Mathematical Reasoning & Algorithmic Thinking',h:3,p:['GEIT 1412']},
+{c:'COSC 2312',n:'Web Programming',h:3,p:['GEIT 1411']},
+{c:'GEIT 2291',n:'Professional Ethics',h:2,p:[]},
+{c:'MATH 2313',n:'Probability and Statistics',h:3,p:['MATH 1423']}]},
+
+{id:'J1',hrs:18,courses:[
+{c:'COSC 3332',n:'Discrete Structures and Combinatorial Analysis',h:3,p:['GEIT 2331']},
+{c:'GEIT 3341',n:'Database I',h:3,p:['GEIT 1412']},
+{c:'GEIT 3331',n:'Computer Organization',h:3,p:['GEIT 1412']},
+{c:'MATH 3433',n:'Linear Algebra and Differential Equation',h:4,p:['MATH 1423']},
+{c:'ASSE 3211',n:'Learning Outcome Assessment II',h:2,p:['ASSE 2111']},
+{c:'COSC E1',n:'CS Elective I',h:3,p:[],el:1}]},
+
+{id:'J2',hrs:17,courses:[
+{c:'GEIT 3351',n:'Principles of Software Engineering',h:3,p:['GEIT 1412']},
+{c:'COSC 3361',n:'Computer Networks',h:3,p:['MATH 2313','GEIT 2421']},
+{c:'COSC 3351',n:'Algorithms',h:3,p:['GEIT 2421']},
+{c:'COSC 3411',n:'Systems Programming',h:4,p:['GEIT 3331']},
+{c:'COSC E2',n:'Natural Science Elective',h:4,p:[],el:1}]},
+
+{id:'SU',hrs:3,courses:[
+{c:'GEIT 4361',n:'Internship',h:3,p:[]}]},
+
+{id:'R1',hrs:16,courses:[
+{c:'COSC 4361',n:'Operating Systems',h:3,p:['COSC 3411']},
+{c:'COSC 4461',n:'Programming Languages',h:4,p:['COSC 3411']},
+{c:'ASSE 4311',n:'Learning Outcome Assessment III — CS',h:3,p:['ASSE 3211']},
+{c:'COSC E3',n:'CS Elective II',h:3,p:[],el:1},
+{c:'COSC E4',n:'Social Science Elective I',h:3,p:[],el:1}]},
+
+{id:'R2',hrs:12,courses:[
+{c:'COSC 4362',n:'Artificial Intelligence',h:3,p:['COSC 3351']},
+{c:'COSC 4363',n:'Theory of Computation',h:3,p:['COSC 3351','MATH 3433']},
+{c:'COSC E5',n:'CS Elective III',h:3,p:[],el:1},
+{c:'COSC E6',n:'Social Science Elective II',h:3,p:[],el:1}]}
+]},
+
+COEN:{name:'Computer Engineering',ar:'هندسة الحاسب',total:135,tech:{},sems:[
+{id:'F1',hrs:16,courses:[
+{c:'ALIS 1211',n:'Introduction to Islamic Culture',h:2,p:[]},
+{c:'COMM 1311',n:'Written Communication',h:3,p:[]},
+{c:'UNIV 1211',n:'Prof. Development and Competencies',h:2,p:[]},
+{c:'MATH 1422',n:'Calculus I',h:4,p:[]},
+{c:'GEIT 1411',n:'Computer Science I',h:4,p:[]},
+{c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]}]},
+
+{id:'F2',hrs:19,courses:[
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'PHYS 1421',n:'Physics for Engineers I',h:4,p:[]},
+{c:'GEIT 1412',n:'Computer Science II',h:4,p:['GEIT 1411']},
+{c:'MATH 1423',n:'Calculus II',h:4,p:['MATH 1422']}]},
+
+{id:'S1',hrs:19,courses:[
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:['UNIV 1212']},
+{c:'PHYS 1422',n:'Physics for Engineers II',h:4,p:['PHYS 1421','MATH 1422']},
+{c:'MATH 1324',n:'Calculus III',h:3,p:['MATH 1423']},
+{c:'GEIT 2421',n:'Data Structures',h:4,p:['GEIT 1412']},
+{c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+
+{id:'S2',hrs:18,courses:[
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
+{c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
+{c:'GEIT 2331',n:'Mathematical Reasoning & Algorithmic Thinking',h:3,p:['GEIT 1412']},
+{c:'COEN 2411',n:'Circuits',h:4,p:['MATH 1423','PHYS 1422']},
+{c:'GEIT 2291',n:'Professional Ethics',h:2,p:[]},
+{c:'MATH 2313',n:'Probability and Statistics',h:3,p:['MATH 1423']}]},
+
+{id:'J1',hrs:16,courses:[
+{c:'GEIT 3341',n:'Database I',h:3,p:['GEIT 1412']},
+{c:'GEIT 3331',n:'Computer Organization',h:3,p:['GEIT 1412']},
+{c:'MATH 3433',n:'Linear Algebra and Differential Equation',h:4,p:['MATH 1423']},
+{c:'COEN 3323',n:'Digital and Logic Design',h:3,p:['COEN 2411']},
+{c:'COEN E1',n:'CE Elective I',h:3,p:[],el:1}]},
+
+{id:'J2',hrs:15,courses:[
+{c:'GEIT 3351',n:'Principles of Software Engineering',h:3,p:['GEIT 1412']},
+{c:'COEN 3361',n:'Computer Networks',h:3,p:['MATH 2313','GEIT 2421']},
+{c:'ASSE 3211',n:'Learning Outcome Assessment II',h:2,p:['ASSE 2111']},
+{c:'COEN 3421',n:'Electronics',h:4,p:['COEN 2411']},
+{c:'COEN E2',n:'CE Elective II',h:3,p:[],el:1}]},
+
+{id:'SU',hrs:3,courses:[
+{c:'GEIT 4361',n:'Internship',h:3,p:[]}]},
+
+{id:'R1',hrs:16,courses:[
+{c:'COEN 4361',n:'Operating Systems',h:3,p:['GEIT 3331']},
+{c:'ASSE 4311',n:'Learning Outcome Assessment III — CE',h:3,p:['ASSE 3211']},
+{c:'COEN E3',n:'Natural Science Elective',h:4,p:[],el:1},
+{c:'COEN E4',n:'CE Elective III',h:3,p:[],el:1},
+{c:'COEN E5',n:'Social Science Elective I',h:3,p:[],el:1}]},
+
+{id:'R2',hrs:13,courses:[
+{c:'COEN 4413',n:'Embedded Systems',h:4,p:['COEN 4361','GEIT 3351']},
+{c:'COEN 4322',n:'Digital Signal Processing',h:3,p:['COEN 3323','MATH 2313']},
+{c:'COEN E6',n:'CE Elective IV',h:3,p:[],el:1},
+{c:'COEN E7',n:'Social Science Elective II',h:3,p:[],el:1}]}
+]},
+
+SOEN:{name:'Software Engineering',ar:'هندسة البرمجيات',total:132,tech:{},sems:[
+{id:'F1',hrs:16,courses:[
+{c:'ALIS 1211',n:'Introduction to Islamic Culture',h:2,p:[]},
+{c:'COMM 1311',n:'Written Communication',h:3,p:[]},
+{c:'UNIV 1211',n:'Prof. Development and Competencies',h:2,p:[]},
+{c:'MATH 1422',n:'Calculus I',h:4,p:[]},
+{c:'GEIT 1411',n:'Computer Science I',h:4,p:[]},
+{c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]}]},
+
+{id:'F2',hrs:19,courses:[
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'MATH 1423',n:'Calculus II',h:4,p:['MATH 1422']},
+{c:'GEIT 1412',n:'Computer Science II',h:4,p:['GEIT 1411']},
+{c:'PHYS 1421',n:'Physics for Engineers I',h:4,p:[]}]},
+
+{id:'S1',hrs:19,courses:[
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:['UNIV 1212']},
+{c:'PHYS 1422',n:'Physics for Engineers II',h:4,p:['PHYS 1421','MATH 1422']},
+{c:'MATH 1324',n:'Calculus III',h:3,p:['MATH 1423']},
+{c:'GEIT 2421',n:'Data Structures',h:4,p:['GEIT 1412']},
+{c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+
+{id:'S2',hrs:17,courses:[
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
+{c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
+{c:'GEIT 2331',n:'Mathematical Reasoning & Algorithmic Thinking',h:3,p:['GEIT 1412']},
+{c:'SOEN 2312',n:'Web Programming',h:3,p:['GEIT 1411']},
+{c:'GEIT 2291',n:'Professional Ethics',h:2,p:[]},
+{c:'SOEN E1',n:'Social Science Elective I',h:3,p:[],el:1}]},
+
+{id:'J1',hrs:15,courses:[
+{c:'GEIT 3341',n:'Database I',h:3,p:['GEIT 1412']},
+{c:'GEIT 3331',n:'Computer Organization',h:3,p:['GEIT 1412']},
+{c:'SOEN 2332',n:'Discrete Structure and Combinatorial Analysis',h:3,p:['GEIT 2331']},
+{c:'GEIT 3351',n:'Principles of Software Engineering',h:3,p:['GEIT 1412']},
+{c:'SOEN 3351',n:'Algorithms',h:3,p:['GEIT 2421']}]},
+
+{id:'J2',hrs:14,courses:[
+{c:'SOEN 3311',n:'Requirements Engineering',h:3,p:['GEIT 3351']},
+{c:'SOEN 4361',n:'Operating Systems',h:3,p:['GEIT 3331']},
+{c:'ASSE 3211',n:'Learning Outcome Assessment II',h:2,p:['ASSE 2111']},
+{c:'SOEN 4371',n:'E-Commerce',h:3,p:['GEIT 3341','SOEN 2312']},
+{c:'MATH 2313',n:'Probability and Statistics',h:3,p:['MATH 1423']}]},
+
+{id:'SU',hrs:3,courses:[
+{c:'GEIT 4361',n:'Internship',h:3,p:[]}]},
+
+{id:'R1',hrs:17,courses:[
+{c:'SOEN 4311',n:'Software Architecture and Design',h:3,p:['SOEN 3311']},
+{c:'ASSE 4311',n:'Learning Outcome Assessment III — SE',h:3,p:['ASSE 3211']},
+{c:'SOEN 4312',n:'Software Testing and Quality Assurance',h:3,p:['GEIT 3351']},
+{c:'SOEN E2',n:'Natural Science Elective',h:4,p:[],el:1},
+{c:'SOEN E3',n:'SE Elective I',h:4,p:[],el:1}]},
+
+{id:'R2',hrs:12,courses:[
+{c:'SOEN 4313',n:'Software Project Management',h:3,p:['GEIT 3351']},
+{c:'SOEN E4',n:'CS / CE / IT Elective',h:3,p:[],el:1},
+{c:'SOEN E5',n:'SE Elective II',h:3,p:[],el:1},
+{c:'SOEN E6',n:'Social Science Elective II',h:3,p:[],el:1}]}
+]},
+
+CSEC:{name:'Cybersecurity',ar:'الأمن السيبراني',total:133,tech:{},sems:[
+{id:'F1',hrs:18,courses:[
+{c:'ALIS 1211',n:'Introduction to Islamic Culture',h:2,p:[]},
+{c:'COMM 1311',n:'Written Communication',h:3,p:[]},
+{c:'MATH 1311',n:'Finite Math for Business',h:3,p:[]},
+{c:'UNIV 1211',n:'Prof. Development and Competencies',h:2,p:[]},
+{c:'GEIT 1411',n:'Computer Science I',h:4,p:[]},
+{c:'CSEC 1311',n:'Intro to Cybersecurity',h:3,p:[]},
+{c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]}]},
+
+{id:'F2',hrs:18,courses:[
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'MATH 1313',n:'Statistical Methods',h:3,p:[]},
+{c:'GEIT 1412',n:'Computer Science II',h:4,p:['GEIT 1411']},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']},
+{c:'CSEC E1',n:'Social Science Elective I',h:3,p:[],el:1}]},
+
+{id:'S1',hrs:18,courses:[
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:['UNIV 1212']},
+{c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
+{c:'GEIT 2421',n:'Data Structures',h:4,p:['GEIT 1412']},
+{c:'CSEC 2431',n:'Network Management',h:4,p:['GEIT 1412']},
+{c:'GEIT 2291',n:'Professional Ethics',h:2,p:[]},
+{c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']}]},
+
+{id:'S2',hrs:17,courses:[
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
+{c:'GEIT 2331',n:'Mathematical Reasoning & Algorithmic Thinking',h:3,p:['GEIT 1412']},
+{c:'CSEC 2331',n:'Digital Forensics',h:3,p:['GEIT 2291']},
+{c:'GEIT 3331',n:'Computer Organization',h:3,p:['GEIT 1412']},
+{c:'CSEC E2',n:'Social Science Elective II',h:3,p:[],el:1}]},
+
+{id:'J1',hrs:15,courses:[
+{c:'ASSE 3211',n:'Learning Outcome Assessment II',h:2,p:['ASSE 2111']},
+{c:'GEIT 3341',n:'Database I',h:3,p:['GEIT 1412']},
+{c:'CSEC 3431',n:'Network Security',h:4,p:['CSEC 2431']},
+{c:'GEIT 3351',n:'Principles of Software Engineering',h:3,p:['GEIT 1412']},
+{c:'CSEC E3',n:'CSEC Elective I',h:3,p:[],el:1}]},
+
+{id:'J2',hrs:17,courses:[
+{c:'CSEC 3352',n:'Secure Software Engineering',h:3,p:['GEIT 3351']},
+{c:'CSEC 3432',n:'Cyber Operations',h:4,p:['CSEC 2431']},
+{c:'CSEC 3354',n:'Introduction to Cryptography',h:3,p:['GEIT 2421']},
+{c:'CSEC 3355',n:'Scripting Languages',h:3,p:['GEIT 1412']},
+{c:'CSEC E4',n:'Natural Science Elective I',h:4,p:[],el:1}]},
+
+{id:'SU',hrs:3,courses:[
+{c:'GEIT 4361',n:'Internship',h:3,p:[]}]},
+
+{id:'R1',hrs:12,courses:[
+{c:'CSEC 4361',n:'Operating Systems',h:3,p:['GEIT 3331']},
+{c:'CSEC 4362',n:'Machine Learning',h:3,p:['GEIT 2421']},
+{c:'ASSE 4311',n:'Learning Outcome Assessment III — CSEC',h:3,p:['ASSE 3211']},
+{c:'CSEC E5',n:'CSEC Elective II',h:3,p:[],el:1}]},
+
+{id:'R2',hrs:15,courses:[
+{c:'CSEC 4471',n:'Vulnerability and Penetration Testing',h:4,p:['CSEC 3355']},
+{c:'CSEC 4472',n:'Systems Security',h:4,p:['CSEC 4361']},
+{c:'CSEC E6',n:'CSEC Elective III',h:3,p:[],el:1},
+{c:'CSEC E7',n:'Natural Science Elective II',h:4,p:[],el:1}]}
+]},
+
+AINT:{name:'Artificial Intelligence',ar:'الذكاء الاصطناعي',total:132,tech:{},sems:[
+{id:'F1',hrs:16,courses:[
+{c:'ALIS 1211',n:'Introduction to Islamic Culture',h:2,p:[]},
+{c:'COMM 1311',n:'Written Communication',h:3,p:[]},
+{c:'UNIV 1211',n:'Prof. Development and Competencies',h:2,p:[]},
+{c:'MATH 1422',n:'Calculus I',h:4,p:[]},
+{c:'GEIT 1411',n:'Computer Science I',h:4,p:[]},
+{c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]}]},
+
+{id:'F2',hrs:19,courses:[
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'PHYS 1421',n:'Physics for Engineers I',h:4,p:[]},
+{c:'GEIT 1412',n:'Computer Science II',h:4,p:['GEIT 1411']},
+{c:'MATH 1423',n:'Calculus II',h:4,p:['MATH 1422']}]},
+
+{id:'S1',hrs:18,courses:[
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:['UNIV 1212']},
+{c:'PHYS 1422',n:'Physics for Engineers II',h:4,p:['PHYS 1421','MATH 1422']},
+{c:'GEIT 2291',n:'Professional Ethics',h:2,p:[]},
+{c:'GEIT 2421',n:'Data Structures',h:4,p:['GEIT 1412']},
+{c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+
+{id:'S2',hrs:19,courses:[
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
+{c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
+{c:'GEIT 2331',n:'Mathematical Reasoning & Algorithmic Thinking',h:3,p:['GEIT 1412']},
+{c:'AINT 2412',n:'Scripting Languages for AI',h:4,p:['GEIT 1412']},
+{c:'AINT 2311',n:'Introduction to AI',h:3,p:['GEIT 2421']},
+{c:'MATH 2313',n:'Probability and Statistics',h:3,p:['MATH 1423']}]},
+
+{id:'J1',hrs:19,courses:[
+{c:'AINT 3332',n:'Discrete Structures and Combinatorial Analysis',h:3,p:['GEIT 2331']},
+{c:'GEIT 3341',n:'Database I',h:3,p:['GEIT 1412']},
+{c:'AINT 3411',n:'Introduction to Machine Learning',h:4,p:['AINT 2412','MATH 2313']},
+{c:'MATH 3433',n:'Linear Algebra and Differential Equation',h:4,p:['MATH 1423']},
+{c:'ASSE 3211',n:'Learning Outcome Assessment II',h:2,p:['ASSE 2111']},
+{c:'GEIT 3331',n:'Computer Organization',h:3,p:['GEIT 1412']}]},
+
+{id:'J2',hrs:17,courses:[
+{c:'GEIT 3351',n:'Principles of Software Engineering',h:3,p:['GEIT 1412']},
+{c:'AINT 3421',n:'Deep Learning',h:4,p:['AINT 3411']},
+{c:'AINT 3351',n:'Algorithms',h:3,p:['GEIT 2421']},
+{c:'AINT E1',n:'AI Elective I',h:3,p:[],el:1},
+{c:'AINT E2',n:'Natural Science Elective',h:4,p:[],el:1}]},
+
+{id:'SU',hrs:3,courses:[
+{c:'GEIT 4361',n:'Internship',h:3,p:[]}]},
+
+{id:'R1',hrs:12,courses:[
+{c:'AINT 4373',n:'Computer Vision',h:3,p:['MATH 3433']},
+{c:'ASSE 4311',n:'Learning Outcome Assessment III — AI',h:3,p:['ASSE 3211']},
+{c:'AINT E3',n:'Social Science Elective I',h:3,p:[],el:1},
+{c:'AINT E4',n:'AI Elective II',h:3,p:[],el:1}]},
+
+{id:'R2',hrs:9,courses:[
+{c:'AINT E5',n:'AI Elective III',h:3,p:[],el:1},
+{c:'AINT E6',n:'Social Science Elective II',h:3,p:[],el:1},
+{c:'AINT E7',n:'AI Elective IV',h:3,p:[],el:1}]}
+]},
+
+ITAP:{name:'Information Technology',ar:'تقنية المعلومات',total:132,tech:{},sems:[
+{id:'F1',hrs:18,courses:[
+{c:'ALIS 1211',n:'Introduction to Islamic Culture',h:2,p:[]},
+{c:'COMM 1311',n:'Written Communication',h:3,p:[]},
+{c:'UNIV 1211',n:'Prof. Development and Competencies',h:2,p:[]},
+{c:'MATH 1311',n:'Finite Math for Business',h:3,p:[]},
+{c:'ITAP 1311',n:'Intro to IT',h:3,p:[]},
+{c:'GEIT 1411',n:'Computer Science I',h:4,p:[]},
+{c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]}]},
+
+{id:'F2',hrs:15,courses:[
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'MATH 1312',n:'Calculus for Business',h:3,p:['MATH 1311']},
+{c:'GEIT 1412',n:'Computer Science II',h:4,p:['GEIT 1411']},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+
+{id:'S1',hrs:18,courses:[
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:['UNIV 1212']},
+{c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
+{c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
+{c:'GEIT 2421',n:'Data Structures',h:4,p:['GEIT 1412']},
+{c:'MATH 1313',n:'Statistical Methods',h:3,p:[]},
+{c:'ITAP E1',n:'Social Science Elective I',h:3,p:[],el:1}]},
+
+{id:'S2',hrs:17,courses:[
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
+{c:'ITAP 2312',n:'Web Programming',h:3,p:['GEIT 1411']},
+{c:'GEIT 2291',n:'Professional Ethics',h:2,p:[]},
+{c:'GEIT 2331',n:'Mathematical Reasoning & Algorithmic Thinking',h:3,p:['GEIT 1412']},
+{c:'ITAP 2431',n:'Network Management',h:4,p:['GEIT 1412']}]},
+
+{id:'J1',hrs:18,courses:[
+{c:'ASSE 3211',n:'Learning Outcome Assessment II',h:2,p:['ASSE 2111']},
+{c:'GEIT 3341',n:'Database I',h:3,p:['GEIT 1412']},
+{c:'ITAP 3431',n:'Network Security',h:4,p:['ITAP 2431']},
+{c:'GEIT 3331',n:'Computer Organization',h:3,p:['GEIT 1412']},
+{c:'ITAP 3313',n:'User Interface Development',h:3,p:['GEIT 1412','ITAP 2312']},
+{c:'ITAP E2',n:'IT Elective I',h:3,p:[],el:1}]},
+
+{id:'J2',hrs:17,courses:[
+{c:'ITAP 3471',n:'Web Server Administration',h:4,p:['ITAP 2312']},
+{c:'ITAP 3411',n:'Systems Programming',h:4,p:['GEIT 3331']},
+{c:'ITAP 3383',n:'Enterprise Resource Planning Systems',h:3,p:['GEIT 3341','GEIT 1412']},
+{c:'GEIT 3351',n:'Principles of Software Engineering',h:3,p:['GEIT 1412']},
+{c:'ITAP 3382',n:'Business Intelligence',h:3,p:['GEIT 3341']}]},
+
+{id:'SU',hrs:3,courses:[
+{c:'GEIT 4361',n:'Internship',h:3,p:[]}]},
+
+{id:'R1',hrs:13,courses:[
+{c:'ASSE 4311',n:'Learning Outcome Assessment III — IT',h:3,p:['ASSE 3211']},
+{c:'ITAP 4371',n:'e-Commerce',h:3,p:['GEIT 3341','ITAP 2312']},
+{c:'ITAP E3',n:'IT Elective II',h:3,p:[],el:1},
+{c:'ITAP E4',n:'Natural Science Elective I',h:4,p:[],el:1}]},
+
+{id:'R2',hrs:13,courses:[
+{c:'ITAP 4316',n:'Introduction to Project Management',h:3,p:['GEIT 3351']},
+{c:'ITAP E5',n:'IT Elective III',h:3,p:[],el:1},
+{c:'ITAP E6',n:'Social Science Elective II',h:3,p:[],el:1},
+{c:'ITAP E7',n:'Natural Science Elective II',h:4,p:[],el:1}]}
+]},
+
+CVEN:{name:'Civil Engineering',ar:'الهندسة المدنية',total:139,tech:{},sems:[
+{id:'F1',hrs:18,courses:[
+{c:'ALIS 1211',n:'Introduction to Islamic Culture',h:2,p:[]},
+{c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]},
+{c:'COMM 1311',n:'Written Communication',h:3,p:[]},
+{c:'UNIV 1211',n:'Prof. Development and Competencies',h:2,p:[]},
+{c:'MATH 1422',n:'Calculus I',h:4,p:[]},
+{c:'PHYS 1421',n:'Physics for Engineers I',h:4,p:[]},
+{c:'GEEN 1211',n:'Intro to Engineering',h:2,p:[]}]},
+
+{id:'F2',hrs:17,courses:[
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']},
+{c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'MATH 1423',n:'Calculus II',h:4,p:['MATH 1422']},
+{c:'CHEM 1421',n:'Chemistry for Engineers I',h:4,p:[]},
+{c:'GEEN 2311',n:'Engineering Mechanics I: Statics',h:3,p:['PHYS 1421']}]},
+
+{id:'S1',hrs:18,courses:[
+{c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
+{c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:['UNIV 1212']},
+{c:'MATH 1324',n:'Calculus III',h:3,p:['MATH 1423']},
+{c:'PHYS 1422',n:'Physics for Engineers II',h:4,p:['PHYS 1421','MATH 1422']},
+{c:'GEEN 2211',n:'Engineering Computing',h:2,p:['MATH 1423']},
+{c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
+{c:'MEEN 2312',n:'Engineering Mechanics II: Dynamics',h:3,p:['GEEN 2311']}]},
+
+{id:'S2',hrs:17,courses:[
+{c:'CVEN 2311',n:'CAD for Civil Engineering',h:3,p:['MATH 1324']},
+{c:'GEEN 2313',n:'Thermodynamics I',h:3,p:['MATH 1324','CHEM 1421']},
+{c:'MATH 2332',n:'Ordinary Differential Equations',h:3,p:['MATH 1324']},
+{c:'MEEN 2313',n:'Solid Mechanics',h:3,p:['GEEN 2311','MATH 1324']},
+{c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']}]},
+
+{id:'J1',hrs:17,courses:[
+{c:'ASSE 3211',n:'Learning Outcome Assessment II',h:2,p:['ASSE 2111']},
+{c:'GEEN 3311',n:'Intro to Fluid Mechanics',h:3,p:['GEEN 2313']},
+{c:'CVEN 3322',n:'Materials in Civil Engineering',h:3,p:['MEEN 2313']},
+{c:'CVEN 3311',n:'Structural Analysis',h:3,p:['MEEN 2313']},
+{c:'CVEN 3323',n:'Engineering Geology',h:3,p:['GEEN 2313']},
+{c:'CVEN 3341',n:'Engineering Measurement',h:3,p:['CVEN 2311']}]},
+
+{id:'J2',hrs:17,courses:[
+{c:'CVEN 3331',n:'Environmental Engineering Fundamental',h:3,p:['GEEN 3311']},
+{c:'CVEN 3332',n:'Hydraulic Engineering',h:3,p:['GEEN 3311']},
+{c:'CVEN 3343',n:'Engineering Probability & Statistics',h:3,p:['MATH 1324']},
+{c:'CVEN 3312',n:'Reinforced Concrete Design',h:3,p:['CVEN 3311']},
+{c:'CVEN 3344',n:'Sustainable Engineering',h:3,p:['CVEN 3322']},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']}]},
+
+{id:'SU',hrs:3,courses:[
+{c:'CVEN 3301',n:'Internship',h:3,p:[]}]},
+
+{id:'R1',hrs:18,courses:[
+{c:'CVEN 4313',n:'Design of Steel Structures',h:3,p:['MEEN 2313','CVEN 3312']},
+{c:'CVEN 4323',n:'Intro to Geotechnical Engineering',h:3,p:['CVEN 3322','CVEN 3323']},
+{c:'CVEN 4396',n:'Civil Engineering Senior Design I',h:3,p:['CVEN 3301']},
+{c:'GEEN 4311',n:'Engineering Economy',h:3,p:[]},
+{c:'CVEN 4342',n:'Transportation Engineering',h:3,p:['CVEN 3341']},
+{c:'CVEN E1',n:'CE Technical Elective I',h:3,p:[],el:1}]},
+
+{id:'R2',hrs:14,courses:[
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'CVEN 4314',n:'Construction Management',h:3,p:['GEEN 4311']},
+{c:'CVEN 4397',n:'Civil Engineering Senior Design II',h:3,p:['CVEN 4396','GEEN 4311']},
+{c:'CVEN E2',n:'CE Technical Elective II',h:3,p:[],el:1},
+{c:'CVEN E3',n:'Social Science Elective',h:3,p:[],el:1}]}
+]},
+
+CHEN:{name:'Chemical Engineering',ar:'الهندسة الكيميائية',total:139,tech:{},sems:[
+{id:'F1',hrs:19,courses:[
+{c:'COMM 1311',n:'Written Communication',h:3,p:[]},
+{c:'UNIV 1211',n:'Prof. Development and Competencies',h:2,p:[]},
+{c:'MATH 1422',n:'Calculus I',h:4,p:[]},
+{c:'PHYS 1421',n:'Physics for Engineers I',h:4,p:[]},
+{c:'CHEM 1421',n:'Chemistry for Engineers I',h:4,p:[]},
+{c:'GEEN 1211',n:'Intro to Engineering',h:2,p:[]}]},
+
+{id:'F2',hrs:17,courses:[
+{c:'ALIS 1211',n:'Arabic and Islamic Studies',h:2,p:[]},
+{c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]},
+{c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'MATH 1423',n:'Calculus II',h:4,p:['MATH 1422']},
+{c:'CHEM 1422',n:'Chemistry for Engineers II',h:4,p:['CHEM 1421']},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]}]},
+
+{id:'S1',hrs:17,courses:[
+{c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
+{c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:['UNIV 1212']},
+{c:'MATH 1324',n:'Calculus III',h:3,p:['MATH 1423']},
+{c:'CHEN 2391',n:'Organic Chemistry',h:3,p:['CHEM 1422']},
+{c:'GEEN 2211',n:'Engineering Computing',h:2,p:['MATH 1423']},
+{c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
+{c:'CHEN 2311',n:'Principles of Chemical Engineering',h:3,p:['PHYS 1421','MATH 1422']}]},
+
+{id:'S2',hrs:18,courses:[
+{c:'MEEN 2311',n:'Materials Engineering',h:3,p:['CHEM 1421']},
+{c:'GEEN 2313',n:'Thermodynamics I',h:3,p:['MATH 1324','CHEM 1421']},
+{c:'MATH 2332',n:'Ordinary Differential Equations',h:3,p:['MATH 1324']},
+{c:'PHYS 1422',n:'Physics for Engineers II',h:4,p:['PHYS 1421','MATH 1422']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']}]},
+
+{id:'J1',hrs:16,courses:[
+{c:'GEEN 3314',n:'Electric Circuits and Electronics',h:3,p:['PHYS 1422']},
+{c:'GEEN 3311',n:'Intro to Fluid Mechanics',h:3,p:['GEEN 2313']},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'CHEN 3313',n:'Biology',h:3,p:['CHEN 2391']},
+{c:'CHEN 3315',n:'Physical Chemistry',h:3,p:['CHEM 1422']},
+{c:'ASSE 3211',n:'Learning Outcome Assessment II',h:2,p:['ASSE 2111']}]},
+
+{id:'J2',hrs:17,courses:[
+{c:'CHEN 3494',n:'Separation Process',h:4,p:['GEEN 3311','CHEN 2311','CHEN 3315']},
+{c:'CHEN E1',n:'Social Science Elective',h:3,p:[],el:1},
+{c:'CVEN 4344',n:'Engineering Probability & Statistics',h:3,p:['MATH 2332']},
+{c:'MEEN 3333',n:'Heat Transfer',h:3,p:['GEEN 3311']},
+{c:'CHEN 3322',n:'Chemical Engineering Thermodynamics II',h:3,p:['CHEN 3315','GEEN 3311']},
+{c:'MEEN 3111',n:'Thermofluids & Energy Lab',h:1,p:['GEEN 3311']}]},
+
+{id:'SU',hrs:3,courses:[
+{c:'CHEN 3301',n:'Internship',h:3,p:[]}]},
+
+{id:'R1',hrs:17,courses:[
+{c:'CHEN 4492',n:'Process Control',h:4,p:['CHEN 3494','MEEN 3333']},
+{c:'CHEN 4493',n:'Reaction Engineering',h:4,p:['CHEN 3494','CHEN 3322']},
+{c:'CHEN 4320',n:'Process Simulation',h:3,p:['CHEN 3494','MEEN 3333']},
+{c:'CHEN 4396',n:'Chemical Eng. Senior Design I',h:3,p:['CHEN 3301','CHEN 3494']},
+{c:'CHEN E2',n:'Chem Technical Elective I',h:3,p:[],el:1}]},
+
+{id:'R2',hrs:15,courses:[
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'CHEN 4422',n:'Plant Design',h:4,p:['CHEN 4320']},
+{c:'CHEN 4397',n:'Chemical Eng. Senior Design II',h:3,p:['CHEN 4396']},
+{c:'GEEN 4311',n:'Engineering Economy',h:3,p:[]},
+{c:'CHEN E3',n:'Chem Technical Elective II',h:3,p:[],el:1}]}
+]},
+
+EEEN:{name:'Electrical Engineering',ar:'الهندسة الكهربائية',total:139,tech:{},sems:[
+{id:'F1',hrs:17,courses:[
+{c:'ALIS 1211',n:'Introduction to Islamic Culture',h:2,p:[]},
+{c:'COMM 1311',n:'Written Communication',h:3,p:[]},
+{c:'UNIV 1211',n:'Prof. Development and Competencies',h:2,p:[]},
+{c:'MATH 1422',n:'Calculus I',h:4,p:[]},
+{c:'PHYS 1421',n:'Physics for Engineers I',h:4,p:[]},
+{c:'GEEN 1211',n:'Intro to Engineering',h:2,p:[]}]},
+
+{id:'F2',hrs:17,courses:[
+{c:'EEEN E1',n:'Social Science Elective',h:3,p:[],el:1},
+{c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]},
+{c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'MATH 1423',n:'Calculus II',h:4,p:['MATH 1422']},
+{c:'PHYS 1422',n:'Physics for Engineers II',h:4,p:['PHYS 1421','MATH 1422']}]},
+
+{id:'S1',hrs:17,courses:[
+{c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
+{c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
+{c:'EEEN 2411',n:'Circuits I',h:4,p:['MATH 1423','PHYS 1422']},
+{c:'MATH 1324',n:'Calculus III',h:3,p:['MATH 1423']},
+{c:'CHEM 1421',n:'Chemistry for Engineers I',h:4,p:[]},
+{c:'GEEN 2211',n:'Engineering Computing',h:2,p:['MATH 1423']}]},
+
+{id:'S2',hrs:16,courses:[
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
+{c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:['UNIV 1212']},
+{c:'GEEN 2310',n:'Applied Linear Algebra for Engineers',h:3,p:[]},
+{c:'MATH 2332',n:'Ordinary Differential Equations',h:3,p:['MATH 1324']},
+{c:'EEEN 2312',n:'Circuits II',h:3,p:['EEEN 2411']}]},
+
+{id:'J1',hrs:17,courses:[
+{c:'ASSE 3211',n:'Learning Outcome Assessment II',h:2,p:['ASSE 2111']},
+{c:'EEEN 3392',n:'Advanced Applied Mathematics',h:3,p:['GEEN 2310','MATH 2332']},
+{c:'EEEN 3361',n:'Electromagnetic Fields & Waves',h:3,p:['EEEN 2411']},
+{c:'EEEN 3421',n:'Electronics I',h:4,p:['EEEN 2411']},
+{c:'EEEN 3331',n:'Digital Systems',h:3,p:['EEEN 2411']},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']}]},
+
+{id:'J2',hrs:18,courses:[
+{c:'EEEN 3422',n:'Electronics II',h:4,p:['EEEN 3421']},
+{c:'EEEN 3432',n:'Microcontroller Systems',h:4,p:['EEEN 3331','GEEN 2211']},
+{c:'EEEN 3341',n:'Signals and Systems',h:3,p:['EEEN 2312','EEEN 3392']},
+{c:'EEEN 3461',n:'Electric Machinery',h:4,p:['EEEN 3361']},
+{c:'EEEN 3391',n:'Probability & Random Signal Analysis',h:3,p:['EEEN 2312','EEEN 3392']}]},
+
+{id:'SU',hrs:3,courses:[
+{c:'EEEN 3301',n:'Internship',h:3,p:[]}]},
+
+{id:'R1',hrs:17,courses:[
+{c:'EEEN 4440',n:'Communication Systems',h:4,p:['EEEN 3391','EEEN 3341']},
+{c:'EEEN 4393',n:'Electrical Eng. Senior Design I',h:3,p:['EEEN 3301','EEEN 3432']},
+{c:'EEEN 4423',n:'Sensors & Instrumentation',h:4,p:['EEEN 3422']},
+{c:'EEEN E2',n:'EE Technical Elective I',h:3,p:[],el:1},
+{c:'GEEN 4311',n:'Engineering Economy',h:3,p:[]}]},
+
+{id:'R2',hrs:17,courses:[
+{c:'EEEN 4394',n:'Electrical Eng. Senior Design II',h:3,p:['GEEN 4311','EEEN 4393']},
+{c:'EEEN 4451',n:'Automatic Control Systems',h:4,p:['EEEN 3341','EEEN 3331']},
+{c:'EEEN E3',n:'EE Technical Elective II',h:3,p:[],el:1},
+{c:'EEEN 4424',n:'Power Electronics',h:4,p:['EEEN 3422']},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']}]}
+]},
+
+ARCH:{name:'Architecture',ar:'العمارة',total:163,tech:{},sems:[
+{id:'F1',hrs:15,courses:[
+{c:'COMM 1311',n:'Written Communication',h:3,p:[]},
+{c:'UNIV 1211',n:'Prof. Development and Competencies',h:2,p:[]},
+{c:'MATH 1422',n:'Calculus I',h:4,p:[]},
+{c:'COAD 1311',n:'Design Studio I — Fundamentals',h:3,p:[]},
+{c:'COAD 1312',n:'Hand Drawing and Rendering Techniques',h:3,p:[]}]},
+
+{id:'F2',hrs:16,courses:[
+{c:'ARCH E1',n:'Social Science Elective I',h:3,p:[],el:1},
+{c:'ALIS 1211',n:'Introduction to Islamic Culture',h:2,p:[]},
+{c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'COAD 1313',n:'Design Studio II — Fundamentals',h:3,p:['COAD 1311','COAD 1312']},
+{c:'COAD 1314',n:'Construction Documents and Detail Drawings',h:3,p:['COAD 1311']}]},
+
+{id:'S1',hrs:17,courses:[
+{c:'MATH 1423',n:'Calculus II',h:4,p:['MATH 1422']},
+{c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
+{c:'COAD 2333',n:'Environmental Psychology for Design',h:3,p:['COAD 1313']},
+{c:'ARCH 2341',n:'Principles of Design with Climate',h:3,p:[]},
+{c:'ARCH 2421',n:'Design Studio III — Architectural Design',h:4,p:['COAD 1313']},
+{c:'COAD 2251',n:'Digital Design I: 2D',h:2,p:['COAD 1314']}]},
+
+{id:'S2',hrs:18,courses:[
+{c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:['UNIV 1212']},
+{c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
+{c:'PHYS 1421',n:'Physics for Engineers I',h:4,p:[]},
+{c:'ARCH 2342',n:'Materials and Methods',h:3,p:[]},
+{c:'ARCH 2422',n:'Design Studio IV — Integrated',h:4,p:['ARCH 2421']},
+{c:'COAD 2252',n:'Digital Design II: 3D',h:2,p:['COAD 2251']}]},
+
+{id:'J1',hrs:16,courses:[
+{c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
+{c:'ASSE 3211',n:'Learning Outcome Assessment II',h:2,p:['ASSE 2111']},
+{c:'COAD 3341',n:'Built World Design History and Theory I',h:3,p:['COAD 2333']},
+{c:'COAD 3353',n:'Digital Design III: BIM',h:3,p:['COAD 2252']},
+{c:'ARCH 3523',n:'Design Studio V — Architectural Design',h:5,p:['ARCH 2422']}]},
+
+{id:'J2',hrs:16,courses:[
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ARCH 3343',n:'Principles of Structural Systems',h:3,p:['ARCH 2342']},
+{c:'COAD 3342',n:'Built World Design History and Theory II',h:3,p:['COAD 3341']},
+{c:'COAD 3322',n:'Building Codes and Universal Design',h:3,p:['ARCH 2342']},
+{c:'ARCH 3524',n:'Design Studio VI — Integrated',h:5,p:['ARCH 3523']}]},
+
+{id:'R1',hrs:15,courses:[
+{c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]},
+{c:'ARCH 4344',n:'Introduction to Environmental Systems',h:3,p:['ARCH 2341']},
+{c:'ARCH 4354',n:'Simulation and Optimization',h:3,p:['MATH 1423','COAD 3353','ARCH 3343']},
+{c:'ARCH E2',n:'Professional Elective I',h:3,p:[],el:1},
+{c:'ARCH 4525',n:'Design Studio VII — Architectural Design',h:5,p:['ARCH 3524','COAD 3322']}]},
+
+{id:'R2',hrs:17,courses:[
+{c:'ARCH 4361',n:'Preparing the Project Brief',h:3,p:['UNIV 1213','COAD 2333']},
+{c:'ARCH 4362',n:'Construction Process and Building Economics',h:3,p:['ARCH 3343']},
+{c:'ARCH 4345',n:'Architectural Structures',h:3,p:['MATH 1423','ARCH 4354']},
+{c:'ARCH 4346',n:'Integrated Environmental Systems',h:3,p:['ARCH 4344']},
+{c:'ARCH 4526',n:'Design Studio VIII — Integrated',h:5,p:['ARCH 4525']}]},
+
+{id:'SU',hrs:3,courses:[
+{c:'ARCH 4365',n:'Internship',h:3,p:[]}]},
+
+{id:'T1',hrs:15,courses:[
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ARCH E3',n:'Social Science Elective II',h:3,p:[],el:1},
+{c:'CHEM 1411',n:'Introductory Chemistry',h:4,p:[]},
+{c:'ARCH E4',n:'Professional Elective II',h:3,p:[],el:1},
+{c:'ARCH 5327',n:'Design Studio IX — Capstone Programming',h:3,p:['ARCH 4365','ARCH 4526']}]},
+
+{id:'T2',hrs:15,courses:[
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']},
+{c:'ARCH 5363',n:'Professional Practice and Ethics',h:3,p:['ARCH 4526']},
+{c:'ARCH E5',n:'Professional Elective III',h:3,p:[],el:1},
+{c:'ARCH 5628',n:'Design Studio X — Architectural Capstone',h:6,p:['ARCH 5327']}]}
+]},
+
+IDES:{name:'Interior Design',ar:'التصميم الداخلي',total:126,tech:{},sems:[
+{id:'F1',hrs:15,courses:[
+{c:'COMM 1311',n:'Written Communication',h:3,p:[]},
+{c:'UNIV 1211',n:'Prof. Development and Competencies',h:2,p:[]},
+{c:'MATH 1311',n:'Finite Math for Business',h:3,p:[]},
+{c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]},
+{c:'COAD 1311',n:'Design Studio I — Fundamentals',h:3,p:[]},
+{c:'COAD 1312',n:'Hand Drawing and Rendering Techniques',h:3,p:[]}]},
+
+{id:'F2',hrs:15,courses:[
+{c:'IDES E1',n:'Social Science Elective I',h:3,p:[],el:1},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']},
+{c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'COAD 1313',n:'Design Studio II — Fundamentals',h:3,p:['COAD 1311','COAD 1312']},
+{c:'COAD 1314',n:'Construction Documents and Detail Drawings',h:3,p:['COAD 1311']}]},
+
+{id:'S1',hrs:16,courses:[
+{c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
+{c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:['UNIV 1212']},
+{c:'MATH 1312',n:'Calculus for Business',h:3,p:['MATH 1311']},
+{c:'IDES 2332',n:'Materials for Interior Design',h:3,p:['COAD 1313']},
+{c:'IDES 2311',n:'Interior Design III — Residential Studio',h:3,p:['COAD 1313','COAD 1314']},
+{c:'COAD 2251',n:'Digital Design I: 2D',h:2,p:['COAD 1314']}]},
+
+{id:'S2',hrs:16,courses:[
+{c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
+{c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
+{c:'IDES E2',n:'Natural & Physical Science Elective I',h:4,p:[],el:1},
+{c:'COAD 2333',n:'Environmental Psychology for Design',h:3,p:['COAD 1313']},
+{c:'IDES 2312',n:'Interior Design IV — Commercial Studio',h:3,p:['IDES 2311']},
+{c:'COAD 2252',n:'Digital Design II: 3D',h:2,p:['COAD 2251']}]},
+
+{id:'J1',hrs:17,courses:[
+{c:'ALIS 1211',n:'Introduction to Islamic Culture',h:2,p:[]},
+{c:'ASSE 3211',n:'Learning Outcome Assessment II',h:2,p:['ASSE 2111']},
+{c:'IDES 3411',n:'Interior Design V — Office Design Studio',h:4,p:['IDES 2312','COAD 2252']},
+{c:'COAD 3341',n:'Built World Design History and Theory I',h:3,p:['COAD 2333']},
+{c:'IDES 3321',n:'Interior Building System',h:3,p:['IDES 2332']},
+{c:'IDES 3331',n:'Interior Lighting',h:3,p:['IDES 2332']}]},
+
+{id:'J2',hrs:15,courses:[
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'IDES 3412',n:'Interior Design VI — Hospitality Studio',h:4,p:['IDES 3411']},
+{c:'COAD 3342',n:'Built World Design History and Theory II',h:3,p:['COAD 3341']},
+{c:'COAD 3322',n:'Building Codes and Universal Design',h:3,p:['IDES 3321']},
+{c:'COAD 3353',n:'Digital Design III: BIM',h:3,p:['COAD 2252']}]},
+
+{id:'SU',hrs:3,courses:[
+{c:'IDES 3338',n:'Internship',h:3,p:[]}]},
+
+{id:'R1',hrs:14,courses:[
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'IDES E3',n:'Natural & Physical Science Elective II',h:4,p:[],el:1},
+{c:'IDES 4112',n:'Capstone Project Research / Pre-Design',h:1,p:['IDES 3338','IDES 3412']},
+{c:'IDES 4337',n:'Sustainable Design',h:3,p:['IDES 3321']},
+{c:'IDES 4425',n:'Interior Design VII — Healthcare Studio',h:4,p:['IDES 3412']}]},
+
+{id:'R2',hrs:15,courses:[
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'IDES E4',n:'Social Science Elective II',h:3,p:[],el:1},
+{c:'IDES 4413',n:'Interior Design Capstone Project Studio',h:4,p:['IDES 4112','IDES 4425']},
+{c:'IDES 4343',n:'Professional Practices',h:3,p:['IDES 4112']},
+{c:'IDES E5',n:'Technical Elective',h:3,p:[],el:1}]}
+]},
+
+GDES:{name:'Graphic Design',ar:'التصميم الجرافيكي',total:125,tech:{},sems:[
+{id:'F1',hrs:16,courses:[
+{c:'COMM 1311',n:'Written Communication',h:3,p:[]},
+{c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]},
+{c:'MATH 1311',n:'Finite Math for Business',h:3,p:[]},
+{c:'GDES 1311',n:'Drawing',h:3,p:[]},
+{c:'GDES 1321',n:'2D Design',h:3,p:[]},
+{c:'GDES 1331',n:'Art Appreciation',h:3,p:[]}]},
+
+{id:'F2',hrs:15,courses:[
+{c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']},
+{c:'UNIV 1211',n:'Prof. Development and Competencies',h:2,p:[]},
+{c:'GDES 1312',n:'Digital Imaging',h:3,p:['GDES 1311']},
+{c:'GDES 1322',n:'3D Design',h:3,p:['GDES 1321']},
+{c:'GDES 1332',n:'Art History',h:3,p:['GDES 1331']}]},
+
+{id:'S1',hrs:15,courses:[
+{c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
+{c:'GDES 2311',n:'Typography I',h:3,p:['GDES 1321']},
+{c:'GDES 2321',n:'Illustration',h:3,p:['GDES 1322']},
+{c:'GDES 2331',n:'History of Visual Communication',h:3,p:['GDES 1332']}]},
+
+{id:'S2',hrs:17,courses:[
+{c:'ALIS 1211',n:'Introduction to Islamic Culture',h:2,p:[]},
+{c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
+{c:'MATH 1313',n:'Statistical Methods',h:3,p:['MATH 1311']},
+{c:'GDES 2312',n:'Arabic Typography',h:3,p:['GDES 2311']},
+{c:'GDES 2322',n:'Digital Photography',h:3,p:['GDES 1312']},
+{c:'GDES 2332',n:'Design Thinking',h:3,p:['GDES 2331']}]},
+
+{id:'J1',hrs:16,courses:[
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'GDES 3311',n:'Typography II',h:3,p:['GDES 2311']},
+{c:'GDES 3321',n:'Brand Identity',h:3,p:['GDES 2311','GDES 2321']},
+{c:'GDES 3331',n:'Interaction I',h:3,p:['GDES 2312','GDES 2322','GDES 2332']},
+{c:'ASSE 3211',n:'Learning Outcome Assessment II',h:2,p:['ASSE 2111']},
+{c:'GDES E1',n:'Social Science Elective I',h:3,p:[],el:1}]},
+
+{id:'J2',hrs:15,courses:[
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'GDES 3312',n:'Information Design',h:3,p:['GDES 3311','GDES 3321','GDES 3331']},
+{c:'GDES 3322',n:'Motion Design',h:3,p:['GDES 3311','GDES 3321','GDES 3331']},
+{c:'GDES 3332',n:'Interaction II',h:3,p:['GDES 3331']},
+{c:'GDES E2',n:'Natural & Physical Science Elective I',h:4,p:[],el:1}]},
+
+{id:'SU',hrs:3,courses:[
+{c:'GDES 3338',n:'Internship',h:3,p:[]}]},
+
+{id:'R1',hrs:14,courses:[
+{c:'GDES E3',n:'Social Science Elective II',h:3,p:[],el:1},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:['UNIV 1212']},
+{c:'GDES 4112',n:'Capstone Project Research',h:1,p:['GDES 3331','GDES 3332']},
+{c:'GDES 4321',n:'Advanced Graphic Design',h:3,p:['GDES 3312','GDES 3322','GDES 3332']},
+{c:'GDES E4',n:'Technical Elective I',h:3,p:[],el:1}]},
+
+{id:'R2',hrs:14,courses:[
+{c:'GDES E5',n:'Natural & Physical Science Elective II',h:4,p:[],el:1},
+{c:'GDES 4322',n:'Portfolio Development',h:3,p:['GDES 4321']},
+{c:'GDES 4413',n:'Graphic Design Capstone Project',h:4,p:['GDES 4321','GDES 4112']},
+{c:'GDES E6',n:'Technical Elective II',h:3,p:[],el:1}]}
+]},
+
+ACCT:{name:'Accounting',ar:'المحاسبة',total:128,tech:{},sems:[
+{id:'F1',hrs:15,courses:[
+{c:'ALIS 1211',n:'Introduction to Islamic Culture',h:2,p:[]},
+{c:'COMM 1311',n:'Written Communication',h:3,p:[]},
+{c:'UNIV 1211',n:'Prof. Development and Competencies',h:2,p:[]},
+{c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:[]},
+{c:'MATH 1311',n:'Finite Math for Business',h:3,p:[]},
+{c:'ACCT E1',n:'Social Science Elective',h:3,p:[],el:1}]},
+
+{id:'F2',hrs:15,courses:[
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]},
+{c:'MATH 1312',n:'Calculus for Business',h:3,p:['MATH 1311']},
+{c:'ACCT E2',n:'Natural Science Elective',h:4,p:[],el:1}]},
+
+{id:'S1',hrs:16,courses:[
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ACCT 2311',n:'Fundamentals of Financial Accounting',h:3,p:[]},
+{c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
+{c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
+{c:'ECON 1311',n:'Introduction to Macroeconomics',h:3,p:[]},
+{c:'MISY 2311',n:'Introduction to Management Information Systems',h:3,p:[]},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+
+{id:'S2',hrs:17,courses:[
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ACCT 2321',n:'Managerial Accounting',h:3,p:['ACCT 2311']},
+{c:'BUSI 2311',n:'Principles of Management',h:3,p:[]},
+{c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
+{c:'ECON 1312',n:'Introduction to Microeconomics',h:3,p:[]},
+{c:'MATH 1313',n:'Statistical Methods',h:3,p:[]}]},
+
+{id:'J1',hrs:14,courses:[
+{c:'ASSE 3211',n:'Learning Outcome Assessment II',h:2,p:['ASSE 2111']},
+{c:'BUSI 3311',n:'Legal Environment of Business',h:3,p:[]},
+{c:'BUSI 3321',n:'Operations Management',h:3,p:['MATH 1313']},
+{c:'ACCT 3311',n:'Intermediate Accounting I',h:3,p:['ACCT 2321']},
+{c:'FINA 3311',n:'Financial Management Principles',h:3,p:['ACCT 2321']}]},
+
+{id:'J2',hrs:15,courses:[
+{c:'BUSI 3312',n:'Organizational Behavior',h:3,p:['BUSI 2311']},
+{c:'BUSI 3313',n:'Marketing Principles',h:3,p:[]},
+{c:'ACCT 3312',n:'Introduction to Accounting Information Systems',h:3,p:['ACCT 2321']},
+{c:'ACCT 3321',n:'Intermediate Accounting II',h:3,p:['ACCT 3311']},
+{c:'ACCT E3',n:'Finance or MIS Elective',h:3,p:[],el:1}]},
+
+{id:'SU',hrs:3,courses:[
+{c:'BUSI 4351',n:'Internship',h:3,p:[]}]},
+
+{id:'R1',hrs:18,courses:[
+{c:'ACCT 4311',n:'Auditing & Assurance Services',h:3,p:['ACCT 3321']},
+{c:'BUSI 4361',n:'Entrepreneurship',h:3,p:['BUSI 3313']},
+{c:'ACCT E4',n:'Accounting Elective I',h:3,p:[],el:1},
+{c:'ACCT E5',n:'Business Elective I',h:3,p:[],el:1},
+{c:'ACCT E6',n:'Business Elective II',h:3,p:[],el:1},
+{c:'ACCT E7',n:'Finance or MIS Elective II',h:3,p:[],el:1}]},
+
+{id:'R2',hrs:15,courses:[
+{c:'ASSE 4311',n:'Learning Outcome Assessment III — ACCT',h:3,p:['ASSE 3211']},
+{c:'ACCT 4321',n:'Accounting Management Planning',h:3,p:['ACCT 3311']},
+{c:'BUSI 4362',n:'Strategic Management',h:3,p:[]},
+{c:'ACCT E8',n:'Accounting Elective II',h:3,p:[],el:1},
+{c:'ACCT E9',n:'Finance or MIS Elective III',h:3,p:[],el:1}]}
+]},
+
+BUSI:{name:'Business Administration',ar:'إدارة الأعمال',total:125,tech:{},sems:[
+{id:'F1',hrs:15,courses:[
+{c:'ALIS 1211',n:'Introduction to Islamic Culture',h:2,p:[]},
+{c:'COMM 1311',n:'Written Communication',h:3,p:[]},
+{c:'UNIV 1211',n:'Prof. Development and Competencies',h:2,p:[]},
+{c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:[]},
+{c:'MATH 1311',n:'Finite Math for Business',h:3,p:[]},
+{c:'BUSI E1',n:'Social Science Elective',h:3,p:[],el:1}]},
+
+{id:'F2',hrs:15,courses:[
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]},
+{c:'MATH 1312',n:'Calculus for Business',h:3,p:['MATH 1311']},
+{c:'BUSI E2',n:'Natural Science Elective',h:4,p:[],el:1}]},
+
+{id:'S1',hrs:16,courses:[
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ACCT 2311',n:'Fundamentals of Financial Accounting',h:3,p:[]},
+{c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
+{c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
+{c:'ECON 1311',n:'Introduction to Macroeconomics',h:3,p:[]},
+{c:'MISY 2311',n:'Introduction to Management Information Systems',h:3,p:[]},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+
+{id:'S2',hrs:17,courses:[
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ACCT 2321',n:'Managerial Accounting',h:3,p:['ACCT 2311']},
+{c:'BUSI 2311',n:'Principles of Management',h:3,p:[]},
+{c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
+{c:'ECON 1312',n:'Introduction to Microeconomics',h:3,p:[]},
+{c:'MATH 1313',n:'Statistical Methods',h:3,p:[]}]},
+
+{id:'J1',hrs:14,courses:[
+{c:'ASSE 3211',n:'Learning Outcome Assessment II',h:2,p:['ASSE 2111']},
+{c:'BUSI 3311',n:'Legal Environment of Business',h:3,p:[]},
+{c:'BUSI 3312',n:'Organizational Behavior',h:3,p:['BUSI 2311']},
+{c:'FINA 3311',n:'Financial Management Principles',h:3,p:['ACCT 2321']},
+{c:'BUSI E3',n:'Business Elective I',h:3,p:[],el:1}]},
+
+{id:'J2',hrs:15,courses:[
+{c:'BUSI 3313',n:'Marketing Principles',h:3,p:[]},
+{c:'BUSI 3321',n:'Operations Management',h:3,p:['MATH 1313']},
+{c:'BUSI 3323',n:'Introduction to HRM',h:3,p:['BUSI 2311']},
+{c:'BUSI 3331',n:'Business Negotiations',h:3,p:[]},
+{c:'BUSI E4',n:'Business Elective II',h:3,p:[],el:1}]},
+
+{id:'SU',hrs:3,courses:[
+{c:'BUSI 4351',n:'Internship',h:3,p:[]}]},
+
+{id:'R1',hrs:15,courses:[
+{c:'BUSI 4311',n:'E-Commerce',h:3,p:['BUSI 3313','MISY 2311']},
+{c:'BUSI 3322',n:'Supply Chain Management',h:3,p:['BUSI 3321']},
+{c:'BUSI 4361',n:'Entrepreneurship',h:3,p:['BUSI 3313']},
+{c:'BUSI 4321',n:'International Business',h:3,p:['BUSI 2311']},
+{c:'BUSI E5',n:'Business Elective III',h:3,p:[],el:1}]},
+
+{id:'R2',hrs:15,courses:[
+{c:'ASSE 4311',n:'Learning Outcome Assessment III — BUSI',h:3,p:['ASSE 3211']},
+{c:'BUSI 4362',n:'Strategic Management',h:3,p:[]},
+{c:'BUSI E6',n:'Accounting Elective',h:3,p:[],el:1},
+{c:'BUSI E7',n:'Finance Elective',h:3,p:[],el:1},
+{c:'BUSI E8',n:'MIS Elective',h:3,p:[],el:1}]}
+]},
+
+FINA:{name:'Finance',ar:'التمويل',total:125,tech:{},sems:[
+{id:'F1',hrs:15,courses:[
+{c:'ALIS 1211',n:'Introduction to Islamic Culture',h:2,p:[]},
+{c:'COMM 1311',n:'Written Communication',h:3,p:[]},
+{c:'UNIV 1211',n:'Prof. Development and Competencies',h:2,p:[]},
+{c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:[]},
+{c:'MATH 1311',n:'Finite Math for Business',h:3,p:[]},
+{c:'FINA E1',n:'Social Science Elective',h:3,p:[],el:1}]},
+
+{id:'F2',hrs:15,courses:[
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]},
+{c:'MATH 1312',n:'Calculus for Business',h:3,p:['MATH 1311']},
+{c:'FINA E2',n:'Natural Science Elective',h:4,p:[],el:1}]},
+
+{id:'S1',hrs:16,courses:[
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ACCT 2311',n:'Fundamentals of Financial Accounting',h:3,p:[]},
+{c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
+{c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
+{c:'ECON 1311',n:'Introduction to Macroeconomics',h:3,p:[]},
+{c:'MISY 2311',n:'Introduction to Management Information Systems',h:3,p:[]},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+
+{id:'S2',hrs:17,courses:[
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ACCT 2321',n:'Managerial Accounting',h:3,p:['ACCT 2311']},
+{c:'BUSI 2311',n:'Principles of Management',h:3,p:[]},
+{c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
+{c:'ECON 1312',n:'Introduction to Microeconomics',h:3,p:[]},
+{c:'MATH 1313',n:'Statistical Methods',h:3,p:[]}]},
+
+{id:'J1',hrs:14,courses:[
+{c:'ASSE 3211',n:'Learning Outcome Assessment II',h:2,p:['ASSE 2111']},
+{c:'BUSI 3311',n:'Legal Environment of Business',h:3,p:[]},
+{c:'BUSI 3312',n:'Organizational Behavior',h:3,p:['BUSI 2311']},
+{c:'FINA 3311',n:'Financial Management Principles',h:3,p:['ACCT 2321']},
+{c:'FINA E3',n:'MIS Elective',h:3,p:[],el:1}]},
+
+{id:'J2',hrs:15,courses:[
+{c:'FINA 3312',n:'Financial Institutions',h:3,p:['FINA 3311']},
+{c:'FINA 3313',n:'Money and Banking',h:3,p:['FINA 3311']},
+{c:'BUSI 3313',n:'Marketing Principles',h:3,p:[]},
+{c:'BUSI 3321',n:'Operations Management',h:3,p:['MATH 1313']},
+{c:'ACCT 3311',n:'Intermediate Accounting I',h:3,p:['ACCT 2321']}]},
+
+{id:'SU',hrs:3,courses:[
+{c:'BUSI 4351',n:'Internship',h:3,p:[]}]},
+
+{id:'R1',hrs:15,courses:[
+{c:'FINA 3314',n:'Financial Statement Analysis',h:3,p:['ACCT 2321']},
+{c:'FINA 4313',n:'Investments',h:3,p:['MATH 1313','FINA 3311']},
+{c:'FINA 4314',n:'International Finance',h:3,p:['FINA 3311']},
+{c:'BUSI 4361',n:'Entrepreneurship',h:3,p:['BUSI 3313']},
+{c:'FINA E4',n:'Business Elective',h:3,p:[],el:1}]},
+
+{id:'R2',hrs:15,courses:[
+{c:'ASSE 4311',n:'Learning Outcome Assessment III — FINA',h:3,p:['ASSE 3211']},
+{c:'FINA 4315',n:'Security Analysis & Portfolio Management',h:3,p:['FINA 4313']},
+{c:'BUSI 4362',n:'Strategic Management',h:3,p:[]},
+{c:'FINA E5',n:'Finance Elective',h:3,p:[],el:1},
+{c:'FINA E6',n:'Accounting or Finance Elective',h:3,p:[],el:1}]}
+]},
+
+MISY:{name:'Management Information Systems',ar:'نظم المعلومات الإدارية',total:125,tech:{},sems:[
+{id:'F1',hrs:15,courses:[
+{c:'ALIS 1211',n:'Introduction to Islamic Culture',h:2,p:[]},
+{c:'COMM 1311',n:'Written Communication',h:3,p:[]},
+{c:'UNIV 1211',n:'Prof. Development and Competencies',h:2,p:[]},
+{c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:[]},
+{c:'MATH 1311',n:'Finite Math for Business',h:3,p:[]},
+{c:'MISY E1',n:'Social Science Elective',h:3,p:[],el:1}]},
+
+{id:'F2',hrs:15,courses:[
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]},
+{c:'MATH 1312',n:'Calculus for Business',h:3,p:['MATH 1311']},
+{c:'MISY E2',n:'Natural Science Elective',h:4,p:[],el:1}]},
+
+{id:'S1',hrs:16,courses:[
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ACCT 2311',n:'Fundamentals of Financial Accounting',h:3,p:[]},
+{c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
+{c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
+{c:'ECON 1311',n:'Introduction to Macroeconomics',h:3,p:[]},
+{c:'MISY 2311',n:'Introduction to Management Information Systems',h:3,p:[]},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+
+{id:'S2',hrs:17,courses:[
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'BUSI 2311',n:'Principles of Management',h:3,p:[]},
+{c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
+{c:'MISY 2312',n:'Introduction to Programming for MIS',h:3,p:['MISY 2311']},
+{c:'ECON 1312',n:'Introduction to Microeconomics',h:3,p:[]},
+{c:'MATH 1313',n:'Statistical Methods',h:3,p:[]}]},
+
+{id:'J1',hrs:14,courses:[
+{c:'ASSE 3211',n:'Learning Outcome Assessment II',h:2,p:['ASSE 2111']},
+{c:'MISY 2313',n:'Intermediate Programming for MIS',h:3,p:['MISY 2312']},
+{c:'MISY 3312',n:'Introduction to Telecommunications',h:3,p:['MISY 2311']},
+{c:'BUSI 3311',n:'Legal Environment of Business',h:3,p:[]},
+{c:'BUSI 3312',n:'Organizational Behavior',h:3,p:['BUSI 2311']}]},
+
+{id:'J2',hrs:15,courses:[
+{c:'BUSI 3313',n:'Marketing Principles',h:3,p:[]},
+{c:'BUSI 3321',n:'Operations Management',h:3,p:['MATH 1313']},
+{c:'MISY 3311',n:'Database Management',h:3,p:['MISY 2311']},
+{c:'MISY 3322',n:'Systems Analysis and Design',h:3,p:['MISY 2313']},
+{c:'ACCT 2321',n:'Managerial Accounting',h:3,p:['ACCT 2311']}]},
+
+{id:'SU',hrs:3,courses:[
+{c:'BUSI 4351',n:'Internship',h:3,p:[]}]},
+
+{id:'R1',hrs:15,courses:[
+{c:'MISY 4331',n:'Building Electronic Commerce',h:3,p:['MISY 2313','MISY 3311']},
+{c:'MISY 4333',n:'Introduction to Information Assurance',h:3,p:['MISY 3312']},
+{c:'MISY 4341',n:'Object Oriented Analysis & Design',h:3,p:['MISY 3311','MISY 3322']},
+{c:'MISY E3',n:'MIS Elective',h:3,p:[],el:1},
+{c:'MISY E4',n:'Business Elective I',h:3,p:[],el:1}]},
+
+{id:'R2',hrs:15,courses:[
+{c:'ASSE 4311',n:'Learning Outcome Assessment III — MISY',h:3,p:['ASSE 3211']},
+{c:'FINA 3311',n:'Financial Management Principles',h:3,p:['ACCT 2321']},
+{c:'BUSI 4361',n:'Entrepreneurship',h:3,p:['BUSI 3313']},
+{c:'BUSI 4362',n:'Strategic Management',h:3,p:[]},
+{c:'MISY E5',n:'Business Elective II',h:3,p:[],el:1}]}
+]},
+
+HRMT:{name:'Human Resource Management',ar:'إدارة الموارد البشرية',total:128,tech:{},sems:[
+{id:'F1',hrs:15,courses:[
+{c:'ALIS 1211',n:'Introduction to Islamic Culture',h:2,p:[]},
+{c:'COMM 1311',n:'Written Communication',h:3,p:[]},
+{c:'UNIV 1211',n:'Prof. Development and Competencies',h:2,p:[]},
+{c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:[]},
+{c:'MATH 1311',n:'Finite Math for Business',h:3,p:[]},
+{c:'HRMT E1',n:'Social Science Elective',h:3,p:[],el:1}]},
+
+{id:'F2',hrs:15,courses:[
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]},
+{c:'MATH 1312',n:'Calculus for Business',h:3,p:['MATH 1311']},
+{c:'HRMT E2',n:'Natural Science Elective',h:4,p:[],el:1}]},
+
+{id:'S1',hrs:16,courses:[
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ACCT 2311',n:'Fundamentals of Financial Accounting',h:3,p:[]},
+{c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
+{c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
+{c:'ECON 1311',n:'Introduction to Macroeconomics',h:3,p:[]},
+{c:'MISY 2311',n:'Introduction to Management Information Systems',h:3,p:[]},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+
+{id:'S2',hrs:17,courses:[
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ACCT 2321',n:'Managerial Accounting',h:3,p:['ACCT 2311']},
+{c:'BUSI 2311',n:'Principles of Management',h:3,p:[]},
+{c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
+{c:'ECON 1312',n:'Introduction to Microeconomics',h:3,p:[]},
+{c:'MATH 1313',n:'Statistical Methods',h:3,p:[]}]},
+
+{id:'J1',hrs:17,courses:[
+{c:'ASSE 3211',n:'Learning Outcome Assessment II',h:2,p:['ASSE 2111']},
+{c:'HRMT 3321',n:'Human Resource Management',h:3,p:['BUSI 2311']},
+{c:'FINA 3311',n:'Financial Management Principles',h:3,p:['ACCT 2321']},
+{c:'BUSI 3311',n:'Legal Environment of Business',h:3,p:[]},
+{c:'BUSI 3312',n:'Organizational Behavior',h:3,p:['BUSI 2311']},
+{c:'BUSI 3313',n:'Marketing Principles',h:3,p:[]}]},
+
+{id:'J2',hrs:15,courses:[
+{c:'BUSI 3321',n:'Operations Management',h:3,p:['MATH 1313']},
+{c:'HRMT 3331',n:'Staffing',h:3,p:['HRMT 3321']},
+{c:'HRMT 3332',n:'Training and Development',h:3,p:['HRMT 3321']},
+{c:'HRMT 3335',n:'Strategic Human Resource Planning',h:3,p:['HRMT 3321']},
+{c:'HRMT E3',n:'Business or HRMT Elective',h:3,p:[],el:1}]},
+
+{id:'SU',hrs:3,courses:[
+{c:'BUSI 4351',n:'Internship',h:3,p:[]}]},
+
+{id:'R1',hrs:15,courses:[
+{c:'HRMT 4333',n:'Compensation and Benefits',h:3,p:['HRMT 3321']},
+{c:'HRMT 4334',n:'Employee Relations',h:3,p:['HRMT 3321','BUSI 3311']},
+{c:'HRMT 4336',n:'Performance Management',h:3,p:['HRMT 3321']},
+{c:'HRMT 4337',n:'Research Methods in HRM',h:3,p:['HRMT 3321']},
+{c:'HRMT E4',n:'HRM Elective I',h:3,p:[],el:1}]},
+
+{id:'R2',hrs:15,courses:[
+{c:'ASSE 4311',n:'Learning Outcome Assessment III — HRMT',h:3,p:['ASSE 3211']},
+{c:'BUSI 4361',n:'Entrepreneurship',h:3,p:['BUSI 3313']},
+{c:'BUSI 4362',n:'Strategic Management',h:3,p:[]},
+{c:'HRMT E5',n:'HRM Elective II',h:3,p:[],el:1},
+{c:'HRMT E6',n:'HRM Elective III',h:3,p:[],el:1}]}
+]},
+
+MKDM:{name:'Marketing & Digital Media',ar:'التسويق والإعلام الرقمي',total:128,tech:{},sems:[
+{id:'F1',hrs:15,courses:[
+{c:'ALIS 1211',n:'Introduction to Islamic Culture',h:2,p:[]},
+{c:'COMM 1311',n:'Written Communication',h:3,p:[]},
+{c:'MATH 1311',n:'Finite Math for Business',h:3,p:[]},
+{c:'UNIV 1211',n:'Prof. Development and Competencies',h:2,p:[]},
+{c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:[]},
+{c:'MKDM E1',n:'Social Science Elective',h:3,p:[],el:1}]},
+
+{id:'F2',hrs:15,courses:[
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
+{c:'MATH 1312',n:'Calculus for Business',h:3,p:['MATH 1311']},
+{c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'MKDM E2',n:'Natural Science Elective',h:4,p:[],el:1}]},
+
+{id:'S1',hrs:16,courses:[
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ACCT 2311',n:'Fundamentals of Financial Accounting',h:3,p:[]},
+{c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
+{c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
+{c:'ECON 1311',n:'Introduction to Macroeconomics',h:3,p:[]},
+{c:'MISY 2311',n:'Introduction to Management Information Systems',h:3,p:[]},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+
+{id:'S2',hrs:17,courses:[
+{c:'ACCT 2321',n:'Managerial Accounting',h:3,p:['ACCT 2311']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'BUSI 2311',n:'Principles of Management',h:3,p:[]},
+{c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
+{c:'ECON 1312',n:'Introduction to Microeconomics',h:3,p:[]},
+{c:'MATH 1313',n:'Statistical Methods',h:3,p:[]}]},
+
+{id:'J1',hrs:17,courses:[
+{c:'ASSE 3211',n:'Learning Outcome Assessment II',h:2,p:['ASSE 2111']},
+{c:'BUSI 3311',n:'Legal Environment of Business',h:3,p:[]},
+{c:'BUSI 3312',n:'Organizational Behavior',h:3,p:['BUSI 2311']},
+{c:'BUSI 3313',n:'Marketing Principles',h:3,p:[]},
+{c:'BUSI 3321',n:'Operations Management',h:3,p:['MATH 1312','MATH 1313']},
+{c:'FINA 3311',n:'Financial Management Principles',h:3,p:['ACCT 2321','ECON 1311','ECON 1312']}]},
+
+{id:'J2',hrs:15,courses:[
+{c:'MKDM 3324',n:'Consumer Behavior',h:3,p:['BUSI 3313']},
+{c:'MKDM 3334',n:'Digital and Social Media',h:3,p:['BUSI 3313']},
+{c:'MKDM 3344',n:'Brand Management',h:3,p:['BUSI 3313']},
+{c:'MKDM 3354',n:'Market Research',h:3,p:['MATH 1313','BUSI 3313']},
+{c:'MKDM E3',n:'Business Elective I',h:3,p:[],el:1}]},
+
+{id:'SU',hrs:3,courses:[
+{c:'BUSI 4351',n:'Internship',h:3,p:[]}]},
+
+{id:'R1',hrs:15,courses:[
+{c:'BUSI 4361',n:'Entrepreneurship',h:3,p:['ACCT 2321','BUSI 3312','BUSI 3313']},
+{c:'MKDM 3364',n:'Public Relations',h:3,p:['BUSI 3313']},
+{c:'MKDM 4314',n:'Advertising Management',h:3,p:['BUSI 3313']},
+{c:'MKDM 4335',n:'Media Strategy & Metrics',h:3,p:['MKDM 3334','MKDM 3354']},
+{c:'MKDM E4',n:'Business Elective II',h:3,p:[],el:1}]},
+
+{id:'R2',hrs:15,courses:[
+{c:'ASSE 4311',n:'Learning Outcome Assessment III — MKTG',h:3,p:['ASSE 3211']},
+{c:'BUSI 4362',n:'Strategic Management',h:3,p:[]},
+{c:'MKDM 4342',n:'Advertising Design',h:3,p:['MKDM 3334','MKDM 4314']},
+{c:'MKDM 4390',n:'The IMC Campaign',h:3,p:['MKDM 4335']},
+{c:'MKDM E5',n:'Business Elective III',h:3,p:[],el:1}]}
+]},
+
+LAWB:{name:'Law',ar:'القانون',total:138,tech:{},sems:[
+{id:'F1',hrs:16,courses:[
+{c:'ALIS 1211',n:'Introduction to Islamic Culture',h:2,p:[]},
+{c:'COMM 1311',n:'Written Communication',h:3,p:[]},
+{c:'ITLB 2211',n:'Intro to Computer Concepts and Applications',h:2,p:[]},
+{c:'UNIV 1211',n:'Prof. Development and Competencies',h:2,p:[]},
+{c:'LAWB 1321',n:'Intro to Law (Arabic)',h:3,p:[]},
+{c:'LAWB E1',n:'Social Science Elective',h:3,p:[],el:1},
+{c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]}]},
+
+{id:'F2',hrs:17,courses:[
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'MATH 1313',n:'Statistical Methods',h:3,p:[]},
+{c:'LAWB 1311',n:'Usul Al-Fiqh',h:3,p:[]},
+{c:'LAWB 1322',n:'Sources of Obligation',h:3,p:['LAWB 1321']},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+
+{id:'S1',hrs:16,courses:[
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:['UNIV 1212']},
+{c:'LAWB 2323',n:'Provisions of Obligation',h:3,p:['LAWB 1322']},
+{c:'LAWC 2311',n:'Global Legal Systems',h:3,p:['LAWB 1321']},
+{c:'LAWB 2361',n:'Legal Writing and Research',h:3,p:['LAWB 1321']},
+{c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']}]},
+
+{id:'S2',hrs:17,courses:[
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
+{c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
+{c:'LAWB 2331',n:'Constitutional Law',h:3,p:['LAWB 1321']},
+{c:'LAWB 2351',n:'Commercial Law',h:3,p:['LAWB 1321']},
+{c:'LAWB 2341',n:'General Criminal Law',h:3,p:['LAWB 1321']},
+{c:'LAWB 2224',n:'Civil Contracts',h:2,p:['LAWB 2323']}]},
+
+{id:'J1',hrs:17,courses:[
+{c:'LAWB 3325',n:'Labor Law and Social Security',h:3,p:['LAWB 2224']},
+{c:'LAWB 3352',n:'Company Law and Bankruptcy',h:3,p:['LAWB 2351']},
+{c:'LAWB 3342',n:'Private Criminal Law',h:3,p:['LAWB 2341']},
+{c:'LAWB 3212',n:'Family Law',h:2,p:['LAWB 1311']},
+{c:'INTL 3321',n:'Public International Law',h:3,p:['LAWC 2311']},
+{c:'LAWB 3326',n:'Property & Real Securities',h:3,p:['LAWB 2224']}]},
+
+{id:'J2',hrs:17,courses:[
+{c:'ASSE 3211',n:'Learning Outcome Assessment II',h:2,p:['ASSE 2111']},
+{c:'INTL 3322',n:'International Economic Law',h:3,p:['INTL 3321']},
+{c:'LAWB 3362',n:'Civil Procedure Law',h:3,p:['LAWB 2224']},
+{c:'LAWB 3332',n:'Administrative Law',h:3,p:['LAWB 2331']},
+{c:'LAWB 3363',n:'Criminal Procedure Law',h:3,p:['LAWB 3342']},
+{c:'LAWB 3315',n:'Law of Zakat and Taxation',h:3,p:['LAWB 1311']}]},
+
+{id:'SU',hrs:3,courses:[
+{c:'LAWB 4365',n:'Internship',h:3,p:[]}]},
+
+{id:'R1',hrs:17,courses:[
+{c:'LAWB 4362',n:'Civil Enforcement Law',h:3,p:['LAWB 3362']},
+{c:'LAWB 4316',n:'Wills and Inheritance',h:3,p:['LAWB 3212']},
+{c:'LAWB 4353',n:'Commercial Papers and Banking',h:3,p:['LAWB 3352']},
+{c:'LAWB 4333',n:'Administrative Judiciary',h:3,p:['LAWB 3332']},
+{c:'LAWC 4211',n:'Legal Ethics',h:2,p:[]},
+{c:'LAWB 4364',n:'Internal Legal Practice',h:3,p:['LAWB 3362','LAWB 3363']}]},
+
+{id:'R2',hrs:18,courses:[
+{c:'ASSE 4311',n:'Learning Assessment III (Capstone)',h:3,p:['ASSE 3211','LAWB 2361']},
+{c:'INTL 4341',n:'Alternative Dispute Resolution',h:3,p:[]},
+{c:'INTL 4351',n:'Intellectual Property Law',h:3,p:[]},
+{c:'LAWB 4371',n:'Private International Law',h:3,p:['LAWB 3362']},
+{c:'LAWB E2',n:'Law Elective (English) I',h:2,p:[],el:1},
+{c:'LAWB E3',n:'Law Elective (English) II',h:2,p:[],el:1},
+{c:'LAWB E4',n:'Law Elective (Arabic)',h:2,p:[],el:1}]}
+]}
+
+};
+
+/* التخصص الحالي */
+let MAJOR=load('pmu_major','MEEN');
+if(!PLANS[MAJOR])MAJOR='MEEN';
+let PLAN=PLANS[MAJOR].sems;
+let TECH_ELECTIVES=PLANS[MAJOR].tech||{};
+let TOTAL_CR=PLANS[MAJOR].total;
+
+function applyMajor(code,silent){
+  if(!PLANS[code])return;
+  MAJOR=code;
+  PLAN=PLANS[code].sems;
+  TECH_ELECTIVES=PLANS[code].tech||{};
+  TOTAL_CR=PLANS[code].total;
+  save('pmu_major',code);
+  const el=document.getElementById('majorSelect');
+  if(el&&el.value!==code)el.value=code;
+  if(!silent)renderPlan();
+}
+
 
 let allCourses=[],schedule=[],completed=[],grades={},filterMode='all';
 let PRO_KEY=null;
@@ -903,7 +2237,13 @@ function creditsOf(code){
 }
 /* كم مادة تنفتح لو خلصت هذي المادة */
 function unlocksCount(code){
-  return allPlanCourses().filter(c=>(c.p||[]).includes(code)).length;
+  /* المادة المكتملة ما تنعد — لو خلصتها فالمتطلب ما عاد يفتح شي */
+  return allPlanCourses().filter(c=>!isDone(c.c)&&(c.p||[]).includes(code)).length;
+}
+/* صياغة "يفتح مادة" / "unlocks 1 course" بشكل صحيح */
+function unlockLabel(n){
+  if(n===1)return t('unlocks1');
+  return `${t('unlocksN')} ${n} ${t('unlocksN2')}`;
 }
 function suggestNext(){
   const cands=[];
@@ -1260,6 +2600,7 @@ function toggleDone(code){
     completed.push(code);
   }
   save('pmu_completed',completed);pushCompleted();
+  applyMajor(MAJOR,true);
   renderPlan();
   if(allCourses.length)renderResults();
 }
@@ -1277,7 +2618,7 @@ function renderPlan(){
   document.getElementById('sugHours').textContent=sug.hours+' '+t('hrsUnit');
   const row=(c,crit)=>`<div class="sug-item">
     <span class="sug-code">${c.c}</span>
-    <span class="sug-name">${c.n}${crit?`<span class="sug-badge">${t('unlocks')} ${c.unlocks} ${t('unlocks2')}</span>`:''}</span>
+    <span class="sug-name">${c.n}${crit?`<span class="sug-badge">${unlockLabel(c.unlocks)}</span>`:''}</span>
     <span class="sug-cr">${c.h}H</span></div>`;
   let html='';
   if(sug.crit.length)html+=`<div class="sug-group crit">${t('critGroup')}</div>`+sug.crit.map(c=>row(c,1)).join('');
@@ -1919,14 +3260,16 @@ const GUIDE={
 ar:{title:'كيف تستخدم جدولك',lead:'دليل سريع لكل ميزة — أقل من دقيقتين قراءة',
 sec1:'البداية',sec2:'الميزات المدفوعة',
 steps:[
-{n:'1',t:'حدّد المواد اللي خلصتها',d:'روح تبويب <b>📋 خطتي</b> وأشّر ✓ على كل مادة أنهيتها. الموقع يحسب لك الساعات المتبقية ومستواك الدراسي تلقائياً.'},
-{n:'2',t:'شوف مقترح الترم الجاي',d:'بعد ما تحدد مواد، يطلع لك مقترح ذكي مقسّم: <b>مواد لا تأجلها</b> (لأنها تفتح مواد جاية) و<b>مواد اختيارية</b>. المواد المقفلة يظهر تحتها المتطلب الناقص.'},
-{n:'3',t:'احسب معدلك',d:'أي مادة تأشرها يظهر جنبها قائمة درجات. اختر تقديرك والمعدل يتحدث فوراً حسب نظام الجامعة الرسمي. المواد بدون درجة ما تدخل الحساب.'},
-{n:'4',t:'ابحث عن المواد',d:'من تبويب <b>🔍 البحث</b> اختر السيمستر والكلية. تقدر تفلتر بكود المادة أو رقم الـ CRN أو اسم الدكتور — والمسافات ما تفرق، <code>MEEN3395</code> نفس <code>meen 3395</code>.'},
-{n:'5',t:'ابنِ جدولك',d:'اضغط <b>➕</b> على أي مادة تضيفها لجدولك. قبل ما تضيف، الموقع يقول لك إذا تتعارض مع مادة ثانية عندك، ويمنعك لو ما خلصت متطلبها.'},
-{n:'6',t:'راجع الجدول واطبعه',d:'تبويب <b>📅 جدولي</b> يعرض أسبوعك من الأحد للخميس بالأوقات والقاعات والدكاترة، مع عدد الساعات المعتمدة وأي تعارض. وفيه زر طباعة.'}],
+{n:'1',t:'اختر تخصصك أول',d:'من <b>⚙️ الإعدادات</b> اختر تخصصك من قائمة <b>20 تخصص</b> — كل كليات الجامعة موجودة. الخطة والساعات والمتطلبات تتغير تلقائياً حسب تخصصك، وتنحفظ في حسابك فتلقاها من أي جهاز.'},
+{n:'2',t:'حدّد المواد اللي خلصتها',d:'روح تبويب <b>📋 خطتي</b> وأشّر ✓ على كل مادة أنهيتها. الموقع يحسب لك الساعات المتبقية ومستواك الدراسي تلقائياً.'},
+{n:'3',t:'شوف مقترح الترم الجاي',d:'بعد ما تحدد مواد، يطلع لك مقترح ذكي مقسّم: <b>مواد لا تأجلها</b> (لأنها تفتح مواد جاية) و<b>مواد اختيارية</b>. المواد المقفلة يظهر تحتها المتطلب الناقص.'},
+{n:'4',t:'احسب معدلك',d:'أي مادة تأشرها يظهر جنبها قائمة درجات. اختر تقديرك والمعدل يتحدث فوراً حسب نظام الجامعة الرسمي. المواد بدون درجة ما تدخل الحساب.'},
+{n:'5',t:'ابحث عن المواد',d:'من تبويب <b>🔍 البحث</b> اختر السيمستر والكلية. تقدر تفلتر بكود المادة أو رقم الـ CRN أو اسم الدكتور — والمسافات ما تفرق، <code>MEEN3395</code> نفس <code>meen 3395</code>.'},
+{n:'6',t:'ابنِ جدولك',d:'اضغط <b>➕</b> على أي مادة تضيفها لجدولك. قبل ما تضيف، الموقع يقول لك إذا تتعارض مع مادة ثانية عندك، ويمنعك لو ما خلصت متطلبها.'},
+{n:'7',t:'راجع الجدول واطبعه',d:'تبويب <b>📅 جدولي</b> يعرض أسبوعك من الأحد للخميس بالأوقات والقاعات والدكاترة، مع الساعات المعتمدة وأي تعارض. وزر <b>🖨️ اطبع الجدول</b> يطلع لك ورقة منظّمة بصفحة وحدة — شبكة أسبوعية بالألوان تشوف فيها فراغاتك بنظرة.'},
+{n:'8',t:'قيّم دكاترتك',d:'تبويب <b>👨‍🏫 دكاترة</b> فيه تقييمات الطلاب لكل دكتور — نجوم ووسوم وتعليقات. تقدر تقيّم بنفسك <b>بشكل مجهول</b>، وتشوف تقييماتك أو تعدّلها من الإعدادات.'}],
 pro:[
-{n:'★',t:'راقب المواد المسكّرة',d:'أي مادة <code>CLOSE</code> يظهر جنبها زر <b>🔕</b> — اضغطه يصير <b>🔔</b>. الموقع يفحص الجامعة كل 5 دقائق على مدار الساعة.'},
+{n:'★',t:'راقب المواد المسكّرة',d:'أي مادة <code>CLOSE</code> يظهر جنبها <b>🔕</b> — اضغطه يصير <b>🔔</b>. السيرفر يفحص الجامعة كل 5 دقائق <b>حتى والموقع مسكّر عندك</b>، فما تحتاج تخلي الصفحة مفتوحة. راقب كم مادة ما تبي، وتوقف أي وحدة من الإعدادات.'},
 {n:'★',t:'اربط تيليغرام',d:'من <b>⚙️ الإعدادات</b> اضغط "ربط" — يفتح البوت، تضغط Start، وخلاص. أول ما تنفتح مادتك يوصلك إشعار فوري فيه الـ CRN والوقت والقاعة.'},
 {n:'★',t:'حفظ سحابي',d:'خطتك وجدولك ومعدلك محفوظين في حسابك — تفتح من أي جهاز وتلقى كل شي زي ما تركته.'}],
 tip:'<b>🎁 لك شهر مجاني</b> أول ما تسجّل — كل الميزات مفتوحة. بعده الاشتراك 19 ريال للسنة كاملة.'},
@@ -1934,14 +3277,16 @@ tip:'<b>🎁 لك شهر مجاني</b> أول ما تسجّل — كل المي
 en:{title:'How to use Jadwalik',lead:'A quick guide to every feature — under two minutes',
 sec1:'Getting started',sec2:'Paid features',
 steps:[
-{n:'1',t:'Mark completed courses',d:'Go to <b>📋 My Plan</b> and tick ✓ every course you finished. The site calculates your remaining hours and academic level automatically.'},
-{n:'2',t:'See next term suggestion',d:'Once you mark courses, you get a smart split: <b>Do not delay</b> (courses that unlock future ones) and <b>Optional</b>. Locked courses show the missing prerequisite.'},
-{n:'3',t:'Calculate your GPA',d:'Each completed course shows a grade dropdown. Pick your grade and the GPA updates instantly using the official university scale. Ungraded courses are excluded.'},
-{n:'4',t:'Search for courses',d:'In <b>🔍 Search</b> pick a semester and college. Filter by course code, CRN, or instructor — spaces do not matter, <code>MEEN3395</code> equals <code>meen 3395</code>.'},
-{n:'5',t:'Build your schedule',d:'Tap <b>➕</b> on any course to add it. Before adding, the site tells you if it conflicts with something you already have, and blocks it if you have not met the prerequisite.'},
-{n:'6',t:'Review and print',d:'The <b>📅 Schedule</b> tab lays out Sunday to Thursday with times, rooms and instructors, plus total credits and any conflicts. There is a print button too.'}],
+{n:'1',t:'Pick your major first',d:'In <b>⚙️ Settings</b> choose your major from <b>20 programs</b> — every college is covered. Your plan, credit hours and prerequisites switch automatically, and the choice is saved to your account so it follows you to any device.'},
+{n:'2',t:'Mark completed courses',d:'Go to <b>📋 My Plan</b> and tick ✓ every course you finished. The site calculates your remaining hours and academic level automatically.'},
+{n:'3',t:'See next term suggestion',d:'Once you mark courses, you get a smart split: <b>Do not delay</b> (courses that unlock future ones) and <b>Optional</b>. Locked courses show the missing prerequisite.'},
+{n:'4',t:'Calculate your GPA',d:'Each completed course shows a grade dropdown. Pick your grade and the GPA updates instantly using the official university scale. Ungraded courses are excluded.'},
+{n:'5',t:'Search for courses',d:'In <b>🔍 Search</b> pick a semester and college. Filter by course code, CRN, or instructor — spaces do not matter, <code>MEEN3395</code> equals <code>meen 3395</code>.'},
+{n:'6',t:'Build your schedule',d:'Tap <b>➕</b> on any course to add it. Before adding, the site tells you if it conflicts with something you already have, and blocks it if you have not met the prerequisite.'},
+{n:'7',t:'Review and print',d:'The <b>📅 Schedule</b> tab lays out Sunday to Thursday with times, rooms and instructors, plus total credits and any conflicts. Tap <b>🖨️ Print schedule</b> for a clean one-page sheet — a colour-coded weekly grid where your gaps are obvious at a glance.'},
+{n:'8',t:'Rate your instructors',d:'The <b>👨‍🏫 Faculty</b> tab collects student ratings for every instructor — stars, tags and comments. You can rate <b>anonymously</b>, and review or edit your own ratings from Settings.'}],
 pro:[
-{n:'★',t:'Monitor closed sections',d:'Any <code>CLOSE</code> course shows a <b>🔕</b> button — tap it to turn it <b>🔔</b>. The site checks the university every 5 minutes, around the clock.'},
+{n:'★',t:'Monitor closed sections',d:'Any <code>CLOSE</code> course shows a <b>🔕</b> — tap it to turn it <b>🔔</b>. The server checks the university every 5 minutes <b>even when the site is closed on your phone</b>, so you never need to keep the page open. Watch as many courses as you like, and stop any of them from Settings.'},
 {n:'★',t:'Link Telegram',d:'In <b>⚙️ Settings</b> tap "Link" — the bot opens, you press Start, done. The moment a seat opens you get an instant message with the CRN, time and room.'},
 {n:'★',t:'Cloud sync',d:'Your plan, schedule and GPA live in your account — open from any device and find everything exactly as you left it.'}],
 tip:'<b>🎁 You get a free month</b> when you sign up — everything unlocked. After that it is SAR 19 for a full year.'}
@@ -1998,6 +3343,19 @@ gpaRank:'التقدير',gpaFrom:'محسوب من',gpaFrom2:'مادة بدرجا
 critGroup:'🔴 لا تأجلها — تفتح لك مواد الترم الجاي',
 optGroup:'⚪ اختيارية — لك الخيار تنزلها أو تأجلها',
 unlocks:'يفتح',unlocks2:'مادة',
+optAll:'الكل',optMale:'طلاب',optFemale:'طالبات',
+docRefresh:'🔄 حدّث القائمة',uniSoon:'جامعات ثانية — قريباً',
+tgSection:'إشعارات تيليغرام',monSection:'المواد المراقبة',
+proTitle:'اشتراك جدولك',proSub:'فعّل المراقبة والحفظ السحابي',
+proPrice:'19 ريال / سنة',proBtn:'اشترك الحين',
+proFeat1:'<b>مراقبة المواد</b> — إشعار تيليغرام فوري أول ما تنفتح أي شعبة',
+proFeat2:'<b>حفظ سحابي</b> — خطتك وجدولك ومعدلك من أي جهاز',
+proFeat3:'<b>مواد بلا حد</b> — راقب كل المواد اللي تبيها',
+payAmount:'المبلغ',payRiyal:'19 ريال',payTo:'STC Pay / تحويل',payCodeLbl:'كودك',
+payNote:'حوّل المبلغ، ثم أرسل صورة الإيصال مع كودك للبوت على تيليغرام. بيتفعّل حسابك خلال ساعات قليلة.',
+payBot:'📩 أرسل الإيصال للبوت',
+unlocks1:'يفتح مادة وحدة',unlocksN:'يفتح',unlocksN2:'مواد',
+
 sugEmpty:'حدد المواد اللي خلصتها تحت وبيطلع لك المقترح',
 needs:'يحتاج',remain:'باقي',
 ranks:['ممتاز مرتفع','ممتاز','جيد جداً','جيد','مقبول','تحت الحد'],
@@ -2013,7 +3371,8 @@ days:{U:'الأحد',M:'الاثنين',T:'الثلاثاء',W:'الأربعاء
 sem:{F1:'السنة الأولى — الترم الأول',F2:'السنة الأولى — الترم الثاني',
 S1:'السنة الثانية — الترم الأول',S2:'السنة الثانية — الترم الثاني',
 J1:'السنة الثالثة — الترم الأول',J2:'السنة الثالثة — الترم الثاني',
-SU:'الصيف — التدريب',R1:'السنة الرابعة — الترم الأول',R2:'السنة الرابعة — الترم الثاني'}},
+SU:'الصيف — التدريب',R1:'السنة الرابعة — الترم الأول',R2:'السنة الرابعة — الترم الثاني',
+T1:'السنة الخامسة — الترم الأول',T2:'السنة الخامسة — الترم الثاني'}},
 
 en:{brand:'Jadwalik',tabSearch:'🔍 Search',tabSched:'📅 Schedule ',tabPlan:'📋 My Plan',
 searchTitle:'Course Search',semester:'Semester',college:'College',gender:'Gender',
@@ -2037,6 +3396,19 @@ gpaRank:'Standing',gpaFrom:'based on',gpaFrom2:'graded courses',
 critGroup:'🔴 Do not delay — these unlock next term',
 optGroup:'⚪ Optional — take them or postpone',
 unlocks:'unlocks',unlocks2:'courses',
+optAll:'All',optMale:'Male',optFemale:'Female',
+docRefresh:'🔄 Refresh list',uniSoon:'More universities — soon',
+tgSection:'Telegram notifications',monSection:'Monitored courses',
+proTitle:'Jadwalik Pro',proSub:'Unlock monitoring and cloud sync',
+proPrice:'SAR 19 / year',proBtn:'Subscribe now',
+proFeat1:'<b>Course monitoring</b> — instant Telegram alert the moment a section opens',
+proFeat2:'<b>Cloud sync</b> — your plan, schedule and GPA on any device',
+proFeat3:'<b>Unlimited courses</b> — watch as many as you want',
+payAmount:'Amount',payRiyal:'SAR 19',payTo:'STC Pay / transfer',payCodeLbl:'Your code',
+payNote:'Transfer the amount, then send the receipt with your code to the bot on Telegram. Your account is activated within a few hours.',
+payBot:'📩 Send receipt to bot',
+unlocks1:'unlocks 1 course',unlocksN:'unlocks',unlocksN2:'courses',
+
 sugEmpty:'Mark the courses you finished below to get your suggestion',
 needs:'Needs',remain:'remaining',
 ranks:['Excellent (High)','Excellent','Very Good','Good','Pass','Below minimum'],
@@ -2052,7 +3424,8 @@ days:{U:'Sunday',M:'Monday',T:'Tuesday',W:'Wednesday',R:'Thursday',F:'Friday',S:
 sem:{F1:'Freshman — 1st Term',F2:'Freshman — 2nd Term',
 S1:'Sophomore — 1st Term',S2:'Sophomore — 2nd Term',
 J1:'Junior — 1st Term',J2:'Junior — 2nd Term',
-SU:'Summer — Internship',R1:'Senior — 1st Term',R2:'Senior — 2nd Term'}}
+SU:'Summer — Internship',R1:'Senior — 1st Term',R2:'Senior — 2nd Term',
+T1:'Fifth Year — 1st Term',T2:'Fifth Year — 2nd Term'}}
 };
 
 let LANG=load('pmu_lang','ar');
@@ -2071,6 +3444,11 @@ function applyLang(){
   document.getElementById('langBtn').textContent=LANG==='ar'?'EN':'ع';
   document.getElementById('brandName').textContent=L.brand;
 
+  document.querySelectorAll('[data-i18n-html]').forEach(el=>{
+    const k=el.getAttribute('data-i18n-html');
+    if(L[k]!==undefined)el.innerHTML=L[k];
+  });
+
   document.querySelectorAll('[data-i18n]').forEach(el=>{
     const k=el.getAttribute('data-i18n');
     if(L[k]===undefined)return;
@@ -2080,7 +3458,6 @@ function applyLang(){
 
   document.getElementById('courseFilter').placeholder=L.filterPh;
   document.getElementById('docFilter').placeholder=L.docPh;
-  document.getElementById('docBtnText').textContent=LANG==='ar'?'🔄 حدّث القائمة':'🔄 Refresh list';
   document.getElementById('searchBtnText').textContent=L.search;
   if(!USER)document.getElementById('authBtn').textContent=L.login;
 
@@ -2111,7 +3488,18 @@ function onUniChange(){
 }
 function onMajorChange(){
   const el=document.getElementById('majorSelect');
-  if(el.value==='SOON')el.value='MEEN';
+  const code=el.value;
+  if(!PLANS[code]){el.value=MAJOR;return}
+  if(code===MAJOR)return;
+  const done=completed.length;
+  if(done && !confirm(LANG==='ar'
+      ? `تغيير التخصص لـ ${PLANS[code].ar}؟\n\nالمواد اللي علّمتها كمكتملة (${done}) بتبقى محفوظة، بس اللي مو موجودة في الخطة الجديدة ما بتنحسب.`
+      : `Switch major to ${PLANS[code].name}?\n\nYour ${done} completed courses stay saved, but any not in the new plan won't count.`)){
+    el.value=MAJOR;return;
+  }
+  applyMajor(code);
+  if(USER)pushProfile&&pushProfile();
+  showToast(LANG==='ar'?`تحوّلت خطتك لـ ${PLANS[code].ar}`:`Switched to ${PLANS[code].name}`,'success');
 }
 
 /* ================= GPA ================= */
@@ -2226,6 +3614,10 @@ async function pullCloud(){
     ]);
     PROFILE=prof||null;
 
+    /* التخصص من السحابة — يجي معك لأي جهاز */
+    if(prof&&prof.major&&PLANS[prof.major]&&prof.major!==MAJOR) applyMajor(prof.major,true);
+    else if(prof&&!prof.major&&MAJOR!=='MEEN') pushProfile();
+
     if(cc&&cc.length){
       completed=cc.map(r=>r.course_code);
       grades={};cc.forEach(r=>{if(r.grade)grades[r.course_code]=r.grade});
@@ -2253,6 +3645,13 @@ async function pullCloud(){
       /* زر "راقب" القديم انشال — الجرس ⏰ جنب كل مادة بديله */
     }
   }catch(e){console.log('pull error',e)}
+}
+
+/* حفظ التخصص في الحساب */
+async function pushProfile(){
+  if(!USER)return;
+  try{ await sb.from('profiles').update({major:MAJOR}).eq('id',USER.id); }
+  catch(e){ console.log('major sync',e); }
 }
 
 async function pushCompleted(){
