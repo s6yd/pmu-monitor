@@ -651,12 +651,17 @@ async function adminHealth() {
   if (SITE_ENV !== 'prod')
     add('warn', `هذي نسخة اختبار (${SITE_ENV})`, `This is a ${SITE_ENV} instance`,
         'المراقبة والإشعارات معطّلة هنا عشان ما تتكرر مع نسخة الإنتاج.');
-  if (!ms.active)
+  if (!ms.active && ms.reason === 'offseason') {
+    const nw = nextWindow();
+    add('warn', 'المراقبة متوقفة — خارج فترات التسجيل',
+        'Monitoring paused — outside registration periods',
+        nw ? `تستأنف تلقائياً في ${nw.ar} (${nw.from}).` : 'ما فيه نافذة قادمة في التقويم — حدّث MONITOR_WINDOWS.');
+  } else if (!ms.active)
     add('warn', 'المراقبة متوقفة الآن — ' + ms.ar, 'Monitoring paused — ' + ms.en,
         'تستأنف تلقائياً الساعة 7 صباحاً بتوقيت الرياض.');
   else if (ms.reason === 'idle')
     add('warn', 'المراقبة مخفّفة — خارج فترة التسجيل', 'Reduced monitoring — outside registration',
-        'الفحص كل 30 دقيقة بدل 5. يرجع مكثفاً تلقائياً في نافذة التسجيل القادمة.');
+        'يرجع مكثفاً تلقائياً في نافذة التسجيل القادمة.');
 
   /* ── سعة تقديرية ── */
   const rate = 20 / 0.88;                       // رسالة/ثانية
@@ -699,6 +704,7 @@ async function adminHealth() {
     monitor: {
       active: ms.active, reason: ms.reason, ar: ms.ar,
       intervalMin: ms.intervalMin,
+      dataTtlMin: Math.round(coursesTTL() / 60000),
       window: ms.window ? ms.window.ar : null,
       nextWindow: MONITOR_WINDOWS.find(w => riyadhDate() < w.from) || null,
       riyadhHour: riyadhHour()
@@ -871,15 +877,28 @@ async function getFinals() {
    900 طالب يوم التسجيل = مئات الطلبات بالدقيقة من IP واحد → حجب.
    مع الكاش: طلب واحد لكل تركيبة كل 60 ثانية مهما كان عدد الطلاب. */
 
-const COURSES_TTL = 60 * 1000;
+/* عمر الكاش يتغيّر حسب الموسم — الجدول ما يتغيّر خارج التسجيل:
+   داخل نافذة التسجيل  → دقيقة   (المقاعد تتقلب لحظياً)
+   أسبوع قبلها أو بعدها → ساعة
+   بقية السنة          → 6 ساعات (4 مرات باليوم) */
+const TTL_PEAK = 60 * 1000;
+const TTL_NEAR = 60 * 60 * 1000;
+const TTL_OFF  = 6 * 60 * 60 * 1000;
+
+function coursesTTL() {
+  if (currentWindow()) return TTL_PEAK;
+  if (nearWindow())    return TTL_NEAR;
+  return TTL_OFF;
+}
 const coursesCache = new Map();     // key → {at, courses}
 const inFlight     = new Map();     // key → Promise (يمنع سحبتين متزامنتين لنفس التركيبة)
 
 async function getCourses(term, college, gender) {
   const key = `${term}|${college}|${gender}`;
   OPS.searches++;
+  const TTL = coursesTTL();
   const hit = coursesCache.get(key);
-  if (hit && Date.now() - hit.at < COURSES_TTL) {
+  if (hit && Date.now() - hit.at < TTL) {
     OPS.searchesCached++;
     return { courses: hit.courses, cached: true, age: Date.now() - hit.at };
   }
@@ -925,9 +944,15 @@ const MONITOR_WINDOWS = [
 const ACTIVE_FROM_HOUR = 7;    // 7 صباحاً بتوقيت الرياض
 const ACTIVE_TO_HOUR   = 23;   // حتى 11 مساءً
 
-const INTERVAL_PEAK = 5  * 60 * 1000;   // داخل نافذة التسجيل
-const INTERVAL_IDLE = 30 * 60 * 1000;   // خارجها — المقاعد نادراً تنفتح
+const INTERVAL_PEAK = 5 * 60 * 1000;    // داخل نافذة التسجيل
 const JITTER        = 0.25;             // ±25% تفادياً لنمط منتظم تماماً
+
+/* خارج نوافذ التسجيل المراقبة تتوقف تماماً.
+   لو حبيت ترجّعها مخفّفة، حط هنا مثلاً 30*60*1000 بدل null. */
+const INTERVAL_IDLE = null;
+
+/* هامش "قرب التسجيل" — يستخدمه كاش البحث */
+const NEAR_DAYS = 7;
 
 /* ساعة الرياض (السيرفر يعمل بتوقيت UTC) */
 function riyadhNow() {
@@ -939,6 +964,19 @@ function riyadhDate() { return riyadhNow().toISOString().slice(0, 10); }
 function currentWindow() {
   const d = riyadhDate();
   return MONITOR_WINDOWS.find(w => d >= w.from && d <= w.to) || null;
+}
+function nextWindow() {
+  const d = riyadhDate();
+  return MONITOR_WINDOWS.find(w => d < w.from) || null;
+}
+const dayShift = (iso, n) =>
+  new Date(Date.parse(iso + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+
+/* هل نحن خلال أسبوع قبل نافذة تسجيل أو أسبوع بعدها؟ */
+function nearWindow() {
+  const d = riyadhDate();
+  return MONITOR_WINDOWS.some(w =>
+    d >= dayShift(w.from, -NEAR_DAYS) && d <= dayShift(w.to, NEAR_DAYS));
 }
 
 function monitorState() {
@@ -960,6 +998,12 @@ function monitorState() {
              en: 'Intensive monitoring — registration period',
              window: win, intervalMin: INTERVAL_PEAK / 60000 };
   }
+  if (!INTERVAL_IDLE) {
+    return { active: false, reason: 'offseason',
+             ar: 'خارج فترات التسجيل — المراقبة متوقفة',
+             en: 'Outside registration periods — monitoring paused',
+             window: null, intervalMin: null, next: nextWindow() };
+  }
   return { active: true, reason: 'idle', ar: 'مراقبة مخفّفة (خارج فترة التسجيل)',
            en: 'Reduced monitoring (outside registration)',
            window: null, intervalMin: INTERVAL_IDLE / 60000 };
@@ -971,6 +1015,9 @@ function nextDelay() {
   const st = monitorState();
 
   if (st.reason === 'disabled') return 60 * 60 * 1000;
+
+  /* خارج الموسم: نفحص مرة كل ساعة فقط إذا بدأت نافذة جديدة */
+  if (st.reason === 'offseason') return 60 * 60 * 1000 * (1 + Math.random() * 0.2);
 
   if (!st.active) {
     /* ننام حتى 7 صباحاً بالضبط */
@@ -1033,6 +1080,7 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({
         success: true, count: r.courses.length,
         cached: r.cached, ageMs: r.age,
+        ttlMin: Math.round(coursesTTL() / 60000),
         courses: r.courses
       }));
     } catch (err) {
@@ -1122,6 +1170,8 @@ const server = http.createServer(async (req, res) => {
     res.end(JSON.stringify({
       active: st.active, reason: st.reason,
       env: SITE_ENV, freeBeta: FREE_BETA,
+      next: st.next || nextWindow(),
+      dataTtlMin: Math.round(coursesTTL() / 60000),
       ar: st.ar, en: st.en,
       intervalMin: st.intervalMin,
       activeHours: [ACTIVE_FROM_HOUR, ACTIVE_TO_HOUR],

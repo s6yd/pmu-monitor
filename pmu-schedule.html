@@ -2595,7 +2595,14 @@ function renderMonitorState(){
   if(!m){ el.className='mon-state'; return }
   const ar=LANG==='ar', h=m.activeHours||[7,23];
   let cls,txt;
-  if(!m.active){
+  if(!m.active && m.reason==='offseason'){
+    cls='idle';
+    const nx=m.next;
+    txt=ar?`🗓️ <b>المراقبة تشتغل في فترات التسجيل فقط</b> — لأن المقاعد ما تتغيّر خارجها.`
+          +(nx?` تستأنف تلقائياً في <b>${escapeHtml(nx.ar)}</b>.`:'')
+          :`🗓️ <b>Monitoring runs during registration periods only</b> — seats rarely change outside them.`
+          +(nx?` It resumes automatically for <b>${escapeHtml(nx.ar)}</b>.`:'');
+  }else if(!m.active){
     cls='off';
     txt=ar?`⏸️ <b>المراقبة متوقفة الآن</b> — تشتغل من ${h[0]} صباحاً حتى ${h[1]-12} مساءً بتوقيت الرياض، وتستأنف تلقائياً.`
           :`⏸️ <b>Monitoring paused</b> — it runs ${h[0]}am–${h[1]-12}pm Riyadh time and resumes automatically.`;
