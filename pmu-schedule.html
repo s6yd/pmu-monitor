@@ -363,6 +363,13 @@ textarea:focus{border-color:var(--accent)}
 font-weight:600;font-family:var(--sans);cursor:pointer;padding:6px 0;margin-bottom:10px}
 
 /* ---- Guide ---- */
+.env-bar{display:none;background:#f59e0b;color:#1a1200;text-align:center;
+padding:6px 12px;font-size:12px;font-weight:700;position:sticky;top:0;z-index:200}
+.env-bar.on{display:block}
+.pro-soon{display:none;font-size:11.5px;line-height:1.75;margin-top:12px;
+padding:11px 13px;border-radius:11px;background:rgba(61,111,255,.10);
+border:1px solid rgba(61,111,255,.28);color:var(--text2)}
+.pro-soon b{color:var(--accent2)}
 .mon-state{font-size:11.5px;line-height:1.6;padding:9px 11px;border-radius:10px;
 margin-bottom:11px;display:none}
 .mon-state.on{display:block}
@@ -557,6 +564,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 </head>
 <body>
 
+<div class="env-bar" id="envBar"></div>
 <div class="topbar">
   <div class="logo">
     <div class="logo-icon">🎓</div>
@@ -788,6 +796,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
       <div class="pro-item">♾️ <span data-i18n-html="proFeat3"><b>مواد بلا حد</b> — راقب كل المواد اللي تبيها</span></div>
     </div>
     <button class="btn-pro" id="btnPro" onclick="togglePay()" data-i18n="proBtn">اشترك الحين</button>
+    <div class="pro-soon" id="proSoon"></div>
 
     <div class="pay-box" id="payBox">
       <div class="pay-line"><span data-i18n="payAmount">المبلغ</span><b data-i18n="payRiyal">19 ريال</b></div>
@@ -2569,6 +2578,14 @@ let MON_STATE=null;
 async function loadMonitorState(){
   try{ MON_STATE=await (await fetch(API_BASE+'/api/monitor-status')).json(); }
   catch(e){ MON_STATE=null; }
+  /* شريط تحذير في نسخة الاختبار */
+  const eb=document.getElementById('envBar');
+  if(eb && MON_STATE && MON_STATE.env && MON_STATE.env!=='prod'){
+    eb.className='env-bar on';
+    eb.textContent=(LANG==='ar'
+      ?'⚠️ نسخة اختبار — التعديلات هنا ما توصل للطلاب · '
+      :'⚠️ Test build — changes here are not live · ')+MON_STATE.env.toUpperCase();
+  }else if(eb){ eb.className='env-bar'; }
   renderMonitorState();
 }
 function renderMonitorState(){
@@ -3125,7 +3142,12 @@ function daysLeft(){
 function isTrial(){ return !PROFILE?.is_pro && daysLeft()>0 && !PROFILE?.paid_at; }
 /* ملاحظة: paid_at يتعبأ يدوياً عند تأكيد الدفع */
 
+/* ═══ الفترة التجريبية المجانية ═══
+   خلّه false لما تبدأ تحصيل الاشتراك — يرجع كل شي زي ما كان. */
+const FREE_BETA = true;
+
 function isPro(){
+  if(FREE_BETA) return !!USER;      /* أي حساب مسجّل = كل الميزات مفتوحة */
   if(!PROFILE)return false;
   if(PROFILE.is_pro)return true;
   if(PROFILE.subscription_expires_at)
@@ -3134,6 +3156,7 @@ function isPro(){
 }
 
 function togglePay(){
+  if(FREE_BETA)return;      /* ما فيه دفع في الفترة التجريبية */
   if(!USER){showToast(LANG==='ar'?'سجّل دخول أول':'Sign in first','warn');return}
   document.getElementById('payBox').classList.toggle('visible');
   document.getElementById('payNum').textContent=PAY_NUMBER;
@@ -3206,8 +3229,34 @@ function renderSettings(){
   const btn=document.getElementById('btnPro');
 
   const d=daysLeft(),trial=isTrial();
+
+  /* ═══ الفترة التجريبية: كل شي مجاني، ولا نعرض سعر ولا وسيلة دفع ═══ */
+  if(FREE_BETA){
+    card.classList.add('pro-trial');
+    card.classList.remove('pro-active');
+    document.getElementById('proTitle').textContent=ar?
+      '🎁 كل الميزات مفتوحة مجاناً':'🎁 Everything unlocked, free';
+    document.getElementById('proSub').textContent=ar?
+      'جدولك في فترة تجريبية — استمتع بكل شي بدون أي رسوم':
+      'Jadwalik is in open beta — enjoy everything at no cost';
+    document.getElementById('proPrice').textContent=ar?'مجاني حالياً':'Free for now';
+    btn.style.display='none';
+    document.getElementById('payBox').classList.remove('visible');
+    const soon=document.getElementById('proSoon');
+    if(soon){
+      soon.style.display='block';
+      soon.innerHTML=ar?
+        '🔜 <b>الاشتراك قريباً</b> — بنضيف خطة مدفوعة لاحقاً لبعض الميزات، وبنخبرك قبلها بوقت كافٍ. أي شي تستخدمه اليوم يظل شغّالاً لين نعلن.':
+        '🔜 <b>Subscriptions coming soon</b> — a paid plan will arrive later for some features, and we will tell you well in advance. Everything you use today keeps working until then.';
+    }
+    renderTgAndMon(ar);
+    return;
+  }
+
   card.classList.toggle('pro-active',pro&&!trial);
   card.classList.toggle('pro-trial',trial);
+  const soonEl=document.getElementById('proSoon');
+  if(soonEl)soonEl.style.display='none';
 
   if(trial){
     document.getElementById('proTitle').textContent=ar?'🎁 تجربتك المجانية شغّالة':'🎁 Free trial active';
@@ -3240,6 +3289,10 @@ function renderSettings(){
     btn.textContent=ar?'اشترك الحين':'Subscribe now';
   }
 
+  renderTgAndMon(ar);
+}
+
+function renderTgAndMon(ar){
   /* telegram */
   const linked=!!PROFILE?.telegram_chat_id;
   document.getElementById('tgTitle').textContent=linked?

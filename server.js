@@ -12,6 +12,16 @@ const TELEGRAM_TOKEN = (process.env.TELEGRAM_TOKEN || '').trim();
 const SB_URL = (process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '');
 const SB_SERVICE_KEY = (process.env.SUPABASE_SERVICE_KEY || '').trim();
 const ADMIN_TOKEN = (process.env.ADMIN_TOKEN || '').trim();   // كلمة سر لوحة التحكم
+
+/* فترة تجريبية مجانية: كل من ربط تيليغرام يستلم الإشعارات بدون اشتراك.
+   لإيقافها لاحقاً: FREE_BETA=false في متغيرات Render. */
+const FREE_BETA = (process.env.FREE_BETA || 'true').trim() !== 'false';
+
+/* نسخة الاختبار: تخدم الموقع لكن ما تراقب ولا ترسل إشعارات،
+   عشان ما تتكرر الرسائل مع نسخة الإنتاج. */
+const SITE_ENV = (process.env.SITE_ENV || 'prod').trim();
+const MONITOR_ENABLED = SITE_ENV === 'prod' &&
+  (process.env.MONITOR_ENABLED || 'true').trim() !== 'false';
 const CHECK_INTERVAL = 5 * 60 * 1000;   // كل 5 دقائق
 
 /* ============ Supabase REST helper ============ */
@@ -241,6 +251,7 @@ async function runMonitorCycle() {
     const sendList = toNotify.filter(({ m }) => {
       const p = profiles[m.user_id];
       if (!p || !p.telegram_chat_id) return false;
+      if (FREE_BETA) return true;          /* الفترة التجريبية: للجميع */
       return p.is_pro ||
         (p.subscription_expires_at && new Date(p.subscription_expires_at).getTime() > nowMs);
     });
@@ -637,6 +648,9 @@ async function adminHealth() {
 
   /* ── حالة الجدولة ── */
   const ms = monitorState();
+  if (SITE_ENV !== 'prod')
+    add('warn', `هذي نسخة اختبار (${SITE_ENV})`, `This is a ${SITE_ENV} instance`,
+        'المراقبة والإشعارات معطّلة هنا عشان ما تتكرر مع نسخة الإنتاج.');
   if (!ms.active)
     add('warn', 'المراقبة متوقفة الآن — ' + ms.ar, 'Monitoring paused — ' + ms.en,
         'تستأنف تلقائياً الساعة 7 صباحاً بتوقيت الرياض.');
@@ -680,6 +694,8 @@ async function adminHealth() {
     pmuFails: OPS.pmuFails,
     lastError: OPS.lastError,
 
+    env: SITE_ENV,
+    freeBeta: FREE_BETA,
     monitor: {
       active: ms.active, reason: ms.reason, ar: ms.ar,
       intervalMin: ms.intervalMin,
@@ -926,6 +942,11 @@ function currentWindow() {
 }
 
 function monitorState() {
+  if (!MONITOR_ENABLED) {
+    return { active: false, reason: 'disabled',
+             ar: 'المراقبة معطّلة في هذي النسخة', en: 'Monitoring disabled on this instance',
+             window: null, intervalMin: null };
+  }
   const hour = riyadhHour();
   const win = currentWindow();
   const inHours = hour >= ACTIVE_FROM_HOUR && hour < ACTIVE_TO_HOUR;
@@ -948,6 +969,8 @@ function monitorState() {
    ويوزّع الحمل بدل ما يجي كله في نفس الثانية من كل دقيقة */
 function nextDelay() {
   const st = monitorState();
+
+  if (st.reason === 'disabled') return 60 * 60 * 1000;
 
   if (!st.active) {
     /* ننام حتى 7 صباحاً بالضبط */
@@ -1098,6 +1121,7 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200);
     res.end(JSON.stringify({
       active: st.active, reason: st.reason,
+      env: SITE_ENV, freeBeta: FREE_BETA,
       ar: st.ar, en: st.en,
       intervalMin: st.intervalMin,
       activeHours: [ACTIVE_FROM_HOUR, ACTIVE_TO_HOUR],
@@ -1165,7 +1189,7 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log('Jadwalik running on ' + PORT);
   const st = monitorState();
-  console.log(`monitor: ${st.reason} — ${st.ar}`);
+  console.log(`env=${SITE_ENV} | freeBeta=${FREE_BETA} | monitor: ${st.reason} — ${st.ar}`);
   /* أول دورة بعد 20-60 ثانية عشوائياً، ثم جدولة ذكية */
   setTimeout(async () => {
     if (monitorState().active) {
