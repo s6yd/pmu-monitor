@@ -406,6 +406,8 @@ margin-bottom:11px;display:none}
 .mon-state.peak{background:var(--open-bg);border:1px solid rgba(16,185,129,.28);color:var(--open)}
 .mon-state.idle{background:var(--warn-bg);border:1px solid rgba(245,158,11,.28);color:var(--warn)}
 .mon-state.off{background:var(--bg);border:1px solid var(--border);color:var(--text2)}
+/* نخفي كل شي في تبويب خطتي عدا لافتة اختيار التخصص */
+#pagePlan.no-major > *:not(.pick-major){display:none!important}
 .pick-major{display:none;background:var(--card);border:2px dashed var(--accent);
 border-radius:16px;padding:26px 20px;text-align:center;margin-bottom:16px}
 .pick-major.on{display:block}
@@ -906,8 +908,9 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
       <div class="uni-field">
         <label class="field-label" data-i18n="major">التخصص</label>
         <select id="majorSelect" onchange="onMajorChange()">
+          <option value="" selected data-i18n="pickOne">— اختر تخصصك —</option>
           <optgroup label="كلية الهندسة">
-            <option value="MEEN" selected>الهندسة الميكانيكية — Mechanical Engineering</option>
+            <option value="MEEN">الهندسة الميكانيكية — Mechanical Engineering</option>
             <option value="EEEN">الهندسة الكهربائية — Electrical Engineering</option>
             <option value="CVEN">الهندسة المدنية — Civil Engineering</option>
             <option value="CHEN">الهندسة الكيميائية — Chemical Engineering</option>
@@ -2399,7 +2402,7 @@ function applyMajor(code,silent,persist){
   TOTAL_CR=PLANS[code].total;
   if(persist!==false)save('pmu_major',code);
   const el=document.getElementById('majorSelect');
-  if(el&&el.value!==code)el.value=code;
+  if(el&&persist!==false&&el.value!==code)el.value=code;
   setPlanTitle();
   if(!silent)renderPlan();
 }
@@ -3148,8 +3151,11 @@ function goPickMajor(){
 
 function renderPlan(){
   /* أول زيارة بدون تخصص — نوجّهه بدل ما نعرض خطة غلط */
+  const chosen=majorChosen();
   const pm=document.getElementById('pickMajor');
-  if(pm)pm.classList.toggle('on',!majorChosen());
+  if(pm)pm.classList.toggle('on',!chosen);
+  document.getElementById('pagePlan').classList.toggle('no-major',!chosen);
+  if(!chosen)return;
 
   renderGPA();
   const cr=doneCredits(),pct=Math.round(cr/TOTAL_CR*100);
@@ -3956,7 +3962,7 @@ finClash:'عندك اختبارين في نفس اليوم والساعة — ر
 finMissing:'مواد ما لقيت لها اختبار:',
 finSource:'المصدر: جدول الاختبارات المعلن في موقع الجامعة. المرجع الرسمي هو موقع الجامعة — راجعه قبل كل اختبار.',
 finPrint:'الاختبارات النهائية',
-optAll:'الكل',optMale:'طلاب',optFemale:'طالبات',
+pickOne:'— اختر تخصصك —',optAll:'الكل',optMale:'طلاب',optFemale:'طالبات',
 docRefresh:'🔄 حدّث القائمة',uniSoon:'جامعات ثانية — قريباً',
 tgSection:'إشعارات تيليغرام',monSection:'المواد المراقبة',
 proTitle:'اشتراك جدولك',proSub:'فعّل المراقبة والحفظ السحابي',
@@ -4032,7 +4038,7 @@ finClash:'You have two exams at the same day and hour — contact the Registrati
 finMissing:'Courses with no exam found:',
 finSource:'Source: the exam schedule published on the university website. The university site is the official reference — verify before every exam.',
 finPrint:'Final Exams',
-optAll:'All',optMale:'Male',optFemale:'Female',
+pickOne:'— Choose your major —',optAll:'All',optMale:'Male',optFemale:'Female',
 docRefresh:'🔄 Refresh list',uniSoon:'More universities — soon',
 tgSection:'Telegram notifications',monSection:'Monitored courses',
 proTitle:'Jadwalik Pro',proSub:'Unlock monitoring and cloud sync',
@@ -4068,23 +4074,41 @@ let LANG=load('pmu_lang','ar');
 const t=k=>I18N[LANG][k]||k;
 
 /* ═══ الثيم الفاتح/الغامق ═══ */
-let THEME=load('pmu_theme','dark');
+/* ثلاث حالات: auto يتبع إعداد الجوال، ثم فاتح، ثم غامق */
+let THEME=load('pmu_theme','auto');
+const _dark=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark)'):null;
+
+function effectiveTheme(){
+  if(THEME==='auto') return (_dark && _dark.matches) ? 'dark' : 'light';
+  return THEME;
+}
 function applyTheme(){
-  document.documentElement.classList.toggle('light',THEME==='light');
+  const eff=effectiveTheme();
+  document.documentElement.classList.toggle('light',eff==='light');
   const b=document.getElementById('themeBtn');
   if(b){
-    b.textContent = THEME==='light' ? '☀️' : '🌙';
+    b.textContent = THEME==='auto' ? '🌗' : (THEME==='light' ? '☀️' : '🌙');
     b.title = LANG==='ar'
-      ? (THEME==='light'?'فاتح — اضغط للغامق':'غامق — اضغط للفاتح')
-      : (THEME==='light'?'Light — tap for dark':'Dark — tap for light');
+      ? (THEME==='auto'?'يتبع إعداد جهازك — اضغط للفاتح'
+        :THEME==='light'?'فاتح — اضغط للغامق':'غامق — اضغط للتلقائي')
+      : (THEME==='auto'?'Follows your device — tap for light'
+        :THEME==='light'?'Light — tap for dark':'Dark — tap for auto');
   }
   const mt=document.querySelector('meta[name="theme-color"]');
-  if(mt)mt.setAttribute('content',THEME==='light'?'#f4f6fb':'#080b12');
+  if(mt)mt.setAttribute('content',eff==='light'?'#f4f6fb':'#080b12');
 }
 function toggleTheme(){
-  THEME=THEME==='light'?'dark':'light';
+  THEME = THEME==='auto' ? 'light' : THEME==='light' ? 'dark' : 'auto';
   save('pmu_theme',THEME);
   applyTheme();
+  if(THEME==='auto')showToast(LANG==='ar'?'الثيم يتبع إعداد جهازك':'Theme follows your device');
+}
+
+/* لو غيّر الطالب إعداد جهازه والموقع مفتوح، يتغيّر معه فوراً */
+if(_dark){
+  const onSys=()=>{ if(THEME==='auto')applyTheme(); };
+  if(_dark.addEventListener)_dark.addEventListener('change',onSys);
+  else if(_dark.addListener)_dark.addListener(onSys);
 }
 
 function toggleLang(){
@@ -4155,7 +4179,8 @@ function onUniChange(){
 function onMajorChange(){
   const el=document.getElementById('majorSelect');
   const code=el.value;
-  if(!PLANS[code]){el.value=MAJOR;return}
+  if(!code)return;                          /* لسا على "اختر تخصصك" */
+  if(!PLANS[code]){el.value=majorChosen()?MAJOR:'';return}
   if(code===MAJOR)return;
   const done=completed.length;
   if(done && !confirm(LANG==='ar'
