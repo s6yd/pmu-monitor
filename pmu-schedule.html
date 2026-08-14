@@ -1005,7 +1005,10 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 
 <script>
 const API='https://pmu-monitor.onrender.com/api/courses';
-const API_BASE=API.replace(/\/api\/courses$/,'');   /* نفس السيرفر، لبقية المسارات */
+/* فاضي = روابط نسبية على نفس النطاق.
+   مهم: الطلب لنطاق onrender يُعاد توجيهه لـ jadwalik.com،
+   وإعادة التوجيه تكسر طلبات POST. */
+const API_BASE='';
 
 /* ===== STUDY PLAN (Updated Spring 2026) ===== */
 /* ===== خطط 20 تخصص — PMU ===== */

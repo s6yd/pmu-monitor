@@ -1116,7 +1116,8 @@ const server = http.createServer(async (req, res) => {
 
   const host = (req.headers.host || '').toLowerCase();
   if (host.includes('onrender.com') && !req.url.startsWith('/tg-webhook')) {
-    res.writeHead(301, { Location: 'https://jadwalik.com' + req.url });
+    /* 308 بدل 301: يحافظ على POST بدل ما المتصفح يحوّلها GET */
+    res.writeHead(308, { Location: 'https://jadwalik.com' + req.url });
     res.end(); return;
   }
 
