@@ -52,6 +52,7 @@ function sb(method, table, { query = '', body = null, prefer = '' } = {}) {
       });
     });
     req.on('error', reject);
+    req.setTimeout(20000, () => { req.destroy(); reject(new Error('Supabase timeout')); });
     if (data) req.write(data);
     req.end();
   });
@@ -117,10 +118,14 @@ function fetchPMUData(termList, collegeList, genderList) {
             'Origin': 'https://masterschedule.pmu.edu.sa'
           }
         }, pr => { let h=''; pr.on('data',c=>h+=c); pr.on('end',()=>resolve(h)); });
-        p.on('error', reject); p.write(postData); p.end();
+        p.on('error', reject);
+        p.setTimeout(20000, () => { p.destroy(); reject(new Error('PMU data timeout')); });
+        p.write(postData); p.end();
       });
     });
-    req.on('error', reject); req.end();
+    req.on('error', reject);
+    req.setTimeout(15000, () => { req.destroy(); reject(new Error('PMU token timeout')); });
+    req.end();
   });
 }
 

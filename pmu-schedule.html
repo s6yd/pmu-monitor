@@ -3646,41 +3646,60 @@ async function loadReviews(){
 let docCourses={};          /* اسم الدكتور → Set من أكواد المواد */
 let docsLoaded=false;       /* سُحبت في هذي الجلسة؟ */
 
+let docsLoading=false;
 async function loadInstructors(force){
+  if(docsLoading)return;                    /* ما نطلق طلبين معاً */
+  docsLoading=true;
   const btn=document.getElementById('docBtnText');
   btn.textContent=LANG==='ar'?'جاري التحميل...':'Loading...';
 
   /* ١) الدكاترة المقيَّمون — يبقون في القائمة للأبد
         حتى لو ما عادوا يدرّسون، لأن تقييماتهم تفيد الطلاب */
   const set=new Set(reviews.map(r=>r.instructor_name));
+  let failed=false;
 
-  /* ٢) دكاترة ترم التسجيل القادم — سحبة واحدة لكل جلسة.
-        السيرفر يكيّش هذي التركيبة أصلاً، فما نحتاج نعيدها من طرفنا.
-        زر "حدّث القائمة" يجبر السحب لو الطالب يبي أحدث نسخة. */
-  if(force || !docsLoaded){
-    try{
-      const r=await fetch(`${API}?term=${UPCOMING_TERM}&college=ALL&gender=ALL`);
-      const d=await r.json();
-      if(d.success){
-        const map={};
-        d.courses.forEach(c=>{
-          const nm=cleanName(c.instructor);
-          if(!nm)return;
-          (map[nm]=map[nm]||new Set()).add((c.courseCode||'').trim());
-        });
-        docCourses=map;
-        docsLoaded=true;
-      }
-    }catch(e){}
+  try{
+    /* ٢) دكاترة ترم التسجيل القادم — سحبة واحدة لكل جلسة.
+          السيرفر يكيّش هذي التركيبة، فطالب واحد يسحب والباقون من نسخته. */
+    if(force || !docsLoaded){
+      /* مهلة 30 ثانية — أول سحبة بعد إعادة تشغيل السيرفر تاخذ وقت
+         لأن الكاش فاضي ولازم يجيب من موقع الجامعة */
+      const ctrl=new AbortController();
+      const timer=setTimeout(()=>ctrl.abort(),30000);
+      try{
+        const r=await fetch(`${API}?term=${UPCOMING_TERM}&college=ALL&gender=ALL`,
+                            {signal:ctrl.signal});
+        const d=await r.json();
+        if(d && d.success){
+          const map={};
+          d.courses.forEach(c=>{
+            const nm=cleanName(c.instructor);
+            if(!nm)return;
+            (map[nm]=map[nm]||new Set()).add((c.courseCode||'').trim());
+          });
+          docCourses=map;
+          docsLoaded=true;
+        }else failed=true;
+      }catch(e){ failed=true; }
+      finally{ clearTimeout(timer); }
+    }
+
+    Object.keys(docCourses).forEach(nm=>set.add(nm));
+
+    /* ٣) ومن نتائج البحث المحمّلة، لو الطالب باحث في ترم ثانٍ */
+    allCourses.forEach(c=>{const nm=cleanName(c.instructor);if(nm)set.add(nm)});
+
+    instructors=[...set];
+    renderDocs();
+
+    if(failed && !instructors.length)
+      showToast(LANG==='ar'?'ما قدرت أجيب القائمة — اضغط "حدّث القائمة"'
+                           :'Could not load the list — tap "Refresh list"','err');
+  }finally{
+    /* الزر يرجع لحالته مهما صار — ما يعلّق على "جاري التحميل" */
+    docsLoading=false;
+    btn.textContent=LANG==='ar'?'🔄 حدّث القائمة':'🔄 Refresh list';
   }
-  Object.keys(docCourses).forEach(nm=>set.add(nm));
-
-  /* ٣) ومن نتائج البحث المحمّلة، لو الطالب باحث في ترم ثانٍ */
-  allCourses.forEach(c=>{const nm=cleanName(c.instructor);if(nm)set.add(nm)});
-
-  instructors=[...set];
-  btn.textContent=LANG==='ar'?'🔄 حدّث القائمة':'🔄 Refresh list';
-  renderDocs();
 }
 
 /* قرب الدكتور من خطة الطالب:
