@@ -17,6 +17,10 @@ const ADMIN_TOKEN = (process.env.ADMIN_TOKEN || '').trim();   // كلمة سر �
    لإيقافها لاحقاً: FREE_BETA=false في متغيرات Render. */
 const FREE_BETA = (process.env.FREE_BETA || 'true').trim() !== 'false';
 
+/* معرّف محادثتك في تيليغرام — يوصلك عليه كل رأي جديد فوراً.
+   تجيبه بإرسال /whoami للبوت، ثم تحطه في Render باسم ADMIN_CHAT_ID */
+const ADMIN_CHAT_ID = (process.env.ADMIN_CHAT_ID || '').trim();
+
 /* نسخة الاختبار: تخدم الموقع لكن ما تراقب ولا ترسل إشعارات،
    عشان ما تتكرر الرسائل مع نسخة الإنتاج. */
 const SITE_ENV = (process.env.SITE_ENV || 'prod').trim();
@@ -327,6 +331,13 @@ async function handleTelegramUpdate(update) {
       `✅ <b>تم الربط بنجاح!</b>\n\n` +
       `بتوصلك إشعارات فورية أول ما تنفتح أي مادة تراقبها.\n\n` +
       `روح للموقع واختر المواد اللي تبي تراقبها 👇\njadwalik.com`);
+  }
+
+  /* يعطيك معرّف محادثتك عشان تحطه في ADMIN_CHAT_ID */
+  if (text === '/whoami' || text === '/id') {
+    return sendMsg(chatId,
+      `🆔 <b>معرّف محادثتك</b>\n\n<code>${chatId}</code>\n\n` +
+      `حطّه في Render باسم <code>ADMIN_CHAT_ID</code> عشان توصلك آراء الطلاب هنا فوراً.`);
   }
 
   if (text === '/stop') {
@@ -657,6 +668,10 @@ async function adminHealth() {
   else if (memPct > 0.7)
     add('warn', `الذاكرة ${Math.round(memPct * 100)}%`, `Memory at ${Math.round(memPct * 100)}%`, '');
 
+  if (!ADMIN_CHAT_ID)
+    add('warn', 'إشعارات الآراء غير مفعّلة', 'Feedback alerts not enabled',
+        'أرسل /whoami للبوت وحط الرقم في Render باسم ADMIN_CHAT_ID.');
+
   if (FEEDBACK_MEM.length)
     add('warn', `${FEEDBACK_MEM.length} ملاحظة محفوظة بالذاكرة فقط`,
         `${FEEDBACK_MEM.length} feedback items in memory only`,
@@ -702,6 +717,7 @@ async function adminHealth() {
     telegramOk: tgOk, telegramName: tgName, telegramError: tgErr,
     supabase: SB_URL && SB_SERVICE_KEY ? 'مضبوط' : 'ناقص',
     telegramToken: TELEGRAM_TOKEN ? 'مضبوط' : 'ناقص',
+    adminChat: ADMIN_CHAT_ID ? 'مضبوط' : 'ناقص',
 
     /* التشغيل */
     uptimeHours: Number(((now - OPS.bootedAt) / 3600000).toFixed(1)),
@@ -1273,6 +1289,24 @@ const server = http.createServer(async (req, res) => {
       if (FEEDBACK_MEM.length > 200) FEEDBACK_MEM.pop();
     }
     OPS.feedback++;
+
+    /* إشعار فوري لك على تيليغرام */
+    if (ADMIN_CHAT_ID) {
+      const icon = { idea: '💡', bug: '🐞', other: '💬' }[entry.category] || '💬';
+      const label = { idea: 'اقتراح جديد', bug: 'مشكلة جديدة', other: 'ملاحظة جديدة' }[entry.category] || 'ملاحظة جديدة';
+      const esc = x => String(x || '')
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const who = entry.name || entry.email || 'زائر غير مسجّل';
+      sendMsg(ADMIN_CHAT_ID,
+        `${icon} <b>${label}</b>\n\n` +
+        `<blockquote>${esc(entry.text)}</blockquote>\n` +
+        `👤 ${esc(who)}\n` +
+        (entry.email ? `✉️ <code>${esc(entry.email)}</code>\n` : '') +
+        (entry.major ? `🎓 ${esc(entry.major)}\n` : '') +
+        (saved ? '' : '⚠️ محفوظة بالذاكرة فقط — جدول feedback ناقص\n') +
+        `\n📊 jadwalik.com/admin`
+      ).catch(() => {});
+    }
 
     res.writeHead(200); res.end(JSON.stringify({ ok: true }));
     return;
