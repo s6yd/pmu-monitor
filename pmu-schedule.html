@@ -243,6 +243,25 @@ min-width:26px;text-align:end;flex-shrink:0;padding-top:2px}
 cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:13px;color:transparent;padding:0}
 .pc.done .pc-check{background:var(--open);border-color:var(--open);color:#fff}
 .pc-info{flex:1;min-width:0}
+/* إخفاء المعدل — للخصوصية لما يكون جنبك أحد */
+.gpa-card{position:relative}
+.gpa-eye{position:absolute;top:10px;inset-inline-end:10px;background:transparent;
+border:1px solid var(--border);color:var(--text3);border-radius:20px;
+padding:4px 9px;font-size:12px;cursor:pointer;line-height:1;z-index:2}
+.gpa-eye:active{background:var(--bg)}
+.gpa-card.hidden .gpa-val,
+.gpa-card.hidden .gpa-scale,
+.gpa-card.hidden .gpa-num{filter:blur(9px);user-select:none;pointer-events:none}
+.acc-head{width:100%;background:none;border:none;padding:0;cursor:pointer;
+display:flex;align-items:center;justify-content:space-between;gap:10px;
+font-family:var(--sans);color:inherit}
+.acc-right{display:flex;align-items:center;gap:9px}
+.acc-count{font-size:11px;font-family:var(--mono);color:var(--text3);
+background:var(--bg);padding:2px 9px;border-radius:20px}
+.acc-arrow{font-size:13px;color:var(--text3);transition:transform .25s}
+.acc.open .acc-arrow{transform:rotate(180deg)}
+.acc-body{display:none;margin-top:13px}
+.acc.open .acc-body{display:block}
 .slot-bar{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}
 .slot{background:var(--card);border:1px solid var(--border);border-radius:12px;
 padding:10px 6px;cursor:pointer;font-family:var(--sans);text-align:center;
@@ -827,7 +846,8 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     <button class="btn-pro" onclick="goPickMajor()" data-i18n="pmBtn">⚙️ روح للإعدادات واختر تخصصك</button>
   </div>
 
-  <div class="gpa-card">
+  <div class="gpa-card" id="gpaCard">
+    <button class="gpa-eye" onclick="toggleGpa()" id="gpaEye" title="إخفاء المعدل">👁️</button>
     <div class="gpa-top">
       <div>
         <div class="gpa-label" data-i18n="gpaLabel">المعدل التراكمي</div>
@@ -936,11 +956,6 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
   </div>
 
   <div class="set-card">
-    <div class="sc-title" data-i18n="myReviews">تقييماتي</div>
-    <div id="myRevList"></div>
-  </div>
-
-  <div class="set-card">
     <div class="sc-title" data-i18n="monSection">المواد المراقبة</div>
     <div id="monList"></div>
   </div>
@@ -1030,6 +1045,17 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
       <span class="fb-count" id="fbCount">0 / 1200</span>
       <button class="btn-sm" id="fbSend" onclick="sendFeedback()" data-i18n="fbSend">إرسال</button>
     </div>
+  </div>
+
+  <div class="set-card acc" id="myRevCard">
+    <button class="acc-head" onclick="toggleMyRev()">
+      <span class="sc-title" style="margin:0" data-i18n="myReviews">تقييماتي</span>
+      <span class="acc-right">
+        <span class="acc-count" id="myRevCount"></span>
+        <span class="acc-arrow" id="myRevArrow">▾</span>
+      </span>
+    </button>
+    <div id="myRevList" class="acc-body"></div>
   </div>
 
   <div class="legal-foot">
@@ -2597,14 +2623,10 @@ function norm(x){return (x||'').toUpperCase().replace(/[\s\-_]/g,'')}
 /* الجامعة ما تعلن الجنس بعمود مستقل، لكنه واضح من القاعة والشعبة:
    القاعات: M-… للطلاب، F-… و GZONE للطالبات
    الشعب:   1xx للطلاب، 2xx للطالبات */
+/* الجنس يجي من الجامعة نفسها (السيرفر يسحب قائمة الطلاب وقائمة الطالبات
+   ويعلّم كل مادة بمصدرها). ما نخمّن من القاعة لأنه كان يخطئ. */
 function genderOf(c){
-  const r=(c.room||'').toUpperCase().trim();
-  if(/^M[-\s]/.test(r)) return 'M';
-  if(/^F[-\s]/.test(r) || r.includes('GZONE')) return 'F';
-  const sec=String(c.section||'').trim();
-  if(/^1/.test(sec)) return 'M';
-  if(/^2/.test(sec)) return 'F';
-  return null;
+  return c.gender==='M'||c.gender==='F' ? c.gender : null;
 }
 function genderChip(c){
   const g=genderOf(c);
@@ -3281,6 +3303,7 @@ function goPickMajor(){
 }
 
 function renderPlan(){
+  applyGpaHidden();
   /* أول زيارة بدون تخصص — نوجّهه بدل ما نعرض خطة غلط */
   const chosen=majorChosen();
   const pm=document.getElementById('pickMajor');
@@ -3559,6 +3582,30 @@ function renderSettings(){
   }
 
   renderTgAndMon(ar);
+}
+
+/* المعدل مخفي؟ ينحفظ محلياً فيبقى مخفياً بعد إعادة التحميل */
+let GPA_HIDDEN=load('pmu_gpa_hidden',false)===true||load('pmu_gpa_hidden',false)==='true';
+function applyGpaHidden(){
+  const c=document.getElementById('gpaCard'), e=document.getElementById('gpaEye');
+  if(c)c.classList.toggle('hidden',GPA_HIDDEN);
+  if(e){
+    e.textContent=GPA_HIDDEN?'🙈':'👁️';
+    e.title=LANG==='ar'?(GPA_HIDDEN?'اعرض المعدل':'أخفِ المعدل')
+                       :(GPA_HIDDEN?'Show GPA':'Hide GPA');
+  }
+}
+function toggleGpa(){
+  GPA_HIDDEN=!GPA_HIDDEN;
+  save('pmu_gpa_hidden',GPA_HIDDEN);
+  applyGpaHidden();
+  showToast(LANG==='ar'?(GPA_HIDDEN?'أُخفي المعدل':'ظهر المعدل')
+                       :(GPA_HIDDEN?'GPA hidden':'GPA shown'));
+}
+
+function toggleMyRev(){
+  const c=document.getElementById('myRevCard');
+  if(c)c.classList.toggle('open');
 }
 
 function renderTgAndMon(ar){
@@ -4080,6 +4127,12 @@ function renderMyReviews(){
   const ar=LANG==='ar';
   const box=document.getElementById('myRevList');
   if(!box)return;
+  /* عدّاد على الرأس عشان يعرف كم عنده بدون ما يفتح */
+  const cnt=document.getElementById('myRevCount');
+  if(cnt){
+    const mine=USER?reviews.filter(r=>r.user_id===USER.id).length:0;
+    cnt.textContent = !USER ? '' : mine ? mine : (ar?'ما فيه':'none');
+  }
   if(!USER){
     box.innerHTML=`<div style="font-size:12.5px;color:var(--text3);padding:8px 0;line-height:1.7">${
       ar?'سجّل دخول عشان تشوف تقييماتك.':'Sign in to see your reviews.'}</div>`;
@@ -4449,6 +4502,7 @@ function applyLang(){
   if(document.getElementById('pageSched').classList.contains('active'))renderSchedule();
   renderCalendar();
   renderSlots();
+  applyGpaHidden();
   applyTheme();
   termHint();
   setPlanTitle();

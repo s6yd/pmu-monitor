@@ -1052,7 +1052,29 @@ async function getCourses(term, college, gender) {
   }
 
   const p = (async () => {
-    const courses = parseHTML(await fetchPMUData(term, college, gender));
+    let courses;
+    if (gender === 'ALL') {
+      /* الجامعة ما تعطي عمود جنس. نسحب الطلاب والطالبات كل على حدة
+         ونعلّم كل مادة بمصدرها — هذي حقيقة مو تخمين من القاعة. */
+      const [m, f] = await Promise.all([
+        fetchPMUData(term, college, 'M1').then(h => parseHTML(h)).catch(() => []),
+        fetchPMUData(term, college, 'F1').then(h => parseHTML(h)).catch(() => [])
+      ]);
+      m.forEach(c => { c.gender = 'M'; });
+      f.forEach(c => { c.gender = 'F'; });
+      /* نمنع التكرار لو ظهرت نفس الشعبة في الاثنين */
+      const seen = new Set();
+      courses = [];
+      for (const c of m.concat(f)) {
+        if (seen.has(c.crn)) continue;
+        seen.add(c.crn); courses.push(c);
+      }
+      if (!courses.length) throw new Error('لم تُرجع الجامعة أي مواد');
+    } else {
+      courses = parseHTML(await fetchPMUData(term, college, gender));
+      const g = gender === 'F1' ? 'F' : gender === 'M1' ? 'M' : null;
+      if (g) courses.forEach(c => { c.gender = g; });
+    }
     coursesCache.set(key, { at: Date.now(), courses });
     resolve('search', 'البحث ما يشتغل');
     if (coursesCache.size > 40) {                     /* تنظيف بسيط */
