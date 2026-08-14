@@ -21,6 +21,11 @@ const FREE_BETA = (process.env.FREE_BETA || 'true').trim() !== 'false';
    تجيبه بإرسال /whoami للبوت، ثم تحطه في Render باسم ADMIN_CHAT_ID */
 const ADMIN_CHAT_ID = (process.env.ADMIN_CHAT_ID || '').trim();
 
+/* وضع الصيانة: MAINTENANCE=on في Render يقفل الموقع للطلاب.
+   لوحة التحكم و/api/admin تبقى شغالة عشان تقدر تتابع. */
+let MAINTENANCE = (process.env.MAINTENANCE || '').trim() === 'on';
+let MAINT_MSG = (process.env.MAINTENANCE_MSG || '').trim();
+
 /* نسخة الاختبار: تخدم الموقع لكن ما تراقب ولا ترسل إشعارات،
    عشان ما تتكرر الرسائل مع نسخة الإنتاج. */
 const SITE_ENV = (process.env.SITE_ENV || 'prod').trim();
@@ -170,6 +175,32 @@ const OPS = {
   searchStale: 0,      // مخدومة من نسخة قديمة (الجامعة واقعة)
   lastError: null
 };
+/* ═══ إنذارات تيليغرام ═══
+   نرسل الإنذار مرة وحدة، وما نكرره إلا بعد ساعة أو بعد ما يُحل ويرجع. */
+const ALERTS = {};
+const ALERT_COOLDOWN = 60 * 60 * 1000;
+
+async function alert(key, title, detail) {
+  if (!ADMIN_CHAT_ID) return;
+  const now = Date.now(), prev = ALERTS[key];
+  if (prev && prev.active && now - prev.at < ALERT_COOLDOWN) return;
+  ALERTS[key] = { active: true, at: now, title };
+  await sendMsg(ADMIN_CHAT_ID,
+    `🔴 <b>${title}</b>\n\n${detail}\n\n` +
+    `🕐 ${new Date(now + 3*3600e3).toISOString().slice(11,16)} بتوقيت الرياض\n` +
+    `📊 jadwalik.com/admin`).catch(() => {});
+}
+
+async function resolve(key, title) {
+  if (!ADMIN_CHAT_ID) return;
+  const prev = ALERTS[key];
+  if (!prev || !prev.active) return;
+  ALERTS[key] = { active: false, at: Date.now(), title };
+  const mins = Math.round((Date.now() - prev.at) / 60000);
+  await sendMsg(ADMIN_CHAT_ID,
+    `✅ <b>رجع طبيعي: ${title}</b>\n\nكانت المشكلة قائمة ${mins} دقيقة.`).catch(() => {});
+}
+
 function logCycle(c) {
   OPS.cycles.push(c);
   if (OPS.cycles.length > 40) OPS.cycles.shift();
@@ -180,7 +211,15 @@ async function runMonitorCycle() {
 
   /* قفل: لو الدورة السابقة ما خلصت، ما نبدأ وحدة جديدة فوقها.
      بدونه الدورات تتراكم في الذروة وتاكل الذاكرة. */
-  if (cycleRunning) { OPS.skipped++; console.log('cycle still running — skipped'); return; }
+  if (cycleRunning) {
+    OPS.skipped++;
+    console.log('cycle still running — skipped');
+    if (OPS.skipped === 3)
+      alert('skip', 'دورات المراقبة تتراكم',
+        `تخطّت ${OPS.skipped} دورات لأن السابقة ما خلصت في وقتها.\n` +
+        `الإشعارات بتتأخر على الطلاب.`);
+    return;
+  }
   cycleRunning = true;
   const t0 = Date.now();
   const stat = { at: t0, rows: 0, changed: 0, toNotify: 0, eligible: 0,
@@ -197,7 +236,13 @@ async function runMonitorCycle() {
       try {
         const html = await fetchPMUData(term, 'ALL', 'ALL');
         parseHTML(html).forEach(c => { snapshot[term + ':' + c.crn] = c; });
-      } catch (e) { OPS.pmuFails++; console.log('fetch fail', term, e.message); }
+      } catch (e) {
+        OPS.pmuFails++;
+        console.log('fetch fail', term, e.message);
+        alert('pmu', 'موقع الجامعة ما يستجيب',
+          `فشل سحب بيانات الترم ${term}.\nالسبب: ${e.message}\n\n` +
+          `المراقبة والبحث بيتأثرون. لو تكرر كثير، تحقق إذا السيرفر محجوب.`);
+      }
       await new Promise(r => setTimeout(r, 1500));
     }
 
@@ -207,6 +252,7 @@ async function runMonitorCycle() {
     stat.rows = monitors.length;
     stat.terms = terms.length;
     stat.snapshot = Object.keys(snapshot).length;
+    if (stat.snapshot > 0) resolve('pmu', 'موقع الجامعة ما يستجيب');
 
     const changed = [];      // {m, live}
     const toNotify = [];     // {m, live}
@@ -305,6 +351,11 @@ async function runMonitorCycle() {
   } finally {
     stat.sec = Number(((Date.now() - t0) / 1000).toFixed(1));
     logCycle(stat);
+    if (stat.sec > 240)
+      alert('slow', 'دورة المراقبة بطيئة',
+        `آخر دورة أخذت ${stat.sec} ثانية (الحد 300).\n` +
+        `${stat.rows} صف · ${stat.notified} إشعار.`);
+    else if (stat.sec < 120) resolve('slow', 'دورة المراقبة بطيئة');
     cycleRunning = false;
   }
 }
@@ -754,6 +805,10 @@ async function adminHealth() {
 
     env: SITE_ENV,
     freeBeta: FREE_BETA,
+    maintenance: MAINTENANCE,
+    maintenanceMsg: MAINT_MSG,
+    alerts: Object.entries(ALERTS).filter(([,v])=>v.active)
+              .map(([k,v])=>({key:k,title:v.title,since:v.at})),
     ttl: ttlReason(),
     cache: cacheSnapshot(),
     riyadhDate: riyadhDate(),
@@ -999,6 +1054,7 @@ async function getCourses(term, college, gender) {
   const p = (async () => {
     const courses = parseHTML(await fetchPMUData(term, college, gender));
     coursesCache.set(key, { at: Date.now(), courses });
+    resolve('search', 'البحث ما يشتغل');
     if (coursesCache.size > 40) {                     /* تنظيف بسيط */
       const oldest = [...coursesCache.entries()].sort((a, b) => a[1].at - b[1].at)[0];
       if (oldest) coursesCache.delete(oldest[0]);
@@ -1129,6 +1185,49 @@ function scheduleNextCycle() {
   }, delay);
 }
 
+/* ============ صفحة الصيانة ============ */
+function maintenancePage() {
+  const msg = MAINT_MSG || 'نسوّي تحديث سريع للموقع. نرجع خلال وقت قصير بإذن الله.';
+  return `<!DOCTYPE html>
+<html lang="ar" dir="rtl"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>جدولك — تحت الصيانة</title>
+<meta name="robots" content="noindex">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;600;700&family=JetBrains+Mono:wght@500&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#080b12;color:#e2e8f8;font-family:'IBM Plex Sans Arabic',system-ui,sans-serif;
+min-height:100vh;display:flex;align-items:center;justify-content:center;padding:28px;text-align:center}
+.w{max-width:420px}
+.ic{width:76px;height:76px;background:#3d6fff;border-radius:22px;display:flex;
+align-items:center;justify-content:center;font-size:38px;margin:0 auto 22px;
+box-shadow:0 10px 34px rgba(61,111,255,.35)}
+h1{font-size:22px;font-weight:700;margin-bottom:12px}
+p{font-size:14.5px;color:#8b96b8;line-height:1.9;margin-bottom:22px}
+.box{background:#131928;border:1px solid #1e2740;border-radius:14px;padding:15px 17px;
+font-size:13px;color:#8b96b8;line-height:1.8}
+.box b{color:#e2e8f8}
+a{color:#6b8fff;text-decoration:none}
+.dots span{display:inline-block;width:7px;height:7px;border-radius:50%;background:#3d6fff;
+margin:0 3px;animation:b 1.3s infinite}
+.dots span:nth-child(2){animation-delay:.18s}
+.dots span:nth-child(3){animation-delay:.36s}
+@keyframes b{0%,60%,100%{opacity:.28;transform:translateY(0)}30%{opacity:1;transform:translateY(-5px)}}
+.f{margin-top:24px;font-size:11.5px;color:#4a5580;font-family:'JetBrains Mono',monospace}
+</style></head><body>
+<div class="w">
+  <div class="ic">🎓</div>
+  <h1>جدولك تحت الصيانة</h1>
+  <p>${msg.replace(/[<>]/g,'')}</p>
+  <div class="dots"><span></span><span></span><span></span></div>
+  <div class="box" style="margin-top:24px">
+    <b>بياناتك محفوظة بالكامل</b><br>
+    جدولك وخطتك ومعدلك في حسابك، وترجع لك زي ما تركتها.
+  </div>
+  <div class="f">jadwalik.com</div>
+</div></body></html>`;
+}
+
 /* ============ HTTP server ============ */
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -1137,13 +1236,35 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return; }
 
   const host = (req.headers.host || '').toLowerCase();
-  if (host.includes('onrender.com') && !req.url.startsWith('/tg-webhook')) {
+  /* نطاق onrender يُحوَّل للنطاق الرسمي — إلا في نسخة الاختبار،
+     لأنها لا تملك نطاقاً خاصاً ولازم تُعرض كما هي. */
+  if (SITE_ENV === 'prod' &&
+      host.includes('onrender.com') && !req.url.startsWith('/tg-webhook')) {
     /* 308 بدل 301: يحافظ على POST بدل ما المتصفح يحوّلها GET */
     res.writeHead(308, { Location: 'https://jadwalik.com' + req.url });
     res.end(); return;
   }
 
   const parsed = url.parse(req.url, true);
+
+  /* وضع الصيانة — نقفل على الطلاب فقط، واللوحة تبقى شغالة */
+  if (MAINTENANCE &&
+      !parsed.pathname.startsWith('/api/admin/') &&
+      parsed.pathname !== '/admin' && parsed.pathname !== '/admin.html' &&
+      parsed.pathname !== '/tg-webhook') {
+    if (parsed.pathname.startsWith('/api/')) {
+      res.setHeader('Content-Type', 'application/json');
+      res.writeHead(503);
+      res.end(JSON.stringify({ success: false, maintenance: true,
+                               error: MAINT_MSG || 'الموقع تحت الصيانة' }));
+    } else {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Retry-After', '600');
+      res.writeHead(503);
+      res.end(maintenancePage());
+    }
+    return;
+  }
 
   /* Telegram webhook */
   if (parsed.pathname === '/tg-webhook' && req.method === 'POST') {
@@ -1172,6 +1293,9 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
       /* لو الجامعة تعطلت، نخدم آخر نسخة محفوظة بدل ما نفشل */
       OPS.lastError = { at: Date.now(), where: 'search', msg: err.message };
+      alert('search', 'البحث ما يشتغل',
+        `فشل جلب المواد من موقع الجامعة.\nالسبب: ${err.message}\n\n` +
+        (coursesCache.size ? 'نخدم النسخة المحفوظة مؤقتاً.' : 'ما فيه نسخة محفوظة — البحث معطّل.'));
       const stale = coursesCache.get(`${term}|${college}|${gender}`);
       if (stale) {
         OPS.searchStale++;
@@ -1234,6 +1358,21 @@ const server = http.createServer(async (req, res) => {
       if (act === 'monitors') return send(200, { monitors: await adminMonitors() });
       if (act === 'feedback') return send(200, { feedback: await adminFeedback() });
       if (act === 'user')     return send(200, await adminUserDetail(parsed.query.id || ''));
+
+      if (act === 'maintenance') {
+        if (req.method === 'POST') {
+          const b = await readBody(req);
+          const was = MAINTENANCE;
+          MAINTENANCE = !!b.on;
+          if (typeof b.msg === 'string') MAINT_MSG = b.msg.slice(0, 300);
+          if (was !== MAINTENANCE) {
+            sendMsg(ADMIN_CHAT_ID, MAINTENANCE
+              ? `🔧 <b>الموقع دخل وضع الصيانة</b>\n\n${MAINT_MSG || 'بدون رسالة'}`
+              : `✅ <b>الموقع رجع للعمل</b>`).catch(() => {});
+          }
+        }
+        return send(200, { on: MAINTENANCE, msg: MAINT_MSG });
+      }
 
       if (req.method === 'POST') {
         const b = await readBody(req);
