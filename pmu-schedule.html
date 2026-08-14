@@ -212,6 +212,9 @@ border-radius:16px;padding:17px;margin-bottom:15px}
 .suggest-head h3{font-size:14px;font-weight:600}
 .suggest-hrs{font-family:var(--mono);font-size:12px;color:var(--accent2);background:rgba(61,111,255,.15);padding:3px 10px;border-radius:20px}
 .sug-item{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)}
+.sug-item.tappable{cursor:pointer}
+.sug-item.tappable:active{background:var(--bg);border-radius:8px}
+.sug-item.tappable .sug-code::after{content:' ›';color:var(--text3);font-weight:700}
 .sug-item:last-child{border-bottom:none}
 .sug-code{font-family:var(--mono);font-size:12px;color:var(--accent2);
 min-width:74px;flex-shrink:0;padding-top:1px;white-space:nowrap}
@@ -414,6 +417,12 @@ border-radius:16px;padding:26px 20px;text-align:center;margin-bottom:16px}
 .pm-ic{font-size:38px;margin-bottom:12px}
 .pm-t{font-size:17px;font-weight:700;margin-bottom:9px}
 .pm-s{font-size:13px;color:var(--text2);line-height:1.8;margin-bottom:18px}
+.g-chip{font-size:9.5px;font-weight:600;padding:3px 8px;border-radius:20px;
+white-space:nowrap;font-family:var(--sans)}
+.g-chip.m{background:rgba(61,111,255,.14);color:var(--accent2);
+border:1px solid rgba(61,111,255,.28)}
+.g-chip.f{background:rgba(217,70,160,.14);color:#e879c7;
+border:1px solid rgba(217,70,160,.30)}
 .btn-doc-courses{width:100%;background:transparent;border:1px solid var(--border2);
 color:var(--text2);border-radius:12px;padding:12px;font-size:13.5px;font-weight:600;
 font-family:var(--sans);cursor:pointer;margin-top:9px}
@@ -2554,6 +2563,26 @@ async function doSearch(){
 /* يشيل المسافات والرموز عشان "MEEN3395" = "meen 3395" */
 function norm(x){return (x||'').toUpperCase().replace(/[\s\-_]/g,'')}
 
+/* الجامعة ما تعلن الجنس بعمود مستقل، لكنه واضح من القاعة والشعبة:
+   القاعات: M-… للطلاب، F-… و GZONE للطالبات
+   الشعب:   1xx للطلاب، 2xx للطالبات */
+function genderOf(c){
+  const r=(c.room||'').toUpperCase().trim();
+  if(/^M[-\s]/.test(r)) return 'M';
+  if(/^F[-\s]/.test(r) || r.includes('GZONE')) return 'F';
+  const sec=String(c.section||'').trim();
+  if(/^1/.test(sec)) return 'M';
+  if(/^2/.test(sec)) return 'F';
+  return null;
+}
+function genderChip(c){
+  const g=genderOf(c);
+  if(!g)return '';
+  const ar=LANG==='ar';
+  return `<span class="g-chip ${g==='M'?'m':'f'}">${
+    g==='M' ? (ar?'👨‍🎓 طلاب':'👨‍🎓 Male') : (ar?'👩‍🎓 طالبات':'👩‍🎓 Female')}</span>`;
+}
+
 function renderResults(){
   const raw=document.getElementById('courseFilter').value.trim();
   const f=norm(raw);
@@ -2605,6 +2634,7 @@ function renderResults(){
         <div><div class="cc-code">${c.courseCode} <span style="color:var(--text2);font-weight:400">— Sec ${c.section}</span></div>
         <div class="cc-title">${c.courseTitle}</div></div>
         <div class="cc-right">
+          ${genderChip(c)}
           <span class="badge ${c.status==='OPEN'?'open':'close'}">${c.status}</span>
           <button class="btn-add ${inSch?'added':''} ${lock?'locked':clash.length?'blocked':''}" onclick="toggleCourse('${c.crn}')">${inSch?'✓':'+'}</button>
           ${c.status==='CLOSE'?`<button class="btn-bell ${isMonitored(c.crn)?'on':''} ${isPro()?'':'locked'}" onclick="toggleMonitorCourse('${c.crn}')" title="مراقبة">${isMonitored(c.crn)?'🔔':'🔕'}</button>`:''}
@@ -3208,7 +3238,8 @@ function renderPlan(){
 
   const sug=suggestNext();
   document.getElementById('sugHours').textContent=sug.hours+' '+t('hrsUnit');
-  const row=(c,crit)=>`<div class="sug-item">
+  const row=(c,crit)=>`<div class="sug-item${c.el?'':' tappable'}"${
+      c.el?'':` onclick="searchSuggested('${c.c}')"`}>
     <span class="sug-code">${c.c}</span>
     <span class="sug-name">${c.n}${crit?`<span class="sug-badge">${unlockLabel(c.unlocks)}</span>`:''}</span>
     <span class="sug-cr">${c.h}H</span></div>`;
@@ -3677,26 +3708,48 @@ function backToDocs(){
   renderDocs();
 }
 
-/* ينقلك للبحث ويعبّي اسم الدكتور في الفلتر */
-function showDocCourses(){
-  const name=currentDoc;
-  if(!name)return;
-  /* نأخذ أوضح جزء من الاسم: عادةً اسم العائلة قبل الفاصلة */
-  const q=name.includes(',') ? name.split(',')[0].trim() : name.trim();
+/* ينقلك للبحث في ترم التسجيل القادم دائماً، بكل الكليات والجنسين.
+   يُستخدم من صفحة الدكتور ومن مقترح الترم الجاي. */
+function searchIn(query, note){
+  const term=document.getElementById('term');
+  const col =document.getElementById('college');
+  const gen =document.getElementById('gender');
+
+  /* نجبر الخيارات على ترم التسجيل القادم + الكل، مهما كان اختياره السابق */
+  const changed = term.value!==UPCOMING_TERM || col.value!=='ALL' || gen.value!=='ALL';
+  term.value=UPCOMING_TERM; col.value='ALL'; gen.value='ALL';
+  termHint();
+
   switchTab('search');
   const f=document.getElementById('courseFilter');
   if(f){
-    f.value=q;
+    f.value=query;
     document.getElementById('clearFilter').style.display='block';
   }
-  if(allCourses.length){
-    renderResults();
-    showToast(LANG==='ar'?`مواد ${q} في الترم المختار`:`Courses by ${q} this term`);
-  }else{
-    /* ما فيه نتائج محمّلة — نبحث له */
-    showToast(LANG==='ar'?'جاري جلب المواد...':'Fetching courses...');
+
+  /* لو تغيّر الترم لازم نعيد السحب — النتائج القديمة لترم ثانٍ */
+  if(changed || !allCourses.length){
+    showToast(LANG==='ar'?'جاري جلب مواد الترم القادم...':'Fetching next term courses...');
     doSearch();
+  }else{
+    renderResults();
+    if(note)showToast(note);
   }
+}
+
+/* من صفحة الدكتور */
+function showDocCourses(){
+  const name=currentDoc;
+  if(!name)return;
+  /* أسماء الجامعة تجي "العائلة، الاسم" أو "الاسم العائلة" */
+  const q=name.includes(',') ? name.split(',')[0].trim() : name.trim();
+  searchIn(q, LANG==='ar'?`مواد ${q} في ترم التسجيل القادم`:`Courses by ${q} next term`);
+}
+
+/* من مقترح الترم الجاي */
+function searchSuggested(code){
+  if(!code)return;
+  searchIn(code, LANG==='ar'?`شعب ${code} في ترم التسجيل القادم`:`${code} sections next term`);
 }
 
 function renderDocDetail(){
