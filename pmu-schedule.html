@@ -406,6 +406,15 @@ margin-bottom:11px;display:none}
 .mon-state.peak{background:var(--open-bg);border:1px solid rgba(16,185,129,.28);color:var(--open)}
 .mon-state.idle{background:var(--warn-bg);border:1px solid rgba(245,158,11,.28);color:var(--warn)}
 .mon-state.off{background:var(--bg);border:1px solid var(--border);color:var(--text2)}
+.pick-major{display:none;background:var(--card);border:2px dashed var(--accent);
+border-radius:16px;padding:26px 20px;text-align:center;margin-bottom:16px}
+.pick-major.on{display:block}
+.pm-ic{font-size:38px;margin-bottom:12px}
+.pm-t{font-size:17px;font-weight:700;margin-bottom:9px}
+.pm-s{font-size:13px;color:var(--text2);line-height:1.8;margin-bottom:18px}
+.term-hint{font-size:11.5px;color:var(--open);margin-top:7px;line-height:1.6;
+padding:7px 10px;background:var(--open-bg);border:1px solid var(--open-border);border-radius:9px}
+.term-hint.hide{display:none}
 .fb-lead{font-size:12px;color:var(--text3);line-height:1.7;margin-bottom:11px}
 .fb-cats{display:flex;gap:7px;margin-bottom:10px;flex-wrap:wrap}
 .fb-cat{background:var(--bg);border:1px solid var(--border);color:var(--text2);
@@ -640,21 +649,22 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     <div class="fields">
       <div>
         <label class="field-label" data-i18n="semester">السيمستر</label>
-        <select id="term">
-          <option value="202710">Fall Semester 2026/2027</option>
-          <option value="202630" selected>Summer Semester 2025/2026</option>
+        <select id="term" onchange="termHint()">
+          <option value="202710" selected>Fall Semester 2026/2027</option>
+          <option value="202630">Summer Semester 2025/2026</option>
           <option value="202730">Summer Semester 2026/2027</option>
           <option value="202720">Spring Semester 2026/2027</option>
           <option value="202620">Spring Semester 2025/2026</option>
           <option value="202610">Fall Semester 2025/2026</option>
         </select>
+        <div class="term-hint" id="termHint"></div>
       </div>
       <div class="row2">
         <div>
           <label class="field-label" data-i18n="college">الكلية</label>
           <select id="college">
-            <option value="ALL" data-i18n="optAll">الكل</option>
-            <option value="EN" selected>Engineering (EN)</option>
+            <option value="ALL" selected data-i18n="optAll">الكل</option>
+            <option value="EN">Engineering (EN)</option>
             <option value="IT">Computer Eng & Science (IT)</option>
             <option value="BA">Business Administration (BA)</option>
             <option value="CS">Computer Science (CS)</option>
@@ -667,9 +677,9 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
         <div>
           <label class="field-label" data-i18n="gender">الجنس</label>
           <select id="gender">
-            <option value="M1" selected data-i18n="optMale">Male</option>
+            <option value="M1" data-i18n="optMale">Male</option>
             <option value="F1" data-i18n="optFemale">Female</option>
-            <option value="ALL" data-i18n="optAll">الكل</option>
+            <option value="ALL" selected data-i18n="optAll">الكل</option>
           </select>
         </div>
       </div>
@@ -761,6 +771,14 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 
 <!-- PLAN -->
 <div class="page" id="pagePlan">
+
+  <div class="pick-major" id="pickMajor">
+    <div class="pm-ic">📋</div>
+    <div class="pm-t" data-i18n="pmTitle">اختر تخصصك أول</div>
+    <div class="pm-s" data-i18n="pmSub">الخطة الدراسية والمواد والمتطلبات تتغيّر حسب تخصصك. اختره مرة وحدة وينحفظ لك.</div>
+    <button class="btn-pro" onclick="goPickMajor()" data-i18n="pmBtn">⚙️ روح للإعدادات واختر تخصصك</button>
+  </div>
+
   <div class="gpa-card">
     <div class="gpa-top">
       <div>
@@ -2372,13 +2390,14 @@ function setPlanTitle(){
   if(p)el.textContent=LANG==='ar'?p.ar:p.name;
 }
 
-function applyMajor(code,silent){
+/* persist=false يعني "اعرض الخطة بس لا تعتبرها اختياراً منه" */
+function applyMajor(code,silent,persist){
   if(!PLANS[code])return;
   MAJOR=code;
   PLAN=PLANS[code].sems;
   TECH_ELECTIVES=PLANS[code].tech||{};
   TOTAL_CR=PLANS[code].total;
-  save('pmu_major',code);
+  if(persist!==false)save('pmu_major',code);
   const el=document.getElementById('majorSelect');
   if(el&&el.value!==code)el.value=code;
   setPlanTitle();
@@ -2669,13 +2688,30 @@ async function sendFeedback(){
         major:MAJOR, lang:LANG
       })
     });
-    const d=await r.json();
-    if(!d.ok)throw new Error(d.error||'fail');
+    let d=null;
+    try{ d=await r.json(); }catch(_){ }
+    if(!r.ok||!d||!d.ok)throw new Error((d&&d.error)||('HTTP '+r.status));
     ta.value=''; updateFbCount();
     showToast(t('fbThanks'),'success');
-  }catch(e){ showToast(t('fbFail'),'err'); }
+  }catch(e){ showToast(t('fbFail')+' — '+e.message,'err'); }
   finally{ btn.disabled=false; }
 }
+/* الترم اللي يسجّل فيه الطالب قريباً — نأخذه من نوافذ التقويم */
+const UPCOMING_TERM='202710';
+function termHint(){
+  const el=document.getElementById('termHint');
+  if(!el)return;
+  const v=(document.getElementById('term')||{}).value;
+  if(v===UPCOMING_TERM){
+    el.className='term-hint';
+    el.textContent=LANG==='ar'
+      ? '✅ هذا ترم التسجيل القادم — ابنِ جدولك منه'
+      : '✅ This is the upcoming registration term — build your schedule from it';
+  }else{
+    el.className='term-hint hide';
+  }
+}
+
 function updateFbCount(){
   const ta=document.getElementById('fbText'), c=document.getElementById('fbCount');
   if(ta&&c)c.textContent=`${ta.value.length} / 1200`;
@@ -3092,17 +3128,29 @@ function toggleDone(code){
     completed.push(code);
   }
   save('pmu_completed',completed);pushCompleted();
-  const _fb=document.getElementById('fbText');
-  if(_fb)_fb.addEventListener('input',updateFbCount);
-  applyTheme();
-  applyMajor(MAJOR,true);
-  renderCalendar();
-  loadMonitorState();
   renderPlan();
   if(allCourses.length)renderResults();
 }
 
+/* هل اختار الطالب تخصصه فعلاً؟ */
+function majorChosen(){ return !!load('pmu_major',null); }
+
+function goPickMajor(){
+  switchTab('set');
+  setTimeout(()=>{
+    const el=document.getElementById('majorSelect');
+    if(el){
+      el.scrollIntoView({behavior:'smooth',block:'center'});
+      el.focus();
+    }
+  },120);
+}
+
 function renderPlan(){
+  /* أول زيارة بدون تخصص — نوجّهه بدل ما نعرض خطة غلط */
+  const pm=document.getElementById('pickMajor');
+  if(pm)pm.classList.toggle('on',!majorChosen());
+
   renderGPA();
   const cr=doneCredits(),pct=Math.round(cr/TOTAL_CR*100);
   document.getElementById('progDone').innerHTML=`${cr}<small> / ${TOTAL_CR} ${t('hrsUnit')}</small>`;
@@ -3195,7 +3243,22 @@ schedule=load('pmu_schedule',[]);
 completed=load('pmu_completed',[]);
 grades=load('pmu_grades',{});
 updateBadge();
-setTimeout(async()=>{applyLang();renderSettings();maybeShowGuide();await loadReviews();},0);
+
+/* الثيم أول شي عشان ما تومض الصفحة */
+applyTheme();
+
+setTimeout(async()=>{
+  applyMajor(MAJOR,true,false);
+  applyLang();
+  renderSettings();
+  renderCalendar();
+  termHint();
+  loadMonitorState();
+  const fb=document.getElementById('fbText');
+  if(fb)fb.addEventListener('input',updateFbCount);
+  maybeShowGuide();
+  await loadReviews();
+},0);
 
 
 
@@ -3891,6 +3954,9 @@ calTitle:'🗓️ مواعيد تهمك',calSub:'من التقويم الأكا�
 calNow:'جارٍ الآن',calToday:'اليوم',calTomorrow:'بكرة',calIn:'بعد',calDays:'يوم',
 calDone:'ما في مواعيد قادمة في التقويم الحالي.',
 calSource:'المصدر: التقويم الأكاديمي المعتمد 2026/2027. التقويم قابل للتعديل — راجع موقع الجامعة.',
+pmTitle:'اختر تخصصك أول',
+pmSub:'الخطة الدراسية والمواد والمتطلبات تتغيّر حسب تخصصك. اختره مرة وحدة وينحفظ لك.',
+pmBtn:'⚙️ روح للإعدادات واختر تخصصك',
 fbTitle:'💬 رأيك يهمنا',fbLead:'وش ناقص؟ وش ما عجبك؟ وش تبينا نضيف؟ اكتب بصراحة — كل رسالة تُقرأ.',
 fbIdea:'💡 اقتراح',fbBug:'🐞 مشكلة',fbOther:'💬 غير ذلك',fbSend:'إرسال',
 fbPh:'اكتب هنا...',fbShort:'اكتب شوي أكثر عشان نفهم قصدك',
@@ -3964,6 +4030,9 @@ calTitle:'🗓️ Dates that matter',calSub:'From the official academic calendar
 calNow:'Now',calToday:'Today',calTomorrow:'Tomorrow',calIn:'in',calDays:'days',
 calDone:'No upcoming dates in the current calendar.',
 calSource:'Source: official 2026/2027 academic calendar. Dates may change — check the university website.',
+pmTitle:'Pick your major first',
+pmSub:'Your degree plan, courses and prerequisites depend on your major. Choose once and it is saved for you.',
+pmBtn:'⚙️ Go to Settings and pick your major',
 fbTitle:'💬 Your feedback matters',fbLead:'What is missing? What annoyed you? What should we add? Write honestly — every message is read.',
 fbIdea:'💡 Idea',fbBug:'🐞 Problem',fbOther:'💬 Other',fbSend:'Send',
 fbPh:'Write here...',fbShort:'Add a little more so we understand',
@@ -4082,6 +4151,7 @@ function applyLang(){
   if(document.getElementById('pageSched').classList.contains('active'))renderSchedule();
   renderCalendar();
   applyTheme();
+  termHint();
   setPlanTitle();
   if(FINALS)renderFinals();
 }
