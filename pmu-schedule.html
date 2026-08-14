@@ -4,6 +4,21 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>جدولك — Jadwalik</title>
+<meta name="description" content="جدولك — ابنِ جدولك الدراسي في جامعة الأمير محمد بن فهد، تابع خطتك، احسب معدلك، وراقب المواد المسكّرة.">
+<meta name="theme-color" content="#080b12">
+<link rel="icon" href="/favicon-32.png" sizes="32x32">
+<link rel="icon" href="/favicon-192.png" sizes="192x192">
+<link rel="apple-touch-icon" href="/favicon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="جدولك">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="/manifest.json">
+<meta property="og:title" content="جدولك — Jadwalik">
+<meta property="og:description" content="جدولك الدراسي وخطتك ومعدلك ومراقبة المواد — كل شي في مكان واحد.">
+<meta property="og:image" content="https://jadwalik.com/favicon-512.png">
+<meta property="og:url" content="https://jadwalik.com">
+<meta property="og:type" content="website">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 :root{
@@ -13,11 +28,26 @@
 --close:#f43f5e;--close-bg:rgba(244,63,94,.08);--close-border:rgba(244,63,94,.25);
 --warn:#f59e0b;--warn-bg:rgba(245,158,11,.1);
 --text:#e2e8f8;--text2:#8b96b8;--text3:#4a5580;
---mono:'JetBrains Mono',monospace;--sans:'IBM Plex Sans Arabic',sans-serif;}
+--mono:'JetBrains Mono',monospace;--sans:'IBM Plex Sans Arabic',sans-serif;
+--topbar-bg:rgba(8,11,18,.94);--shadow:rgba(0,0,0,.35);}
+
+/* ── الثيم الفاتح ── */
+html.light{
+--bg:#f4f6fb;--card:#ffffff;--border:#e3e8f1;--border2:#ccd5e4;
+--accent:#2f5fe8;--accent2:#2450d0;
+--open:#0e9f76;--open-bg:rgba(14,159,118,.09);--open-border:rgba(14,159,118,.3);
+--close:#dc2f4e;--close-bg:rgba(220,47,78,.08);--close-border:rgba(220,47,78,.28);
+--warn:#b0700a;--warn-bg:rgba(176,112,10,.1);
+--text:#141a26;--text2:#4f5b72;--text3:#8794a8;
+--topbar-bg:rgba(244,246,251,.95);--shadow:rgba(20,30,60,.09);}
+html.light .card,html.light .set-card,html.light .day-block,
+html.light .pro-card,html.light .finals-card,html.light .cal-card{
+box-shadow:0 1px 3px var(--shadow)}
+html.light .logo-icon{box-shadow:0 2px 8px rgba(47,95,232,.28)}
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh}
 
-.topbar{position:sticky;top:0;z-index:100;background:rgba(8,11,18,.94);backdrop-filter:blur(16px);
+.topbar{position:sticky;top:0;z-index:100;background:var(--topbar-bg);backdrop-filter:blur(16px);
 border-bottom:1px solid var(--border);padding:0 16px;height:52px;display:flex;align-items:center;justify-content:space-between}
 .logo{display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;line-height:1.15}
 .brand-sub{font-size:9.5px;font-family:var(--mono);color:var(--text3);letter-spacing:.5px;margin-top:2px}
@@ -376,6 +406,18 @@ margin-bottom:11px;display:none}
 .mon-state.peak{background:var(--open-bg);border:1px solid rgba(16,185,129,.28);color:var(--open)}
 .mon-state.idle{background:var(--warn-bg);border:1px solid rgba(245,158,11,.28);color:var(--warn)}
 .mon-state.off{background:var(--bg);border:1px solid var(--border);color:var(--text2)}
+.fb-lead{font-size:12px;color:var(--text3);line-height:1.7;margin-bottom:11px}
+.fb-cats{display:flex;gap:7px;margin-bottom:10px;flex-wrap:wrap}
+.fb-cat{background:var(--bg);border:1px solid var(--border);color:var(--text2);
+border-radius:20px;padding:6px 13px;font-size:12px;font-weight:600;
+font-family:var(--sans);cursor:pointer}
+.fb-cat.active{background:var(--accent);border-color:var(--accent);color:#fff}
+#fbText{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);
+border-radius:12px;padding:11px 13px;font-size:13.5px;font-family:var(--sans);
+line-height:1.7;outline:none;resize:vertical;min-height:90px}
+#fbText:focus{border-color:var(--accent)}
+.fb-row{display:flex;justify-content:space-between;align-items:center;margin-top:10px;gap:10px}
+.fb-count{font-size:11px;color:var(--text3);font-family:var(--mono)}
 .legal-foot{text-align:center;padding:22px 10px 6px;font-size:12px;
 color:var(--text3);display:flex;flex-wrap:wrap;gap:8px;justify-content:center;align-items:center}
 .legal-foot a{color:var(--text2);text-decoration:none}
@@ -413,10 +455,13 @@ letter-spacing:1px;margin:20px 0 4px;padding-top:14px;border-top:1px solid var(-
 padding:12px 14px;font-size:12.5px;color:var(--text2);line-height:1.7;margin-top:16px}
 .g-tip b{color:var(--text)}
 
-.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(90px);background:var(--accent);
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(200%);background:var(--accent);
 color:#fff;padding:11px 20px;border-radius:12px;font-size:13px;font-weight:600;
-box-shadow:0 8px 30px rgba(61,111,255,.4);transition:transform .3s;z-index:999;max-width:90%;text-align:center}
-.toast.show{transform:translateX(-50%) translateY(0)}
+box-shadow:0 8px 30px rgba(61,111,255,.4);z-index:999;max-width:90%;text-align:center;
+opacity:0;visibility:hidden;pointer-events:none;
+transition:transform .3s ease,opacity .25s ease,visibility 0s linear .3s}
+.toast.show{transform:translateX(-50%) translateY(0);opacity:1;visibility:visible;
+transition:transform .3s ease,opacity .25s ease,visibility 0s}
 .toast.warn{background:var(--warn)}
 .toast.err{background:var(--close)}
 
@@ -572,6 +617,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
   </div>
   <div style="display:flex;align-items:center;gap:8px">
     <div class="status-pill"><div class="pulse-dot" id="statusDot"></div><span id="statusText">جاهز</span></div>
+    <button class="lang-btn" id="themeBtn" onclick="toggleTheme()">🌙</button>
     <button class="lang-btn" id="langBtn" onclick="toggleLang()">EN</button>
     <button class="auth-btn" id="authBtn" onclick="handleAuth()">دخول</button>
   </div>
@@ -826,7 +872,6 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 
   <div class="set-card">
     <div class="sc-title" data-i18n="monSection">المواد المراقبة</div>
-    <div class="mon-state" id="monState"></div>
     <div id="monList"></div>
   </div>
 
@@ -890,6 +935,22 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
         <p id="accStatus">سجّل دخول لحفظ بياناتك</p>
       </div>
       <button class="btn-sm ghost" onclick="handleAuth()" id="btnAcc">دخول</button>
+    </div>
+  </div>
+
+  <div class="set-card">
+    <div class="sc-title" data-i18n="fbTitle">💬 رأيك يهمنا</div>
+    <p class="fb-lead" data-i18n="fbLead">وش ناقص؟ وش ما عجبك؟ وش تبينا نضيف؟ اكتب بصراحة — كل رسالة تُقرأ.</p>
+    <div class="fb-cats" id="fbCats">
+      <button class="fb-cat active" data-c="idea"  onclick="pickFb(this)" data-i18n="fbIdea">💡 اقتراح</button>
+      <button class="fb-cat"        data-c="bug"   onclick="pickFb(this)" data-i18n="fbBug">🐞 مشكلة</button>
+      <button class="fb-cat"        data-c="other" onclick="pickFb(this)" data-i18n="fbOther">💬 غير ذلك</button>
+    </div>
+    <textarea id="fbText" maxlength="1200" rows="4" data-i18n-ph="fbPh"
+      placeholder="اكتب هنا..."></textarea>
+    <div class="fb-row">
+      <span class="fb-count" id="fbCount">0 / 1200</span>
+      <button class="btn-sm" id="fbSend" onclick="sendFeedback()" data-i18n="fbSend">إرسال</button>
     </div>
   </div>
 
@@ -2573,12 +2634,11 @@ function renderSchedule(){
   }).join('');
 }
 
-/* ═══════════ حالة المراقبة ═══════════ */
+/* حالة المراقبة تُجلب للتحقق من نسخة الاختبار فقط */
 let MON_STATE=null;
 async function loadMonitorState(){
   try{ MON_STATE=await (await fetch(API_BASE+'/api/monitor-status')).json(); }
   catch(e){ MON_STATE=null; }
-  /* شريط تحذير في نسخة الاختبار */
   const eb=document.getElementById('envBar');
   if(eb && MON_STATE && MON_STATE.env && MON_STATE.env!=='prod'){
     eb.className='env-bar on';
@@ -2586,40 +2646,39 @@ async function loadMonitorState(){
       ?'⚠️ نسخة اختبار — التعديلات هنا ما توصل للطلاب · '
       :'⚠️ Test build — changes here are not live · ')+MON_STATE.env.toUpperCase();
   }else if(eb){ eb.className='env-bar'; }
-  renderMonitorState();
 }
-function renderMonitorState(){
-  const el=document.getElementById('monState');
-  if(!el)return;
-  const m=MON_STATE;
-  if(!m){ el.className='mon-state'; return }
-  const ar=LANG==='ar', h=m.activeHours||[7,23];
-  let cls,txt;
-  if(!m.active && m.reason==='offseason'){
-    cls='idle';
-    const nx=m.next;
-    txt=ar?`🗓️ <b>المراقبة تشتغل في فترات التسجيل فقط</b> — لأن المقاعد ما تتغيّر خارجها.`
-          +(nx?` تستأنف تلقائياً في <b>${escapeHtml(nx.ar)}</b>.`:'')
-          :`🗓️ <b>Monitoring runs during registration periods only</b> — seats rarely change outside them.`
-          +(nx?` It resumes automatically for <b>${escapeHtml(nx.ar)}</b>.`:'');
-  }else if(!m.active){
-    cls='off';
-    txt=ar?`⏸️ <b>المراقبة متوقفة الآن</b> — تشتغل من ${h[0]} صباحاً حتى ${h[1]-12} مساءً بتوقيت الرياض، وتستأنف تلقائياً.`
-          :`⏸️ <b>Monitoring paused</b> — it runs ${h[0]}am–${h[1]-12}pm Riyadh time and resumes automatically.`;
-  }else if(m.reason==='peak'){
-    cls='peak';
-    txt=ar?`🔔 <b>مراقبة مكثفة</b> — فحص كل ${m.intervalMin} دقائق، لأننا في فترة التسجيل.`
-          :`🔔 <b>Intensive monitoring</b> — checking every ${m.intervalMin} minutes during registration.`;
-  }else{
-    cls='idle';
-    const today=new Date().toISOString().slice(0,10);
-    const nx=(m.windows||[]).find(w=>today<w.from);
-    txt=ar?`🕐 <b>مراقبة مخفّفة</b> — فحص كل ${m.intervalMin} دقيقة خارج فترات التسجيل، لأن المقاعد نادراً تنفتح.`
-          +(nx?` ترجع مكثفة في <b>${escapeHtml(nx.ar)}</b>.`:'')
-          :`🕐 <b>Reduced monitoring</b> — checking every ${m.intervalMin} minutes outside registration, when seats rarely open.`;
-  }
-  el.className='mon-state on '+cls;
-  el.innerHTML=txt;
+
+/* ═══════════ رأيك يهمنا ═══════════ */
+let FB_CAT='idea';
+function pickFb(el){
+  document.querySelectorAll('.fb-cat').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  FB_CAT=el.dataset.c;
+}
+async function sendFeedback(){
+  const ta=document.getElementById('fbText'), btn=document.getElementById('fbSend');
+  const txt=(ta.value||'').trim();
+  if(txt.length<5){ showToast(t('fbShort'),'warn'); return }
+  btn.disabled=true;
+  try{
+    const r=await fetch(API_BASE+'/api/feedback',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        text:txt, category:FB_CAT,
+        email:USER?USER.email:null, name:USER?(USER.user_metadata?.name||null):null,
+        major:MAJOR, lang:LANG
+      })
+    });
+    const d=await r.json();
+    if(!d.ok)throw new Error(d.error||'fail');
+    ta.value=''; updateFbCount();
+    showToast(t('fbThanks'),'success');
+  }catch(e){ showToast(t('fbFail'),'err'); }
+  finally{ btn.disabled=false; }
+}
+function updateFbCount(){
+  const ta=document.getElementById('fbText'), c=document.getElementById('fbCount');
+  if(ta&&c)c.textContent=`${ta.value.length} / 1200`;
 }
 
 /* ═══════════ التقويم الأكاديمي 2026/2027 ═══════════ */
@@ -3033,6 +3092,9 @@ function toggleDone(code){
     completed.push(code);
   }
   save('pmu_completed',completed);pushCompleted();
+  const _fb=document.getElementById('fbText');
+  if(_fb)_fb.addEventListener('input',updateFbCount);
+  applyTheme();
   applyMajor(MAJOR,true);
   renderCalendar();
   loadMonitorState();
@@ -3119,10 +3181,13 @@ function showLoading(s){
   document.getElementById('searchBtnText').textContent=s?t('searching'):t('search');
 }
 function setStatus(t){document.getElementById('statusText').textContent=t}
+let _toastTimer=null;
 function showToast(m,type){
-  const t=document.getElementById('toast');t.textContent=m;
+  const t=document.getElementById('toast');
+  t.textContent=m;
   t.className='toast show'+(type?' '+type:'');
-  setTimeout(()=>t.classList.remove('show'),3500);
+  clearTimeout(_toastTimer);                    /* ما نخلي مؤقتين يتعاركون */
+  _toastTimer=setTimeout(()=>t.classList.remove('show'),3500);
 }
 
 /* ===== Init ===== */
@@ -3334,7 +3399,8 @@ function renderTgAndMon(ar){
   /* account */
   document.getElementById('accEmail').textContent=USER?USER.email:(ar?'غير مسجل':'Not signed in');
   document.getElementById('accStatus').textContent=USER?
-    (isTrial()?(ar?`تجربة مجانية — باقي ${daysLeft()} يوم`:`Free trial — ${daysLeft()} days left`):
+    (FREE_BETA?(ar?'كل الميزات مفتوحة':'All features unlocked'):
+     isTrial()?(ar?`تجربة مجانية — باقي ${daysLeft()} يوم`:`Free trial — ${daysLeft()} days left`):
      pro?(ar?'حساب مشترك':'Subscribed account'):(ar?'حساب مجاني':'Free account')):
     (ar?'سجّل دخول لحفظ بياناتك':'Sign in to save your data');
   document.getElementById('btnAcc').textContent=USER?(ar?'خروج':'Sign out'):(ar?'دخول':'Sign in');
@@ -3541,7 +3607,8 @@ function renderDocDetail(){
     </div>
 
     <button class="btn-search" onclick="openRatingForm()">
-      ${mine?(ar?'✏️ عدّل تقييمك':'✏️ Edit your review'):(ar?'⭐ قيّم هذا الدكتور':'⭐ Rate this instructor')}
+      ${mine?(ar?'✏️ عدّل تقييمك':'✏️ Edit your review')
+             :(ar?'⭐ قيّم هذا الدكتور — بشكل مجهول':'⭐ Rate this instructor — anonymously')}
     </button>
 
     <div id="rateForm" style="display:none"></div>
@@ -3729,7 +3796,7 @@ async function deleteMyReview(name){
 /* ================= GUIDE ================= */
 const GUIDE={
 ar:{title:'كيف تستخدم جدولك',lead:'كل ميزة بسطر — أقل من دقيقتين',
-sec1:'البداية',sec2:'الميزات المدفوعة',
+sec1:'البداية',sec2:'ميزات إضافية',
 steps:[
 {n:'1',t:'اختر تخصصك',d:'من <b>⚙️ الإعدادات</b> اختر تخصصك — <b>20 تخصص</b>، كل كليات الجامعة. الخطة والساعات والمتطلبات تتغير معك تلقائياً.'},
 {n:'2',t:'علّم اللي خلصته',d:'في <b>📋 خطتي</b> اضغط المربّع جنب كل مادة درستها. المواد اللي متطلبها ناقص تظهر <b>مقفلة</b>، وتنفتح أول ما تعلّم متطلبها.'},
@@ -3745,10 +3812,10 @@ pro:[
 {n:'★',t:'راقب المواد المسكّرة',d:'أي مادة <code>CLOSE</code> جنبها <b>🔕</b> — اضغطه يصير <b>🔔</b>. السيرفر يفحص كل 5 دقائق <b>حتى والموقع مسكّر</b>، فما تحتاج تفتح الصفحة. راقب كم مادة ما تبي.'},
 {n:'★',t:'اربط تيليغرام',d:'من <b>⚙️ الإعدادات</b> اضغط "ربط" → يفتح البوت → Start. أول ما تنفتح مادتك يوصلك إشعار فيه الـ CRN والوقت والقاعة.'},
 {n:'★',t:'حفظ سحابي',d:'خطتك وجدولك ومعدلك محفوظة في حسابك — افتح من أي جهاز وتلقى كل شي زي ما تركته.'}],
-tip:'<b>🎁 لك شهر مجاني</b> أول ما تسجّل — كل الميزات مفتوحة. بعده 19 ريال للسنة كاملة.'},
+tip:'<b>🎁 كل الميزات مفتوحة مجاناً</b> — جدولك في فترة تجريبية، سجّل دخول واستمتع بكل شي بدون أي رسوم.'},
 
 en:{title:'How to use Jadwalik',lead:'Every feature in one line — under two minutes',
-sec1:'Getting started',sec2:'Paid features',
+sec1:'Getting started',sec2:'Extra features',
 steps:[
 {n:'1',t:'Pick your major',d:'In <b>⚙️ Settings</b> choose your major — <b>20 programs</b>, every college. Your plan, credits and prerequisites switch automatically.'},
 {n:'2',t:'Mark what you finished',d:'In <b>📋 My Plan</b> tick the box next to each course you passed. Courses missing a prerequisite show as <b>locked</b> and open the moment you tick it.'},
@@ -3764,7 +3831,7 @@ pro:[
 {n:'★',t:'Monitor closed sections',d:'Any <code>CLOSE</code> course has a <b>🔕</b> — tap it to make it <b>🔔</b>. The server checks every 5 minutes <b>even with the site closed</b>, so you never keep the page open. Watch as many as you like.'},
 {n:'★',t:'Link Telegram',d:'In <b>⚙️ Settings</b> tap "Link" → the bot opens → Start. When your course opens you get an alert with the CRN, time and room.'},
 {n:'★',t:'Cloud sync',d:'Your plan, schedule and GPA live in your account — open from any device and find everything as you left it.'}],
-tip:'<b>🎁 One free month</b> when you sign up — all features unlocked. After that SAR 19 for a full year.'}
+tip:'<b>🎁 Everything is free right now</b> — Jadwalik is in open beta. Sign in and enjoy every feature at no cost.'}
 };
 
 function renderGuide(){
@@ -3824,6 +3891,10 @@ calTitle:'🗓️ مواعيد تهمك',calSub:'من التقويم الأكا�
 calNow:'جارٍ الآن',calToday:'اليوم',calTomorrow:'بكرة',calIn:'بعد',calDays:'يوم',
 calDone:'ما في مواعيد قادمة في التقويم الحالي.',
 calSource:'المصدر: التقويم الأكاديمي المعتمد 2026/2027. التقويم قابل للتعديل — راجع موقع الجامعة.',
+fbTitle:'💬 رأيك يهمنا',fbLead:'وش ناقص؟ وش ما عجبك؟ وش تبينا نضيف؟ اكتب بصراحة — كل رسالة تُقرأ.',
+fbIdea:'💡 اقتراح',fbBug:'🐞 مشكلة',fbOther:'💬 غير ذلك',fbSend:'إرسال',
+fbPh:'اكتب هنا...',fbShort:'اكتب شوي أكثر عشان نفهم قصدك',
+fbThanks:'وصلتنا — شكراً لك 🙏',fbFail:'ما انرسلت، جرّب مرة ثانية',
 finTitle:'📝 اختباراتك النهائية',finSub:'من نفس المواد اللي في جدولك',
 finLoad:'اعرض',finReload:'🔄 حدّث',
 finNoSched:'ابنِ جدولك أول، وبعدها تطلع لك اختباراتك هنا تلقائياً.',
@@ -3893,6 +3964,10 @@ calTitle:'🗓️ Dates that matter',calSub:'From the official academic calendar
 calNow:'Now',calToday:'Today',calTomorrow:'Tomorrow',calIn:'in',calDays:'days',
 calDone:'No upcoming dates in the current calendar.',
 calSource:'Source: official 2026/2027 academic calendar. Dates may change — check the university website.',
+fbTitle:'💬 Your feedback matters',fbLead:'What is missing? What annoyed you? What should we add? Write honestly — every message is read.',
+fbIdea:'💡 Idea',fbBug:'🐞 Problem',fbOther:'💬 Other',fbSend:'Send',
+fbPh:'Write here...',fbShort:'Add a little more so we understand',
+fbThanks:'Received — thank you 🙏',fbFail:'Could not send, try again',
 finTitle:'📝 Your final exams',finSub:'Pulled from the courses in your schedule',
 finLoad:'Show',finReload:'🔄 Refresh',
 finNoSched:'Build your schedule first — your exams will appear here automatically.',
@@ -3938,6 +4013,26 @@ T1:'Fifth Year — 1st Term',T2:'Fifth Year — 2nd Term'}}
 let LANG=load('pmu_lang','ar');
 const t=k=>I18N[LANG][k]||k;
 
+/* ═══ الثيم الفاتح/الغامق ═══ */
+let THEME=load('pmu_theme','dark');
+function applyTheme(){
+  document.documentElement.classList.toggle('light',THEME==='light');
+  const b=document.getElementById('themeBtn');
+  if(b){
+    b.textContent = THEME==='light' ? '☀️' : '🌙';
+    b.title = LANG==='ar'
+      ? (THEME==='light'?'فاتح — اضغط للغامق':'غامق — اضغط للفاتح')
+      : (THEME==='light'?'Light — tap for dark':'Dark — tap for light');
+  }
+  const mt=document.querySelector('meta[name="theme-color"]');
+  if(mt)mt.setAttribute('content',THEME==='light'?'#f4f6fb':'#080b12');
+}
+function toggleTheme(){
+  THEME=THEME==='light'?'dark':'light';
+  save('pmu_theme',THEME);
+  applyTheme();
+}
+
 function toggleLang(){
   LANG=LANG==='ar'?'en':'ar';
   save('pmu_lang',LANG);
@@ -3950,6 +4045,11 @@ function applyLang(){
   document.documentElement.dir=LANG==='ar'?'rtl':'ltr';
   document.getElementById('langBtn').textContent=LANG==='ar'?'EN':'ع';
   document.getElementById('brandName').textContent=L.brand;
+
+  document.querySelectorAll('[data-i18n-ph]').forEach(el=>{
+    const k=el.getAttribute('data-i18n-ph');
+    if(L[k]!==undefined)el.placeholder=L[k];
+  });
 
   document.querySelectorAll('[data-i18n-html]').forEach(el=>{
     const k=el.getAttribute('data-i18n-html');
@@ -3981,7 +4081,7 @@ function applyLang(){
   if(currentDoc)renderDocDetail();else if(instructors.length)renderDocs();
   if(document.getElementById('pageSched').classList.contains('active'))renderSchedule();
   renderCalendar();
-  renderMonitorState();
+  applyTheme();
   setPlanTitle();
   if(FINALS)renderFinals();
 }

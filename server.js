@@ -156,6 +156,7 @@ const OPS = {
   pmuFails: 0,         // فشل سحب من الجامعة
   tgFails: 0,          // رسائل تيليغرام فشلت
   searches: 0,         // عمليات بحث
+  feedback: 0,         // ملاحظات وصلت
   searchesCached: 0,   // منها المخدومة من الكاش
   searchStale: 0,      // مخدومة من نسخة قديمة (الجامعة واقعة)
   lastError: null
@@ -371,6 +372,8 @@ function safeEqual(a, b) {
 
 /* --- تحديد المحاولات: 8 محاولات فاشلة لكل IP خلال 15 دقيقة --- */
 const loginTries = new Map();
+const fbLimit = new Map();
+const FEEDBACK_MEM = [];        /* احتياطي لو جدول feedback مو موجود */
 function tooManyTries(ip) {
   const now = Date.now(), rec = loginTries.get(ip);
   if (!rec || now - rec.first > 15 * 60 * 1000) return false;
@@ -563,6 +566,22 @@ async function adminNotify(userId, text) {
   return { ok: true };
 }
 
+/* --- ملاحظات الطلاب --- */
+async function adminFeedback() {
+  let rows = [];
+  try {
+    const r = await sb('GET', 'feedback', { query: '?select=*&order=created_at.desc&limit=200' });
+    if (Array.isArray(r)) rows = r.map(x => ({
+      at: x.created_at ? Date.parse(x.created_at) : null,
+      text: x.message, category: x.category,
+      email: x.user_email, name: x.user_name, major: x.major, lang: x.lang,
+      id: x.id, source: 'db'
+    }));
+  } catch (e) { /* الجدول غير موجود */ }
+  const mem = FEEDBACK_MEM.map(f => ({ ...f, source: 'mem' }));
+  return [...rows, ...mem].sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 200);
+}
+
 /* --- فحص صحة الإعدادات --- */
 async function adminHealth() {
   const now = Date.now();
@@ -638,6 +657,11 @@ async function adminHealth() {
   else if (memPct > 0.7)
     add('warn', `الذاكرة ${Math.round(memPct * 100)}%`, `Memory at ${Math.round(memPct * 100)}%`, '');
 
+  if (FEEDBACK_MEM.length)
+    add('warn', `${FEEDBACK_MEM.length} ملاحظة محفوظة بالذاكرة فقط`,
+        `${FEEDBACK_MEM.length} feedback items in memory only`,
+        'جدول feedback غير موجود في Supabase — تُفقد عند إعادة التشغيل. شغّل SQL الإنشاء.');
+
   const upMin = (now - OPS.bootedAt) / 60000;
   if (upMin < 20 && OPS.searches > 3)
     add('warn', `السيرفر أُعيد تشغيله قبل ${Math.round(upMin)} دقيقة`,
@@ -696,6 +720,7 @@ async function adminHealth() {
 
     /* البحث */
     searches: OPS.searches,
+    feedbackCount: OPS.feedback,
     cacheHitPct: cacheHitRate === null ? null : Math.round(cacheHitRate * 100),
     searchStale: OPS.searchStale,
 
@@ -1184,6 +1209,7 @@ const server = http.createServer(async (req, res) => {
       if (act === 'users')    return send(200, { users: await adminUsers() });
       if (act === 'reviews')  return send(200, { reviews: await adminReviews() });
       if (act === 'monitors') return send(200, { monitors: await adminMonitors() });
+      if (act === 'feedback') return send(200, { feedback: await adminFeedback() });
       if (act === 'user')     return send(200, await adminUserDetail(parsed.query.id || ''));
 
       if (req.method === 'POST') {
@@ -1197,6 +1223,58 @@ const server = http.createServer(async (req, res) => {
     } catch (e) {
       return send(500, { error: e.message });
     }
+  }
+
+  /* ملاحظات الطلاب */
+  if (parsed.pathname === '/api/feedback' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    const ip = clientIP(req);
+    /* حد بسيط: 5 رسائل لكل IP كل ساعة */
+    const now = Date.now();
+    const rec = fbLimit.get(ip);
+    if (rec && now - rec.first < 3600e3 && rec.count >= 5) {
+      res.writeHead(429); res.end(JSON.stringify({ ok: false, error: 'كثير، جرّب بعدين' })); return;
+    }
+    const b = await readBody(req);
+    const text = String(b.text || '').trim().slice(0, 1200);
+    if (text.length < 5) {
+      res.writeHead(400); res.end(JSON.stringify({ ok: false, error: 'نص قصير' })); return;
+    }
+    if (!rec || now - rec.first >= 3600e3) fbLimit.set(ip, { first: now, count: 1 });
+    else rec.count++;
+    if (fbLimit.size > 3000) fbLimit.clear();
+
+    const entry = {
+      at: now,
+      text,
+      category: ['idea', 'bug', 'other'].includes(b.category) ? b.category : 'other',
+      email: String(b.email || '').slice(0, 120) || null,
+      name:  String(b.name  || '').slice(0, 80)  || null,
+      major: String(b.major || '').slice(0, 12)  || null,
+      lang:  b.lang === 'en' ? 'en' : 'ar'
+    };
+
+    /* نحفظها في Supabase لو الجدول موجود، وإلا نخزّنها بالذاكرة */
+    let saved = false;
+    try {
+      const r = await sb('POST', 'feedback', {
+        body: {
+          user_email: entry.email, user_name: entry.name,
+          category: entry.category, message: entry.text,
+          major: entry.major, lang: entry.lang
+        },
+        prefer: 'return=minimal'
+      });
+      saved = !(r && r.code);        /* لو رجع كود خطأ فالجدول ناقص */
+    } catch (e) { saved = false; }
+    if (!saved) {
+      FEEDBACK_MEM.unshift(entry);
+      if (FEEDBACK_MEM.length > 200) FEEDBACK_MEM.pop();
+    }
+    OPS.feedback++;
+
+    res.writeHead(200); res.end(JSON.stringify({ ok: true }));
+    return;
   }
 
   /* حالة المراقبة — يعرضها الموقع للطالب بشفافية */
@@ -1243,6 +1321,19 @@ const server = http.createServer(async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     runMonitorCycle();
     res.writeHead(200); res.end(JSON.stringify({ started: true }));
+    return;
+  }
+
+  /* الأيقونات والمانيفست */
+  if (/^\/(favicon-\d+\.png|manifest\.json|jadwalik-logo[\w-]*\.png)$/.test(parsed.pathname)) {
+    try {
+      const f = path.join(__dirname, parsed.pathname.slice(1));
+      const buf = fs.readFileSync(f);
+      res.setHeader('Content-Type',
+        parsed.pathname.endsWith('.json') ? 'application/json' : 'image/png');
+      res.setHeader('Cache-Control', 'public, max-age=604800');
+      res.writeHead(200); res.end(buf);
+    } catch (e) { res.writeHead(404); res.end('Not found'); }
     return;
   }
 

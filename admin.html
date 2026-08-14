@@ -56,8 +56,19 @@ display:grid;grid-template-columns:repeat(4,1fr)}
 .tab{background:none;border:none;color:var(--text3);font-family:var(--sans);
 font-size:12px;font-weight:600;padding:12px 2px;cursor:pointer;position:relative}
 .tab.active{color:var(--accent2)}
-.tabs5{grid-template-columns:repeat(5,1fr)}
-.tabs5 .tab{font-size:11px}
+.tabs6{grid-template-columns:repeat(6,1fr)}
+.tabs6 .tab{font-size:10.5px;padding:12px 1px}
+.tab-badge{display:none;position:absolute;top:6px;inset-inline-end:3px;
+background:var(--accent);color:#fff;font-size:9px;font-family:var(--mono);
+padding:1px 5px;border-radius:20px;line-height:1.5}
+.tab-badge.on{display:block}
+.fb-item{background:var(--card);border:1px solid var(--border);border-radius:13px;
+padding:13px;margin-bottom:9px;border-inline-start:3px solid var(--accent)}
+.fb-item.bug{border-inline-start-color:var(--close)}
+.fb-item.idea{border-inline-start-color:var(--open)}
+.fb-msg{font-size:13px;line-height:1.75;color:var(--text);white-space:pre-wrap;word-break:break-word}
+.fb-meta{display:flex;flex-wrap:wrap;gap:10px;margin-top:9px;font-size:10.5px;color:var(--text3)}
+.fb-meta b{color:var(--text2);font-family:var(--mono);font-weight:500}
 .tab-dot{display:none;width:6px;height:6px;border-radius:50%;background:var(--close);
 position:absolute;top:9px;inset-inline-end:6px}
 .tab-dot.on{display:block}
@@ -247,11 +258,12 @@ padding:1px 6px;border-radius:5px;color:var(--accent2)}
   </div>
 </div>
 
-<div class="tabs tabs5">
+<div class="tabs tabs6">
   <button class="tab active" data-p="over"  onclick="go('over')">نظرة عامة</button>
   <button class="tab"        data-p="users" onclick="go('users')">المستخدمين</button>
   <button class="tab"        data-p="revs"  onclick="go('revs')">التقييمات</button>
   <button class="tab"        data-p="mons"  onclick="go('mons')">المراقبة</button>
+  <button class="tab"        data-p="fb"    onclick="go('fb')">آراء<span class="tab-badge" id="fbBadge"></span></button>
   <button class="tab"        data-p="sys"   onclick="go('sys')">النظام<span class="tab-dot" id="sysDot"></span></button>
 </div>
 
@@ -292,6 +304,19 @@ padding:1px 6px;border-radius:5px;color:var(--accent2)}
     <div id="monsBody"><div class="spinner"></div></div>
   </div>
 
+  <div class="page" id="pageFb">
+    <div class="toolbar">
+      <input id="fbSearch" placeholder="ابحث في الآراء..." oninput="renderFb()">
+      <select id="fbFilter" onchange="renderFb()">
+        <option value="all">الكل</option>
+        <option value="idea">اقتراحات</option>
+        <option value="bug">مشاكل</option>
+        <option value="other">غير ذلك</option>
+      </select>
+    </div>
+    <div id="fbBody"><div class="spinner"></div></div>
+  </div>
+
   <div class="page" id="pageSys">
     <div id="sysBody"><div class="spinner"></div></div>
   </div>
@@ -311,7 +336,7 @@ padding:1px 6px;border-radius:5px;color:var(--accent2)}
 <script>
 /* ══════════ الحالة ══════════ */
 let TOKEN = sessionStorage.getItem('jdw_admin') || '';
-let USERS = [], REVS = [], MONS = [], STATS = null, HEALTH = null;
+let USERS = [], REVS = [], MONS = [], STATS = null, HEALTH = null, FB = [];
 
 /* كلمات تستدعي المراجعة — مؤشر فقط، القرار لك */
 const FLAGS = ['حمار','غبي','كلب','حقير','خرا','قذر','تافه','زبالة','حيوان','لعن',
@@ -361,7 +386,7 @@ function logout(){
 /* ══════════ تنقل ══════════ */
 function go(p){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.p===p));
-  const ids={over:'pageOver',users:'pageUsers',revs:'pageRevs',mons:'pageMons',sys:'pageSys'};
+  const ids={over:'pageOver',users:'pageUsers',revs:'pageRevs',mons:'pageMons',fb:'pageFb',sys:'pageSys'};
   document.querySelectorAll('.page').forEach(el=>el.classList.remove('active'));
   document.getElementById(ids[p]).classList.add('active');
 }
@@ -392,12 +417,13 @@ function flagged(txt){
 async function loadAll(){
   if(!TOKEN) return;
   try{
-    const [s,u,r,m,h] = await Promise.all([
+    const [s,u,r,m,h,f] = await Promise.all([
       api('stats'), api('users'), api('reviews'), api('monitors'),
-      api('health').catch(()=>null)
+      api('health').catch(()=>null), api('feedback').catch(()=>({feedback:[]}))
     ]);
     STATS=s; USERS=u.users||[]; REVS=r.reviews||[]; MONS=m.monitors||[]; HEALTH=h;
-    renderOver(); renderUsers(); renderRevs(); renderMons(); renderSys();
+    FB=(f&&f.feedback)||[];
+    renderOver(); renderUsers(); renderRevs(); renderMons(); renderFb(); renderSys();
   }catch(e){ toast(e.message,'err') }
 }
 
@@ -701,6 +727,43 @@ async function delRev(key,instructor){
     toast('انحذف التقييم','ok');
     await loadAll();
   }catch(e){ toast(e.message,'err') }
+}
+
+/* ══════════ آراء الطلاب ══════════ */
+const FB_ICON={idea:'💡',bug:'🐞',other:'💬'};
+const FB_NAME={idea:'اقتراح',bug:'مشكلة',other:'ملاحظة'};
+
+function renderFb(){
+  const box=document.getElementById('fbBody');
+  const badge=document.getElementById('fbBadge');
+  if(badge){ badge.textContent=FB.length; badge.className='tab-badge'+(FB.length?' on':''); }
+
+  const q=(document.getElementById('fbSearch').value||'').trim().toLowerCase();
+  const f=document.getElementById('fbFilter').value;
+  const list=FB.filter(x=>{
+    if(f!=='all'&&x.category!==f)return false;
+    if(q&&!((x.text+' '+(x.email||'')+' '+(x.name||'')).toLowerCase().includes(q)))return false;
+    return true;
+  });
+
+  if(!list.length){
+    box.innerHTML=`<div class="empty"><div class="empty-icon">💬</div>
+      <div class="empty-t">ما وصل شي بعد</div>
+      <div class="empty-s">آراء الطلاب من صفحة الإعدادات تظهر هنا</div></div>`;
+    return;
+  }
+
+  box.innerHTML=list.map(x=>`<div class="fb-item ${esc(x.category||'other')}">
+    <div class="fb-msg">${esc(x.text)}</div>
+    <div class="fb-meta">
+      <span>${FB_ICON[x.category]||'💬'} ${FB_NAME[x.category]||'ملاحظة'}</span>
+      ${x.name?`<span>من <b>${esc(x.name)}</b></span>`:''}
+      ${x.email?`<span><b>${esc(x.email)}</b></span>`:''}
+      ${x.major?`<span>${esc(x.major)}</span>`:''}
+      ${x.at?`<span>${fdate(new Date(x.at).toISOString())}</span>`:''}
+      ${x.source==='mem'?`<span style="color:var(--warn)">⚠️ بالذاكرة فقط</span>`:''}
+    </div>
+  </div>`).join('');
 }
 
 /* ══════════ لوحة النظام ══════════ */
