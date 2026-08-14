@@ -341,7 +341,8 @@ display:flex;align-items:center;justify-content:center;font-size:15px;font-weigh
 color:var(--accent2);flex-shrink:0;font-family:var(--mono)}
 .doc-info{flex:1;min-width:0}
 .doc-name{font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.doc-meta{font-size:11px;color:var(--text3);margin-top:3px}
+.doc-meta{font-size:11px;color:var(--text3);margin-top:4px;
+display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 .doc-score{text-align:center;flex-shrink:0}
 .doc-num{font-family:var(--mono);font-size:16px;font-weight:600}
 .doc-stars{font-size:9px;letter-spacing:-1px;margin-top:2px}
@@ -424,11 +425,11 @@ border-radius:16px;padding:26px 20px;text-align:center;margin-bottom:16px}
 .pm-ic{font-size:38px;margin-bottom:12px}
 .pm-t{font-size:17px;font-weight:700;margin-bottom:9px}
 .pm-s{font-size:13px;color:var(--text2);line-height:1.8;margin-bottom:18px}
-.doc-tag{font-size:9.5px;font-weight:600;padding:2px 7px;border-radius:20px;
-margin-inline-start:7px;white-space:nowrap;vertical-align:middle}
+.doc-tag{font-size:9.5px;font-weight:600;padding:2px 8px;border-radius:20px;
+white-space:nowrap;flex-shrink:0;
+background:var(--bg);color:var(--text3);border:1px solid var(--border)}
 .doc-tag.now{background:rgba(61,111,255,.15);color:var(--accent2);
-border:1px solid rgba(61,111,255,.3)}
-.doc-tag.done{background:var(--bg);color:var(--text3);border:1px solid var(--border)}
+border-color:rgba(61,111,255,.3)}
 .g-chip{font-size:9.5px;font-weight:600;padding:3px 8px;border-radius:20px;
 white-space:nowrap;font-family:var(--sans)}
 .g-chip.m{background:rgba(61,111,255,.14);color:var(--accent2);
@@ -3772,14 +3773,18 @@ function renderDocs(){
   box.innerHTML=list.slice(0,200).map(n=>{
     const st=docStats(n);
     const initials=n.split(' ').slice(0,2).map(x=>x[0]||'').join('').toUpperCase();
+    /* الشارة تعني: يدرّس مادة موجودة في خطتك — بدون ادعاء أنك درست معه */
     const rv=rel[n]||0;
-    const planTag = rv===2 ? `<span class="doc-tag now">${ar?'📘 من خطتك':'📘 In your plan'}</span>`
-                  : rv===1 ? `<span class="doc-tag done">${ar?'✓ درستها':'✓ Completed'}</span>` : '';
+    const planTag = rv ? `<span class="doc-tag${rv===2?' now':''}">${
+      ar?'📘 يدرّس من خطتك':'📘 Teaches from your plan'}</span>` : '';
     return `<div class="doc-row" onclick="openDoc('${n.replace(/'/g,"\\'")}')">
       <div class="doc-av">${initials}</div>
       <div class="doc-info">
-        <div class="doc-name">${n}${planTag}</div>
-        <div class="doc-meta">${st.n?`${st.n} ${ar?'تقييم':'reviews'}`:(ar?'ما فيه تقييمات بعد':'No reviews yet')}</div>
+        <div class="doc-name">${n}</div>
+        <div class="doc-meta">
+          <span>${st.n?`${st.n} ${ar?'تقييم':'reviews'}`:(ar?'ما فيه تقييمات بعد':'No reviews yet')}</span>
+          ${planTag}
+        </div>
       </div>
       <div class="doc-score">
         ${st.n?`<div class="doc-num" style="color:var(--warn)">${st.avg.toFixed(1)}</div>
