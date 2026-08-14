@@ -243,6 +243,9 @@ min-width:26px;text-align:end;flex-shrink:0;padding-top:2px}
 cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:13px;color:transparent;padding:0}
 .pc.done .pc-check{background:var(--open);border-color:var(--open);color:#fff}
 .pc-info{flex:1;min-width:0}
+.pc-info.tappable{cursor:pointer}
+.pc-info.tappable:active{opacity:.6}
+.pc-info.tappable .pc-code::after{content:' ›';color:var(--text3);font-weight:700}
 .pc-code{font-size:12.5px;font-weight:600}
 .pc-name{font-size:11px;color:var(--text2);margin-top:2px}
 .pc-req{font-size:10.5px;color:var(--warn);margin-top:3px}
@@ -3278,9 +3281,12 @@ function renderPlan(){
             <option value="">—</option>
             ${GRADE_LIST.map(x=>`<option value="${x}" ${g===x?'selected':''}>${x}</option>`).join('')}
           </select>`:`<div class="pc-cr">${c.h}H</div>`;
+        /* الاختيارية خانة مو مادة حقيقية، فما لها شعب نبحث عنها */
+        const tap=!c.el;
         return `<div class="pc ${d?'done':''} ${locked?'locked':''}">
           <button class="pc-check" onclick="toggleDone('${c.c}')">✓</button>
-          <div class="pc-info"><div class="pc-code">${c.c} <span style="color:var(--text3);font-family:var(--mono);font-size:10.5px">${c.h}H</span></div>
+          <div class="pc-info${tap?' tappable':''}"${tap?` onclick="searchSuggested('${c.c}')"`:''}>
+          <div class="pc-code">${c.c} <span style="color:var(--text3);font-family:var(--mono);font-size:10.5px">${c.h}H</span></div>
           <div class="pc-name">${c.n}</div>${req}</div>
           ${gradeSel}</div>`;
       }).join('')}</div></div>`;
