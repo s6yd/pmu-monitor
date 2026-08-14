@@ -414,6 +414,11 @@ border-radius:16px;padding:26px 20px;text-align:center;margin-bottom:16px}
 .pm-ic{font-size:38px;margin-bottom:12px}
 .pm-t{font-size:17px;font-weight:700;margin-bottom:9px}
 .pm-s{font-size:13px;color:var(--text2);line-height:1.8;margin-bottom:18px}
+.btn-doc-courses{width:100%;background:transparent;border:1px solid var(--border2);
+color:var(--text2);border-radius:12px;padding:12px;font-size:13.5px;font-weight:600;
+font-family:var(--sans);cursor:pointer;margin-top:9px}
+.btn-doc-courses:active{background:var(--card)}
+.field-help{font-size:11px;color:var(--text3);margin-top:6px;line-height:1.6}
 .term-hint{font-size:11.5px;color:var(--open);margin-top:7px;line-height:1.6;
 padding:7px 10px;background:var(--open-bg);border:1px solid var(--open-border);border-radius:9px}
 .term-hint.hide{display:none}
@@ -694,11 +699,12 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
         </div>
       </div>
       <div>
-        <label class="field-label" data-i18n="filterLabel">فلتر المادة (اختياري)</label>
+        <label class="field-label" data-i18n="filterLabel">فلتر (اختياري)</label>
         <div class="search-input-wrap">
-          <input type="text" id="courseFilter" placeholder="مثلاً: MEEN 3395 أو 30547">
+          <input type="text" id="courseFilter" placeholder="MEEN 3395 · 30547 · اسم الدكتور">
           <button class="clear-btn" id="clearFilter" onclick="clearFilter()">✕</button>
         </div>
+        <div class="field-help" data-i18n="filterHelp">ابحث بكود المادة، أو الـ CRN، أو اسم المادة، أو اسم الدكتور</div>
       </div>
       <div class="btn-row">
         <button class="btn-search" id="btnSearch" onclick="doSearch()"><span id="searchBtnText">🔍 ابحث</span></button>
@@ -3671,6 +3677,28 @@ function backToDocs(){
   renderDocs();
 }
 
+/* ينقلك للبحث ويعبّي اسم الدكتور في الفلتر */
+function showDocCourses(){
+  const name=currentDoc;
+  if(!name)return;
+  /* نأخذ أوضح جزء من الاسم: عادةً اسم العائلة قبل الفاصلة */
+  const q=name.includes(',') ? name.split(',')[0].trim() : name.trim();
+  switchTab('search');
+  const f=document.getElementById('courseFilter');
+  if(f){
+    f.value=q;
+    document.getElementById('clearFilter').style.display='block';
+  }
+  if(allCourses.length){
+    renderResults();
+    showToast(LANG==='ar'?`مواد ${q} في الترم المختار`:`Courses by ${q} this term`);
+  }else{
+    /* ما فيه نتائج محمّلة — نبحث له */
+    showToast(LANG==='ar'?'جاري جلب المواد...':'Fetching courses...');
+    doSearch();
+  }
+}
+
 function renderDocDetail(){
   const ar=LANG==='ar', n=currentDoc, st=docStats(n);
   const mine=reviews.find(r=>r.instructor_name===n&&USER&&r.user_id===USER.id);
@@ -3700,6 +3728,10 @@ function renderDocDetail(){
     <button class="btn-search" onclick="openRatingForm()">
       ${mine?(ar?'✏️ عدّل تقييمك':'✏️ Edit your review')
              :(ar?'⭐ قيّم هذا الدكتور — بشكل مجهول':'⭐ Rate this instructor — anonymously')}
+    </button>
+
+    <button class="btn-doc-courses" onclick="showDocCourses()">
+      ${ar?'🔍 شوف مواده هذا الترم':'🔍 See their courses this term'}
     </button>
 
     <div id="rateForm" style="display:none"></div>
@@ -3956,7 +3988,8 @@ function maybeShowGuide(){
 const I18N={
 ar:{brand:'جدولك',tabSearch:'🔍 البحث',tabSched:'📅 جدولي ',tabPlan:'📋 خطتي',
 searchTitle:'البحث عن المواد',semester:'السيمستر',college:'الكلية',gender:'الجنس',
-filterLabel:'فلتر المادة (اختياري)',filterPh:'مثلاً: MEEN 3395 أو 30547',
+filterLabel:'فلتر (اختياري)',filterPh:'MEEN 3395 · 30547 · اسم الدكتور',
+filterHelp:'ابحث بكود المادة، أو الـ CRN، أو اسم المادة، أو اسم الدكتور',
 search:'🔍 ابحث',searching:'جاري البحث...',monitor:'📡 راقب',stopMonitor:'⏹ أوقف',
 total:'إجمالي',open:'مفتوح',closed:'مغلق',show:'عرض:',all:'الكل',onlyOpen:'مفتوح فقط',onlyClosed:'مغلق فقط',
 courses:'مادة',credits:'ساعة معتمدة',clashes:'تعارض',clashTitle:'يوجد تعارض في الجدول',
@@ -4033,7 +4066,8 @@ T1:'السنة الخامسة — الترم الأول',T2:'السنة الخا
 
 en:{brand:'Jadwalik',tabSearch:'🔍 Search',tabSched:'📅 Schedule ',tabPlan:'📋 My Plan',
 searchTitle:'Course Search',semester:'Semester',college:'College',gender:'Gender',
-filterLabel:'Course filter (optional)',filterPh:'e.g. MEEN 3395 or 30547',
+filterLabel:'Filter (optional)',filterPh:'MEEN 3395 · 30547 · instructor name',
+filterHelp:'Search by course code, CRN, course title, or instructor name',
 search:'🔍 Search',searching:'Searching...',monitor:'📡 Monitor',stopMonitor:'⏹ Stop',
 total:'Total',open:'Open',closed:'Closed',show:'Show:',all:'All',onlyOpen:'Open only',onlyClosed:'Closed only',
 courses:'Courses',credits:'Credit hours',clashes:'Conflicts',clashTitle:'Schedule conflict detected',
