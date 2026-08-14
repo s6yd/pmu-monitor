@@ -427,11 +427,14 @@ font-family:var(--sans);cursor:pointer}
 border-radius:12px;padding:11px 13px;font-size:13.5px;font-family:var(--sans);
 line-height:1.7;outline:none;resize:vertical;min-height:90px}
 #fbText:focus{border-color:var(--accent)}
-.fb-mail{display:none;width:100%;background:var(--bg);border:1px solid var(--border);
+.fb-contact{display:none;margin-top:11px;padding-top:11px;border-top:1px solid var(--border)}
+.fb-contact.on{display:block}
+.fb-ct-lead{font-size:11.5px;color:var(--text3);margin-bottom:8px;line-height:1.6}
+.fb-in{width:100%;background:var(--bg);border:1px solid var(--border);
 color:var(--text);border-radius:11px;padding:10px 13px;font-size:13px;
-font-family:var(--sans);outline:none;margin-top:9px;direction:ltr;text-align:start}
-.fb-mail:focus{border-color:var(--accent)}
-.fb-mail.on{display:block}
+font-family:var(--sans);outline:none;margin-bottom:7px;direction:ltr;text-align:start}
+.fb-in:focus{border-color:var(--accent)}
+.fb-in:last-child{margin-bottom:0}
 .fb-row{display:flex;justify-content:space-between;align-items:center;margin-top:10px;gap:10px}
 .fb-count{font-size:11px;color:var(--text3);font-family:var(--mono)}
 .legal-foot{text-align:center;padding:22px 10px 6px;font-size:12px;
@@ -974,8 +977,13 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     </div>
     <textarea id="fbText" maxlength="1200" rows="4" oninput="updateFbCount()" data-i18n-ph="fbPh"
       placeholder="اكتب هنا..."></textarea>
-    <input type="email" id="fbEmail" class="fb-mail" maxlength="120"
-      data-i18n-ph="fbMailPh" placeholder="إيميلك (اختياري) — لو تبينا نرد عليك">
+    <div class="fb-contact" id="fbContact">
+      <div class="fb-ct-lead" data-i18n="fbCtLead">لو تبينا نرد عليك — اكتب وسيلة تواصل (اختياري)</div>
+      <input type="email" id="fbEmail" class="fb-in" maxlength="120"
+        data-i18n-ph="fbMailPh" placeholder="إيميلك">
+      <input type="text" id="fbTg" class="fb-in" maxlength="40"
+        data-i18n-ph="fbTgPh" placeholder="@معرّفك في تيليغرام">
+    </div>
     <div class="fb-row">
       <span class="fb-count" id="fbCount">0 / 1200</span>
       <button class="btn-sm" id="fbSend" onclick="sendFeedback()" data-i18n="fbSend">إرسال</button>
@@ -2684,8 +2692,8 @@ async function loadMonitorState(){
 let FB_CAT='idea';
 /* خانة الإيميل تظهر لغير المسجّلين فقط — المسجّل إيميله معروف */
 function syncFbEmail(){
-  const el=document.getElementById('fbEmail');
-  if(el)el.classList.toggle('on',!USER);
+  const box=document.getElementById('fbContact');
+  if(box)box.classList.toggle('on',!USER);
 }
 
 function pickFb(el){
@@ -2704,6 +2712,7 @@ async function sendFeedback(){
       body:JSON.stringify({
         text:txt, category:FB_CAT,
         email:USER?USER.email:(document.getElementById('fbEmail')?.value||'').trim()||null,
+        telegram:USER?null:(document.getElementById('fbTg')?.value||'').trim()||null,
         name:USER?(USER.user_metadata?.name||null):null,
         major:majorChosen()?MAJOR:null, lang:LANG
       })
@@ -2712,7 +2721,7 @@ async function sendFeedback(){
     try{ d=await r.json(); }catch(_){ }
     if(!r.ok||!d||!d.ok)throw new Error((d&&d.error)||('HTTP '+r.status));
     ta.value=''; updateFbCount();
-    const em=document.getElementById('fbEmail'); if(em)em.value='';
+    ['fbEmail','fbTg'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
     showToast(t('fbThanks'),'success');
   }catch(e){ showToast(t('fbFail')+' — '+e.message,'err'); }
   finally{ btn.disabled=false; }
@@ -3978,7 +3987,8 @@ pmSub:'الخطة الدراسية والمواد والمتطلبات تتغي�
 pmBtn:'⚙️ روح للإعدادات واختر تخصصك',
 fbTitle:'💬 رأيك يهمنا',fbLead:'وش ناقص؟ وش ما عجبك؟ وش تبينا نضيف؟ اكتب بصراحة — كل رسالة تُقرأ.',
 fbIdea:'💡 اقتراح',fbBug:'🐞 مشكلة',fbOther:'💬 غير ذلك',fbSend:'إرسال',
-fbPh:'اكتب هنا...',fbMailPh:'إيميلك (اختياري) — لو تبينا نرد عليك',fbShort:'اكتب شوي أكثر عشان نفهم قصدك',
+fbPh:'اكتب هنا...',fbMailPh:'إيميلك',fbTgPh:'@معرّفك في تيليغرام',
+fbCtLead:'لو تبينا نرد عليك — اكتب وسيلة تواصل (اختياري)',fbShort:'اكتب شوي أكثر عشان نفهم قصدك',
 fbThanks:'وصلتنا — شكراً لك 🙏',fbFail:'ما انرسلت، جرّب مرة ثانية',
 finTitle:'📝 اختباراتك النهائية',finSub:'من نفس المواد اللي في جدولك',
 finLoad:'اعرض',finReload:'🔄 حدّث',
@@ -4054,7 +4064,8 @@ pmSub:'Your degree plan, courses and prerequisites depend on your major. Choose 
 pmBtn:'⚙️ Go to Settings and pick your major',
 fbTitle:'💬 Your feedback matters',fbLead:'What is missing? What annoyed you? What should we add? Write honestly — every message is read.',
 fbIdea:'💡 Idea',fbBug:'🐞 Problem',fbOther:'💬 Other',fbSend:'Send',
-fbPh:'Write here...',fbMailPh:'Your email (optional) — if you want a reply',fbShort:'Add a little more so we understand',
+fbPh:'Write here...',fbMailPh:'Your email',fbTgPh:'@your Telegram username',
+fbCtLead:'If you want a reply — leave a way to reach you (optional)',fbShort:'Add a little more so we understand',
 fbThanks:'Received — thank you 🙏',fbFail:'Could not send, try again',
 finTitle:'📝 Your final exams',finSub:'Pulled from the courses in your schedule',
 finLoad:'Show',finReload:'🔄 Refresh',

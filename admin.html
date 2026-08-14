@@ -759,6 +759,8 @@ function renderFb(){
       <span>${FB_ICON[x.category]||'💬'} ${FB_NAME[x.category]||'ملاحظة'}</span>
       ${x.name?`<span>من <b>${esc(x.name)}</b></span>`:''}
       ${x.email?`<span><b>${esc(x.email)}</b></span>`:''}
+      ${x.telegram?`<span>📱 <a href="https://t.me/${esc(x.telegram)}" target="_blank"
+        style="color:var(--accent2)">@${esc(x.telegram)}</a></span>`:''}
       ${x.major?`<span>${esc(x.major)}</span>`:''}
       ${x.at?`<span>${fdate(new Date(x.at).toISOString())}</span>`:''}
       ${x.source==='mem'?`<span style="color:var(--warn)">⚠️ بالذاكرة فقط</span>`:''}

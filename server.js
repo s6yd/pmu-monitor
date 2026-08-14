@@ -586,6 +586,7 @@ async function adminFeedback() {
       at: x.created_at ? Date.parse(x.created_at) : null,
       text: x.message, category: x.category,
       email: x.user_email, name: x.user_name, major: x.major, lang: x.lang,
+      telegram: x.telegram,
       id: x.id, source: 'db'
     }));
   } catch (e) { /* الجدول غير موجود */ }
@@ -1268,8 +1269,36 @@ const server = http.createServer(async (req, res) => {
       email: String(b.email || '').slice(0, 120) || null,
       name:  String(b.name  || '').slice(0, 80)  || null,
       major: String(b.major || '').slice(0, 12)  || null,
-      lang:  b.lang === 'en' ? 'en' : 'ar'
+      lang:  b.lang === 'en' ? 'en' : 'ar',
+      /* من الزائر: يكتبه بنفسه. من المسجّل: نجيبه من حسابه تحت */
+      telegram: String(b.telegram || '').trim().replace(/^@+/, '').slice(0, 40) || null,
+      chatId: null
     };
+
+    /* لو مسجّل وربط تيليغرام، نجيب معرّفه من حسابه — أدق من كتابته يدوياً */
+    if (entry.email) {
+      try {
+        const p = await sb('GET', 'profiles', {
+          query: `?user_email=eq.${encodeURIComponent(entry.email)}` +
+                 `&select=telegram_username,telegram_chat_id`
+        });
+        const row = Array.isArray(p) ? p[0] : null;
+        if (!row) {
+          const p2 = await sb('GET', 'profiles', {
+            query: `?email=eq.${encodeURIComponent(entry.email)}` +
+                   `&select=telegram_username,telegram_chat_id`
+          });
+          const r2 = Array.isArray(p2) ? p2[0] : null;
+          if (r2) {
+            entry.telegram = entry.telegram || r2.telegram_username || null;
+            entry.chatId = r2.telegram_chat_id || null;
+          }
+        } else {
+          entry.telegram = entry.telegram || row.telegram_username || null;
+          entry.chatId = row.telegram_chat_id || null;
+        }
+      } catch (e) { /* ما يهم */ }
+    }
 
     /* نحفظها في Supabase لو الجدول موجود، وإلا نخزّنها بالذاكرة */
     let saved = false;
@@ -1278,7 +1307,8 @@ const server = http.createServer(async (req, res) => {
         body: {
           user_email: entry.email, user_name: entry.name,
           category: entry.category, message: entry.text,
-          major: entry.major, lang: entry.lang
+          major: entry.major, lang: entry.lang,
+          telegram: entry.telegram
         },
         prefer: 'return=minimal'
       });
@@ -1297,14 +1327,26 @@ const server = http.createServer(async (req, res) => {
       const esc = x => String(x || '')
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const who = entry.name || entry.email || 'زائر غير مسجّل';
+      /* رابط يفتح محادثة مباشرة مع الطالب */
+      let reply = '';
+      if (entry.telegram) {
+        reply = `\n💬 <a href="https://t.me/${esc(entry.telegram)}">تكلّم معه على تيليغرام</a>`;
+      } else if (entry.chatId) {
+        reply = `\n💬 <a href="tg://user?id=${esc(entry.chatId)}">تكلّم معه على تيليغرام</a>`;
+      } else if (entry.email) {
+        reply = `\n✉️ <a href="mailto:${esc(entry.email)}">رد بالإيميل</a>`;
+      }
+
       sendMsg(ADMIN_CHAT_ID,
         `${icon} <b>${label}</b>\n\n` +
         `<blockquote>${esc(entry.text)}</blockquote>\n` +
         `👤 ${esc(who)}\n` +
         (entry.email ? `✉️ <code>${esc(entry.email)}</code>\n` : '') +
+        (entry.telegram ? `📱 @${esc(entry.telegram)}\n` : '') +
         (entry.major ? `🎓 ${esc(entry.major)}\n` : '') +
         (saved ? '' : '⚠️ محفوظة بالذاكرة فقط — جدول feedback ناقص\n') +
-        `\n📊 jadwalik.com/admin`
+        reply +
+        `\n\n📊 jadwalik.com/admin`
       ).catch(() => {});
     }
 
