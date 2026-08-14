@@ -367,6 +367,69 @@ async function handleTelegramUpdate(update) {
   const chatId = msg.chat.id;
   const text = msg.text.trim();
 
+  /* ═══ رد المشرف على طالب ═══
+     تسحب الإشعار وترد عليه، فنستخرج معرّف الطالب من البصمة #u123 */
+  const isAdmin = ADMIN_CHAT_ID && String(chatId) === String(ADMIN_CHAT_ID);
+
+  if (isAdmin && msg.reply_to_message && msg.reply_to_message.text) {
+    const m = msg.reply_to_message.text.match(/#u(\d+)/);
+    if (m) {
+      const target = m[1];
+      const r = await sendMsg(target,
+        `💬 <b>رد من فريق جدولك</b>\n\n${text.replace(/[<>]/g, '')}\n\n` +
+        `<i>تقدر ترد على هذي الرسالة وبيوصلنا ردك.</i>`);
+      return sendMsg(chatId, (r && r.ok)
+        ? `✅ وصلت رسالتك للطالب.`
+        : `⚠️ ما وصلت: ${(r && r.description) || 'الطالب قد يكون حظر البوت'}`);
+    }
+  }
+
+  /* رد الطالب على رسالة الفريق — يوصلك كملاحظة */
+  if (!isAdmin && msg.reply_to_message && msg.reply_to_message.text &&
+      msg.reply_to_message.text.includes('رد من فريق جدولك')) {
+    if (ADMIN_CHAT_ID) {
+      const who = msg.from
+        ? (msg.from.first_name || '') + (msg.from.username ? ` @${msg.from.username}` : '')
+        : '';
+      await sendMsg(ADMIN_CHAT_ID,
+        `↩️ <b>رد طالب</b>\n\n<blockquote>${text.replace(/[<>]/g,'')}</blockquote>\n` +
+        `👤 ${who.replace(/[<>]/g,'') || 'غير معروف'}\n\n` +
+        `<code>#u${chatId}</code>`);
+    }
+    return sendMsg(chatId, '✅ وصلتنا رسالتك، شكراً لك 🙏');
+  }
+
+  /* ═══ /reply <إيميل أو معرّف> <النص> ═══ */
+  if (isAdmin && text.startsWith('/reply')) {
+    const rest = text.slice(6).trim();
+    const sp = rest.indexOf(' ');
+    if (sp < 1) return sendMsg(chatId,
+      `الصيغة:\n<code>/reply البريد_أو_المعرّف النص</code>\n\n` +
+      `مثال:\n<code>/reply s@pmu.edu.sa شكراً على اقتراحك</code>`);
+    const who = rest.slice(0, sp).trim(), body = rest.slice(sp + 1).trim();
+
+    let target = /^\d+$/.test(who) ? who : null;
+    if (!target) {
+      for (const col of ['email', 'user_email']) {
+        try {
+          const rows = await sb('GET', 'profiles', {
+            query: `?${col}=eq.${encodeURIComponent(who)}&select=telegram_chat_id`
+          });
+          if (Array.isArray(rows) && rows[0] && rows[0].telegram_chat_id) {
+            target = rows[0].telegram_chat_id; break;
+          }
+        } catch (e) { /* العمود غير موجود */ }
+      }
+    }
+    if (!target) return sendMsg(chatId, `❌ ما لقيت أحداً بهذا البريد، أو ما ربط تيليغرام.`);
+
+    const r = await sendMsg(target,
+      `💬 <b>رد من فريق جدولك</b>\n\n${body.replace(/[<>]/g,'')}\n\n` +
+      `<i>تقدر ترد على هذي الرسالة وبيوصلنا ردك.</i>`);
+    return sendMsg(chatId, (r && r.ok) ? `✅ وصلت.` :
+      `⚠️ ما وصلت: ${(r && r.description) || 'غير معروف'}`);
+  }
+
   if (text.startsWith('/start')) {
     const code = (text.split(' ')[1] || '').trim().toUpperCase();
     if (!code) {
@@ -633,6 +696,33 @@ async function adminNotify(userId, text) {
   return { ok: true };
 }
 
+/* --- رد مباشر على طالب من اللوحة --- */
+async function adminReply(chatId, email, text) {
+  const body = String(text || '').trim();
+  if (body.length < 2) return { ok: false, error: 'الرسالة قصيرة' };
+
+  let target = chatId ? String(chatId) : null;
+  if (!target && email) {
+    for (const col of ['email', 'user_email']) {
+      try {
+        const rows = await sb('GET', 'profiles', {
+          query: `?${col}=eq.${encodeURIComponent(email)}&select=telegram_chat_id`
+        });
+        if (Array.isArray(rows) && rows[0] && rows[0].telegram_chat_id) {
+          target = rows[0].telegram_chat_id; break;
+        }
+      } catch (e) { /* العمود غير موجود */ }
+    }
+  }
+  if (!target) return { ok: false, error: 'ما ربط تيليغرام — رد بالإيميل' };
+
+  const r = await sendMsg(target,
+    `💬 <b>رد من فريق جدولك</b>\n\n${body.slice(0,3000).replace(/[<>]/g,'')}\n\n` +
+    `<i>تقدر ترد على هذي الرسالة وبيوصلنا ردك.</i>`);
+  if (!r || r.ok !== true) return { ok: false, error: (r && r.description) || 'ما وصل تأكيد' };
+  return { ok: true };
+}
+
 /* --- ملاحظات الطلاب --- */
 async function adminFeedback() {
   let rows = [];
@@ -642,7 +732,7 @@ async function adminFeedback() {
       at: x.created_at ? Date.parse(x.created_at) : null,
       text: x.message, category: x.category,
       email: x.user_email, name: x.user_name, major: x.major, lang: x.lang,
-      telegram: x.telegram,
+      telegram: x.telegram, chatId: x.chat_id || null,
       id: x.id, source: 'db'
     }));
   } catch (e) { /* الجدول غير موجود */ }
@@ -1402,6 +1492,7 @@ const server = http.createServer(async (req, res) => {
         if (act === 'revoke') return send(200, await adminRevoke(b.userId));
         if (act === 'delete-review') return send(200, await adminDeleteReview(b));
         if (act === 'notify') return send(200, await adminNotify(b.userId, b.text || ''));
+        if (act === 'reply')  return send(200, await adminReply(b.chatId, b.email, b.text || ''));
       }
       return send(404, { error: 'إجراء غير معروف' });
     } catch (e) {
@@ -1512,7 +1603,9 @@ const server = http.createServer(async (req, res) => {
         (entry.major ? `🎓 ${esc(entry.major)}\n` : '') +
         (saved ? '' : '⚠️ محفوظة بالذاكرة فقط — جدول feedback ناقص\n') +
         reply +
-        `\n\n📊 jadwalik.com/admin`
+        (entry.chatId ? `\n\n<i>↩️ رد على هذي الرسالة عشان يوصله ردك</i>` : '') +
+        `\n\n📊 jadwalik.com/admin` +
+        (entry.chatId ? `\n<code>#u${entry.chatId}</code>` : '')
       ).catch(() => {});
     }
 

@@ -541,7 +541,7 @@ function renderUsers(){
         <button class="mini go" onclick="grant('${u.id}',365,'${esc(u.name)}')">+ سنة</button>
         <button class="mini"    onclick="grant('${u.id}',30,'${esc(u.name)}')">+ شهر</button>
         <button class="mini"    onclick="grant('${u.id}',7,'${esc(u.name)}')">+ أسبوع</button>
-        ${u.telegram?`<button class="mini" onclick="notify('${u.id}','${esc(u.name)}')">✉️ رسالة</button>`:''}
+        ${u.telegram?`<button class="mini go" onclick="replyTo('','${esc(u.email)}','${esc(u.name)}')">💬 رسالة</button>`:''}
         ${u.active?`<button class="mini no" onclick="revoke('${u.id}','${esc(u.name)}')">إلغاء</button>`:''}
       </div>
     </div>`;
@@ -774,6 +774,12 @@ function renderFb(){
       ${x.at?`<span>${fdate(new Date(x.at).toISOString())}</span>`:''}
       ${x.source==='mem'?`<span style="color:var(--warn)">⚠️ بالذاكرة فقط</span>`:''}
     </div>
+    ${(x.chatId||x.email)?`<div class="row-acts">
+      <button class="mini go" onclick="replyTo('${x.chatId||''}','${esc(x.email||'')}','${esc(x.name||x.email||'')}')">
+        💬 رد عبر البوت</button>
+      ${x.email?`<a class="mini" style="text-decoration:none"
+        href="mailto:${esc(x.email)}">✉️ رد بالإيميل</a>`:''}
+    </div>`:''}
   </div>`).join('');
 }
 
@@ -797,6 +803,16 @@ async function toggleMaint(on){
       await loadAll();
     }catch(e){ toast(e.message,'err') }
   }
+}
+
+async function replyTo(chatId,email,name){
+  const txt=prompt(`ردك على ${name} (يوصله عبر بوت جدولك):`);
+  if(!txt||!txt.trim())return;
+  try{
+    const r=await api('reply',{body:{chatId:chatId||null,email:email||null,text:txt.trim()}});
+    if(!r.ok)return toast(r.error||'ما وصلت','err');
+    toast('وصلت رسالتك ✅','ok');
+  }catch(e){ toast(e.message,'err') }
 }
 
 /* ══════════ لوحة النظام ══════════ */
