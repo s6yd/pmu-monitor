@@ -243,6 +243,10 @@ min-width:26px;text-align:end;flex-shrink:0;padding-top:2px}
 cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:13px;color:transparent;padding:0}
 .pc.done .pc-check{background:var(--open);border-color:var(--open);color:#fff}
 .pc-info{flex:1;min-width:0}
+.tap-tip{background:rgba(61,111,255,.09);border:1px solid rgba(61,111,255,.24);
+border-radius:12px;padding:10px 13px;font-size:12px;color:var(--text2);
+line-height:1.7;margin-bottom:14px}
+.tap-tip b{color:var(--accent2)}
 .pc-info.tappable{cursor:pointer}
 .pc-info.tappable:active{opacity:.6}
 .pc-info.tappable .pc-code::after{content:' ›';color:var(--text3);font-weight:700}
@@ -835,6 +839,10 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
       <span id="progRemain">باقي 139 ساعة</span>
       <span id="progLevel">Freshman</span>
     </div>
+  </div>
+
+  <div class="tap-tip" data-i18n-html="tapTip">
+    👆 <b>اضغط أي مادة</b> عشان تشوف شعبها وأوقاتها في ترم التسجيل القادم
   </div>
 
   <div class="suggest-card">
@@ -3983,13 +3991,15 @@ steps:[
 {n:'1',t:'اختر تخصصك',d:'من <b>⚙️ الإعدادات</b> اختر تخصصك — <b>20 تخصص</b>، كل كليات الجامعة. الخطة والساعات والمتطلبات تتغير معك تلقائياً.'},
 {n:'2',t:'علّم اللي خلصته',d:'في <b>📋 خطتي</b> اضغط المربّع جنب كل مادة درستها. المواد اللي متطلبها ناقص تظهر <b>مقفلة</b>، وتنفتح أول ما تعلّم متطلبها.'},
 {n:'3',t:'شوف مقترح الترم الجاي',d:'فوق الخطة يطلع لك مقترح جاهز. اللي معلّم <b>"لا تؤجلها"</b> مواد تفتح لك مواد بعدها — تأجيلها يأخّر تخرّجك.'},
-{n:'4',t:'احسب معدلك',d:'حط درجة أي مادة خلصتها، والمعدل يتحدّث فوراً بنظام الجامعة (‎A+‎ = 4.00). تقدر كمان تجرّب: كم لازم أجيب هذا الترم عشان أوصل معدل معيّن.'},
-{n:'5',t:'ابحث عن موادك',d:'في <b>🔍 البحث</b> اختر الترم واضغط ابحث. تقدر تفلتر بكود المادة أو الـ CRN أو اسم الدكتور.'},
-{n:'6',t:'ابنِ جدولك',d:'اضغط <b>+</b> على أي شعبة تضيفها. لو تعارضت مع مادة عندك، الموقع ينبّهك قبل ما تسجّل.'},
-{n:'7',t:'اطبع جدولك',d:'زر <b>🖨️ اطبع الجدول</b> يطلع ورقة واحدة منظّمة — شبكة أسبوعية ملوّنة تبيّن فراغاتك، ومعها اختباراتك النهائية.'},
-{n:'8',t:'اختباراتك النهائية',d:'في <b>📅 جدولي</b> اضغط <b>اعرض</b> تحت "اختباراتك النهائية" — يطلع لك موعد وقاعة كل اختبار من مواد جدولك، وينبّهك لو صار اختبارين بنفس الوقت.'},
-{n:'9',t:'مواعيد تهمك',d:'نفس الصفحة تعرض أقرب المواعيد بعدّاد أيام: التسجيل، بداية الدراسة، <b>آخر يوم انسحاب</b>، والاختبارات. المواعيد القريبة تتلوّن تنبيهاً.'},
-{n:'10',t:'قيّم دكاترتك',d:'في <b>👨‍🏫 دكاترة</b> شوف تقييمات الطلاب قبل ما تسجّل، وقيّم أنت <b>بشكل مجهول</b> — ما أحد يشوف اسمك.'}],
+{n:'4',t:'اضغط أي مادة تشوف شعبها',d:'من <b>📋 خطتي</b> اضغط أي مادة — من المقترح أو من الخطة كاملة — ينقلك للبحث ويوريك شعبها وأوقاتها ودكاترتها في <b>ترم التسجيل القادم</b> مباشرة.'},
+{n:'5',t:'احسب معدلك',d:'حط درجة أي مادة خلصتها، والمعدل يتحدّث فوراً بنظام الجامعة (‎A+‎ = 4.00). تقدر كمان تجرّب: كم لازم أجيب هذا الترم عشان أوصل معدل معيّن.'},
+{n:'6',t:'ابحث عن موادك',d:'في <b>🔍 البحث</b> اختر الترم واضغط ابحث. الفلتر يقبل <b>كود المادة</b> أو <b>الـ CRN</b> أو <b>اسم المادة</b> أو <b>اسم الدكتور</b>. وكل شعبة مكتوب عليها إذا هي للطلاب ولا للطالبات.'},
+{n:'7',t:'ابنِ جدولك',d:'اضغط <b>+</b> على أي شعبة تضيفها. لو تعارضت مع مادة عندك، الموقع ينبّهك قبل ما تسجّل.'},
+{n:'8',t:'اطبع جدولك',d:'زر <b>🖨️ اطبع الجدول</b> يطلع ورقة واحدة منظّمة — شبكة أسبوعية ملوّنة تبيّن فراغاتك، ومعها اختباراتك النهائية.'},
+{n:'9',t:'اختباراتك النهائية',d:'في <b>📅 جدولي</b> اضغط <b>اعرض</b> تحت "اختباراتك النهائية" — يطلع لك موعد وقاعة كل اختبار من مواد جدولك، وينبّهك لو صار اختبارين بنفس الوقت.'},
+{n:'10',t:'مواعيد تهمك',d:'نفس الصفحة تعرض أقرب المواعيد بعدّاد أيام: التسجيل، بداية الدراسة، <b>آخر يوم انسحاب</b>، والاختبارات. المواعيد القريبة تتلوّن تنبيهاً.'},
+{n:'11',t:'قيّم دكاترتك',d:'في <b>👨‍🏫 دكاترة</b> شوف تقييمات الطلاب قبل ما تسجّل، وقيّم أنت <b>بشكل مجهول</b> — ما أحد يشوف اسمك. وفي صفحة كل دكتور زر <b>"شوف مواده هذا الترم"</b>.'},
+{n:'12',t:'قول لنا رأيك',d:'في <b>⚙️ الإعدادات</b> خانة <b>"رأيك يهمنا"</b> — اكتب أي اقتراح أو مشكلة. توصلني فوراً، وإذا حطيت وسيلة تواصل أرد عليك.'}],
 pro:[
 {n:'★',t:'راقب المواد المسكّرة',d:'أي مادة <code>CLOSE</code> جنبها <b>🔕</b> — اضغطه يصير <b>🔔</b>. السيرفر يفحص كل 5 دقائق <b>حتى والموقع مسكّر</b>، فما تحتاج تفتح الصفحة. راقب كم مادة ما تبي.'},
 {n:'★',t:'اربط تيليغرام',d:'من <b>⚙️ الإعدادات</b> اضغط "ربط" → يفتح البوت → Start. أول ما تنفتح مادتك يوصلك إشعار فيه الـ CRN والوقت والقاعة.'},
@@ -4002,13 +4012,15 @@ steps:[
 {n:'1',t:'Pick your major',d:'In <b>⚙️ Settings</b> choose your major — <b>20 programs</b>, every college. Your plan, credits and prerequisites switch automatically.'},
 {n:'2',t:'Mark what you finished',d:'In <b>📋 My Plan</b> tick the box next to each course you passed. Courses missing a prerequisite show as <b>locked</b> and open the moment you tick it.'},
 {n:'3',t:'See next term suggestion',d:'A ready plan appears above your degree plan. Anything marked <b>"Do not delay"</b> unlocks later courses — delaying it delays your graduation.'},
-{n:'4',t:'Calculate your GPA',d:'Enter a grade for any finished course and your GPA updates instantly on the PMU scale (A+ = 4.00). You can also ask: what do I need this term to reach a target GPA.'},
-{n:'5',t:'Search for courses',d:'In <b>🔍 Search</b> pick the term and hit search. Filter by course code, CRN, or instructor name.'},
-{n:'6',t:'Build your schedule',d:'Tap <b>+</b> on any section to add it. If it clashes with a course you already have, you get warned before you register.'},
-{n:'7',t:'Print your schedule',d:'<b>🖨️ Print schedule</b> gives you one clean page — a colour-coded weekly grid showing your gaps, with your final exams underneath.'},
-{n:'8',t:'Your final exams',d:'In <b>📅 Schedule</b> tap <b>Show</b> under "Your final exams" — you get the date and room for every course in your schedule, and a warning if two exams collide.'},
-{n:'9',t:'Dates that matter',d:'The same page shows upcoming dates with a countdown: registration, first day of class, <b>the withdrawal deadline</b>, and finals. Near dates turn amber.'},
-{n:'10',t:'Rate your instructors',d:'In <b>👨‍🏫 Faculty</b> read student ratings before you register, and rate <b>anonymously</b> — nobody sees your name.'}],
+{n:'4',t:'Tap any course for its sections',d:'In <b>📋 My Plan</b> tap any course — from the suggestion or the full plan — and it jumps to Search showing its sections, times and instructors for the <b>upcoming registration term</b>.'},
+{n:'5',t:'Calculate your GPA',d:'Enter a grade for any finished course and your GPA updates instantly on the PMU scale (A+ = 4.00). You can also ask: what do I need this term to reach a target GPA.'},
+{n:'6',t:'Search for courses',d:'In <b>🔍 Search</b> pick the term and hit search. The filter accepts a <b>course code</b>, <b>CRN</b>, <b>course title</b>, or <b>instructor name</b>. Every section is labelled male or female.'},
+{n:'7',t:'Build your schedule',d:'Tap <b>+</b> on any section to add it. If it clashes with a course you already have, you get warned before you register.'},
+{n:'8',t:'Print your schedule',d:'<b>🖨️ Print schedule</b> gives you one clean page — a colour-coded weekly grid showing your gaps, with your final exams underneath.'},
+{n:'9',t:'Your final exams',d:'In <b>📅 Schedule</b> tap <b>Show</b> under "Your final exams" — you get the date and room for every course in your schedule, and a warning if two exams collide.'},
+{n:'10',t:'Dates that matter',d:'The same page shows upcoming dates with a countdown: registration, first day of class, <b>the withdrawal deadline</b>, and finals. Near dates turn amber.'},
+{n:'11',t:'Rate your instructors',d:'In <b>👨‍🏫 Faculty</b> read student ratings before you register, and rate <b>anonymously</b> — nobody sees your name. Each instructor page has a <b>"See their courses this term"</b> button.'},
+{n:'12',t:'Tell us what you think',d:'In <b>⚙️ Settings</b> the <b>"Your feedback matters"</b> box takes any idea or problem. It reaches me instantly, and if you leave contact details I reply.'}],
 pro:[
 {n:'★',t:'Monitor closed sections',d:'Any <code>CLOSE</code> course has a <b>🔕</b> — tap it to make it <b>🔔</b>. The server checks every 5 minutes <b>even with the site closed</b>, so you never keep the page open. Watch as many as you like.'},
 {n:'★',t:'Link Telegram',d:'In <b>⚙️ Settings</b> tap "Link" → the bot opens → Start. When your course opens you get an alert with the CRN, time and room.'},
@@ -4074,6 +4086,7 @@ calTitle:'🗓️ مواعيد تهمك',calSub:'من التقويم الأكا�
 calNow:'جارٍ الآن',calToday:'اليوم',calTomorrow:'بكرة',calIn:'بعد',calDays:'يوم',
 calDone:'ما في مواعيد قادمة في التقويم الحالي.',
 calSource:'المصدر: التقويم الأكاديمي المعتمد 2026/2027. التقويم قابل للتعديل — راجع موقع الجامعة.',
+tapTip:'👆 <b>اضغط أي مادة</b> عشان تشوف شعبها وأوقاتها في ترم التسجيل القادم',
 pmTitle:'اختر تخصصك أول',
 pmSub:'الخطة الدراسية والمواد والمتطلبات تتغيّر حسب تخصصك. اختره مرة وحدة وينحفظ لك.',
 pmBtn:'⚙️ روح للإعدادات واختر تخصصك',
@@ -4152,6 +4165,7 @@ calTitle:'🗓️ Dates that matter',calSub:'From the official academic calendar
 calNow:'Now',calToday:'Today',calTomorrow:'Tomorrow',calIn:'in',calDays:'days',
 calDone:'No upcoming dates in the current calendar.',
 calSource:'Source: official 2026/2027 academic calendar. Dates may change — check the university website.',
+tapTip:'👆 <b>Tap any course</b> to see its sections and times for the upcoming term',
 pmTitle:'Pick your major first',
 pmSub:'Your degree plan, courses and prerequisites depend on your major. Choose once and it is saved for you.',
 pmBtn:'⚙️ Go to Settings and pick your major',
