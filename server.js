@@ -373,6 +373,15 @@ async function handleTelegramUpdate(update) {
 
   if (isAdmin && msg.reply_to_message && msg.reply_to_message.text) {
     const m = msg.reply_to_message.text.match(/#u(\d+)/);
+
+    /* حالة الاختبار: أنت ترد على رسالة "رد من فريق جدولك" الموجّهة لك أنت.
+       ما فيها بصمة، فنعاملك كطالب عادي. */
+    if (!m && msg.reply_to_message.text.includes('رد من فريق جدولك')) {
+      return sendMsg(chatId,
+        `✅ وصلتنا رسالتك، شكراً لك 🙏\n\n` +
+        `<i>(أنت المشرف — الطالب العادي يوصلك ردّه هنا مباشرة.)</i>`);
+    }
+
     if (m) {
       const target = m[1];
       const r = await sendMsg(target,
@@ -382,6 +391,12 @@ async function handleTelegramUpdate(update) {
         ? `✅ وصلت رسالتك للطالب.`
         : `⚠️ ما وصلت: ${(r && r.description) || 'الطالب قد يكون حظر البوت'}`);
     }
+
+    /* رد على رسالة ما فيها بصمة — نوضح بدل ما نسكت */
+    return sendMsg(chatId,
+      `ℹ️ هذي الرسالة ما فيها معرّف طالب، فما أعرف لمين أوصل ردك.\n\n` +
+      `رد على <b>إشعار ملاحظة</b> فيه <code>#u…</code> في آخره،\n` +
+      `أو استخدم:\n<code>/reply البريد النص</code>`);
   }
 
   /* رد الطالب على رسالة الفريق — يوصلك كملاحظة */
