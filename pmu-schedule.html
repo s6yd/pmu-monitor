@@ -868,7 +868,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
         <input type="text" id="docFilter" placeholder="ابحث عن دكتور…">
         <button class="clear-btn" id="clearDoc" onclick="clearDocFilter()">✕</button>
       </div>
-      <button class="btn-search" style="margin-top:11px" onclick="loadInstructors()">
+      <button class="btn-search" style="margin-top:11px" onclick="loadInstructors(true)">
         <span id="docBtnText" data-i18n="docRefresh">🔄 حدّث القائمة</span>
       </button>
     </div>
@@ -3642,24 +3642,72 @@ async function loadReviews(){
 }
 
 /* جمع أسماء الدكاترة: من نتائج البحث + من التقييمات الموجودة */
-async function loadInstructors(){
+/* المواد اللي يدرّسها كل دكتور في ترم التسجيل القادم */
+let docCourses={};          /* اسم الدكتور → Set من أكواد المواد */
+let docsLoaded=false;       /* سُحبت في هذي الجلسة؟ */
+
+async function loadInstructors(force){
   const btn=document.getElementById('docBtnText');
   btn.textContent=LANG==='ar'?'جاري التحميل...':'Loading...';
-  const set=new Set(reviews.map(r=>r.instructor_name));
-  allCourses.forEach(c=>{const n=cleanName(c.instructor);if(n)set.add(n)});
 
-  /* لو ما فيه نتائج بحث محمّلة، اسحب قائمة كاملة مرة وحدة */
-  if(set.size<5){
+  /* ١) الدكاترة المقيَّمون — يبقون في القائمة للأبد
+        حتى لو ما عادوا يدرّسون، لأن تقييماتهم تفيد الطلاب */
+  const set=new Set(reviews.map(r=>r.instructor_name));
+
+  /* ٢) دكاترة ترم التسجيل القادم — سحبة واحدة لكل جلسة.
+        السيرفر يكيّش هذي التركيبة أصلاً، فما نحتاج نعيدها من طرفنا.
+        زر "حدّث القائمة" يجبر السحب لو الطالب يبي أحدث نسخة. */
+  if(force || !docsLoaded){
     try{
-      const term=document.getElementById('term').value;
-      const r=await fetch(`${API}?term=${term}&college=ALL&gender=ALL`);
+      const r=await fetch(`${API}?term=${UPCOMING_TERM}&college=ALL&gender=ALL`);
       const d=await r.json();
-      if(d.success)d.courses.forEach(c=>{const n=cleanName(c.instructor);if(n)set.add(n)});
+      if(d.success){
+        const map={};
+        d.courses.forEach(c=>{
+          const nm=cleanName(c.instructor);
+          if(!nm)return;
+          (map[nm]=map[nm]||new Set()).add((c.courseCode||'').trim());
+        });
+        docCourses=map;
+        docsLoaded=true;
+      }
     }catch(e){}
   }
-  instructors=[...set].sort();
+  Object.keys(docCourses).forEach(nm=>set.add(nm));
+
+  /* ٣) ومن نتائج البحث المحمّلة، لو الطالب باحث في ترم ثانٍ */
+  allCourses.forEach(c=>{const nm=cleanName(c.instructor);if(nm)set.add(nm)});
+
+  instructors=[...set];
   btn.textContent=LANG==='ar'?'🔄 حدّث القائمة':'🔄 Refresh list';
   renderDocs();
+}
+
+/* قرب الدكتور من خطة الطالب:
+   2 = يدرّس مادة في خطته وما خلصها بعد  (الأهم له)
+   1 = يدرّس مادة في خطته لكن خلصها
+   0 = ما له علاقة بخطته، أو ما اختار تخصصاً */
+let _planIdx=null, _planIdxFor=null;
+function planIndex(){
+  if(_planIdx && _planIdxFor===MAJOR)return _planIdx;
+  const m=new Map();
+  allPlanCourses().forEach(c=>{ if(!c.el)m.set(norm(c.c),c.c); });
+  _planIdx=m; _planIdxFor=MAJOR;
+  return m;
+}
+function docRelevance(name){
+  if(!majorChosen())return 0;
+  const codes=docCourses[name];
+  if(!codes||!codes.size)return 0;
+  const plan=planIndex();
+  let best=0;
+  for(const code of codes){
+    const planCode=plan.get(norm(code));
+    if(!planCode)continue;
+    if(!isDone(planCode))return 2;   /* أعلى قيمة، ما نحتاج نكمل */
+    best=1;
+  }
+  return best;
 }
 
 function renderDocs(){
@@ -3667,11 +3715,18 @@ function renderDocs(){
   const q=norm(document.getElementById('docFilter').value);
   let list=instructors.filter(n=>!q||norm(n).includes(q));
 
-  /* المقيَّمون أولاً ثم الأعلى تقييماً */
+  /* الترتيب:
+     ١) المقيَّمون أولاً دائماً — ثم الأعلى تقييماً
+     ٢) بعدهم: الأقرب لخطة الطالب (مواد ما خلصها ← مواد في خطته)
+     ٣) وأخيراً الباقي أبجدياً */
+  const rel={};
+  list.forEach(nm=>rel[nm]=docRelevance(nm));
   list.sort((a,b)=>{
     const A=docStats(a),B=docStats(b);
-    if(!!B.n!==!!A.n)return B.n-A.n;
-    return B.avg-A.avg;
+    if(!!B.n!==!!A.n)return B.n-A.n;          /* مقيَّم قبل غير مقيَّم */
+    if(A.n&&B.n)return B.avg-A.avg;           /* بين المقيَّمين: الأعلى */
+    if(rel[b]!==rel[a])return rel[b]-rel[a];  /* الأقرب لخطته */
+    return a.localeCompare(b,'en');           /* أبجدي */
   });
 
   const box=document.getElementById('docRows');
@@ -4443,7 +4498,7 @@ function setAuthUI(){
     note.classList.add('visible');
     document.getElementById('syncText').innerHTML=`${t('syncIn')} <b>${USER.email}</b> ${t('syncIn2')}`;
   }else{
-    b.textContent='دخول';b.classList.remove('out');
+    b.textContent=t('login');b.classList.remove('out');
     note.classList.add('visible');
     document.getElementById('syncText').textContent=t('syncOut');
   }
