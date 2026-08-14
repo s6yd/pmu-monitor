@@ -424,6 +424,11 @@ border-radius:16px;padding:26px 20px;text-align:center;margin-bottom:16px}
 .pm-ic{font-size:38px;margin-bottom:12px}
 .pm-t{font-size:17px;font-weight:700;margin-bottom:9px}
 .pm-s{font-size:13px;color:var(--text2);line-height:1.8;margin-bottom:18px}
+.doc-tag{font-size:9.5px;font-weight:600;padding:2px 7px;border-radius:20px;
+margin-inline-start:7px;white-space:nowrap;vertical-align:middle}
+.doc-tag.now{background:rgba(61,111,255,.15);color:var(--accent2);
+border:1px solid rgba(61,111,255,.3)}
+.doc-tag.done{background:var(--bg);color:var(--text3);border:1px solid var(--border)}
 .g-chip{font-size:9.5px;font-weight:600;padding:3px 8px;border-radius:20px;
 white-space:nowrap;font-family:var(--sans)}
 .g-chip.m{background:rgba(61,111,255,.14);color:var(--accent2);
@@ -1045,7 +1050,10 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 <div class="toast" id="toast"></div>
 
 <script>
-const API='https://pmu-monitor.onrender.com/api/courses';
+/* مسار نسبي: الصفحة والسيرفر على نفس النطاق.
+   الرابط المطلق لـ onrender كان يسبّب إعادة توجيه 308 لكل طلب —
+   رحلة شبكة زائدة تضاعف زمن الانتظار. */
+const API='/api/courses';
 /* فاضي = روابط نسبية على نفس النطاق.
    مهم: الطلب لنطاق onrender يُعاد توجيهه لـ jadwalik.com،
    وإعادة التوجيه تكسر طلبات POST. */
@@ -3658,6 +3666,11 @@ async function loadInstructors(force){
   const set=new Set(reviews.map(r=>r.instructor_name));
   let failed=false;
 
+  /* نعرض المتاح فوراً بدل ما الطالب يقعد ينتظر شاشة فاضية */
+  Object.keys(docCourses).forEach(nm=>set.add(nm));
+  allCourses.forEach(c=>{const nm=cleanName(c.instructor);if(nm)set.add(nm)});
+  if(set.size){ instructors=[...set]; renderDocs(); }
+
   try{
     /* ٢) دكاترة ترم التسجيل القادم — سحبة واحدة لكل جلسة.
           السيرفر يكيّش هذي التركيبة، فطالب واحد يسحب والباقون من نسخته. */
@@ -3759,10 +3772,13 @@ function renderDocs(){
   box.innerHTML=list.slice(0,200).map(n=>{
     const st=docStats(n);
     const initials=n.split(' ').slice(0,2).map(x=>x[0]||'').join('').toUpperCase();
+    const rv=rel[n]||0;
+    const planTag = rv===2 ? `<span class="doc-tag now">${ar?'📘 من خطتك':'📘 In your plan'}</span>`
+                  : rv===1 ? `<span class="doc-tag done">${ar?'✓ درستها':'✓ Completed'}</span>` : '';
     return `<div class="doc-row" onclick="openDoc('${n.replace(/'/g,"\\'")}')">
       <div class="doc-av">${initials}</div>
       <div class="doc-info">
-        <div class="doc-name">${n}</div>
+        <div class="doc-name">${n}${planTag}</div>
         <div class="doc-meta">${st.n?`${st.n} ${ar?'تقييم':'reviews'}`:(ar?'ما فيه تقييمات بعد':'No reviews yet')}</div>
       </div>
       <div class="doc-score">
