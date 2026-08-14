@@ -964,7 +964,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
       <button class="fb-cat"        data-c="bug"   onclick="pickFb(this)" data-i18n="fbBug">🐞 مشكلة</button>
       <button class="fb-cat"        data-c="other" onclick="pickFb(this)" data-i18n="fbOther">💬 غير ذلك</button>
     </div>
-    <textarea id="fbText" maxlength="1200" rows="4" data-i18n-ph="fbPh"
+    <textarea id="fbText" maxlength="1200" rows="4" oninput="updateFbCount()" data-i18n-ph="fbPh"
       placeholder="اكتب هنا..."></textarea>
     <div class="fb-row">
       <span class="fb-count" id="fbCount">0 / 1200</span>
@@ -3243,22 +3243,7 @@ schedule=load('pmu_schedule',[]);
 completed=load('pmu_completed',[]);
 grades=load('pmu_grades',{});
 updateBadge();
-
-/* الثيم أول شي عشان ما تومض الصفحة */
-applyTheme();
-
-setTimeout(async()=>{
-  applyMajor(MAJOR,true,false);
-  applyLang();
-  renderSettings();
-  renderCalendar();
-  termHint();
-  loadMonitorState();
-  const fb=document.getElementById('fbText');
-  if(fb)fb.addEventListener('input',updateFbCount);
-  maybeShowGuide();
-  await loadReviews();
-},0);
+setTimeout(async()=>{applyLang();renderSettings();maybeShowGuide();loadMonitorState();await loadReviews();},0);
 
 
 
