@@ -3138,6 +3138,14 @@ function toggleDone(code){
 /* هل اختار الطالب تخصصه فعلاً؟ */
 function majorChosen(){ return !!load('pmu_major',null); }
 
+/* تضبط القائمة على التخصص المحفوظ، أو تخليها فاضية لو ما اختار */
+function syncMajorSelect(){
+  const el=document.getElementById('majorSelect');
+  if(!el)return;
+  const v=majorChosen()?MAJOR:'';
+  if(el.value!==v)el.value=v;
+}
+
 function goPickMajor(){
   switchTab('set');
   setTimeout(()=>{
@@ -3419,6 +3427,7 @@ function renderSettings(){
 }
 
 function renderTgAndMon(ar){
+  syncMajorSelect();
   /* telegram */
   const linked=!!PROFILE?.telegram_chat_id;
   document.getElementById('tgTitle').textContent=linked?
@@ -4181,7 +4190,16 @@ function onMajorChange(){
   const code=el.value;
   if(!code)return;                          /* لسا على "اختر تخصصك" */
   if(!PLANS[code]){el.value=majorChosen()?MAJOR:'';return}
-  if(code===MAJOR)return;
+  if(code===MAJOR){
+    /* نفس التخصص المعروض، لكنه أول اختيار فعلي منه — نثبّته */
+    if(!majorChosen()){
+      save('pmu_major',code);
+      if(USER)pushProfile&&pushProfile();
+      renderPlan();
+      showToast(LANG==='ar'?`تخصصك: ${PLANS[code].ar}`:`Your major: ${PLANS[code].name}`,'success');
+    }
+    return;
+  }
   const done=completed.length;
   if(done && !confirm(LANG==='ar'
       ? `تغيير التخصص لـ ${PLANS[code].ar}؟\n\nالمواد اللي علّمتها كمكتملة (${done}) بتبقى محفوظة، بس اللي مو موجودة في الخطة الجديدة ما بتنحسب.`
