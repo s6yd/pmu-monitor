@@ -75,6 +75,15 @@ position:absolute;top:9px;inset-inline-end:6px}
 .tab-dot.warn{background:var(--warn)}
 
 /* لوحة النظام */
+.maint{background:var(--card);border:1px solid var(--border);border-radius:14px;
+padding:14px;margin-bottom:12px}
+.maint.on{background:var(--warn-bg);border-color:rgba(245,158,11,.4)}
+.maint-top{display:flex;align-items:flex-start;justify-content:space-between;gap:11px}
+.maint-t{font-size:14px;font-weight:700}
+.maint.on .maint-t{color:var(--warn)}
+.maint-s{font-size:11.5px;color:var(--text2);margin-top:5px;line-height:1.6}
+.maint-msg{margin-top:11px;padding:9px 11px;background:var(--bg);border-radius:9px;
+font-size:12px;color:var(--text2);line-height:1.7}
 .alert{border-radius:12px;padding:12px 14px;margin-bottom:9px;
 display:flex;gap:11px;align-items:flex-start}
 .alert.bad{background:var(--close-bg);border:1px solid rgba(244,63,94,.32)}
@@ -532,7 +541,7 @@ function renderUsers(){
         <button class="mini go" onclick="grant('${u.id}',365,'${esc(u.name)}')">+ سنة</button>
         <button class="mini"    onclick="grant('${u.id}',30,'${esc(u.name)}')">+ شهر</button>
         <button class="mini"    onclick="grant('${u.id}',7,'${esc(u.name)}')">+ أسبوع</button>
-        ${u.telegram?`<button class="mini" onclick="notify('${u.id}','${esc(u.name)}')">✉️ رسالة</button>`:''}
+        ${u.telegram?`<button class="mini go" onclick="replyTo('','${esc(u.email)}','${esc(u.name)}')">💬 رسالة</button>`:''}
         ${u.active?`<button class="mini no" onclick="revoke('${u.id}','${esc(u.name)}')">إلغاء</button>`:''}
       </div>
     </div>`;
@@ -765,7 +774,45 @@ function renderFb(){
       ${x.at?`<span>${fdate(new Date(x.at).toISOString())}</span>`:''}
       ${x.source==='mem'?`<span style="color:var(--warn)">⚠️ بالذاكرة فقط</span>`:''}
     </div>
+    ${(x.chatId||x.email)?`<div class="row-acts">
+      <button class="mini go" onclick="replyTo('${x.chatId||''}','${esc(x.email||'')}','${esc(x.name||x.email||'')}')">
+        💬 رد عبر البوت</button>
+      ${x.email?`<a class="mini" style="text-decoration:none"
+        href="mailto:${esc(x.email)}">✉️ رد بالإيميل</a>`:''}
+    </div>`:''}
   </div>`).join('');
+}
+
+/* ══════════ وضع الصيانة ══════════ */
+async function toggleMaint(on){
+  if(on){
+    const msg=prompt('رسالة تظهر للطلاب (اتركها فاضية للنص الافتراضي):',
+      'نسوّي تحديث سريع للموقع. نرجع خلال وقت قصير بإذن الله.');
+    if(msg===null)return;
+    if(!confirm('تأكيد: بيشوف كل الطلاب صفحة الصيانة بدل الموقع.'))return;
+    try{
+      await api('maintenance',{body:{on:true,msg:msg.trim()}});
+      toast('الموقع دخل وضع الصيانة','ok');
+      await loadAll();
+    }catch(e){ toast(e.message,'err') }
+  }else{
+    if(!confirm('ترجيع الموقع للعمل؟'))return;
+    try{
+      await api('maintenance',{body:{on:false}});
+      toast('الموقع رجع للعمل','ok');
+      await loadAll();
+    }catch(e){ toast(e.message,'err') }
+  }
+}
+
+async function replyTo(chatId,email,name){
+  const txt=prompt(`ردك على ${name} (يوصله عبر بوت جدولك):`);
+  if(!txt||!txt.trim())return;
+  try{
+    const r=await api('reply',{body:{chatId:chatId||null,email:email||null,text:txt.trim()}});
+    if(!r.ok)return toast(r.error||'ما وصلت','err');
+    toast('وصلت رسالتك ✅','ok');
+  }catch(e){ toast(e.message,'err') }
 }
 
 /* ══════════ لوحة النظام ══════════ */
@@ -779,6 +826,22 @@ function renderSys(){
   const bad=(h.warnings||[]).some(w=>w.level==='bad');
   const wrn=(h.warnings||[]).some(w=>w.level==='warn');
   dot.className='tab-dot'+(bad?' on':wrn?' on warn':'');
+
+  /* ── وضع الصيانة ── */
+  const mOn=!!h.maintenance;
+  const maint=`<div class="maint ${mOn?'on':''}">
+    <div class="maint-top">
+      <div>
+        <div class="maint-t">${mOn?'🔧 الموقع مقفل للصيانة':'🟢 الموقع شغّال للطلاب'}</div>
+        <div class="maint-s">${mOn
+          ?'الطلاب يشوفون صفحة صيانة. اللوحة تشتغل عادي.'
+          :'اقفله وقت التحديثات الكبيرة عشان ما يشوفون أخطاء.'}</div>
+      </div>
+      <button class="mini ${mOn?'go':'no'}" onclick="toggleMaint(${mOn?'false':'true'})">
+        ${mOn?'▶️ شغّل الموقع':'⏸️ اقفل الموقع'}</button>
+    </div>
+    ${mOn&&h.maintenanceMsg?`<div class="maint-msg">${esc(h.maintenanceMsg)}</div>`:''}
+  </div>`;
 
   /* ── التحذيرات ── */
   let alerts='';
@@ -885,7 +948,7 @@ function renderSys(){
     العدّادات تُصفّر مع كل إعادة نشر على Render. الدورة تشتغل كل 5 دقائق (300 ثانية).
   </div>`;
 
-  box.innerHTML=alerts+gauge+spark+detail;
+  box.innerHTML=maint+alerts+gauge+spark+detail;
 }
 
 /* ══════════ المراقبة ══════════ */

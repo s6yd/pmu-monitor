@@ -243,6 +243,33 @@ min-width:26px;text-align:end;flex-shrink:0;padding-top:2px}
 cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:13px;color:transparent;padding:0}
 .pc.done .pc-check{background:var(--open);border-color:var(--open);color:#fff}
 .pc-info{flex:1;min-width:0}
+/* إخفاء المعدل — للخصوصية لما يكون جنبك أحد */
+.gpa-card{position:relative}
+.gpa-eye{position:absolute;top:10px;inset-inline-end:10px;background:transparent;
+border:1px solid var(--border);color:var(--text3);border-radius:20px;
+padding:4px 9px;font-size:12px;cursor:pointer;line-height:1;z-index:2}
+.gpa-eye:active{background:var(--bg)}
+.gpa-card.hidden .gpa-val,
+.gpa-card.hidden .gpa-scale,
+.gpa-card.hidden .gpa-num{filter:blur(9px);user-select:none;pointer-events:none}
+.acc-head{width:100%;background:none;border:none;padding:0;cursor:pointer;
+display:flex;align-items:center;justify-content:space-between;gap:10px;
+font-family:var(--sans);color:inherit}
+.acc-right{display:flex;align-items:center;gap:9px}
+.acc-count{font-size:11px;font-family:var(--mono);color:var(--text3);
+background:var(--bg);padding:2px 9px;border-radius:20px}
+.acc-arrow{font-size:13px;color:var(--text3);transition:transform .25s}
+.acc.open .acc-arrow{transform:rotate(180deg)}
+.acc-body{display:none;margin-top:13px}
+.acc.open .acc-body{display:block}
+.slot-bar{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}
+.slot{background:var(--card);border:1px solid var(--border);border-radius:12px;
+padding:10px 6px;cursor:pointer;font-family:var(--sans);text-align:center;
+display:flex;flex-direction:column;gap:3px}
+.slot.on{border-color:var(--accent);background:rgba(61,111,255,.10)}
+.slot-n{font-size:12.5px;font-weight:700;color:var(--text2)}
+.slot.on .slot-n{color:var(--accent2)}
+.slot-c{font-size:10.5px;color:var(--text3);font-family:var(--mono)}
 .tap-tip{background:rgba(61,111,255,.09);border:1px solid rgba(61,111,255,.24);
 border-radius:12px;padding:10px 13px;font-size:12px;color:var(--text2);
 line-height:1.7;margin-bottom:14px}
@@ -779,6 +806,8 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     <div class="state-icon">📅</div><div class="state-title">جدولك فاضي</div>
     <div class="state-sub">روح لصفحة البحث واضغط ➕ على أي مادة</div>
   </div>
+  <div class="slot-bar" id="slotBar"></div>
+
   <div id="schedDays"></div>
 
   <!-- المواعيد المهمة -->
@@ -817,7 +846,8 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     <button class="btn-pro" onclick="goPickMajor()" data-i18n="pmBtn">⚙️ روح للإعدادات واختر تخصصك</button>
   </div>
 
-  <div class="gpa-card">
+  <div class="gpa-card" id="gpaCard">
+    <button class="gpa-eye" onclick="toggleGpa()" id="gpaEye" title="إخفاء المعدل">👁️</button>
     <div class="gpa-top">
       <div>
         <div class="gpa-label" data-i18n="gpaLabel">المعدل التراكمي</div>
@@ -926,11 +956,6 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
   </div>
 
   <div class="set-card">
-    <div class="sc-title" data-i18n="myReviews">تقييماتي</div>
-    <div id="myRevList"></div>
-  </div>
-
-  <div class="set-card">
     <div class="sc-title" data-i18n="monSection">المواد المراقبة</div>
     <div id="monList"></div>
   </div>
@@ -1020,6 +1045,17 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
       <span class="fb-count" id="fbCount">0 / 1200</span>
       <button class="btn-sm" id="fbSend" onclick="sendFeedback()" data-i18n="fbSend">إرسال</button>
     </div>
+  </div>
+
+  <div class="set-card acc" id="myRevCard">
+    <button class="acc-head" onclick="toggleMyRev()">
+      <span class="sc-title" style="margin:0" data-i18n="myReviews">تقييماتي</span>
+      <span class="acc-right">
+        <span class="acc-count" id="myRevCount"></span>
+        <span class="acc-arrow" id="myRevArrow">▾</span>
+      </span>
+    </button>
+    <div id="myRevList" class="acc-body"></div>
   </div>
 
   <div class="legal-foot">
@@ -2461,6 +2497,7 @@ function applyMajor(code,silent,persist){
 }
 
 
+let SCHEDULES=[[],[],[]],SLOT=0;
 let allCourses=[],schedule=[],completed=[],grades={},filterMode='all';
 let PRO_KEY=null;
 const DAY_KEYS=['U','M','T','W','R'];
@@ -2529,7 +2566,7 @@ function switchTab(n){
     document.getElementById('page'+t[0].toUpperCase()+t.slice(1)).classList.toggle('active',t===n);
     document.getElementById('tab'+t[0].toUpperCase()+t.slice(1)).classList.toggle('active',t===n);
   });
-  if(n==='sched')renderSchedule();
+  if(n==='sched'){renderSlots();renderSchedule();}
   if(n==='plan')renderPlan();
   if(n==='sched')renderCalendar();
   if(n==='set')renderSettings();
@@ -2586,14 +2623,10 @@ function norm(x){return (x||'').toUpperCase().replace(/[\s\-_]/g,'')}
 /* الجامعة ما تعلن الجنس بعمود مستقل، لكنه واضح من القاعة والشعبة:
    القاعات: M-… للطلاب، F-… و GZONE للطالبات
    الشعب:   1xx للطلاب، 2xx للطالبات */
+/* الجنس يجي من الجامعة نفسها (السيرفر يسحب قائمة الطلاب وقائمة الطالبات
+   ويعلّم كل مادة بمصدرها). ما نخمّن من القاعة لأنه كان يخطئ. */
 function genderOf(c){
-  const r=(c.room||'').toUpperCase().trim();
-  if(/^M[-\s]/.test(r)) return 'M';
-  if(/^F[-\s]/.test(r) || r.includes('GZONE')) return 'F';
-  const sec=String(c.section||'').trim();
-  if(/^1/.test(sec)) return 'M';
-  if(/^2/.test(sec)) return 'F';
-  return null;
+  return c.gender==='M'||c.gender==='F' ? c.gender : null;
 }
 function genderChip(c){
   const g=genderOf(c);
@@ -2673,7 +2706,7 @@ function renderResults(){
 /* ===== Schedule ===== */
 function toggleCourse(crn){
   const i=schedule.findIndex(s=>s.crn===crn);
-  if(i>-1){const r=schedule.splice(i,1)[0];save('pmu_schedule',schedule);pushSchedule();updateBadge();renderResults();showToast(`${t('removed')} ${r.courseCode}`);return}
+  if(i>-1){const r=schedule.splice(i,1)[0];saveSchedules();pushSchedule();updateBadge();renderResults();showToast(`${t('removed')} ${r.courseCode}`);return}
   const c=allCourses.find(x=>x.crn===crn);if(!c)return;
   const pre=prereqCheck(c.courseCode);
   if(pre.known&&!pre.ok){
@@ -2681,18 +2714,47 @@ function toggleCourse(crn){
     return;
   }
   const clash=findConflicts(c,schedule);
-  schedule.push(c);save('pmu_schedule',schedule);pushSchedule();updateBadge();renderResults();
+  schedule.push(c);saveSchedules();pushSchedule();updateBadge();renderResults();
   if(clash.length)showToast(`${t('addedButClash')} ${clash[0].courseCode}`,'warn');
   else showToast(`${t('addedTo')} ${c.courseCode} ${t('toSchedule')}`);
 }
 function removeFromSchedule(crn){
   const i=schedule.findIndex(s=>s.crn===crn);
-  if(i>-1){const r=schedule.splice(i,1)[0];save('pmu_schedule',schedule);pushSchedule();updateBadge();renderSchedule();renderResults();showToast(`${t('removed')} ${r.courseCode}`)}
+  if(i>-1){const r=schedule.splice(i,1)[0];saveSchedules();pushSchedule();updateBadge();renderSchedule();renderResults();showToast(`${t('removed')} ${r.courseCode}`)}
 }
 function clearSchedule(){
   if(!schedule.length)return;
-  schedule=[];save('pmu_schedule',schedule);pushSchedule();updateBadge();renderSchedule();renderResults();showToast(t('clearedSched'));
+  schedule.length=0;   /* نفرّغه بدون ما نكسر الإشارة */
+  saveSchedules();pushSchedule();updateBadge();renderSchedule();renderResults();showToast(t('clearedSched'));
 }
+function saveSchedules(){
+  SCHEDULES[SLOT]=schedule;
+  save('pmu_schedules',SCHEDULES);
+  save('pmu_schedule',schedule);
+  renderSlots();
+}
+
+function switchSlot(i){
+  i=Math.min(2,Math.max(0,i));
+  if(i===SLOT)return;
+  SLOT=i; save('pmu_slot',String(i));
+  schedule=SCHEDULES[SLOT];
+  updateBadge(); renderSchedule(); renderResults(); renderSlots();
+  if(FINALS)renderFinals();          /* الاختبارات تتبع الجدول المختار */
+  showToast(LANG==='ar'?`جدول ${i+1}`:`Schedule ${i+1}`);
+}
+
+function renderSlots(){
+  const box=document.getElementById('slotBar');
+  if(!box)return;
+  const ar=LANG==='ar';
+  box.innerHTML=SCHEDULES.map((sc,i)=>`
+    <button class="slot${i===SLOT?' on':''}" onclick="switchSlot(${i})">
+      <span class="slot-n">${ar?'جدول':'Plan'} ${i+1}</span>
+      <span class="slot-c">${sc.length?sc.length+(ar?' مواد':' crs'):(ar?'فاضي':'empty')}</span>
+    </button>`).join('');
+}
+
 function updateBadge(){document.getElementById('schedBadge').textContent=schedule.length}
 
 function renderSchedule(){
@@ -3241,6 +3303,7 @@ function goPickMajor(){
 }
 
 function renderPlan(){
+  applyGpaHidden();
   /* أول زيارة بدون تخصص — نوجّهه بدل ما نعرض خطة غلط */
   const chosen=majorChosen();
   const pm=document.getElementById('pickMajor');
@@ -3340,7 +3403,15 @@ function showToast(m,type){
 }
 
 /* ===== Init ===== */
-schedule=load('pmu_schedule',[]);
+/* ثلاثة جداول — schedule يشير للمختار، فبقية الكود يشتغل بلا تغيير */
+SCHEDULES=load('pmu_schedules',null);
+if(!Array.isArray(SCHEDULES)||SCHEDULES.length!==3){
+  const old=load('pmu_schedule',[]);       /* ترقية من النسخة القديمة */
+  SCHEDULES=[Array.isArray(old)?old:[],[],[]];
+  save('pmu_schedules',SCHEDULES);
+}
+SLOT=Math.min(2,Math.max(0,parseInt(load('pmu_slot','0'),10)||0));
+schedule=SCHEDULES[SLOT];
 completed=load('pmu_completed',[]);
 grades=load('pmu_grades',{});
 updateBadge();
@@ -3511,6 +3582,30 @@ function renderSettings(){
   }
 
   renderTgAndMon(ar);
+}
+
+/* المعدل مخفي؟ ينحفظ محلياً فيبقى مخفياً بعد إعادة التحميل */
+let GPA_HIDDEN=load('pmu_gpa_hidden',false)===true||load('pmu_gpa_hidden',false)==='true';
+function applyGpaHidden(){
+  const c=document.getElementById('gpaCard'), e=document.getElementById('gpaEye');
+  if(c)c.classList.toggle('hidden',GPA_HIDDEN);
+  if(e){
+    e.textContent=GPA_HIDDEN?'🙈':'👁️';
+    e.title=LANG==='ar'?(GPA_HIDDEN?'اعرض المعدل':'أخفِ المعدل')
+                       :(GPA_HIDDEN?'Show GPA':'Hide GPA');
+  }
+}
+function toggleGpa(){
+  GPA_HIDDEN=!GPA_HIDDEN;
+  save('pmu_gpa_hidden',GPA_HIDDEN);
+  applyGpaHidden();
+  showToast(LANG==='ar'?(GPA_HIDDEN?'أُخفي المعدل':'ظهر المعدل')
+                       :(GPA_HIDDEN?'GPA hidden':'GPA shown'));
+}
+
+function toggleMyRev(){
+  const c=document.getElementById('myRevCard');
+  if(c)c.classList.toggle('open');
 }
 
 function renderTgAndMon(ar){
@@ -4032,6 +4127,12 @@ function renderMyReviews(){
   const ar=LANG==='ar';
   const box=document.getElementById('myRevList');
   if(!box)return;
+  /* عدّاد على الرأس عشان يعرف كم عنده بدون ما يفتح */
+  const cnt=document.getElementById('myRevCount');
+  if(cnt){
+    const mine=USER?reviews.filter(r=>r.user_id===USER.id).length:0;
+    cnt.textContent = !USER ? '' : mine ? mine : (ar?'ما فيه':'none');
+  }
   if(!USER){
     box.innerHTML=`<div style="font-size:12.5px;color:var(--text3);padding:8px 0;line-height:1.7">${
       ar?'سجّل دخول عشان تشوف تقييماتك.':'Sign in to see your reviews.'}</div>`;
@@ -4400,6 +4501,8 @@ function applyLang(){
   if(currentDoc)renderDocDetail();else if(instructors.length)renderDocs();
   if(document.getElementById('pageSched').classList.contains('active'))renderSchedule();
   renderCalendar();
+  renderSlots();
+  applyGpaHidden();
   applyTheme();
   termHint();
   setPlanTitle();
@@ -4566,13 +4669,24 @@ async function pullCloud(){
     }
     else if(completed.length) await pushCompleted();   /* أول مرة: ارفع المحلي */
 
-    if(us&&us.length) schedule=us.map(r=>({
-      crn:r.crn,courseCode:r.course_code,courseTitle:r.course_title,section:r.section,
-      courseDate:r.course_date,courseTiming:r.course_timing,instructor:r.instructor,room:r.room}));
-    else if(schedule.length) await pushSchedule();
+    if(us&&us.length){
+      /* نوزّع الصفوف على الجداول الثلاثة حسب عمود slot.
+         الصفوف القديمة بدون slot تروح للجدول الأول. */
+      const box=[[],[],[]];
+      us.forEach(r=>{
+        const i=Math.min(2,Math.max(0,(parseInt(r.slot,10)||1)-1));
+        box[i].push({crn:r.crn,courseCode:r.course_code,courseTitle:r.course_title,
+          section:r.section,courseDate:r.course_date,courseTiming:r.course_timing,
+          instructor:r.instructor,room:r.room});
+      });
+      SCHEDULES=box;
+      schedule=SCHEDULES[SLOT];
+    }
+    else if(SCHEDULES.some(x=>x.length)) await pushSchedule();
 
-    save('pmu_completed',completed);save('pmu_schedule',schedule);
-    updateBadge();
+    save('pmu_completed',completed);
+    save('pmu_schedules',SCHEDULES);save('pmu_schedule',schedule);
+    updateBadge();renderSlots();
     await loadMonitored();
     await loadReviews();
     renderSettings();
@@ -4608,11 +4722,13 @@ async function pushSchedule(){
   if(!USER||syncing)return;
   try{
     await sb.from('user_schedule').delete().eq('user_id',USER.id);
-    if(schedule.length)
-      await sb.from('user_schedule').insert(schedule.map(c=>({
-        user_id:USER.id,crn:c.crn,course_code:c.courseCode,course_title:c.courseTitle,
-        section:c.section,course_date:c.courseDate,course_timing:c.courseTiming,
-        instructor:c.instructor,room:c.room,term:document.getElementById('term').value})));
+    /* نرفع الجداول الثلاثة، وكل صف يحمل رقم جدوله */
+    const rows=[];
+    SCHEDULES.forEach((sc,i)=>sc.forEach(c=>rows.push({
+      user_id:USER.id,slot:i+1,crn:c.crn,course_code:c.courseCode,course_title:c.courseTitle,
+      section:c.section,course_date:c.courseDate,course_timing:c.courseTiming,
+      instructor:c.instructor,room:c.room,term:document.getElementById('term').value})));
+    if(rows.length) await sb.from('user_schedule').insert(rows);
   }catch(e){console.log('push sch',e)}
 }
 
