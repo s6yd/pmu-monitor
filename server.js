@@ -370,6 +370,54 @@ async function handleTelegramUpdate(update) {
   const chatId = msg.chat.id;
   const text = (msg.text || msg.caption || '').trim();
 
+  /* صور من المشرف — سواء أُرسلت كألبوم أو صوراً منفصلة متتالية.
+     تيليغرام ما يجمّعها إلا لو اختار خيار الألبوم، فنجمّعها نحن. */
+  if (photo && String(chatId) === String(ADMIN_CHAT_ID)) {
+    /* مفتاح واحد لكل الصور المتتالية، فتلتصق ببعضها */
+    const gid = msg.media_group_id || ('solo-' + chatId);
+    collectAlbum(gid, photo, text, async (photos, caption) => {
+      const cmd = (caption || '').trim();
+      try {
+        if (cmd.startsWith('/broadcast')) {
+          const body = cmd.slice(10).trim();
+          const r = await adminBroadcast(body, photos, false);
+          await sendMsg(chatId, r.ok
+            ? `📢 بدأ البث لـ <b>${r.total}</b> طالب مع <b>${photos.length}</b> صور.`
+            : `❌ ${r.error}`);
+        } else if (cmd.startsWith('/reply')) {
+          const rest = cmd.slice(6).trim(), sp = rest.indexOf(' ');
+          const who = sp > 0 ? rest.slice(0, sp).trim() : rest;
+          let body = sp > 0 ? rest.slice(sp + 1).trim() : '';
+          if (body.startsWith('!')) body = body.slice(1).trim();
+          let target = /^\d+$/.test(who) ? who : null;
+          if (!target) {
+            for (const col of ['email', 'user_email']) {
+              try {
+                const rows = await sb('GET', 'profiles', {
+                  query: `?${col}=eq.${encodeURIComponent(who)}&select=telegram_chat_id` });
+                if (Array.isArray(rows) && rows[0] && rows[0].telegram_chat_id) {
+                  target = rows[0].telegram_chat_id; break;
+                }
+              } catch (e) { /* العمود غير موجود */ }
+            }
+          }
+          if (!target) return sendMsg(chatId, '❌ ما لقيت أحداً بهذا البريد.');
+          const r = await sendMedia(target, photos, body);
+          await sendMsg(chatId, (r && r.ok)
+            ? `✅ وصلت ${photos.length} صور.`
+            : `⚠️ ما وصلت: ${(r && r.description) || 'غير معروف'}`);
+        } else {
+          await sendMsg(chatId,
+            `📷 وصلتني <b>${photos.length}</b> ${photos.length===1?'صورة':'صور'}.\n\n` +
+            `عشان ترسلها، اكتب في تعليق <b>أول صورة</b>:\n` +
+            `<code>/broadcast النص</code> — للجميع\n` +
+            `<code>/reply البريد !النص</code> — لطالب واحد`);
+        }
+      } catch (e) { await sendMsg(chatId, '⚠️ ' + e.message); }
+    });
+    return;
+  }
+
   /* ═══ رد المشرف على طالب ═══
      تسحب الإشعار وترد عليه، فنستخرج معرّف الطالب من البصمة #u123 */
   const isAdmin = ADMIN_CHAT_ID && String(chatId) === String(ADMIN_CHAT_ID);
@@ -390,11 +438,11 @@ async function handleTelegramUpdate(update) {
       let r;
       if (photo) {
         r = await tg('sendPhoto', { chat_id: target, photo,
-          caption: `💬 <b>رد من فريق جدولك</b>\n\n${text.replace(/[<>]/g,'')}`,
+          caption: `💬 <b>رد من فريق جدولك</b>\n\n${text}`,
           parse_mode: 'HTML' });
       } else {
         r = await sendMsg(target,
-          `💬 <b>رد من فريق جدولك</b>\n\n${text.replace(/[<>]/g, '')}\n\n` +
+          `💬 <b>رد من فريق جدولك</b>\n\n${text}\n\n` +
           `<i>💬 تبي ترد؟ اكتب رسالتك هنا مباشرة وبتوصلنا.</i>`);
       }
       /* نسجّل الرد في تذكرة الطالب */
@@ -452,9 +500,18 @@ async function handleTelegramUpdate(update) {
     const rest = text.slice(6).trim();
     const sp = rest.indexOf(' ');
     if (sp < 1) return sendMsg(chatId,
-      `الصيغة:\n<code>/reply البريد_أو_المعرّف النص</code>\n\n` +
-      `مثال:\n<code>/reply s@pmu.edu.sa شكراً على اقتراحك</code>`);
-    const who = rest.slice(0, sp).trim(), body = rest.slice(sp + 1).trim();
+      `<b>رد على طالب:</b>\n<code>/reply البريد النص</code>\n` +
+      `<i>يضيف ترويسة "رد من فريق جدولك"</i>\n\n` +
+      `<b>رسالة مستقلة (تحديث/إعلان):</b>\n<code>/reply البريد !النص</code>\n` +
+      `<i>علامة التعجب تشيل الترويسة</i>\n\n` +
+      `مثال:\n<code>/reply s@pmu.edu.sa !🎉 تحديث جديد في جدولك</code>`);
+    const who = rest.slice(0, sp).trim();
+    let body = rest.slice(sp + 1).trim();
+
+    /* "!" في أول النص = رسالة مستقلة بدون ترويسة "رد من فريق جدولك".
+       نستخدمها للتحديثات والإعلانات، والترويسة تبقى للردود الفعلية. */
+    let bare = false;
+    if (body.startsWith('!')) { bare = true; body = body.slice(1).trim(); }
 
     let target = /^\d+$/.test(who) ? who : null;
     if (!target) {
@@ -471,11 +528,20 @@ async function handleTelegramUpdate(update) {
     }
     if (!target) return sendMsg(chatId, `❌ ما لقيت أحداً بهذا البريد، أو ما ربط تيليغرام.`);
 
-    const r = await sendMsg(target,
-      `💬 <b>رد من فريق جدولك</b>\n\n${body.replace(/[<>]/g,'')}\n\n` +
-      `<i>💬 تبي ترد؟ اكتب رسالتك هنا مباشرة وبتوصلنا.</i>`);
+    if (photo) {
+      const rp = await tg('sendPhoto', { chat_id: target, photo,
+        caption: (bare ? body : `💬 <b>رد من فريق جدولك</b>\n\n${body}`).slice(0, 1000),
+        parse_mode: 'HTML' });
+      return sendMsg(chatId, (rp && rp.ok) ? `✅ وصلت مع الصورة.` :
+        `⚠️ ما وصلت: ${(rp && rp.description) || 'تأكد أن الوسوم مغلقة صح'}`);
+    }
+
+    const r = await sendMsg(target, bare
+      ? `${body}\n\n<i>💬 عندك ملاحظة؟ اكتبها هنا مباشرة.</i>`
+      : `💬 <b>رد من فريق جدولك</b>\n\n${body}\n\n` +
+        `<i>💬 تبي ترد؟ اكتب رسالتك هنا مباشرة وبتوصلنا.</i>`);
     return sendMsg(chatId, (r && r.ok) ? `✅ وصلت.` :
-      `⚠️ ما وصلت: ${(r && r.description) || 'غير معروف'}`);
+      `⚠️ ما وصلت: ${(r && r.description) || 'تأكد أن الوسوم مغلقة صح'}`);
   }
 
   if (text.startsWith('/start')) {
@@ -519,7 +585,7 @@ async function handleTelegramUpdate(update) {
 
   /* ═══ أي كلام حر من طالب = رسالة توصل المشرف ═══
      نخليها آخر شي بعد الأوامر، فما تتعارض معها. */
-  if (!isAdmin && !text.startsWith('/')) {
+  if (!text.startsWith('/') && !(isAdmin && msg.reply_to_message)) {
     if (!ADMIN_CHAT_ID) return;
 
     /* حد بسيط: 6 رسائل لكل محادثة في الساعة */
@@ -618,6 +684,47 @@ function safeEqual(a, b) {
 const loginTries = new Map();
 const fbLimit = new Map();
 const botMsgLimit = new Map();
+
+/* ═══ تجميع الألبومات ═══
+   تيليغرام يرسل كل صورة من الألبوم كتحديث منفصل بنفس media_group_id.
+   نجمّعها 1.5 ثانية ثم ننفّذ الأمر مرة وحدة بكل الصور. */
+const albums = new Map();
+
+function collectAlbum(gid, photo, caption, run) {
+  let a = albums.get(gid);
+  if (!a) {
+    a = { photos: [], caption: '', timer: null };
+    albums.set(gid, a);
+  }
+  if (photo) a.photos.push(photo);
+  if (caption && !a.caption) a.caption = caption;
+
+  clearTimeout(a.timer);
+  /* 3 ثوانٍ: تكفي للصور المنفصلة اللي ترسل ورا بعض */
+  a.timer = setTimeout(() => {
+    albums.delete(gid);
+    run(a.photos.slice(0, 10), a.caption);
+  }, 3000);
+}
+
+/* يرسل صورة أو ألبوم أو نصاً — واجهة واحدة لكل الحالات */
+async function sendMedia(chatId, photos, text) {
+  const list = Array.isArray(photos) ? photos.filter(Boolean) : (photos ? [photos] : []);
+  if (!list.length) return sendMsg(chatId, text);
+
+  if (list.length === 1) {
+    return tg('sendPhoto', { chat_id: chatId, photo: list[0],
+      caption: (text || '').slice(0, 1000), parse_mode: 'HTML' });
+  }
+  /* ألبوم: التعليق على أول صورة فقط */
+  return tg('sendMediaGroup', {
+    chat_id: chatId,
+    media: list.slice(0, 10).map((p, i) => ({
+      type: 'photo', media: p,
+      ...(i === 0 && text ? { caption: text.slice(0, 1000), parse_mode: 'HTML' } : {})
+    }))
+  });
+}
 
 /* ═══ الزوار المتصلون ═══
    نسجّل بصمة مجهولة (IP + المتصفح) لكل طلب، ونعدّ آخر 5 دقائق.
@@ -1039,9 +1146,9 @@ async function adminBroadcast(text, photo, dryRun) {
     try {
       await inBatches(list, 20, async (r) => {
         const res = photo
-          ? await tg('sendPhoto', { chat_id: r.telegram_chat_id, photo,
-              caption: body.slice(0, 1000), parse_mode: 'HTML' })
-          : await sendMsg(r.telegram_chat_id, body.slice(0, 3500));
+          ? await sendMedia(r.telegram_chat_id, photo, body)
+          : await sendMsg(r.telegram_chat_id,
+              body.slice(0, 3400) + `\n\n<i>💬 عندك ملاحظة؟ اكتبها هنا مباشرة.</i>`);
         if (res && res.ok) BROADCAST.sent++; else BROADCAST.failed++;
         await new Promise(x => setTimeout(x, 700));
       });
@@ -1080,7 +1187,7 @@ async function adminReply(chatId, email, text) {
   if (!target) return { ok: false, error: 'ما ربط تيليغرام — رد بالإيميل' };
 
   const r = await sendMsg(target,
-    `💬 <b>رد من فريق جدولك</b>\n\n${body.slice(0,3000).replace(/[<>]/g,'')}\n\n` +
+    `💬 <b>رد من فريق جدولك</b>\n\n${body.slice(0,3000)}\n\n` +
     `<i>💬 تبي ترد؟ اكتب رسالتك هنا مباشرة وبتوصلنا.</i>`);
   if (!r || r.ok !== true) return { ok: false, error: (r && r.description) || 'ما وصل تأكيد' };
   return { ok: true };
@@ -1950,7 +2057,18 @@ const server = http.createServer(async (req, res) => {
       } catch (e) { /* ما يهم */ }
     }
 
-    /* نحفظها في Supabase لو الجدول موجود، وإلا نخزّنها بالذاكرة */
+    /* نفتح تذكرة عشان تتجمّع المحادثة في مكان واحد */
+    let ticket = null;
+    if (entry.chatId || entry.email) {
+      ticket = await getOrCreateTicket({
+        chatId: entry.chatId, email: entry.email, name: entry.name,
+        major: entry.major, telegram: entry.telegram,
+        text: entry.text, category: entry.category
+      });
+      if (ticket) await addTicketMessage(ticket.id, 'student', entry.text, null);
+    }
+
+    /* ونحفظها في جدول الملاحظات كذلك */
     let saved = false;
     try {
       const r = await sb('POST', 'feedback', {
@@ -1962,7 +2080,7 @@ const server = http.createServer(async (req, res) => {
         },
         prefer: 'return=minimal'
       });
-      saved = !(r && r.code);        /* لو رجع كود خطأ فالجدول ناقص */
+      saved = !(r && r.code);
     } catch (e) { saved = false; }
     if (!saved) {
       FEEDBACK_MEM.unshift(entry);
@@ -1988,6 +2106,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       sendMsg(ADMIN_CHAT_ID,
+        (ticket ? `🎫 تذكرة <b>#${ticket.id}</b>\n` : '') +
         `${icon} <b>${label}</b>\n\n` +
         `<blockquote>${esc(entry.text)}</blockquote>\n` +
         `👤 ${esc(who)}\n` +
