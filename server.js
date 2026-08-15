@@ -390,11 +390,11 @@ async function handleTelegramUpdate(update) {
       let r;
       if (photo) {
         r = await tg('sendPhoto', { chat_id: target, photo,
-          caption: `💬 <b>رد من فريق جدولك</b>\n\n${text.replace(/[<>]/g,'')}`,
+          caption: `💬 <b>رد من فريق جدولك</b>\n\n${text}`,
           parse_mode: 'HTML' });
       } else {
         r = await sendMsg(target,
-          `💬 <b>رد من فريق جدولك</b>\n\n${text.replace(/[<>]/g, '')}\n\n` +
+          `💬 <b>رد من فريق جدولك</b>\n\n${text}\n\n` +
           `<i>💬 تبي ترد؟ اكتب رسالتك هنا مباشرة وبتوصلنا.</i>`);
       }
       /* نسجّل الرد في تذكرة الطالب */
@@ -471,11 +471,19 @@ async function handleTelegramUpdate(update) {
     }
     if (!target) return sendMsg(chatId, `❌ ما لقيت أحداً بهذا البريد، أو ما ربط تيليغرام.`);
 
+    if (photo) {
+      const rp = await tg('sendPhoto', { chat_id: target, photo,
+        caption: `💬 <b>رد من فريق جدولك</b>\n\n${body}`.slice(0, 1000),
+        parse_mode: 'HTML' });
+      return sendMsg(chatId, (rp && rp.ok) ? `✅ وصلت مع الصورة.` :
+        `⚠️ ما وصلت: ${(rp && rp.description) || 'تأكد أن الوسوم مغلقة صح'}`);
+    }
+
     const r = await sendMsg(target,
-      `💬 <b>رد من فريق جدولك</b>\n\n${body.replace(/[<>]/g,'')}\n\n` +
+      `💬 <b>رد من فريق جدولك</b>\n\n${body}\n\n` +
       `<i>💬 تبي ترد؟ اكتب رسالتك هنا مباشرة وبتوصلنا.</i>`);
     return sendMsg(chatId, (r && r.ok) ? `✅ وصلت.` :
-      `⚠️ ما وصلت: ${(r && r.description) || 'غير معروف'}`);
+      `⚠️ ما وصلت: ${(r && r.description) || 'تأكد أن الوسوم مغلقة صح'}`);
   }
 
   if (text.startsWith('/start')) {
@@ -1080,7 +1088,7 @@ async function adminReply(chatId, email, text) {
   if (!target) return { ok: false, error: 'ما ربط تيليغرام — رد بالإيميل' };
 
   const r = await sendMsg(target,
-    `💬 <b>رد من فريق جدولك</b>\n\n${body.slice(0,3000).replace(/[<>]/g,'')}\n\n` +
+    `💬 <b>رد من فريق جدولك</b>\n\n${body.slice(0,3000)}\n\n` +
     `<i>💬 تبي ترد؟ اكتب رسالتك هنا مباشرة وبتوصلنا.</i>`);
   if (!r || r.ok !== true) return { ok: false, error: (r && r.description) || 'ما وصل تأكيد' };
   return { ok: true };
