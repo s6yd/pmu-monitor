@@ -1109,6 +1109,38 @@ async function bumpReview(reviewId, kind, delta) {
   } catch (e) { /* ما يهم */ }
 }
 
+/* إلغاء البلاغات على تقييم — نصفّر العدّاد ونحذف سجلاتها */
+async function clearReports(id) {
+  try {
+    await sb('DELETE', 'review_reactions',
+      { query: `?review_id=eq.${id}&kind=eq.report`, prefer: 'return=minimal' });
+    await sb('PATCH', 'instructor_reviews',
+      { query: `?id=eq.${id}`, body: { reports: 0 }, prefer: 'return=minimal' });
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+
+/* حذف تذكرة ورسائلها */
+async function deleteTicket(id) {
+  try {
+    await sb('DELETE', 'ticket_messages',
+      { query: `?ticket_id=eq.${id}`, prefer: 'return=minimal' });
+    await sb('DELETE', 'tickets',
+      { query: `?id=eq.${id}`, prefer: 'return=minimal' });
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+
+/* حذف ملاحظة */
+async function deleteFeedback(id) {
+  if (!id) return { ok: false, error: 'بدون معرّف' };
+  try {
+    await sb('DELETE', 'feedback',
+      { query: `?id=eq.${id}`, prefer: 'return=minimal' });
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+
 /* إخفاء أو إظهار تقييم من اللوحة */
 async function setReviewHidden(id, hidden) {
   try {
@@ -1201,6 +1233,7 @@ async function adminFeedback() {
     if (Array.isArray(r)) rows = r.map(x => ({
       at: x.created_at ? Date.parse(x.created_at) : null,
       text: x.message, category: x.category,
+      id: x.id,
       email: x.user_email, name: x.user_name, major: x.major, lang: x.lang,
       telegram: x.telegram, chatId: x.chat_id || null,
       id: x.id, source: 'db'
@@ -1626,29 +1659,16 @@ async function getCourses(term, college, gender) {
   }
 
   const p = (async () => {
-    let courses;
-    if (gender === 'ALL') {
-      /* الجامعة ما تعطي عمود جنس. نسحب الطلاب والطالبات كل على حدة
-         ونعلّم كل مادة بمصدرها — هذي حقيقة مو تخمين من القاعة. */
-      const [m, f] = await Promise.all([
-        fetchPMUData(term, college, 'M1').then(h => parseHTML(h)).catch(() => []),
-        fetchPMUData(term, college, 'F1').then(h => parseHTML(h)).catch(() => [])
-      ]);
-      m.forEach(c => { c.gender = 'M'; });
-      f.forEach(c => { c.gender = 'F'; });
-      /* نمنع التكرار لو ظهرت نفس الشعبة في الاثنين */
-      const seen = new Set();
-      courses = [];
-      for (const c of m.concat(f)) {
-        if (seen.has(c.crn)) continue;
-        seen.add(c.crn); courses.push(c);
-      }
-      if (!courses.length) throw new Error('لم تُرجع الجامعة أي مواد');
-    } else {
-      courses = parseHTML(await fetchPMUData(term, college, gender));
-      const g = gender === 'F1' ? 'F' : gender === 'M1' ? 'M' : null;
-      if (g) courses.forEach(c => { c.gender = g; });
-    }
+    /* سحبة واحدة بـ ALL، ونوزّع الجنس من رقم الشعبة:
+       1xx = طلاب · 2xx = طالبات — قاعدة الجامعة الثابتة.
+       أوفر من سحبتين منفصلتين، وأدق من التخمين من القاعة. */
+    const courses = parseHTML(await fetchPMUData(term, college, gender));
+    const forced = gender === 'F1' ? 'F' : gender === 'M1' ? 'M' : null;
+    courses.forEach(c => {
+      if (forced) { c.gender = forced; return; }
+      const sec = String(c.section || '').trim();
+      c.gender = /^2/.test(sec) ? 'F' : /^1/.test(sec) ? 'M' : null;
+    });
     coursesCache.set(key, { at: Date.now(), courses });
     resolve('search', 'البحث ما يشتغل');
     if (coursesCache.size > 40) {                     /* تنظيف بسيط */
@@ -1983,7 +2003,10 @@ const server = http.createServer(async (req, res) => {
         if (act === 'broadcast')
           return send(200, await adminBroadcast(b.text, b.photo, !!b.dryRun));
         if (act === 'close-ticket') return send(200, await closeTicket(b.id));
-        if (act === 'hide-review')  return send(200, await setReviewHidden(b.id, b.hidden));
+        if (act === 'hide-review')   return send(200, await setReviewHidden(b.id, b.hidden));
+        if (act === 'clear-reports') return send(200, await clearReports(b.id));
+        if (act === 'del-ticket')    return send(200, await deleteTicket(b.id));
+        if (act === 'del-feedback')  return send(200, await deleteFeedback(b.id));
       }
       return send(404, { error: 'إجراء غير معروف' });
     } catch (e) {
