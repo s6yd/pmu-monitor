@@ -2601,8 +2601,29 @@ function conflicts(a,b){
   return ta.start<tb.end&&tb.start<ta.end;
 }
 function findConflicts(c,list){return list.filter(x=>x.crn!==c.crn&&conflicts(c,x))}
+/* المعمل يجي بصيغ مختلفة عند الجامعة:
+   • نفس الكود بشعبة مختلفة   MEEN 3395 §111
+   • كود بحرف L في آخره       MEEN 3395L
+   • كود بحرف L بعد الحروف    MEENL 3395
+   • بشرطة أو أقواس           MEEN 3395 - LAB
+   في كل الحالات ساعاته داخلة في ساعات المادة الأم، فلا يُحسب مرتين. */
+function baseCourseCode(code){
+  let k=(code||'').trim().toUpperCase().replace(/\s+/g,' ');
+  k=k.replace(/\s*[-\u2013]\s*(LAB|L)\b/,'');
+  k=k.replace(/(\d{4})\s*L\b/,'$1');
+  k=k.replace(/^([A-Z]{3,4})L\s/,'$1 ');
+  k=k.replace(/\s*\(LAB\)/,'');
+  return k.trim();
+}
+
 function scheduleCredits(){
-  let t=0;schedule.forEach(c=>t+=creditsOf(c.courseCode));return t;
+  const seen=new Set(); let t=0;
+  schedule.forEach(c=>{
+    const k=baseCourseCode(c.courseCode);
+    if(seen.has(k))return;
+    seen.add(k); t+=creditsOf(c.courseCode);
+  });
+  return t;
 }
 
 /* ===== Search ===== */
