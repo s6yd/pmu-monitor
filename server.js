@@ -370,6 +370,54 @@ async function handleTelegramUpdate(update) {
   const chatId = msg.chat.id;
   const text = (msg.text || msg.caption || '').trim();
 
+  /* صور من المشرف — سواء أُرسلت كألبوم أو صوراً منفصلة متتالية.
+     تيليغرام ما يجمّعها إلا لو اختار خيار الألبوم، فنجمّعها نحن. */
+  if (photo && String(chatId) === String(ADMIN_CHAT_ID)) {
+    /* مفتاح واحد لكل الصور المتتالية، فتلتصق ببعضها */
+    const gid = msg.media_group_id || ('solo-' + chatId);
+    collectAlbum(gid, photo, text, async (photos, caption) => {
+      const cmd = (caption || '').trim();
+      try {
+        if (cmd.startsWith('/broadcast')) {
+          const body = cmd.slice(10).trim();
+          const r = await adminBroadcast(body, photos, false);
+          await sendMsg(chatId, r.ok
+            ? `📢 بدأ البث لـ <b>${r.total}</b> طالب مع <b>${photos.length}</b> صور.`
+            : `❌ ${r.error}`);
+        } else if (cmd.startsWith('/reply')) {
+          const rest = cmd.slice(6).trim(), sp = rest.indexOf(' ');
+          const who = sp > 0 ? rest.slice(0, sp).trim() : rest;
+          let body = sp > 0 ? rest.slice(sp + 1).trim() : '';
+          if (body.startsWith('!')) body = body.slice(1).trim();
+          let target = /^\d+$/.test(who) ? who : null;
+          if (!target) {
+            for (const col of ['email', 'user_email']) {
+              try {
+                const rows = await sb('GET', 'profiles', {
+                  query: `?${col}=eq.${encodeURIComponent(who)}&select=telegram_chat_id` });
+                if (Array.isArray(rows) && rows[0] && rows[0].telegram_chat_id) {
+                  target = rows[0].telegram_chat_id; break;
+                }
+              } catch (e) { /* العمود غير موجود */ }
+            }
+          }
+          if (!target) return sendMsg(chatId, '❌ ما لقيت أحداً بهذا البريد.');
+          const r = await sendMedia(target, photos, body);
+          await sendMsg(chatId, (r && r.ok)
+            ? `✅ وصلت ${photos.length} صور.`
+            : `⚠️ ما وصلت: ${(r && r.description) || 'غير معروف'}`);
+        } else {
+          await sendMsg(chatId,
+            `📷 وصلتني <b>${photos.length}</b> ${photos.length===1?'صورة':'صور'}.\n\n` +
+            `عشان ترسلها، اكتب في تعليق <b>أول صورة</b>:\n` +
+            `<code>/broadcast النص</code> — للجميع\n` +
+            `<code>/reply البريد !النص</code> — لطالب واحد`);
+        }
+      } catch (e) { await sendMsg(chatId, '⚠️ ' + e.message); }
+    });
+    return;
+  }
+
   /* ═══ رد المشرف على طالب ═══
      تسحب الإشعار وترد عليه، فنستخرج معرّف الطالب من البصمة #u123 */
   const isAdmin = ADMIN_CHAT_ID && String(chatId) === String(ADMIN_CHAT_ID);
@@ -636,6 +684,47 @@ function safeEqual(a, b) {
 const loginTries = new Map();
 const fbLimit = new Map();
 const botMsgLimit = new Map();
+
+/* ═══ تجميع الألبومات ═══
+   تيليغرام يرسل كل صورة من الألبوم كتحديث منفصل بنفس media_group_id.
+   نجمّعها 1.5 ثانية ثم ننفّذ الأمر مرة وحدة بكل الصور. */
+const albums = new Map();
+
+function collectAlbum(gid, photo, caption, run) {
+  let a = albums.get(gid);
+  if (!a) {
+    a = { photos: [], caption: '', timer: null };
+    albums.set(gid, a);
+  }
+  if (photo) a.photos.push(photo);
+  if (caption && !a.caption) a.caption = caption;
+
+  clearTimeout(a.timer);
+  /* 3 ثوانٍ: تكفي للصور المنفصلة اللي ترسل ورا بعض */
+  a.timer = setTimeout(() => {
+    albums.delete(gid);
+    run(a.photos.slice(0, 10), a.caption);
+  }, 3000);
+}
+
+/* يرسل صورة أو ألبوم أو نصاً — واجهة واحدة لكل الحالات */
+async function sendMedia(chatId, photos, text) {
+  const list = Array.isArray(photos) ? photos.filter(Boolean) : (photos ? [photos] : []);
+  if (!list.length) return sendMsg(chatId, text);
+
+  if (list.length === 1) {
+    return tg('sendPhoto', { chat_id: chatId, photo: list[0],
+      caption: (text || '').slice(0, 1000), parse_mode: 'HTML' });
+  }
+  /* ألبوم: التعليق على أول صورة فقط */
+  return tg('sendMediaGroup', {
+    chat_id: chatId,
+    media: list.slice(0, 10).map((p, i) => ({
+      type: 'photo', media: p,
+      ...(i === 0 && text ? { caption: text.slice(0, 1000), parse_mode: 'HTML' } : {})
+    }))
+  });
+}
 
 /* ═══ الزوار المتصلون ═══
    نسجّل بصمة مجهولة (IP + المتصفح) لكل طلب، ونعدّ آخر 5 دقائق.
@@ -1057,8 +1146,7 @@ async function adminBroadcast(text, photo, dryRun) {
     try {
       await inBatches(list, 20, async (r) => {
         const res = photo
-          ? await tg('sendPhoto', { chat_id: r.telegram_chat_id, photo,
-              caption: body.slice(0, 1000), parse_mode: 'HTML' })
+          ? await sendMedia(r.telegram_chat_id, photo, body)
           : await sendMsg(r.telegram_chat_id,
               body.slice(0, 3400) + `\n\n<i>💬 عندك ملاحظة؟ اكتبها هنا مباشرة.</i>`);
         if (res && res.ok) BROADCAST.sent++; else BROADCAST.failed++;
