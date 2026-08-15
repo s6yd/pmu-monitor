@@ -363,9 +363,12 @@ async function runMonitorCycle() {
 /* ============ Telegram webhook ============ */
 async function handleTelegramUpdate(update) {
   const msg = update.message;
-  if (!msg || !msg.text) return;
+  if (!msg) return;
+  /* نقبل النص والصور — الصورة تجي مع caption أحياناً */
+  const photo = msg.photo && msg.photo.length ? msg.photo[msg.photo.length - 1].file_id : null;
+  if (!msg.text && !photo) return;
   const chatId = msg.chat.id;
-  const text = msg.text.trim();
+  const text = (msg.text || msg.caption || '').trim();
 
   /* ═══ رد المشرف على طالب ═══
      تسحب الإشعار وترد عليه، فنستخرج معرّف الطالب من البصمة #u123 */
@@ -373,15 +376,43 @@ async function handleTelegramUpdate(update) {
 
   if (isAdmin && msg.reply_to_message && msg.reply_to_message.text) {
     const m = msg.reply_to_message.text.match(/#u(\d+)/);
+
+    /* حالة الاختبار: أنت ترد على رسالة "رد من فريق جدولك" الموجّهة لك أنت.
+       ما فيها بصمة، فنعاملك كطالب عادي. */
+    if (!m && msg.reply_to_message.text.includes('رد من فريق جدولك')) {
+      return sendMsg(chatId,
+        `✅ وصلتنا رسالتك، شكراً لك 🙏\n\n` +
+        `<i>(أنت المشرف — الطالب العادي يوصلك ردّه هنا مباشرة.)</i>`);
+    }
+
     if (m) {
       const target = m[1];
-      const r = await sendMsg(target,
-        `💬 <b>رد من فريق جدولك</b>\n\n${text.replace(/[<>]/g, '')}\n\n` +
-        `<i>تقدر ترد على هذي الرسالة وبيوصلنا ردك.</i>`);
+      let r;
+      if (photo) {
+        r = await tg('sendPhoto', { chat_id: target, photo,
+          caption: `💬 <b>رد من فريق جدولك</b>\n\n${text.replace(/[<>]/g,'')}`,
+          parse_mode: 'HTML' });
+      } else {
+        r = await sendMsg(target,
+          `💬 <b>رد من فريق جدولك</b>\n\n${text.replace(/[<>]/g, '')}\n\n` +
+          `<i>💬 تبي ترد؟ اكتب رسالتك هنا مباشرة وبتوصلنا.</i>`);
+      }
+      /* نسجّل الرد في تذكرة الطالب */
+      try {
+        const t = await sb('GET', 'tickets', {
+          query: `?chat_id=eq.${encodeURIComponent(target)}&status=eq.open&select=id&limit=1` });
+        if (Array.isArray(t) && t[0]) await addTicketMessage(t[0].id, 'admin', text || '(صورة)', photo);
+      } catch (e) { /* ما يهم */ }
       return sendMsg(chatId, (r && r.ok)
         ? `✅ وصلت رسالتك للطالب.`
         : `⚠️ ما وصلت: ${(r && r.description) || 'الطالب قد يكون حظر البوت'}`);
     }
+
+    /* رد على رسالة ما فيها بصمة — نوضح بدل ما نسكت */
+    return sendMsg(chatId,
+      `ℹ️ هذي الرسالة ما فيها معرّف طالب، فما أعرف لمين أوصل ردك.\n\n` +
+      `رد على <b>إشعار ملاحظة</b> فيه <code>#u…</code> في آخره،\n` +
+      `أو استخدم:\n<code>/reply البريد النص</code>`);
   }
 
   /* رد الطالب على رسالة الفريق — يوصلك كملاحظة */
@@ -397,6 +428,23 @@ async function handleTelegramUpdate(update) {
         `<code>#u${chatId}</code>`);
     }
     return sendMsg(chatId, '✅ وصلتنا رسالتك، شكراً لك 🙏');
+  }
+
+  /* ═══ /broadcast <النص> — بث لكل من ربط تيليغرام ═══ */
+  if (isAdmin && text.startsWith('/broadcast')) {
+    const body = text.slice(10).trim();
+    if (!body && !photo) {
+      const d = await adminBroadcast('x', null, true);
+      return sendMsg(chatId,
+        `📢 <b>البث الجماعي</b>\n\n` +
+        `المستلمون: <b>${d.total || 0}</b> طالب ربطوا تيليغرام\n\n` +
+        `الصيغة:\n<code>/broadcast نص الرسالة</code>\n\n` +
+        `أو أرسل صورة مع تعليق يبدأ بـ <code>/broadcast</code>`);
+    }
+    const r = await adminBroadcast(body, photo, false);
+    return sendMsg(chatId, r.ok
+      ? `📢 بدأ البث لـ <b>${r.total}</b> طالب.\nبوصلك تقرير لما يخلص.`
+      : `❌ ${r.error}`);
   }
 
   /* ═══ /reply <إيميل أو معرّف> <النص> ═══ */
@@ -425,7 +473,7 @@ async function handleTelegramUpdate(update) {
 
     const r = await sendMsg(target,
       `💬 <b>رد من فريق جدولك</b>\n\n${body.replace(/[<>]/g,'')}\n\n` +
-      `<i>تقدر ترد على هذي الرسالة وبيوصلنا ردك.</i>`);
+      `<i>💬 تبي ترد؟ اكتب رسالتك هنا مباشرة وبتوصلنا.</i>`);
     return sendMsg(chatId, (r && r.ok) ? `✅ وصلت.` :
       `⚠️ ما وصلت: ${(r && r.description) || 'غير معروف'}`);
   }
@@ -449,7 +497,8 @@ async function handleTelegramUpdate(update) {
     return sendMsg(chatId,
       `✅ <b>تم الربط بنجاح!</b>\n\n` +
       `بتوصلك إشعارات فورية أول ما تنفتح أي مادة تراقبها.\n\n` +
-      `روح للموقع واختر المواد اللي تبي تراقبها 👇\njadwalik.com`);
+      `روح للموقع واختر المواد اللي تبي تراقبها 👇\njadwalik.com\n\n` +
+      `💬 <b>وأي ملاحظة أو اقتراح؟</b> اكتبها هنا مباشرة وبتوصلني.`);
   }
 
   /* يعطيك معرّف محادثتك عشان تحطه في ADMIN_CHAT_ID */
@@ -466,6 +515,71 @@ async function handleTelegramUpdate(update) {
       await sb('PATCH', 'profiles', { query: `?id=eq.${rows[0].id}`, body: { telegram_chat_id: null } });
     }
     return sendMsg(chatId, `🔕 وقفت الإشعارات. تقدر ترجع تربط حسابك من الموقع أي وقت.`);
+  }
+
+  /* ═══ أي كلام حر من طالب = رسالة توصل المشرف ═══
+     نخليها آخر شي بعد الأوامر، فما تتعارض معها. */
+  if (!isAdmin && !text.startsWith('/')) {
+    if (!ADMIN_CHAT_ID) return;
+
+    /* حد بسيط: 6 رسائل لكل محادثة في الساعة */
+    const now = Date.now(), rec = botMsgLimit.get(String(chatId));
+    if (rec && now - rec.first < 3600e3 && rec.count >= 6) {
+      return sendMsg(chatId, '⏳ وصلتنا رسائلك، نقرأها ونرد عليك قريب.');
+    }
+    if (!rec || now - rec.first >= 3600e3) botMsgLimit.set(String(chatId), { first: now, count: 1 });
+    else rec.count++;
+    if (botMsgLimit.size > 3000) botMsgLimit.clear();
+
+    /* نجيب اسمه من حسابه لو مربوط */
+    let who = '', profName = null, profEmail = null, profMajor = null;
+    try {
+      const rows = await sb('GET', 'profiles',
+        { query: `?telegram_chat_id=eq.${encodeURIComponent(chatId)}&select=name,email,major` });
+      const p = Array.isArray(rows) && rows[0];
+      if (p) {
+        profName = p.name || null; profEmail = p.email || null; profMajor = p.major || null;
+        who = `${p.name || ''}${p.email ? ` · ${p.email}` : ''}${p.major ? ` · ${p.major}` : ''}`;
+      }
+    } catch (e) { /* ما يهم */ }
+    if (!who && msg.from)
+      who = (msg.from.first_name || '') + (msg.from.username ? ` @${msg.from.username}` : '');
+
+    OPS.feedback++;
+
+    /* كل رسالة تلتصق بتذكرة الطالب المفتوحة، أو تفتح وحدة جديدة */
+    const tk = await getOrCreateTicket({
+      chatId, name: profName || who, email: profEmail, major: profMajor,
+      telegram: msg.from && msg.from.username ? msg.from.username : null,
+      text, category: 'other'
+    });
+    if (tk) await addTicketMessage(tk.id, 'student', text || '(صورة)', photo);
+    else {
+      FEEDBACK_MEM.unshift({ at: now, text, category: 'other', email: profEmail,
+        name: who || null, major: profMajor, lang: 'ar',
+        telegram: msg.from && msg.from.username ? msg.from.username : null,
+        chatId: String(chatId) });
+      if (FEEDBACK_MEM.length > 200) FEEDBACK_MEM.pop();
+    }
+
+    const tag = tk ? `🎫 تذكرة <b>#${tk.id}</b>\n` : '';
+    if (photo) {
+      await tg('sendPhoto', { chat_id: ADMIN_CHAT_ID, photo,
+        caption: `${tag}💬 <b>صورة من طالب</b>\n${text ? '\n' + text.replace(/[<>]/g,'') + '\n' : ''}` +
+                 `👤 ${(who || 'غير معروف').replace(/[<>]/g,'')}\n\n#u${chatId}`,
+        parse_mode: 'HTML' });
+    } else {
+      await sendMsg(ADMIN_CHAT_ID,
+        `${tag}💬 <b>رسالة من طالب</b>\n\n<blockquote>${text.replace(/[<>]/g, '')}</blockquote>\n` +
+        `👤 ${(who || 'غير معروف').replace(/[<>]/g, '')}\n\n` +
+        `<i>↩️ رد على هذي الرسالة عشان يوصله ردك</i>\n` +
+        `<code>#u${chatId}</code>`);
+    }
+
+    return sendMsg(chatId,
+      (tk ? `✅ وصلتنا رسالتك — رقم تذكرتك <b>#${tk.id}</b>\n\n`
+          : '✅ وصلتنا رسالتك\n\n') +
+      'نقرأ كل رسالة ونرد عليك هنا 🙏');
   }
 
   if (text === '/status') {
@@ -503,6 +617,35 @@ function safeEqual(a, b) {
 /* --- تحديد المحاولات: 8 محاولات فاشلة لكل IP خلال 15 دقيقة --- */
 const loginTries = new Map();
 const fbLimit = new Map();
+const botMsgLimit = new Map();
+
+/* ═══ الزوار المتصلون ═══
+   نسجّل بصمة مجهولة (IP + المتصفح) لكل طلب، ونعدّ آخر 5 دقائق.
+   ما نخزّن IP خاماً — نجزّئه فما يعرّف بشخص. */
+const visitors = new Map();
+const VISITOR_WINDOW = 5 * 60 * 1000;
+
+function touchVisitor(req) {
+  try {
+    const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() ||
+               req.socket.remoteAddress || '';
+    const ua = (req.headers['user-agent'] || '').slice(0, 60);
+    const h = crypto.createHash('sha1').update(ip + '|' + ua).digest('hex').slice(0, 16);
+    visitors.set(h, Date.now());
+    if (visitors.size > 8000) {
+      const cut = Date.now() - VISITOR_WINDOW;
+      for (const [k, t] of visitors) if (t < cut) visitors.delete(k);
+    }
+  } catch (e) { /* ما يهم */ }
+}
+
+function liveVisitors() {
+  const cut = Date.now() - VISITOR_WINDOW;
+  let live = 0, last1 = 0;
+  const cut1 = Date.now() - 60000;
+  for (const t of visitors.values()) { if (t >= cut) live++; if (t >= cut1) last1++; }
+  return { live, lastMinute: last1 };
+}
 const FEEDBACK_MEM = [];        /* احتياطي لو جدول feedback مو موجود */
 function tooManyTries(ip) {
   const now = Date.now(), rec = loginTries.get(ip);
@@ -622,6 +765,10 @@ async function adminReviews() {
     authorEmail: (map[r.user_id] || {}).email || '—',
     instructor: r.instructor_name || '—',
     rating: Number(r.rating) || 0,
+    agree: Number(r.agree) || 0,
+    disagree: Number(r.disagree) || 0,
+    reports: Number(r.reports) || 0,
+    hidden: !!r.hidden,
     course: r.course_code || '—',
     comment: r.comment || '',
     tags: Array.isArray(r.tags) ? r.tags : [],
@@ -696,6 +843,222 @@ async function adminNotify(userId, text) {
   return { ok: true };
 }
 
+/* ================================================================
+   ============        نظام التذاكر        ============
+   ================================================================ */
+
+/* تجيب التذكرة المفتوحة للطالب، أو تنشئ وحدة جديدة */
+async function getOrCreateTicket(info) {
+  const chat = String(info.chatId || '');
+  if (chat) {
+    try {
+      const open = await sb('GET', 'tickets', {
+        query: `?chat_id=eq.${encodeURIComponent(chat)}&status=eq.open` +
+               `&select=*&order=updated_at.desc&limit=1`
+      });
+      if (Array.isArray(open) && open[0]) return open[0];
+    } catch (e) { /* الجدول ناقص */ }
+  }
+  try {
+    const created = await sb('POST', 'tickets', {
+      body: {
+        user_email: info.email || null, user_name: info.name || null,
+        chat_id: chat || null, telegram: info.telegram || null,
+        major: info.major || null, category: info.category || 'other',
+        subject: String(info.text || '').slice(0, 80)
+      },
+      prefer: 'return=representation'
+    });
+    return Array.isArray(created) ? created[0] : null;
+  } catch (e) { return null; }
+}
+
+async function addTicketMessage(ticketId, sender, body, photoId) {
+  if (!ticketId) return;
+  try {
+    await sb('POST', 'ticket_messages', {
+      body: { ticket_id: ticketId, sender, body: String(body || '').slice(0, 4000),
+              photo_id: photoId || null },
+      prefer: 'return=minimal'
+    });
+    await sb('PATCH', 'tickets', {
+      query: `?id=eq.${ticketId}`,
+      body: { updated_at: new Date().toISOString(), status: 'open', closed_at: null },
+      prefer: 'return=minimal'
+    });
+  } catch (e) { /* ما يهم */ }
+}
+
+async function closeTicket(id) {
+  try {
+    await sb('PATCH', 'tickets', {
+      query: `?id=eq.${id}`,
+      body: { status: 'closed', closed_at: new Date().toISOString() },
+      prefer: 'return=minimal'
+    });
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+
+async function adminTickets(status) {
+  try {
+    const q = status === 'closed' ? '&status=eq.closed'
+            : status === 'all' ? '' : '&status=eq.open';
+    const rows = await sb('GET', 'tickets',
+      { query: `?select=*${q}&order=updated_at.desc&limit=100` });
+    if (!Array.isArray(rows)) return [];
+    /* نجيب رسائل كل التذاكر دفعة واحدة */
+    const ids = rows.map(r => r.id);
+    let msgs = [];
+    if (ids.length) {
+      msgs = await sb('GET', 'ticket_messages', {
+        query: `?ticket_id=in.(${ids.join(',')})&select=*&order=created_at.asc&limit=1000`
+      });
+      if (!Array.isArray(msgs)) msgs = [];
+    }
+    return rows.map(r => ({
+      ...r,
+      messages: msgs.filter(m => String(m.ticket_id) === String(r.id))
+    }));
+  } catch (e) { return []; }
+}
+
+/* ================================================================
+   ============   تفاعلات التقييمات والتبليغ   ============
+   ================================================================ */
+async function reviewReact(reviewId, userId, kind, reason) {
+  if (!['agree', 'disagree', 'report'].includes(kind))
+    return { ok: false, error: 'نوع غير معروف' };
+  if (!reviewId || !userId) return { ok: false, error: 'بيانات ناقصة' };
+
+  try {
+    /* موجود من قبل؟ نتراجع عنه (عدا التبليغ) */
+    const prev = await sb('GET', 'review_reactions', {
+      query: `?review_id=eq.${reviewId}&user_id=eq.${encodeURIComponent(userId)}` +
+             `&kind=eq.${kind}&select=id`
+    });
+    if (Array.isArray(prev) && prev[0]) {
+      if (kind === 'report') return { ok: true, already: true };
+      await sb('DELETE', 'review_reactions',
+        { query: `?id=eq.${prev[0].id}`, prefer: 'return=minimal' });
+      await bumpReview(reviewId, kind, -1);
+      return { ok: true, removed: true };
+    }
+
+    /* موافق وغير موافق متعارضان — نشيل الآخر */
+    if (kind === 'agree' || kind === 'disagree') {
+      const other = kind === 'agree' ? 'disagree' : 'agree';
+      const o = await sb('GET', 'review_reactions', {
+        query: `?review_id=eq.${reviewId}&user_id=eq.${encodeURIComponent(userId)}` +
+               `&kind=eq.${other}&select=id`
+      });
+      if (Array.isArray(o) && o[0]) {
+        await sb('DELETE', 'review_reactions',
+          { query: `?id=eq.${o[0].id}`, prefer: 'return=minimal' });
+        await bumpReview(reviewId, other, -1);
+      }
+    }
+
+    await sb('POST', 'review_reactions', {
+      body: { review_id: reviewId, user_id: userId, kind,
+              reason: reason ? String(reason).slice(0, 300) : null },
+      prefer: 'return=minimal'
+    });
+    await bumpReview(reviewId, kind, 1);
+
+    /* التبليغ يوصلك فوراً */
+    if (kind === 'report' && ADMIN_CHAT_ID) {
+      let rv = null;
+      try {
+        const r = await sb('GET', 'instructor_reviews',
+          { query: `?id=eq.${reviewId}&select=*` });
+        rv = Array.isArray(r) ? r[0] : null;
+      } catch (e) { /* ما يهم */ }
+      const esc = x => String(x || '').replace(/[<>]/g, '');
+      sendMsg(ADMIN_CHAT_ID,
+        `🚩 <b>بلاغ على تقييم</b>\n\n` +
+        (rv ? `<blockquote>${esc(rv.comment || '(بدون تعليق)')}</blockquote>\n` +
+              `👨‍🏫 ${esc(rv.instructor_name)}\n⭐ ${rv.rating}/5\n` : '') +
+        (reason ? `\n📝 السبب: ${esc(reason)}\n` : '') +
+        `🚩 مجموع البلاغات: ${rv ? (rv.reports || 0) + 1 : '?'}\n\n` +
+        `📊 jadwalik.com/admin`).catch(() => {});
+    }
+    return { ok: true, added: true };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+
+/* نزيد أو ننقص العدّاد على التقييم نفسه */
+async function bumpReview(reviewId, kind, delta) {
+  const col = kind === 'agree' ? 'agree' : kind === 'disagree' ? 'disagree' : 'reports';
+  try {
+    const r = await sb('GET', 'instructor_reviews',
+      { query: `?id=eq.${reviewId}&select=${col}` });
+    const cur = (Array.isArray(r) && r[0] && r[0][col]) || 0;
+    await sb('PATCH', 'instructor_reviews', {
+      query: `?id=eq.${reviewId}`,
+      body: { [col]: Math.max(0, cur + delta) },
+      prefer: 'return=minimal'
+    });
+  } catch (e) { /* ما يهم */ }
+}
+
+/* إخفاء أو إظهار تقييم من اللوحة */
+async function setReviewHidden(id, hidden) {
+  try {
+    await sb('PATCH', 'instructor_reviews', {
+      query: `?id=eq.${id}`, body: { hidden: !!hidden }, prefer: 'return=minimal' });
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+
+/* ================================================================
+   ============        البث الجماعي        ============
+   ================================================================ */
+const BROADCAST = { running: false, sent: 0, failed: 0, total: 0, at: 0, text: '' };
+
+async function adminBroadcast(text, photo, dryRun) {
+  if (BROADCAST.running) return { ok: false, error: 'فيه بث شغّال الآن' };
+  const body = String(text || '').trim();
+  if (!body && !photo) return { ok: false, error: 'الرسالة فاضية' };
+
+  let rows = [];
+  try {
+    rows = await sb('GET', 'profiles',
+      { query: '?telegram_chat_id=not.is.null&select=telegram_chat_id,name' });
+  } catch (e) { return { ok: false, error: e.message }; }
+  const list = (Array.isArray(rows) ? rows : []).filter(r => r.telegram_chat_id);
+
+  if (dryRun) return { ok: true, dryRun: true, total: list.length };
+  if (!list.length) return { ok: false, error: 'ما فيه أحد ربط تيليغرام' };
+
+  Object.assign(BROADCAST, { running: true, sent: 0, failed: 0,
+    total: list.length, at: Date.now(), text: body.slice(0, 120) });
+
+  /* نرسل بالخلفية على دفعات — تيليغرام حده ~30 رسالة/ثانية */
+  (async () => {
+    try {
+      await inBatches(list, 20, async (r) => {
+        const res = photo
+          ? await tg('sendPhoto', { chat_id: r.telegram_chat_id, photo,
+              caption: body.slice(0, 1000), parse_mode: 'HTML' })
+          : await sendMsg(r.telegram_chat_id, body.slice(0, 3500));
+        if (res && res.ok) BROADCAST.sent++; else BROADCAST.failed++;
+        await new Promise(x => setTimeout(x, 700));
+      });
+    } finally {
+      BROADCAST.running = false;
+      if (ADMIN_CHAT_ID) sendMsg(ADMIN_CHAT_ID,
+        `📢 <b>انتهى البث</b>\n\n` +
+        `✅ وصلت: ${BROADCAST.sent}\n` +
+        `⚠️ فشلت: ${BROADCAST.failed}\n` +
+        `👥 المجموع: ${BROADCAST.total}` +
+        (BROADCAST.failed ? `\n\n<i>الفشل غالباً طلاب حظروا البوت.</i>` : '')).catch(()=>{});
+    }
+  })();
+
+  return { ok: true, started: true, total: list.length };
+}
+
 /* --- رد مباشر على طالب من اللوحة --- */
 async function adminReply(chatId, email, text) {
   const body = String(text || '').trim();
@@ -718,7 +1081,7 @@ async function adminReply(chatId, email, text) {
 
   const r = await sendMsg(target,
     `💬 <b>رد من فريق جدولك</b>\n\n${body.slice(0,3000).replace(/[<>]/g,'')}\n\n` +
-    `<i>تقدر ترد على هذي الرسالة وبيوصلنا ردك.</i>`);
+    `<i>💬 تبي ترد؟ اكتب رسالتك هنا مباشرة وبتوصلنا.</i>`);
   if (!r || r.ok !== true) return { ok: false, error: (r && r.description) || 'ما وصل تأكيد' };
   return { ok: true };
 }
@@ -901,7 +1264,21 @@ async function adminHealth() {
               .map(([k,v])=>({key:k,title:v.title,since:v.at})),
     ttl: ttlReason(),
     cache: cacheSnapshot(),
+    caches: {
+      finals: ['M','F'].map(g=>({
+        key:'اختبارات '+(g==='M'?'الطلاب':'الطالبات'),
+        ok: !!(finalsCache[g]&&finalsCache[g].exams&&finalsCache[g].exams.length),
+        count: finalsCache[g]&&finalsCache[g].exams?finalsCache[g].exams.length:0,
+        ageMin: finalsCache[g]?Math.round((now-finalsCache[g].at)/60000):null,
+        ttlMin: 360
+      })),
+      docs: {
+        key:'قائمة الدكاترة',
+        note:'تُبنى في متصفح كل طالب من كاش البحث — ما لها كاش مستقل في السيرفر'
+      }
+    },
     riyadhDate: riyadhDate(),
+    visitors: liveVisitors(),
     monitor: {
       active: ms.active, reason: ms.reason, ar: ms.ar,
       intervalMin: ms.intervalMin,
@@ -1391,6 +1768,7 @@ const server = http.createServer(async (req, res) => {
 
   /* بحث المواد */
   if (parsed.pathname === '/api/courses') {
+    touchVisitor(req);
     res.setHeader('Content-Type', 'application/json');
     const { term = '202630', college = 'ALL', gender = 'M1' } = parsed.query;
     try {
@@ -1470,6 +1848,8 @@ const server = http.createServer(async (req, res) => {
       if (act === 'monitors') return send(200, { monitors: await adminMonitors() });
       if (act === 'feedback') return send(200, { feedback: await adminFeedback() });
       if (act === 'user')     return send(200, await adminUserDetail(parsed.query.id || ''));
+      if (act === 'tickets')  return send(200, { tickets: await adminTickets(parsed.query.status) });
+      if (act === 'broadcast-status') return send(200, BROADCAST);
 
       if (act === 'maintenance') {
         if (req.method === 'POST') {
@@ -1493,11 +1873,24 @@ const server = http.createServer(async (req, res) => {
         if (act === 'delete-review') return send(200, await adminDeleteReview(b));
         if (act === 'notify') return send(200, await adminNotify(b.userId, b.text || ''));
         if (act === 'reply')  return send(200, await adminReply(b.chatId, b.email, b.text || ''));
+        if (act === 'broadcast')
+          return send(200, await adminBroadcast(b.text, b.photo, !!b.dryRun));
+        if (act === 'close-ticket') return send(200, await closeTicket(b.id));
+        if (act === 'hide-review')  return send(200, await setReviewHidden(b.id, b.hidden));
       }
       return send(404, { error: 'إجراء غير معروف' });
     } catch (e) {
       return send(500, { error: e.message });
     }
+  }
+
+  /* تفاعل الطالب مع تقييم: موافق / غير موافق / بلاغ */
+  if (parsed.pathname === '/api/review-react' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    const b = await readBody(req);
+    const r = await reviewReact(b.reviewId, b.userId, b.kind, b.reason);
+    res.writeHead(r.ok ? 200 : 400); res.end(JSON.stringify(r));
+    return;
   }
 
   /* ملاحظات الطلاب */
@@ -1688,6 +2081,7 @@ const server = http.createServer(async (req, res) => {
 
   /* الصفحة */
   if (parsed.pathname === '/' || parsed.pathname === '/index.html') {
+    touchVisitor(req);
     try {
       const html = fs.readFileSync(path.join(__dirname, 'pmu-schedule.html'), 'utf8');
       res.setHeader('Content-Type', 'text/html; charset=utf-8');

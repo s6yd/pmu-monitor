@@ -62,6 +62,25 @@ font-size:12px;font-weight:600;padding:12px 2px;cursor:pointer;position:relative
 background:var(--accent);color:#fff;font-size:9px;font-family:var(--mono);
 padding:1px 5px;border-radius:20px;line-height:1.5}
 .tab-badge.on{display:block}
+.btn-bc{width:100%;background:var(--accent);color:#fff;border:none;border-radius:12px;
+padding:12px;font-size:13.5px;font-weight:700;font-family:var(--sans);
+cursor:pointer;margin-bottom:12px}
+.tk{background:var(--card);border:1px solid var(--border);border-radius:14px;
+padding:13px;margin-bottom:10px;border-inline-start:3px solid var(--accent)}
+.tk.closed{border-inline-start-color:var(--text3);opacity:.72}
+.tk-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.tk-id{font-family:var(--mono);font-size:12px;color:var(--accent2);font-weight:700}
+.tk-who{font-size:13px;font-weight:600;margin-top:3px}
+.tk-meta{font-size:10.5px;color:var(--text3);margin-top:3px}
+.tk-msgs{margin-top:11px;display:flex;flex-direction:column;gap:7px}
+.tk-m{padding:9px 11px;border-radius:11px;font-size:12.5px;line-height:1.7;
+white-space:pre-wrap;word-break:break-word;max-width:88%}
+.tk-m.student{background:var(--bg);border:1px solid var(--border);align-self:flex-start;
+border-start-start-radius:4px}
+.tk-m.admin{background:rgba(61,111,255,.14);border:1px solid rgba(61,111,255,.28);
+align-self:flex-end;border-start-end-radius:4px}
+.tk-m-t{font-size:9.5px;color:var(--text3);margin-top:5px;font-family:var(--mono)}
+.tk-photo{font-size:11px;color:var(--warn);margin-top:4px}
 .fb-item{background:var(--card);border:1px solid var(--border);border-radius:13px;
 padding:13px;margin-bottom:9px;border-inline-start:3px solid var(--accent)}
 .fb-item.bug{border-inline-start-color:var(--close)}
@@ -272,7 +291,7 @@ padding:1px 6px;border-radius:5px;color:var(--accent2)}
   <button class="tab"        data-p="users" onclick="go('users')">المستخدمين</button>
   <button class="tab"        data-p="revs"  onclick="go('revs')">التقييمات</button>
   <button class="tab"        data-p="mons"  onclick="go('mons')">المراقبة</button>
-  <button class="tab"        data-p="fb"    onclick="go('fb')">آراء<span class="tab-badge" id="fbBadge"></span></button>
+  <button class="tab"        data-p="fb"    onclick="go('fb')">تذاكر<span class="tab-badge" id="fbBadge"></span></button>
   <button class="tab"        data-p="sys"   onclick="go('sys')">النظام<span class="tab-dot" id="sysDot"></span></button>
 </div>
 
@@ -300,10 +319,11 @@ padding:1px 6px;border-radius:5px;color:var(--accent2)}
     <div class="toolbar">
       <input id="revSearch" placeholder="ابحث بالدكتور أو النص..." oninput="renderRevs()">
       <select id="revFilter" onchange="renderRevs()">
+        <option value="reported">🚩 مبلَّغ عنها</option>
         <option value="all">الكل</option>
-        <option value="flag">تحتاج مراجعة</option>
+        <option value="flag">ألفاظ مشبوهة</option>
         <option value="low">تقييم منخفض</option>
-        <option value="txt">فيها تعليق</option>
+        <option value="hidden">مخفية</option>
       </select>
     </div>
     <div id="revsBody"><div class="spinner"></div></div>
@@ -314,13 +334,15 @@ padding:1px 6px;border-radius:5px;color:var(--accent2)}
   </div>
 
   <div class="page" id="pageFb">
+    <button class="btn-bc" onclick="openBroadcast()">📢 بث رسالة لكل من ربط تيليغرام</button>
+
     <div class="toolbar">
-      <input id="fbSearch" placeholder="ابحث في الآراء..." oninput="renderFb()">
+      <input id="fbSearch" placeholder="ابحث..." oninput="renderFb()">
       <select id="fbFilter" onchange="renderFb()">
+        <option value="open">تذاكر مفتوحة</option>
+        <option value="closed">مغلقة</option>
         <option value="all">الكل</option>
-        <option value="idea">اقتراحات</option>
-        <option value="bug">مشاكل</option>
-        <option value="other">غير ذلك</option>
+        <option value="notes">ملاحظات الموقع</option>
       </select>
     </div>
     <div id="fbBody"><div class="spinner"></div></div>
@@ -345,7 +367,7 @@ padding:1px 6px;border-radius:5px;color:var(--accent2)}
 <script>
 /* ══════════ الحالة ══════════ */
 let TOKEN = sessionStorage.getItem('jdw_admin') || '';
-let USERS = [], REVS = [], MONS = [], STATS = null, HEALTH = null, FB = [];
+let USERS = [], REVS = [], MONS = [], STATS = null, HEALTH = null, FB = [], TICKETS = [];
 
 /* كلمات تستدعي المراجعة — مؤشر فقط، القرار لك */
 const FLAGS = ['حمار','غبي','كلب','حقير','خرا','قذر','تافه','زبالة','حيوان','لعن',
@@ -426,12 +448,13 @@ function flagged(txt){
 async function loadAll(){
   if(!TOKEN) return;
   try{
-    const [s,u,r,m,h,f] = await Promise.all([
+    const [s,u,r,m,h,f,tk] = await Promise.all([
       api('stats'), api('users'), api('reviews'), api('monitors'),
-      api('health').catch(()=>null), api('feedback').catch(()=>({feedback:[]}))
+      api('health').catch(()=>null), api('feedback').catch(()=>({feedback:[]})),
+      api('tickets?status=all').catch(()=>({tickets:[]}))
     ]);
     STATS=s; USERS=u.users||[]; REVS=r.reviews||[]; MONS=m.monitors||[]; HEALTH=h;
-    FB=(f&&f.feedback)||[];
+    FB=(f&&f.feedback)||[]; TICKETS=(tk&&tk.tickets)||[];
     renderOver(); renderUsers(); renderRevs(); renderMons(); renderFb(); renderSys();
   }catch(e){ toast(e.message,'err') }
 }
@@ -684,12 +707,14 @@ function renderRevs(){
     if(q && !((r.instructor+' '+r.comment+' '+r.course+' '+r.author).toLowerCase().includes(q))) return false;
     if(f==='flag' && !flagged(r.comment)) return false;
     if(f==='low'  && r.rating>2) return false;
-    if(f==='txt'  && !String(r.comment||'').trim()) return false;
+    if(f==='reported' && !(r.reports>0)) return false;
+    if(f==='hidden' && !r.hidden) return false;
     return true;
   });
 
-  /* اللي تحتاج مراجعة تطلع فوق */
-  list.sort((a,b)=>(flagged(b.comment)?1:0)-(flagged(a.comment)?1:0));
+  /* المبلَّغ عنها أولاً، ثم اللي فيها ألفاظ مشبوهة */
+  list.sort((a,b)=>((b.reports||0)-(a.reports||0))||
+    ((flagged(b.comment)?1:0)-(flagged(a.comment)?1:0)));
 
   const box=document.getElementById('revsBody');
   if(!list.length){
@@ -712,17 +737,37 @@ function renderRevs(){
       </div>
       ${String(r.comment||'').trim()
         ? `<div class="comment${bad?' flag':''}">${esc(r.comment)}</div>` : ''}
+      ${r.reports?`<div class="flag-note">🚩 ${r.reports} بلاغ من الطلاب — تحتاج مراجعتك</div>`:''}
       ${bad?`<div class="flag-note">⚠️ فيها لفظ يحتاج مراجعتك</div>`:''}
+      ${r.hidden?`<div class="flag-note" style="color:var(--text3)">🙈 مخفية عن الطلاب</div>`:''}
+      <div class="row-meta" style="margin-top:8px">
+        <span>👍 <b>${r.agree||0}</b></span>
+        <span>👎 <b>${r.disagree||0}</b></span>
+        ${r.reports?`<span style="color:var(--close)">🚩 <b>${r.reports}</b></span>`:''}
+      </div>
       ${r.tags.length?`<div class="tags">${r.tags.map(t=>`<span class="tag">${esc(t)}</span>`).join('')}</div>`:''}
       <div class="row-meta">
         <span>من <b>${esc(r.author)}</b></span>
         ${r.createdAt?`<span><b>${fdate(r.createdAt)}</b></span>`:''}
       </div>
       <div class="row-acts">
+        <button class="mini" onclick="hideRev(${r.id},${r.hidden?'false':'true'})">
+          ${r.hidden?'👁️ أظهرها':'🙈 أخفها'}</button>
         <button class="mini no" onclick="delRev('${esc(key)}','${esc(r.instructor)}')">🗑️ احذف</button>
       </div>
     </div>`;
   }).join('');
+}
+
+async function hideRev(id,hide){
+  if(!id)return toast('التقييم بدون معرّف','err');
+  if(!confirm(hide?'إخفاء هذا التقييم عن الطلاب؟':'إظهاره للطلاب مرة ثانية؟'))return;
+  try{
+    const r=await api('hide-review',{body:{id,hidden:hide}});
+    if(!r.ok)return toast(r.error||'ما ضبط','err');
+    toast(hide?'أُخفي التقييم':'ظهر التقييم','ok');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
 }
 
 async function delRev(key,instructor){
@@ -745,12 +790,56 @@ const FB_NAME={idea:'اقتراح',bug:'مشكلة',other:'ملاحظة'};
 function renderFb(){
   const box=document.getElementById('fbBody');
   const badge=document.getElementById('fbBadge');
-  if(badge){ badge.textContent=FB.length; badge.className='tab-badge'+(FB.length?' on':''); }
+  const openN=(TICKETS||[]).filter(t=>t.status==='open').length;
+  if(badge){ badge.textContent=openN||FB.length; badge.className='tab-badge'+((openN||FB.length)?' on':''); }
 
   const q=(document.getElementById('fbSearch').value||'').trim().toLowerCase();
   const f=document.getElementById('fbFilter').value;
+
+  /* ── التذاكر ── */
+  if(f!=='notes'){
+    let tks=(TICKETS||[]).filter(t=>{
+      if(f==='open'&&t.status!=='open')return false;
+      if(f==='closed'&&t.status!=='closed')return false;
+      if(q){
+        const hay=(t.user_name+' '+(t.user_email||'')+' '+
+          (t.messages||[]).map(m=>m.body).join(' ')).toLowerCase();
+        if(!hay.includes(q))return false;
+      }
+      return true;
+    });
+    if(!tks.length){
+      box.innerHTML=`<div class="empty"><div class="empty-icon">🎫</div>
+        <div class="empty-t">ما فيه تذاكر</div>
+        <div class="empty-s">رسائل الطلاب من البوت تظهر هنا</div></div>`;
+      return;
+    }
+    box.innerHTML=tks.map(t=>`<div class="tk ${t.status==='closed'?'closed':''}">
+      <div class="tk-top">
+        <div style="min-width:0">
+          <div class="tk-id">🎫 #${t.id}${t.status==='closed'?' · مغلقة':''}</div>
+          <div class="tk-who">${esc(t.user_name||'غير معروف')}</div>
+          <div class="tk-meta">${esc(t.user_email||'')}${t.major?' · '+esc(t.major):''}
+            ${t.updated_at?' · '+fdate(t.updated_at):''}</div>
+        </div>
+      </div>
+      <div class="tk-msgs">
+        ${(t.messages||[]).map(m=>`<div class="tk-m ${m.sender==='admin'?'admin':'student'}">
+          ${esc(m.body)}${m.photo_id?'<div class="tk-photo">📷 صورة — شوفها في تيليغرام</div>':''}
+          <div class="tk-m-t">${m.sender==='admin'?'أنت':'الطالب'} · ${
+            m.created_at?new Date(m.created_at).toLocaleString('ar-SA',{hour:'2-digit',minute:'2-digit',day:'numeric',month:'short'}):''}</div>
+        </div>`).join('')}
+      </div>
+      <div class="row-acts">
+        ${t.chat_id?`<button class="mini go" onclick="replyTo('${t.chat_id}','','${esc(t.user_name||'')}')">💬 رد</button>`:''}
+        ${t.status==='open'?`<button class="mini no" onclick="closeTk(${t.id})">✓ أغلق التذكرة</button>`:''}
+      </div>
+    </div>`).join('');
+    return;
+  }
+
+  /* ── ملاحظات الموقع ── */
   const list=FB.filter(x=>{
-    if(f!=='all'&&x.category!==f)return false;
     if(q&&!((x.text+' '+(x.email||'')+' '+(x.name||'')).toLowerCase().includes(q)))return false;
     return true;
   });
@@ -805,6 +894,26 @@ async function toggleMaint(on){
   }
 }
 
+async function closeTk(id){
+  if(!confirm('إغلاق التذكرة #'+id+'؟ لو رسل الطالب مرة ثانية تنفتح تلقائياً.'))return;
+  try{ await api('close-ticket',{body:{id}}); toast('أُغلقت التذكرة','ok'); await loadAll(); }
+  catch(e){ toast(e.message,'err') }
+}
+
+async function openBroadcast(){
+  let info;
+  try{ info=await api('broadcast',{body:{text:'x',dryRun:true}}); }
+  catch(e){ return toast(e.message,'err') }
+  const txt=prompt(`بث رسالة لـ ${info.total} طالب ربطوا تيليغرام:\n(تدعم <b>عريض</b>)`);
+  if(!txt||!txt.trim())return;
+  if(!confirm(`تأكيد: بترسل لـ ${info.total} طالب.\n\n"${txt.trim().slice(0,90)}"`))return;
+  try{
+    const r=await api('broadcast',{body:{text:txt.trim()}});
+    if(!r.ok)return toast(r.error||'ما بدأ','err');
+    toast(`بدأ البث لـ ${r.total} طالب — بيوصلك تقرير`,'ok');
+  }catch(e){ toast(e.message,'err') }
+}
+
 async function replyTo(chatId,email,name){
   const txt=prompt(`ردك على ${name} (يوصله عبر بوت جدولك):`);
   if(!txt||!txt.trim())return;
@@ -855,6 +964,16 @@ function renderSys(){
       <div><div class="alert-t">${esc(w.ar)}</div>
       ${w.hint?`<div class="alert-h">${esc(w.hint)}</div>`:''}</div></div>`).join('');
   }
+
+  /* ── الزوار الآن ── */
+  const v=h.visitors||{live:0,lastMinute:0};
+  const liveBox=`<div class="gauge">
+    <div class="gauge-top">
+      <span class="gauge-lbl">🟢 متصلون الآن</span>
+      <span class="gauge-val ${v.live?'':''}" style="color:${v.live?'var(--open)':'var(--text3)'}">${v.live}</span>
+    </div>
+    <div class="gauge-sub">${v.lastMinute} في آخر دقيقة · النافذة 5 دقائق</div>
+  </div>`;
 
   /* ── مقياس الحمل ── */
   const load=h.loadPct||0;
@@ -921,6 +1040,21 @@ function renderSys(){
     <div class="gauge-sub">${esc(h.ttl.ar)}${h.riyadhDate?` · اليوم ${h.riyadhDate}`:''}</div>`:''}
   </div>
 
+  ${h.caches&&h.caches.finals?`<div class="sec-title">جدول الاختبارات</div>
+  <div class="gauge">
+    ${h.caches.finals.map(f=>`<div class="kv"><span>${esc(f.key)}</span>
+      <b class="${f.ok?'good':'warn'}">${f.ok?f.count+' اختبار':'ما سُحب بعد'}${
+        f.ageMin!==null?` · قبل ${f.ageMin<60?f.ageMin+' د':Math.round(f.ageMin/60)+' س'}`:''}</b></div>`).join('')}
+    <div class="gauge-sub">يُحدَّث كل 6 ساعات · يُسحب أول ما يطلبه طالب</div>
+  </div>
+
+  <div class="sec-title">قائمة الدكاترة</div>
+  <div class="gauge">
+    <div class="kv"><span>المصدر</span><b class="good">كاش البحث</b></div>
+    <div class="gauge-sub">${esc(h.caches.docs.note)}<br>
+      التقييمات محفوظة في قاعدة البيانات ومستقلة عن موقع الجامعة.</div>
+  </div>`:''}
+
   ${h.cache&&h.cache.length?`<div class="sec-title">النسخ المحفوظة الآن</div>
   <div class="gauge">
     ${h.cache.map(c=>`<div class="kv"><span style="font-family:var(--mono);font-size:11px">${esc(c.key)}</span>
@@ -948,7 +1082,7 @@ function renderSys(){
     العدّادات تُصفّر مع كل إعادة نشر على Render. الدورة تشتغل كل 5 دقائق (300 ثانية).
   </div>`;
 
-  box.innerHTML=maint+alerts+gauge+spark+detail;
+  box.innerHTML=maint+alerts+liveBox+gauge+spark+detail;
 }
 
 /* ══════════ المراقبة ══════════ */
