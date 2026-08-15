@@ -751,12 +751,40 @@ function renderRevs(){
         ${r.createdAt?`<span><b>${fdate(r.createdAt)}</b></span>`:''}
       </div>
       <div class="row-acts">
+        ${r.reports?`<button class="mini go" onclick="clearRep(${r.id})">✓ ألغِ البلاغ</button>`:''}
         <button class="mini" onclick="hideRev(${r.id},${r.hidden?'false':'true'})">
           ${r.hidden?'👁️ أظهرها':'🙈 أخفها'}</button>
         <button class="mini no" onclick="delRev('${esc(key)}','${esc(r.instructor)}')">🗑️ احذف</button>
       </div>
     </div>`;
   }).join('');
+}
+
+async function clearRep(id){
+  if(!confirm('إلغاء البلاغات على هذا التقييم؟ يعني راجعته ووجدته سليماً.'))return;
+  try{
+    const r=await api('clear-reports',{body:{id}});
+    if(!r.ok)return toast(r.error||'ما ضبط','err');
+    toast('أُلغيت البلاغات','ok'); await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
+async function delTk(id){
+  if(!confirm('حذف التذكرة #'+id+' ورسائلها نهائياً؟ ما ينفع تراجع.'))return;
+  try{
+    const r=await api('del-ticket',{body:{id}});
+    if(!r.ok)return toast(r.error||'ما ضبط','err');
+    toast('حُذفت التذكرة','ok'); await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
+async function delFb(id){
+  if(!confirm('حذف هذي الملاحظة نهائياً؟'))return;
+  try{
+    const r=await api('del-feedback',{body:{id}});
+    if(!r.ok)return toast(r.error||'ما ضبط','err');
+    toast('حُذفت الملاحظة','ok'); await loadAll();
+  }catch(e){ toast(e.message,'err') }
 }
 
 async function hideRev(id,hide){
@@ -832,7 +860,8 @@ function renderFb(){
       </div>
       <div class="row-acts">
         ${t.chat_id?`<button class="mini go" onclick="replyTo('${t.chat_id}','','${esc(t.user_name||'')}')">💬 رد</button>`:''}
-        ${t.status==='open'?`<button class="mini no" onclick="closeTk(${t.id})">✓ أغلق التذكرة</button>`:''}
+        ${t.status==='open'?`<button class="mini" onclick="closeTk(${t.id})">✓ أغلق</button>`:''}
+        <button class="mini no" onclick="delTk(${t.id})">🗑️ احذف</button>
       </div>
     </div>`).join('');
     return;
@@ -862,6 +891,8 @@ function renderFb(){
       ${x.major?`<span>${esc(x.major)}</span>`:''}
       ${x.at?`<span>${fdate(new Date(x.at).toISOString())}</span>`:''}
       ${x.source==='mem'?`<span style="color:var(--warn)">⚠️ بالذاكرة فقط</span>`:''}
+      ${x.id?`<button class="mini no" style="margin-inline-start:auto"
+        onclick="delFb(${x.id})">🗑️</button>`:''}
     </div>
     ${(x.chatId||x.email)?`<div class="row-acts">
       <button class="mini go" onclick="replyTo('${x.chatId||''}','${esc(x.email||'')}','${esc(x.name||x.email||'')}')">

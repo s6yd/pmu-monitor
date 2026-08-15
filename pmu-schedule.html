@@ -213,6 +213,11 @@ border-radius:16px;padding:17px;margin-bottom:15px}
 .suggest-head h3{font-size:14px;font-weight:600}
 .suggest-hrs{font-family:var(--mono);font-size:12px;color:var(--accent2);background:rgba(61,111,255,.15);padding:3px 10px;border-radius:20px}
 .sug-item{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)}
+.sug-badge.retake{background:var(--close-bg);color:var(--close);
+border:1px solid rgba(244,63,94,.3)}
+.sug-note{font-size:11.5px;color:var(--warn);background:var(--warn-bg);
+border:1px solid rgba(245,158,11,.28);border-radius:10px;
+padding:9px 11px;margin:9px 0;line-height:1.7}
 .sug-item.tappable{cursor:pointer}
 .sug-item.tappable:active{background:var(--bg);border-radius:8px}
 .sug-item.tappable .sug-code::after{content:' ›';color:var(--text3);font-weight:700}
@@ -263,6 +268,30 @@ background:var(--bg);padding:2px 9px;border-radius:20px}
 .acc.open .acc-arrow{transform:rotate(180deg)}
 .acc-body{display:none;margin-top:13px}
 .acc.open .acc-body{display:block}
+.gpa-proj{display:none;margin-top:13px;padding-top:12px;border-top:1px dashed var(--border2)}
+.gpa-proj.visible{display:block}
+.gp-row{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.gp-lbl{font-size:12px;color:var(--text2)}
+.gp-val{font-family:var(--mono);font-size:20px;font-weight:500;color:var(--accent2)}
+.gp-diff{font-size:11.5px;margin-inline-start:6px}
+.gp-diff.up{color:var(--open)}
+.gp-diff.down{color:var(--close)}
+.gp-sub{font-size:11px;color:var(--text3);margin-top:6px;line-height:1.6;
+display:flex;justify-content:space-between;align-items:center;gap:10px}
+.gp-clear{background:none;border:1px solid var(--border);color:var(--text3);
+border-radius:20px;padding:3px 11px;font-size:10.5px;font-family:var(--sans);
+cursor:pointer;flex-shrink:0}
+.pc-wi{background:var(--bg);border:1px dashed var(--border2);color:var(--text3);
+border-radius:9px;padding:5px 7px;font-size:11px;font-family:var(--mono);
+outline:none;flex-shrink:0;max-width:78px}
+.pc-wi.set{border-style:solid;border-color:var(--accent);color:var(--accent2)}
+.lab-warn{display:none;gap:11px;align-items:flex-start;background:var(--warn-bg);
+border:1px solid rgba(245,158,11,.3);border-radius:13px;padding:12px 14px;margin-bottom:13px}
+.lab-warn.visible{display:flex}
+.lw-ic{font-size:18px;flex-shrink:0}
+.lw-t{font-size:13px;font-weight:700;color:var(--warn)}
+.lw-s{font-size:12px;color:var(--text2);margin-top:6px;line-height:1.8}
+.lw-n{font-size:11px;color:var(--text3);margin-top:7px;line-height:1.6}
 .slot-bar{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}
 .slot{background:var(--card);border:1px solid var(--border);border-radius:12px;
 padding:10px 6px;cursor:pointer;font-family:var(--sans);text-align:center;
@@ -605,7 +634,7 @@ html,body{background:#fff!important;color:#111827!important;
 margin:0!important;padding:0!important;min-height:0!important}
 
 /* اخفِ واجهة الشاشة كاملة */
-.topbar,.tabs,.sched-actions,.slot-remove,.conflict-alert,.sched-summary,
+.topbar,.tabs,.sched-actions,.slot-remove,.conflict-alert,.sched-summary,.lab-warn,
 .guide-fab,.guide-overlay,.toast,.state-box,.sync-note,.next-check,
 #schedDays,.modal,.overlay,.finals-card,.cal-card,.legal-foot{display:none!important}
 .page{display:none!important}
@@ -817,6 +846,8 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
   </div>
   <div class="slot-bar" id="slotBar"></div>
 
+  <div class="lab-warn" id="labWarn"></div>
+
   <div id="schedDays"></div>
 
   <!-- المواعيد المهمة -->
@@ -872,6 +903,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     </div>
     <div class="gpa-bar"><div class="gpa-fill" id="gpaFill" style="width:0%"></div></div>
     <div class="gpa-hint" id="gpaHint">حط درجة أي مادة خلصتها تحت — والمواد بدون درجة أو بتقدير P / TR / W ما تدخل الحساب</div>
+    <div class="gpa-proj" id="gpaProj"></div>
   </div>
 
   <div class="progress-card">
@@ -2519,7 +2551,16 @@ function load(k,d){try{const s=localStorage.getItem(k);return s?JSON.parse(s):d}
 /* ===== Plan helpers ===== */
 function allPlanCourses(){return PLAN.flatMap(s=>s.courses.map(c=>({...c,sem:s.id})))}
 function findPlanCourse(code){return allPlanCourses().find(c=>c.c===code)}
+/* تقديرات الرسوب — المادة تُعاد وما تفتح اللي بعدها.
+   جامعة الأمير محمد بن فهد: الحد الأدنى للنجاح في متطلب سابق هو C. */
+const FAIL_GRADES=['D','F','WF'];
+function isFailed(code){ return FAIL_GRADES.includes(grades[code]); }
+
+/* "خلّصها" للعرض والتقدّم — يشمل حتى اللي رسب فيها بـ D */
 function isDone(code){return completed.includes(code)}
+
+/* "نجح فيها" لفتح المواد اللاحقة — يستثني الرسوب */
+function isPassed(code){ return completed.includes(code) && !isFailed(code); }
 function doneCredits(){
   let t=0;allPlanCourses().forEach(c=>{if(isDone(c.c))t+=c.h});return t;
 }
@@ -2531,7 +2572,7 @@ function prereqCheck(code){
   if(pc) reqs={p:pc.p||[],min:pc.min||0};
   else if(TECH_ELECTIVES[code]) reqs={p:TECH_ELECTIVES[code],min:0};
   if(!reqs) return {known:false,ok:true,missing:[]};
-  const missing=reqs.p.filter(r=>!isDone(r));
+  const missing=reqs.p.filter(r=>!isPassed(r));
   const cr=doneCredits();
   const needCr=reqs.min&&cr<reqs.min?reqs.min:0;
   return {known:true,ok:missing.length===0&&!needCr,missing,needCr,haveCr:cr};
@@ -2555,18 +2596,34 @@ function unlockLabel(n){
   if(n===1)return t('unlocks1');
   return `${t('unlocksN')} ${n} ${t('unlocksN2')}`;
 }
+/* التطبيق العملي (Internship / Co-op) ينزل لحاله — ممنوع معه مواد */
+function isInternship(c){
+  const code=(c.c||'').toUpperCase(), name=(c.n||'').toUpperCase();
+  return /\b(INTERN|COOP|CO-OP|TRAINING|PRACTIC)/.test(name) ||
+         /^(INTR|COOP|TRAI)/.test(code) ||
+         /\b(4399|4499|4999)\b/.test(code);
+}
+
 function suggestNext(){
-  const cands=[];
+  const cands=[]; let intern=null;
   PLAN.forEach((sem,si)=>sem.courses.forEach(c=>{
-    if(isDone(c.c)||c.el)return;
+    /* المادة اللي رسب فيها لازم يعيدها — تبقى في المقترح */
+    if((isDone(c.c)&&!isFailed(c.c))||c.el)return;
     if(!prereqCheck(c.c).ok)return;
-    cands.push({...c,order:si,unlocks:unlocksCount(c.c)});
+    const item={...c,order:si,unlocks:unlocksCount(c.c),retake:isFailed(c.c)};
+    if(isInternship(c)){ if(!intern)intern=item; return; }
+    cands.push(item);
   }));
-  cands.sort((a,b)=>(b.unlocks-a.unlocks)||(a.order-b.order));
+
+  /* التطبيق العملي ينزل لحاله — ممنوع معه أي مادة */
+  if(intern && !cands.length)
+    return {crit:[intern],opt:[],hours:intern.h,internOnly:true};
+
+  cands.sort((a,b)=>(b.retake?1:0)-(a.retake?1:0)||(b.unlocks-a.unlocks)||(a.order-b.order));
   const crit=[],opt=[];let hrs=0;
-  cands.filter(c=>c.unlocks>0).forEach(c=>{if(hrs+c.h<=20){crit.push(c);hrs+=c.h}});
-  cands.filter(c=>c.unlocks===0).forEach(c=>{if(hrs+c.h<=20){opt.push(c);hrs+=c.h}});
-  return {crit,opt,hours:hrs};
+  cands.filter(c=>c.retake||c.unlocks>0).forEach(c=>{if(hrs+c.h<=20){crit.push(c);hrs+=c.h}});
+  cands.filter(c=>!c.retake&&c.unlocks===0).forEach(c=>{if(hrs+c.h<=20){opt.push(c);hrs+=c.h}});
+  return {crit,opt,hours:hrs,internAvailable:!!intern};
 }
 
 /* ===== Tabs ===== */
@@ -2787,6 +2844,61 @@ function renderSlots(){
 
 function updateBadge(){document.getElementById('schedBadge').textContent=schedule.length}
 
+/* هل هذي الشعبة معمل؟ المعمل شعبته 1x1 أو 2x1 (الرقم الأوسط أكبر من 0)
+   أو كودها فيه L، أو اسمها فيه LAB */
+function isLabSection(c){
+  const sec=String(c.section||'').trim();
+  const code=(c.courseCode||'').toUpperCase();
+  const name=(c.courseTitle||'').toUpperCase();
+  if(/L/i.test(sec))return true;
+  if(/L\b/.test(code)||/L\s/.test(code))return true;
+  if(/\bLAB\b/.test(name))return true;
+  /* 111 و211 = معمل · 101 و201 = محاضرة */
+  if(/^\d{3}$/.test(sec)&&sec[1]!=='0')return true;
+  return false;
+}
+
+/* ينبّه لو المادة لها معمل في نتائج البحث وما أضافه، أو العكس */
+function renderLabWarn(){
+  const box=document.getElementById('labWarn');
+  if(!box)return;
+  const ar=LANG==='ar';
+
+  /* نجمّع ما في الجدول حسب المادة الأم */
+  const mine={};
+  schedule.forEach(c=>{
+    const k=baseCourseCode(c.courseCode);
+    (mine[k]=mine[k]||{lec:[],lab:[]})[isLabSection(c)?'lab':'lec'].push(c);
+  });
+
+  /* ونشوف وش المتاح في نتائج البحث لنفس المادة */
+  const avail={};
+  allCourses.forEach(c=>{
+    const k=baseCourseCode(c.courseCode);
+    (avail[k]=avail[k]||{lec:0,lab:0})[isLabSection(c)?'lab':'lec']++;
+  });
+
+  const msgs=[];
+  Object.keys(mine).forEach(k=>{
+    const m=mine[k], a=avail[k];
+    if(m.lec.length && !m.lab.length && a && a.lab>0)
+      msgs.push(ar?`<b>${k}</b> — ضفت المحاضرة بدون المعمل`
+                  :`<b>${k}</b> — lecture added without its lab`);
+    if(m.lab.length && !m.lec.length)
+      msgs.push(ar?`<b>${k}</b> — ضفت المعمل بدون المحاضرة`
+                  :`<b>${k}</b> — lab added without its lecture`);
+  });
+
+  if(!msgs.length){ box.classList.remove('visible'); return }
+  box.classList.add('visible');
+  box.innerHTML=`<div class="lw-ic">🧪</div><div>
+    <div class="lw-t">${ar?'ناقص معمل أو محاضرة':'Missing lab or lecture'}</div>
+    <div class="lw-s">${msgs.join('<br>')}</div>
+    <div class="lw-n">${ar?'أغلب المواد لازم تسجّل المحاضرة والمعمل معاً.'
+                          :'Most courses require registering both the lecture and its lab.'}</div>
+  </div>`;
+}
+
 function renderSchedule(){
   const empty=document.getElementById('schedEmpty'),wrap=document.getElementById('schedDays');
   document.getElementById('sumCourses').textContent=schedule.length;
@@ -2799,6 +2911,8 @@ function renderSchedule(){
   if(pairs.length){al.classList.add('visible');
     document.getElementById('conflictList').innerHTML=pairs.map(p=>`${p[0].courseCode} §${p[0].section} ✕ ${p[1].courseCode} §${p[1].section}`).join('<br>');
   }else al.classList.remove('visible');
+
+  renderLabWarn();
 
   if(!schedule.length){empty.classList.add('visible');wrap.innerHTML='';buildPrintSheet(new Set());return}
   empty.classList.remove('visible');
@@ -3355,11 +3469,17 @@ function renderPlan(){
   const row=(c,crit)=>`<div class="sug-item${c.el?'':' tappable'}"${
       c.el?'':` onclick="searchSuggested('${c.c}')"`}>
     <span class="sug-code">${c.c}</span>
-    <span class="sug-name">${c.n}${crit?`<span class="sug-badge">${unlockLabel(c.unlocks)}</span>`:''}</span>
+    <span class="sug-name">${c.n}${
+      c.retake?`<span class="sug-badge retake">${t('retakeBadge')}</span>`
+      :crit?`<span class="sug-badge">${unlockLabel(c.unlocks)}</span>`:''}</span>
     <span class="sug-cr">${c.h}H</span></div>`;
   let html='';
+  if(sug.internOnly)
+    html+=`<div class="sug-note">${t('internOnly')}</div>`;
   if(sug.crit.length)html+=`<div class="sug-group crit">${t('critGroup')}</div>`+sug.crit.map(c=>row(c,1)).join('');
   if(sug.opt.length)html+=`<div class="sug-group">${t('optGroup')}</div>`+sug.opt.map(c=>row(c,0)).join('');
+  if(sug.internAvailable&&!sug.internOnly)
+    html+=`<div class="sug-note">${t('internSoon')}</div>`;
   document.getElementById('sugList').innerHTML=html||`<div style="font-size:12.5px;color:var(--text2);padding:6px 0">${t('sugEmpty')}</div>`;
 
   /* احفظ الترمات المفتوحة قبل إعادة الرسم */
@@ -3388,10 +3508,22 @@ function renderPlan(){
           req=`<div class="pc-req">🔒 ${t('needs')}: ${parts.join(' + ')}</div>`;
         }
         const g=grades[c.c]||'';
-        const gradeSel=d?`<select class="grade-sel ${g?'':'empty'}" onchange="setGrade('${c.c}',this.value)">
+        /* المادة المنتهية: قائمة درجة حقيقية.
+           غير المنتهية وغير مقفلة: قائمة تقدير افتراضي لتوقّع المعدل. */
+        const wi=WHATIF[c.c]||'';
+        const gradeSel=d
+          ? `<select class="grade-sel ${g?'':'empty'}" onchange="setGrade('${c.c}',this.value)">
             <option value="">—</option>
             ${GRADE_LIST.map(x=>`<option value="${x}" ${g===x?'selected':''}>${x}</option>`).join('')}
-          </select>`:`<div class="pc-cr">${c.h}H</div>`;
+          </select>`
+          : (c.el || locked
+             ? `<div class="pc-cr">${c.h}H</div>`
+             : `<select class="pc-wi ${wi?'set':''}" title="${LANG==='ar'?'تقدير افتراضي':'Projected grade'}"
+                  onchange="setWhatIf('${c.c}',this.value)">
+                <option value="">${c.h}H</option>
+                ${['A+','A','B+','B','C+','C','D+','D'].map(x=>
+                  `<option value="${x}" ${wi===x?'selected':''}>${x}</option>`).join('')}
+              </select>`);
         /* الاختيارية خانة مو مادة حقيقية، فما لها شعب نبحث عنها */
         const tap=!c.el;
         return `<div class="pc ${d?'done':''} ${locked?'locked':''}">
@@ -4374,6 +4506,9 @@ calNow:'جارٍ الآن',calToday:'اليوم',calTomorrow:'بكرة',calIn:'�
 calDone:'ما في مواعيد قادمة في التقويم الحالي.',
 calSource:'المصدر: التقويم الأكاديمي المعتمد 2026/2027. التقويم قابل للتعديل — راجع موقع الجامعة.',
 tapTip:'👆 <b>اضغط أي مادة</b> عشان تشوف شعبها وأوقاتها في ترم التسجيل القادم',
+retakeBadge:'أعدها',
+internOnly:'🎓 <b>التطبيق العملي ينزل لحاله</b> — ما ينفع تسجّل معه أي مادة ثانية.',
+internSoon:'🎓 التطبيق العملي متاح لك، بس لازم ينزل لحاله بدون أي مادة معه.',
 pmTitle:'اختر تخصصك أول',
 pmSub:'الخطة الدراسية والمواد والمتطلبات تتغيّر حسب تخصصك. اختره مرة وحدة وينحفظ لك.',
 pmBtn:'⚙️ روح للإعدادات واختر تخصصك',
@@ -4453,6 +4588,9 @@ calNow:'Now',calToday:'Today',calTomorrow:'Tomorrow',calIn:'in',calDays:'days',
 calDone:'No upcoming dates in the current calendar.',
 calSource:'Source: official 2026/2027 academic calendar. Dates may change — check the university website.',
 tapTip:'👆 <b>Tap any course</b> to see its sections and times for the upcoming term',
+retakeBadge:'Retake',
+internOnly:'🎓 <b>Internship is taken alone</b> — you cannot register any other course with it.',
+internSoon:'🎓 Internship is available, but it must be taken alone with no other courses.',
 pmTitle:'Pick your major first',
 pmSub:'Your degree plan, courses and prerequisites depend on your major. Choose once and it is saved for you.',
 pmBtn:'⚙️ Go to Settings and pick your major',
@@ -4654,7 +4792,43 @@ function calcGPA(){
     const h=creditsOf(code);
     pts+=GRADE_POINTS[g]*h;hrs+=h;n++;
   });
+  return {gpa:hrs?pts/hrs:null,hrs,n,pts};
+}
+
+/* ═══ المعدل المتوقّع ═══
+   الطالب يحط تقديراً افتراضياً لمادة ما خلصها، فيشوف أثرها على معدله.
+   ما يُحفظ مع الدرجات الحقيقية ولا يُرفع للسحابة. */
+let WHATIF=load('pmu_whatif',{})||{};
+
+function setWhatIf(code,val){
+  if(val)WHATIF[code]=val; else delete WHATIF[code];
+  save('pmu_whatif',WHATIF);
+  renderGPA();
+}
+function clearWhatIf(){
+  WHATIF={}; save('pmu_whatif',WHATIF);
+  renderPlan();
+  showToast(LANG==='ar'?'مُسحت التقديرات الافتراضية':'Projections cleared');
+}
+function hasWhatIf(){ return Object.keys(WHATIF).length>0; }
+
+function calcProjected(){
+  const base=calcGPA();
+  let pts=base.pts||0, hrs=base.hrs||0, n=0;
+  Object.keys(WHATIF).forEach(code=>{
+    const g=WHATIF[code];
+    if(!g||!(g in GRADE_POINTS))return;
+    if(isDone(code))return;              /* خلصها فعلاً — نتجاهل الافتراض */
+    const h=creditsOf(code);
+    pts+=GRADE_POINTS[g]*h; hrs+=h; n++;
+  });
   return {gpa:hrs?pts/hrs:null,hrs,n};
+}
+
+/* صيغة عربية سليمة للعدد */
+function n_(x){
+  if(LANG!=='ar')return String(x);
+  return x===1?'مادة واحدة':x===2?'مادتين':x<=10?`${x} مواد`:`${x} مادة`;
 }
 
 function setGrade(code,val){
@@ -4665,6 +4839,30 @@ function setGrade(code,val){
 }
 
 function renderGPA(){
+  /* شريط المعدل المتوقّع — يظهر فقط لو حط افتراضاً */
+  const pbox=document.getElementById('gpaProj');
+  if(pbox){
+    if(hasWhatIf()){
+      const p=calcProjected(), real=calcGPA();
+      const diff=(p.gpa!==null&&real.gpa!==null)?(p.gpa-real.gpa):null;
+      const ar=LANG==='ar';
+      pbox.classList.add('visible');
+      pbox.innerHTML=`
+        <div class="gp-row">
+          <span class="gp-lbl">${ar?'معدلك المتوقّع':'Projected GPA'}</span>
+          <span class="gp-val">${p.gpa!==null?p.gpa.toFixed(2):'—'}
+            ${diff!==null&&Math.abs(diff)>=0.005
+              ?`<span class="gp-diff ${diff>0?'up':'down'}">${diff>0?'▲':'▼'} ${Math.abs(diff).toFixed(2)}</span>`
+              :''}</span>
+        </div>
+        <div class="gp-sub">${ar
+          ? `مبني على ${n_(p.n)} افتراضية + موادك المنتهية`
+          : `Based on ${p.n} projected + your completed courses`}
+          <button class="gp-clear" onclick="clearWhatIf()">${ar?'امسح':'Clear'}</button>
+        </div>`;
+    }else pbox.classList.remove('visible');
+  }
+
   const {gpa,hrs,n}=calcGPA();
   const el=document.getElementById('gpaVal');
   const fill=document.getElementById('gpaFill');
