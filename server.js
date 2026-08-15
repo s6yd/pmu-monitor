@@ -519,7 +519,7 @@ async function handleTelegramUpdate(update) {
 
   /* ═══ أي كلام حر من طالب = رسالة توصل المشرف ═══
      نخليها آخر شي بعد الأوامر، فما تتعارض معها. */
-  if (!isAdmin && !text.startsWith('/')) {
+  if (!text.startsWith('/') && !(isAdmin && msg.reply_to_message)) {
     if (!ADMIN_CHAT_ID) return;
 
     /* حد بسيط: 6 رسائل لكل محادثة في الساعة */
@@ -1950,7 +1950,18 @@ const server = http.createServer(async (req, res) => {
       } catch (e) { /* ما يهم */ }
     }
 
-    /* نحفظها في Supabase لو الجدول موجود، وإلا نخزّنها بالذاكرة */
+    /* نفتح تذكرة عشان تتجمّع المحادثة في مكان واحد */
+    let ticket = null;
+    if (entry.chatId || entry.email) {
+      ticket = await getOrCreateTicket({
+        chatId: entry.chatId, email: entry.email, name: entry.name,
+        major: entry.major, telegram: entry.telegram,
+        text: entry.text, category: entry.category
+      });
+      if (ticket) await addTicketMessage(ticket.id, 'student', entry.text, null);
+    }
+
+    /* ونحفظها في جدول الملاحظات كذلك */
     let saved = false;
     try {
       const r = await sb('POST', 'feedback', {
@@ -1962,7 +1973,7 @@ const server = http.createServer(async (req, res) => {
         },
         prefer: 'return=minimal'
       });
-      saved = !(r && r.code);        /* لو رجع كود خطأ فالجدول ناقص */
+      saved = !(r && r.code);
     } catch (e) { saved = false; }
     if (!saved) {
       FEEDBACK_MEM.unshift(entry);
@@ -1988,6 +1999,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       sendMsg(ADMIN_CHAT_ID,
+        (ticket ? `🎫 تذكرة <b>#${ticket.id}</b>\n` : '') +
         `${icon} <b>${label}</b>\n\n` +
         `<blockquote>${esc(entry.text)}</blockquote>\n` +
         `👤 ${esc(who)}\n` +
