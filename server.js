@@ -452,9 +452,18 @@ async function handleTelegramUpdate(update) {
     const rest = text.slice(6).trim();
     const sp = rest.indexOf(' ');
     if (sp < 1) return sendMsg(chatId,
-      `الصيغة:\n<code>/reply البريد_أو_المعرّف النص</code>\n\n` +
-      `مثال:\n<code>/reply s@pmu.edu.sa شكراً على اقتراحك</code>`);
-    const who = rest.slice(0, sp).trim(), body = rest.slice(sp + 1).trim();
+      `<b>رد على طالب:</b>\n<code>/reply البريد النص</code>\n` +
+      `<i>يضيف ترويسة "رد من فريق جدولك"</i>\n\n` +
+      `<b>رسالة مستقلة (تحديث/إعلان):</b>\n<code>/reply البريد !النص</code>\n` +
+      `<i>علامة التعجب تشيل الترويسة</i>\n\n` +
+      `مثال:\n<code>/reply s@pmu.edu.sa !🎉 تحديث جديد في جدولك</code>`);
+    const who = rest.slice(0, sp).trim();
+    let body = rest.slice(sp + 1).trim();
+
+    /* "!" في أول النص = رسالة مستقلة بدون ترويسة "رد من فريق جدولك".
+       نستخدمها للتحديثات والإعلانات، والترويسة تبقى للردود الفعلية. */
+    let bare = false;
+    if (body.startsWith('!')) { bare = true; body = body.slice(1).trim(); }
 
     let target = /^\d+$/.test(who) ? who : null;
     if (!target) {
@@ -473,15 +482,16 @@ async function handleTelegramUpdate(update) {
 
     if (photo) {
       const rp = await tg('sendPhoto', { chat_id: target, photo,
-        caption: `💬 <b>رد من فريق جدولك</b>\n\n${body}`.slice(0, 1000),
+        caption: (bare ? body : `💬 <b>رد من فريق جدولك</b>\n\n${body}`).slice(0, 1000),
         parse_mode: 'HTML' });
       return sendMsg(chatId, (rp && rp.ok) ? `✅ وصلت مع الصورة.` :
         `⚠️ ما وصلت: ${(rp && rp.description) || 'تأكد أن الوسوم مغلقة صح'}`);
     }
 
-    const r = await sendMsg(target,
-      `💬 <b>رد من فريق جدولك</b>\n\n${body}\n\n` +
-      `<i>💬 تبي ترد؟ اكتب رسالتك هنا مباشرة وبتوصلنا.</i>`);
+    const r = await sendMsg(target, bare
+      ? `${body}\n\n<i>💬 عندك ملاحظة؟ اكتبها هنا مباشرة.</i>`
+      : `💬 <b>رد من فريق جدولك</b>\n\n${body}\n\n` +
+        `<i>💬 تبي ترد؟ اكتب رسالتك هنا مباشرة وبتوصلنا.</i>`);
     return sendMsg(chatId, (r && r.ok) ? `✅ وصلت.` :
       `⚠️ ما وصلت: ${(r && r.description) || 'تأكد أن الوسوم مغلقة صح'}`);
   }
@@ -1049,7 +1059,8 @@ async function adminBroadcast(text, photo, dryRun) {
         const res = photo
           ? await tg('sendPhoto', { chat_id: r.telegram_chat_id, photo,
               caption: body.slice(0, 1000), parse_mode: 'HTML' })
-          : await sendMsg(r.telegram_chat_id, body.slice(0, 3500));
+          : await sendMsg(r.telegram_chat_id,
+              body.slice(0, 3400) + `\n\n<i>💬 عندك ملاحظة؟ اكتبها هنا مباشرة.</i>`);
         if (res && res.ok) BROADCAST.sent++; else BROADCAST.failed++;
         await new Promise(x => setTimeout(x, 700));
       });
