@@ -192,7 +192,8 @@ display:flex;align-items:center;justify-content:space-between}
 .slot-time{font-family:var(--mono);font-size:11px;color:var(--text2);min-width:80px;direction:ltr;text-align:center}
 .slot-info{flex:1;min-width:0}
 .slot-name{font-size:13px;font-weight:600}
-.slot-sub{font-size:11px;color:var(--text3);margin-top:2px}
+.slot-title{font-size:11.5px;color:var(--text2);margin-top:3px;line-height:1.4}
+.slot-sub{font-size:11px;color:var(--text3);margin-top:3px}
 .slot-remove{background:none;border:none;color:var(--text3);font-size:16px;cursor:pointer;padding:3px 5px}
 .empty-day{padding:9px 15px 12px;font-size:12px;color:var(--text3);font-style:italic}
 
@@ -410,6 +411,14 @@ padding:14px 15px;margin-bottom:8px}
 .rev-text{font-size:12.5px;color:var(--text2);line-height:1.8}
 .rev-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:9px}
 .rev-tag{font-size:10.5px;padding:3px 9px;border-radius:20px;background:var(--bg);color:var(--text3)}
+.rev-acts{display:flex;gap:7px;margin-top:10px;padding-top:9px;border-top:1px solid var(--border)}
+.rv-btn{background:var(--bg);border:1px solid var(--border);color:var(--text3);
+border-radius:20px;padding:5px 11px;font-size:11.5px;font-family:var(--sans);
+cursor:pointer;display:flex;align-items:center;gap:4px}
+.rv-btn b{font-family:var(--mono);font-weight:500}
+.rv-btn.on{background:var(--open-bg);border-color:rgba(16,185,129,.35);color:var(--open)}
+.rv-btn.off{background:var(--close-bg);border-color:rgba(244,63,94,.3);color:var(--close)}
+.rv-btn.flag{margin-inline-start:auto}
 .rev-date{font-size:10.5px;color:var(--text3);font-family:var(--mono)}
 
 /* form */
@@ -2784,6 +2793,7 @@ function renderSchedule(){
       <div class="slot ${cl.has(c.crn)?'clash':''}">
         <div class="slot-time">${t?fmtTime(t.start)+'–'+fmtTime(t.end):'—'}</div>
         <div class="slot-info"><div class="slot-name">${c.courseCode} §${c.section}</div>
+        ${c.courseTitle?`<div class="slot-title">${escapeHtml(c.courseTitle)}</div>`:''}
         <div class="slot-sub">${c.room||'—'} · ${c.instructor||'—'}</div></div>
         <button class="slot-remove" onclick="removeFromSchedule('${c.crn}')">✕</button>
       </div>`).join('')}</div>`:`<div class="empty-day">${t('noClass')}</div>`;
@@ -3738,11 +3748,63 @@ function docStats(name){
 }
 
 /* تحميل التقييمات */
+/* تفاعلاتي محفوظة محلياً عشان الأزرار تعكس حالتي فوراً */
+let MY_REACTS=load('pmu_reacts',{})||{};
+const myReact=id=>MY_REACTS[id]||null;
+
+async function reactReview(id,kind){
+  if(!USER){showToast(LANG==='ar'?'سجّل دخول أول':'Sign in first','warn');return}
+  const was=MY_REACTS[id];
+  /* تحديث فوري قبل ما يرد السيرفر */
+  if(was===kind)delete MY_REACTS[id]; else MY_REACTS[id]=kind;
+  save('pmu_reacts',MY_REACTS);
+  const rv=reviews.find(r=>String(r.id)===String(id));
+  if(rv){
+    const f=kind==='agree'?'agree':'disagree', o=kind==='agree'?'disagree':'agree';
+    if(was===kind)rv[f]=Math.max(0,(rv[f]||0)-1);
+    else{ rv[f]=(rv[f]||0)+1; if(was)rv[o]=Math.max(0,(rv[o]||0)-1); }
+  }
+  renderDocDetail();
+  try{
+    await fetch(API_BASE+'/api/review-react',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({reviewId:id,userId:USER.id,kind})});
+  }catch(e){}
+}
+
+async function reportReview(id){
+  if(!USER){showToast(LANG==='ar'?'سجّل دخول أول':'Sign in first','warn');return}
+  const ar=LANG==='ar';
+  const reason=prompt(ar?'وش المشكلة في هذا التقييم؟ (اختياري)'
+                        :'What is wrong with this review? (optional)');
+  if(reason===null)return;
+  try{
+    const r=await fetch(API_BASE+'/api/review-react',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({reviewId:id,userId:USER.id,kind:'report',reason:reason.trim()})});
+    const d=await r.json();
+    showToast(d.already?(ar?'بلّغت عنه من قبل':'Already reported')
+                       :(ar?'وصلنا بلاغك — بنراجعه 🙏':'Report received — we will review it'),
+              d.already?'warn':'success');
+  }catch(e){ showToast(ar?'ما انرسل البلاغ':'Could not send report','err') }
+}
+
 async function loadReviews(){
+  /* نعرض النسخة المحفوظة فوراً، ثم نحدّثها.
+     التقييمات في Supabase — مستقلة عن موقع الجامعة، فلو انحجبنا تظل شغالة. */
+  const cached=load('pmu_reviews_cache',null);
+  if(Array.isArray(cached)&&cached.length)reviews=cached;
+
   try{
     const {data}=await sb.from('instructor_reviews').select('*').order('created_at',{ascending:false});
-    reviews=data||[];
-  }catch(e){reviews=[]}
+    if(Array.isArray(data)){
+      reviews=data;
+      save('pmu_reviews_cache',data.slice(0,600));   /* احتياطي محلي */
+    }
+  }catch(e){
+    /* نبقي النسخة المحفوظة بدل ما نفرّغ القائمة */
+    if(!Array.isArray(reviews))reviews=[];
+  }
 }
 
 /* جمع أسماء الدكاترة: من نتائج البحث + من التقييمات الموجودة */
@@ -3995,7 +4057,7 @@ function renderDocDetail(){
 
     <div class="sc-title" style="margin:20px 0 10px">${ar?'آراء الطلاب':'Student reviews'}</div>
     <div id="revList">${
-      st.n? (st.list.map(r=>`
+      st.n? (st.list.filter(r=>!r.hidden).map(r=>`
         <div class="rev">
           <div class="rev-top">
             <span>${starStr(r.rating)}</span>
@@ -4007,6 +4069,14 @@ function renderDocDetail(){
           <div class="rev-tags" style="justify-content:space-between;margin-top:9px">
             <span class="rev-date">${ar?'طالب':'Student'}</span>
             <span class="rev-date">${new Date(r.created_at).toLocaleDateString(ar?'ar-SA':'en-GB')}</span>
+          </div>
+          <div class="rev-acts">
+            <button class="rv-btn${myReact(r.id)==='agree'?' on':''}"
+              onclick="reactReview(${r.id},'agree')">👍 <b>${r.agree||0}</b></button>
+            <button class="rv-btn${myReact(r.id)==='disagree'?' off':''}"
+              onclick="reactReview(${r.id},'disagree')">👎 <b>${r.disagree||0}</b></button>
+            <button class="rv-btn flag" onclick="reportReview(${r.id})"
+              title="${ar?'تبليغ':'Report'}">🚩</button>
           </div>
         </div>`).join(''))
       : `<div style="font-size:12.5px;color:var(--text3);padding:8px 0">${
@@ -4690,11 +4760,12 @@ async function pullCloud(){
     await loadMonitored();
     await loadReviews();
     renderSettings();
-    if(isTrial()&&!load('pmu_seen_trial',false)){
-      save('pmu_seen_trial',true);
+    if(!load('pmu_seen_welcome',false)){
+      save('pmu_seen_welcome',true);
+      const nm=(PROFILE&&PROFILE.name?PROFILE.name:'').split(' ')[0];
       setTimeout(()=>showToast(LANG==='ar'?
-        `🎁 لك شهر مجاني — كل الميزات مفتوحة`:
-        `🎁 You have a free month — all features unlocked`),1200);
+        `👋 نوّرت الموقع${nm?' يا '+nm:''}`:
+        `👋 Welcome${nm?', '+nm:''}`),1200);
     }
     if(isPro()){
       /* زر "راقب" القديم انشال — الجرس ⏰ جنب كل مادة بديله */
