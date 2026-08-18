@@ -3131,6 +3131,12 @@ async function loadFinals(manual){
       const r=await fetch(API_BASE+'/api/finals');
       const d=await r.json();
       if(!d.success)throw new Error(d.error||'fail');
+      /* موقوف من اللوحة: الجامعة ما نشرت جدول الترم الجديد بعد */
+      if(d.disabled){
+        body.innerHTML=`<div class="fin-empty">${t('finOff')}</div>`;
+        btn.textContent=t('finReload');
+        return;
+      }
       FINALS=d.exams||[];
     }catch(e){
       body.innerHTML=`<div class="fin-empty">${t('finErr')}</div>`;
@@ -4522,6 +4528,7 @@ finLoad:'اعرض',finReload:'🔄 حدّث',
 finNoSched:'ابنِ جدولك أول، وبعدها تطلع لك اختباراتك هنا تلقائياً.',
 finNone:'ما لقيت اختبارات لموادك. غالباً الجامعة ما نشرت جدول هذا الترم بعد — جرّب بعدين.',
 finErr:'ما قدرت أجيب الجدول الحين. تأكد من الاتصال وجرّب مرة ثانية.',
+finOff:'جدول اختبارات الترم الجديد ما نشرته الجامعة بعد. أوقفنا العرض مؤقتاً عشان ما يطلع لك جدول الترم الماضي بالغلط — نشغّله أول ما ينزل.',
 finFemale:'جدول اختبارات الطالبات ما هو متاح في الموقع حالياً. راجعي موقع الجامعة.',
 finClash:'عندك اختبارين في نفس اليوم والساعة — راجع القبول والتسجيل فوراً.',
 finMissing:'مواد ما لقيت لها اختبار:',
@@ -4604,6 +4611,7 @@ finLoad:'Show',finReload:'🔄 Refresh',
 finNoSched:'Build your schedule first — your exams will appear here automatically.',
 finNone:'No exams found for your courses. The university likely has not published this term\'s schedule yet — check back later.',
 finErr:'Could not load the schedule right now. Check your connection and try again.',
+finOff:'The university has not published the new term\'s exam schedule yet. We paused this view so you do not see last term\'s schedule by mistake — it will be back as soon as it is published.',
 finFemale:'The female exam schedule is not available in the app yet. Please check the university website.',
 finClash:'You have two exams at the same day and hour — contact the Registration Office immediately.',
 finMissing:'Courses with no exam found:',

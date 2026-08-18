@@ -903,6 +903,20 @@ function renderFb(){
   </div>`).join('');
 }
 
+/* ══════════ جدول الاختبارات النهائية ══════════ */
+async function toggleFinals(on){
+  if(on){
+    if(!confirm('تشغيل جدول النهائيات؟ تأكد أن الجامعة نشرت جدول الترم الحالي — وإلا بيشوف الطلاب جدول الترم الماضي.'))return;
+  }else{
+    if(!confirm('إيقاف عرض جدول النهائيات؟ بيشوف الطلاب رسالة أن الجامعة ما نشرته بعد.'))return;
+  }
+  try{
+    await api('finals-toggle',{body:{on:!!on}});
+    toast(on?'جدول النهائيات شغّال':'جدول النهائيات موقوف','ok');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
 /* ══════════ وضع الصيانة ══════════ */
 async function toggleMaint(on){
   if(on){
@@ -981,6 +995,21 @@ function renderSys(){
         ${mOn?'▶️ شغّل الموقع':'⏸️ اقفل الموقع'}</button>
     </div>
     ${mOn&&h.maintenanceMsg?`<div class="maint-msg">${esc(h.maintenanceMsg)}</div>`:''}
+  </div>`;
+
+  /* ── جدول الاختبارات النهائية ── */
+  const fOn=h.finalsOn!==false;
+  const finals=`<div class="maint ${fOn?'':'on'}">
+    <div class="maint-top">
+      <div>
+        <div class="maint-t">${fOn?'📕 جدول النهائيات معروض':'📕 جدول النهائيات موقوف'}</div>
+        <div class="maint-s">${fOn
+          ?'أوقفه بين الترمين — موقع الجامعة يبقي جدول الترم الماضي منشوراً فيطلع للطالب كأنه جديد.'
+          :'الطلاب يشوفون رسالة أن الجامعة ما نشرت الجدول بعد. شغّله أول ما ينشر جدول الترم الحالي.'}</div>
+      </div>
+      <button class="mini ${fOn?'no':'go'}" onclick="toggleFinals(${fOn?'false':'true'})">
+        ${fOn?'⏸️ أوقف العرض':'▶️ شغّل العرض'}</button>
+    </div>
   </div>`;
 
   /* ── التحذيرات ── */
@@ -1113,7 +1142,7 @@ function renderSys(){
     العدّادات تُصفّر مع كل إعادة نشر على Render. الدورة تشتغل كل 5 دقائق (300 ثانية).
   </div>`;
 
-  box.innerHTML=maint+alerts+liveBox+gauge+spark+detail;
+  box.innerHTML=maint+finals+alerts+liveBox+gauge+spark+detail;
 }
 
 /* ══════════ المراقبة ══════════ */
