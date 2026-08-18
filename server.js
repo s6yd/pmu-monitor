@@ -26,6 +26,12 @@ const ADMIN_CHAT_ID = (process.env.ADMIN_CHAT_ID || '').trim();
 let MAINTENANCE = (process.env.MAINTENANCE || '').trim() === 'on';
 let MAINT_MSG = (process.env.MAINTENANCE_MSG || '').trim();
 
+/* عرض جدول الاختبارات النهائية: FINALS_ENABLED=off في Render يوقفه.
+   نوقفه بين الترمين لأن موقع الجامعة يبقي جدول الترم الماضي منشوراً،
+   وأسماء المواد والشعب تتكرر فيطلع للطالب جدول قديم كأنه جديد.
+   يُبدّل أيضاً من لوحة التحكم، لكن إعادة تشغيل Render ترجّعه لقيمة الإعداد. */
+let FINALS_ON = (process.env.FINALS_ENABLED || '').trim() !== 'off';
+
 /* نسخة الاختبار: تخدم الموقع لكن ما تراقب ولا ترسل إشعارات،
    عشان ما تتكرر الرسائل مع نسخة الإنتاج. */
 const SITE_ENV = (process.env.SITE_ENV || 'prod').trim();
@@ -1400,6 +1406,7 @@ async function adminHealth() {
     freeBeta: FREE_BETA,
     maintenance: MAINTENANCE,
     maintenanceMsg: MAINT_MSG,
+    finalsOn: FINALS_ON,
     alerts: Object.entries(ALERTS).filter(([,v])=>v.active)
               .map(([k,v])=>({key:k,title:v.title,since:v.at})),
     ttl: ttlReason(),
@@ -1978,6 +1985,22 @@ const server = http.createServer(async (req, res) => {
       if (act === 'tickets')  return send(200, { tickets: await adminTickets(parsed.query.status) });
       if (act === 'broadcast-status') return send(200, BROADCAST);
 
+      if (act === 'finals-toggle') {
+        if (req.method === 'POST') {
+          const b = await readBody(req);
+          const was = FINALS_ON;
+          FINALS_ON = !!b.on;
+          if (was !== FINALS_ON) {
+            /* لما نشغّله نفضي الكاش عشان يسحب جدول الترم الجديد لا القديم */
+            if (FINALS_ON) { finalsCache.M = null; finalsCache.F = null; }
+            sendMsg(ADMIN_CHAT_ID, FINALS_ON
+              ? '📕 <b>جدول الاختبارات النهائية شغّال للطلاب</b>'
+              : '📕 <b>جدول الاختبارات النهائية موقوف</b>\n\nالطلاب يشوفون رسالة أن الجامعة ما نشرت الجدول بعد.').catch(() => {});
+          }
+        }
+        return send(200, { on: FINALS_ON });
+      }
+
       if (act === 'maintenance') {
         if (req.method === 'POST') {
           const b = await readBody(req);
@@ -2170,6 +2193,12 @@ const server = http.createServer(async (req, res) => {
   /* جدول الاختبارات النهائية */
   if (parsed.pathname === '/api/finals') {
     res.setHeader('Content-Type', 'application/json');
+    /* موقوف من اللوحة: ما نسحب من الجامعة أصلاً */
+    if (!FINALS_ON) {
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: true, disabled: true, count: 0, exams: [] }));
+      return;
+    }
     try {
       const d = await getFinals();
       res.writeHead(200);
