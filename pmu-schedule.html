@@ -2844,17 +2844,16 @@ function renderSlots(){
 
 function updateBadge(){document.getElementById('schedBadge').textContent=schedule.length}
 
-/* هل هذي الشعبة معمل؟ المعمل شعبته 1x1 أو 2x1 (الرقم الأوسط أكبر من 0)
-   أو كودها فيه L، أو اسمها فيه LAB */
+/* هل هذي الشعبة معمل؟ نعتمد على بيانات الجامعة نفسها فقط:
+   اسم الشعبة فيه LAB، أو كودها فيه L (مثل PHYS 1101L).
+   ما نخمّن من رقم الشعبة — مواد كثيرة شعبها تتجاوز 110 وهي محاضرات. */
 function isLabSection(c){
   const sec=String(c.section||'').trim();
   const code=(c.courseCode||'').toUpperCase();
   const name=(c.courseTitle||'').toUpperCase();
   if(/L/i.test(sec))return true;
   if(/L\b/.test(code)||/L\s/.test(code))return true;
-  if(/\bLAB\b/.test(name))return true;
-  /* 111 و211 = معمل · 101 و201 = محاضرة */
-  if(/^\d{3}$/.test(sec)&&sec[1]!=='0')return true;
+  if(/\bLABS?\b|\bLABORATORY\b/.test(name))return true;
   return false;
 }
 
@@ -2884,7 +2883,8 @@ function renderLabWarn(){
     if(m.lec.length && !m.lab.length && a && a.lab>0)
       msgs.push(ar?`<b>${k}</b> — ضفت المحاضرة بدون المعمل`
                   :`<b>${k}</b> — lecture added without its lab`);
-    if(m.lab.length && !m.lec.length)
+    /* ما ننبّه إلا لو نتائج البحث تؤكد أن للمادة محاضرة منفصلة */
+    if(m.lab.length && !m.lec.length && a && a.lec>0)
       msgs.push(ar?`<b>${k}</b> — ضفت المعمل بدون المحاضرة`
                   :`<b>${k}</b> — lab added without its lecture`);
   });
