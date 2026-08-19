@@ -191,6 +191,8 @@ display:flex;align-items:center;justify-content:space-between}
 .slot.clash{border-right-color:var(--warn);background:rgba(245,158,11,.06)}
 .slot-time{font-family:var(--mono);font-size:11px;color:var(--text2);min-width:80px;direction:ltr;text-align:center}
 .slot-info{flex:1;min-width:0}
+.slot-info.tap{cursor:pointer;-webkit-tap-highlight-color:transparent}
+.slot-info.tap:active{opacity:.55}
 .slot-name{font-size:13px;font-weight:600}
 .slot-title{font-size:11.5px;color:var(--text2);margin-top:3px;line-height:1.4}
 .slot-sub{font-size:11px;color:var(--text3);margin-top:3px}
@@ -594,6 +596,32 @@ background:var(--bg);border:1px solid var(--border)}
 .cal-row.warn .cal-name{color:var(--warn)}
 .cal-row.exam .cal-name{color:var(--close)}
 
+/* ---- جدول التسجيل حسب المستوى ---- */
+.reg-card{background:var(--card);border:1px solid var(--border);
+border-radius:15px;padding:15px;margin-top:14px;display:none}
+.reg-card.on{display:block}
+.reg-row{display:flex;align-items:center;gap:10px;padding:9px 0;
+border-bottom:1px solid var(--border);cursor:pointer;
+-webkit-tap-highlight-color:transparent}
+.reg-row:last-of-type{border-bottom:none}
+.reg-name{flex:1;min-width:0;font-size:12.5px;font-weight:600;line-height:1.4}
+.reg-hrs{font-size:10.5px;color:var(--text3);margin-top:2px;font-weight:500}
+.reg-date{font-size:11px;font-family:var(--mono);color:var(--text2);
+white-space:nowrap;flex-shrink:0}
+.reg-row.me{background:var(--accent-soft,rgba(59,130,246,.10));
+margin:0 -8px;padding:9px 8px;border-radius:10px;border-bottom-color:transparent}
+.reg-row.me .reg-name{color:var(--accent)}
+.reg-row.me .reg-date{color:var(--accent);font-weight:700}
+.reg-tick{font-size:11px;color:var(--accent);flex-shrink:0}
+.reg-why{font-size:11px;color:var(--text3);margin-top:10px;line-height:1.6}
+.reg-more{display:none;margin-top:11px;padding-top:11px;
+border-top:1px solid var(--border)}
+.reg-more.on{display:block}
+.reg-note{font-size:11.5px;color:var(--text2);line-height:1.7;margin-top:7px}
+.reg-btn{margin-top:11px;background:var(--bg);border:1px solid var(--border);
+color:var(--text2);font-size:11.5px;font-weight:600;padding:7px 13px;
+border-radius:9px;cursor:pointer;font-family:inherit}
+
 /* ---- جدول الاختبارات النهائية ---- */
 .finals-card{background:var(--card);border:1px solid var(--border);
 border-radius:15px;padding:15px;margin-top:14px}
@@ -849,6 +877,17 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
   <div class="lab-warn" id="labWarn"></div>
 
   <div id="schedDays"></div>
+
+  <!-- تواريخ التسجيل حسب المستوى -->
+  <div class="reg-card" id="regCard">
+    <div class="fin-head">
+      <div>
+        <div class="fin-title" id="regTitle">📋 تواريخ التسجيل</div>
+        <div class="fin-sub" id="regSub">الترم الأول ٢٠٢٦–٢٠٢٧</div>
+      </div>
+    </div>
+    <div id="regBody"></div>
+  </div>
 
   <!-- المواعيد المهمة -->
   <div class="cal-card" id="calCard">
@@ -2634,7 +2673,7 @@ function switchTab(n){
   });
   if(n==='sched'){renderSlots();renderSchedule();}
   if(n==='plan')renderPlan();
-  if(n==='sched')renderCalendar();
+  if(n==='sched'){renderCalendar();renderRegCal();}
   if(n==='set')renderSettings();
   if(n==='docs'){if(!currentDoc){document.getElementById('docsList').style.display='block';
     document.getElementById('docDetail').style.display='none';
@@ -2927,7 +2966,8 @@ function renderSchedule(){
     const body=items.length?`<div class="day-body">${items.map(({c,t})=>`
       <div class="slot ${cl.has(c.crn)?'clash':''}">
         <div class="slot-time">${t?fmtTime(t.start)+'–'+fmtTime(t.end):'—'}</div>
-        <div class="slot-info"><div class="slot-name">${c.courseCode} §${c.section}</div>
+        <div class="slot-info tap" data-code="${escapeHtml(c.courseCode)}"
+          onclick="searchIn(this.dataset.code)"><div class="slot-name">${c.courseCode} §${c.section}</div>
         ${c.courseTitle?`<div class="slot-title">${escapeHtml(c.courseTitle)}</div>`:''}
         <div class="slot-sub">${c.room||'—'} · ${c.instructor||'—'}</div></div>
         <button class="slot-remove" onclick="removeFromSchedule('${c.crn}')">✕</button>
@@ -3017,7 +3057,7 @@ const ACAD_CAL=[
 {s:'2026-08-23',e:'2026-08-27',t:'reg', ar:'فترة التسجيل',                 en:'Registration period'},
 {s:'2026-08-30',              t:'start',ar:'بداية الدراسة — الترم الأول',   en:'Classes begin — Fall'},
 {s:'2026-08-30',e:'2026-09-03',t:'add', ar:'التسجيل المتأخر والحذف والإضافة',en:'Late registration & Add/Drop'},
-{s:'2026-09-10',              t:'add',  ar:'آخر يوم للحذف بدون رسوم',       en:'Last day to drop without charge'},
+{s:'2026-09-06',e:'2026-09-10',t:'add',  ar:'فترة الحذف (آخر يوم بدون رسوم ١٠ سبتمبر)',en:'Drop period (last day without charge 10 Sep)'},
 {s:'2026-09-23',e:'2026-09-26',t:'off', ar:'إجازة اليوم الوطني',            en:'National Day holiday'},
 {s:'2026-11-05',              t:'warn', ar:'آخر يوم للانسحاب بتقدير W',     en:'Last day to withdraw with "W"'},
 {s:'2026-11-22',e:'2026-11-24',t:'off', ar:'إجازة منتصف الترم',             en:'Mid-term break'},
@@ -3049,6 +3089,139 @@ const ACAD_CAL=[
 ];
 
 const CAL_ICON={reg:'📝',start:'🎓',add:'🔁',off:'🌴',warn:'⚠️',exam:'📕',note:'📌'};
+
+/* ═══════════ تواريخ التسجيل حسب المستوى ═══════════
+   من تقويم التسجيل المعتمد للترم الأول ٢٠٢٦–٢٠٢٧.
+   يختفي الكرت كامل بعد نهاية فترة الحذف. */
+const REG_CAL={
+  hideAfter:'2026-09-10',
+  termAr:'الترم الأول ٢٠٢٦–٢٠٢٧', termEn:'Fall 2026–2027',
+  rows:[
+    {k:'eve', d:'2026-08-23', ar:'مسائي · دراسات عليا · تحضيري',
+     en:'Evening · Graduate · Prep', hAr:'كل المستويات', hEn:'All levels'},
+    {k:'sr',  d:'2026-08-24', min:90, ar:'سينيور', en:'Senior',
+     hAr:'٩٠ ساعة فأكثر', hEn:'90 credits and above'},
+    {k:'jr',  d:'2026-08-25', min:60, ar:'جونيور', en:'Junior',
+     hAr:'٦٠ – ٨٩ ساعة', hEn:'60 – 89 credits'},
+    {k:'so',  d:'2026-08-26', min:30, ar:'سوفومور', en:'Sophomore',
+     hAr:'٣٠ – ٥٩ ساعة', hEn:'30 – 59 credits'},
+    {k:'fr',  d:'2026-08-27', min:0,  ar:'فريشمان', en:'Freshman',
+     hAr:'٠ – ٢٩ ساعة', hEn:'0 – 29 credits'}
+  ],
+  addDrop:{s:'2026-08-30',e:'2026-09-03'},
+  drop:{s:'2026-09-06',e:'2026-09-10'}
+};
+
+/* الساعات المكتسبة بنظام الجامعة:
+   الراسب (D / F / WF) والمنسحب (W / WP) ما ينحسبون،
+   والمعادلة (TR) تنحسب لأنها مادة مكتملة بلا درجة. */
+const NO_CREDIT_GRADES=FAIL_GRADES.concat(['W','WP']);
+function earnedCredits(){
+  let t=0;
+  completed.forEach(code=>{
+    if(NO_CREDIT_GRADES.includes(grades[code]))return;
+    t+=creditsOf(code);
+  });
+  return t;
+}
+
+/* المستوى المستنتج — null لو الطالب ما عبّى خطته أصلاً */
+function autoRegLevel(){
+  if(!completed.length)return null;
+  const cr=earnedCredits();
+  return cr>=90?'sr':cr>=60?'jr':cr>=30?'so':'fr';
+}
+
+function toggleRegMore(){
+  const el=document.getElementById('regMore');
+  const btn=document.getElementById('regMoreBtn');
+  if(!el)return;
+  const on=el.classList.toggle('on');
+  if(btn)btn.textContent=on
+    ?(LANG==='ar'?'إخفاء التفاصيل ▴':'Hide details ▴')
+    :(LANG==='ar'?'تفاصيل ▾':'Details ▾');
+}
+
+/* ضغطة على صف = تثبيت مستواك · ضغطة ثانية على نفس الصف = رجوع للاستنتاج */
+function pickRegLevel(k){
+  const cur=load('pmu_reg_level',null);
+  if(cur===k){ try{localStorage.removeItem('pmu_reg_level')}catch(e){} }
+  else save('pmu_reg_level',k);
+  renderRegCal();
+}
+
+function renderRegCal(){
+  const card=document.getElementById('regCard');
+  const box=document.getElementById('regBody');
+  if(!card||!box)return;
+
+  /* انتهى موسم التسجيل → نخفي الكرت */
+  if(calDays(REG_CAL.hideAfter)<0){ card.classList.remove('on'); return; }
+  card.classList.add('on');
+
+  const ar=LANG==='ar';
+  document.getElementById('regTitle').textContent=ar?'📋 تواريخ التسجيل':'📋 Registration dates';
+  document.getElementById('regSub').textContent=ar?REG_CAL.termAr:REG_CAL.termEn;
+
+  const manual=load('pmu_reg_level',null);
+  const auto=autoRegLevel();
+  const mine=manual||auto;
+  const cr=earnedCredits();
+
+  const rows=REG_CAL.rows.map(r=>{
+    const me=r.k===mine;
+    const dd=calDays(r.d);
+    let when='';
+    if(me){
+      if(dd===0)when=ar?' · اليوم':' · today';
+      else if(dd===1)when=ar?' · بكرة':' · tomorrow';
+      else if(dd>1)when=ar?` · بعد ${dd} يوم`:` · in ${dd} days`;
+    }
+    return `<div class="reg-row${me?' me':''}" onclick="pickRegLevel('${r.k}')">
+      <div class="reg-name">${escapeHtml(ar?r.ar:r.en)}
+        <div class="reg-hrs">${escapeHtml(ar?r.hAr:r.hEn)}</div></div>
+      <div class="reg-date">${calFmt(r.d)}${when}</div>
+      ${me?'<div class="reg-tick">✓</div>':''}
+    </div>`;
+  }).join('');
+
+  let why;
+  if(manual)
+    why=ar?'مستواك مثبّت يدوياً — اضغط عليه مرة ثانية للرجوع للحساب التلقائي.'
+          :'Level set manually — tap it again to go back to automatic.';
+  else if(auto)
+    why=ar?`محسوب على ${cr} ساعة مكتسبة في خطتك. مو صحيح؟ اضغط على مستواك.`
+          :`Based on ${cr} earned credits in your plan. Not right? Tap your level.`;
+  else
+    why=ar?'اضغط على مستواك عشان يتميّز لك، أو عبّي خطتك ويطلع تلقائياً.'
+          :'Tap your level to highlight it, or fill your plan to get it automatically.';
+
+  const fmtRange=x=>`${calFmt(x.s)} – ${calFmt(x.e)}`;
+  const more=`<div class="reg-more" id="regMore">
+    <div class="reg-note">🔁 ${ar?'الحذف والإضافة':'Add / Drop'}: <b>${fmtRange(REG_CAL.addDrop)}</b> — ${
+      ar?'لكل المستويات':'all levels'}</div>
+    <div class="reg-note">➖ ${ar?'الحذف':'Drop'}: <b>${fmtRange(REG_CAL.drop)}</b> — ${
+      ar?'لكل المستويات':'all levels'}</div>
+    <div class="reg-note">📌 ${ar
+      ?'ما فيه تسجيل مبكر هذا الترم لأي مستوى.'
+      :'There is no early registration this term for any level.'}</div>
+    <div class="reg-note">🎓 ${ar
+      ?'التحضيري: التسجيل ممتد من ٢٣ إلى ٢٧ أغسطس، وتعديل الجدول يكون عن طريق قسم التحضيري.'
+      :'Prep Program: registration runs 23–27 Aug, and schedule adjustment goes through the Prep Department.'}</div>
+    <div class="reg-note">🧮 ${ar
+      ?'الساعات المكتسبة تستثني D و F و WF و W و WP، وتشمل المواد المعادلة (TR).'
+      :'Earned credits exclude D, F, WF, W and WP, and include transferred (TR) courses.'}</div>
+  </div>`;
+
+  box.innerHTML=rows
+    +`<div class="reg-why">${why}</div>`
+    +`<button class="reg-btn" id="regMoreBtn" onclick="toggleRegMore()">${
+       ar?'تفاصيل ▾':'Details ▾'}</button>`
+    +more
+    +`<div class="fin-note">${ar
+      ?'المرجع الرسمي هو تقويم التسجيل في موقع الجامعة — راجعه قبل يوم تسجيلك.'
+      :'The university registration calendar is the official reference — check it before your day.'}</div>`;
+}
 
 function calDays(d){
   const now=new Date(); now.setHours(0,0,0,0);
@@ -4738,6 +4911,7 @@ function applyLang(){
   if(currentDoc)renderDocDetail();else if(instructors.length)renderDocs();
   if(document.getElementById('pageSched').classList.contains('active'))renderSchedule();
   renderCalendar();
+  renderRegCal();
   renderSlots();
   applyGpaHidden();
   applyTheme();
@@ -4788,8 +4962,8 @@ function onMajorChange(){
 const GRADE_POINTS={'A+':4.00,'A':3.75,'B+':3.50,'B':3.00,
 'C+':2.50,'C':2.00,'D+':1.50,'D':1.00,'F':0.00,'WF':0.00};
 /* تقديرات لا تدخل في حساب المعدل */
-const GRADE_SKIP=['I','IP','AU','EX','TR','W','N','P','AW'];
-const GRADE_LIST=['A+','A','B+','B','C+','C','D+','D','F','WF','P','TR','W'];
+const GRADE_SKIP=['I','IP','AU','EX','TR','W','WP','N','P','AW'];
+const GRADE_LIST=['A+','A','B+','B','C+','C','D+','D','F','WF','P','TR','W','WP'];
 
 function calcGPA(){
   let pts=0,hrs=0,n=0;
