@@ -199,6 +199,10 @@ border:1px solid rgba(245,158,11,.35);border-radius:13px;padding:13px 15px;margi
 .ca-text h3{font-size:13px;font-weight:600;color:var(--warn);margin-bottom:4px}
 .ca-text p{font-size:12px;color:var(--text2);line-height:1.6}
 .sched-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:16px}
+/* المسح إجراء لا رجعة فيه — سطر ثانٍ وأصغر عشان ما يُضغط بالغلط */
+.sched-actions .btn-ghost.danger{grid-column:1/-1;padding:9px;font-size:12px;
+opacity:.75}
+.sched-actions .btn-ghost.danger:active{opacity:1}
 .btn-ghost{background:transparent;border:1px solid var(--border2);color:var(--text2);border-radius:11px;
 padding:11px;font-size:13px;font-weight:600;font-family:var(--sans);cursor:pointer}
 .btn-ghost.danger{color:var(--close);border-color:var(--close-border)}
@@ -616,6 +620,25 @@ background:var(--bg);border:1px solid var(--border)}
 .cal-row.warn .cal-name{color:var(--warn)}
 .cal-row.exam .cal-name{color:var(--close)}
 
+/* ---- أرقام التسجيل (CRN) ---- */
+.crn-panel{display:none;background:var(--card);border:1px solid var(--border);
+border-radius:15px;padding:14px;margin-top:12px}
+.crn-panel.on{display:block}
+.crn-row{display:flex;align-items:center;gap:10px;padding:8px 0;
+border-bottom:1px solid var(--border);cursor:pointer;
+-webkit-tap-highlight-color:transparent}
+.crn-row:last-of-type{border-bottom:none}
+.crn-row:active{opacity:.55}
+.crn-num{font-family:var(--mono);font-size:15px;font-weight:700;
+color:var(--accent);letter-spacing:.5px}
+.crn-code{flex:1;min-width:0;font-size:12.5px;color:var(--text2);
+overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crn-copy{font-size:11px;color:var(--text3);flex-shrink:0}
+.crn-all{width:100%;margin-top:11px;background:var(--accent);color:#fff;border:none;
+font-family:inherit;font-size:13px;font-weight:700;padding:11px;border-radius:11px;
+cursor:pointer}
+.crn-hint{font-size:11px;color:var(--text3);margin-top:9px;line-height:1.6}
+
 /* ---- جدول التسجيل حسب المستوى ---- */
 .reg-card{background:var(--card);border:1px solid var(--border);
 border-radius:15px;padding:15px;margin-top:14px;display:none}
@@ -683,7 +706,7 @@ margin:0!important;padding:0!important;min-height:0!important}
 
 /* اخفِ واجهة الشاشة كاملة */
 .topbar,.tabs,.sched-actions,.slot-remove,.conflict-alert,.sched-summary,.lab-warn,
-.guide-fab,.guide-overlay,.toast,.state-box,.sync-note,.next-check,
+.guide-fab,.guide-overlay,.toast,.state-box,.sync-note,.next-check,.reg-card,.crn-panel,
 #schedDays,.modal,.overlay,.finals-card,.cal-card,.legal-foot{display:none!important}
 .page{display:none!important}
 .main{padding:0!important;max-width:none!important;margin:0!important}
@@ -740,6 +763,13 @@ break-inside:avoid;page-break-inside:avoid}
 .ps-lg{display:flex;align-items:center;gap:5px;font-size:6.5pt;color:#5b6472}
 .ps-lg i{width:8px;height:8px;border-radius:2px;background:var(--c);flex-shrink:0}
 .ps-lg b{font-weight:700;color:#111827;direction:ltr}
+.ps-crn{margin-top:7px;padding-top:6px;border-top:1px solid #dfe3e9;
+display:flex;flex-wrap:wrap;align-items:center;gap:4px 9px;
+break-inside:avoid;page-break-inside:avoid}
+.ps-crn-t{font-size:6.5pt;font-weight:700;color:#111827}
+.ps-crn-i{font-size:6.5pt;color:#5b6472;direction:ltr;
+border:1px solid #dfe3e9;border-radius:3px;padding:1px 5px}
+.ps-crn-i b{font-family:var(--mono);font-size:8pt;color:#111827;margin-inline-end:4px}
 .ps-note{margin-top:6px;font-size:6.5pt;color:#5b6472;line-height:1.6;break-inside:avoid}
 .ps-note b{color:#111827;direction:ltr}
 .ps-warn{margin-top:6px;font-size:6.5pt;color:#b8442e;line-height:1.6}
@@ -896,9 +926,11 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     <div class="ca-text"><h3 data-i18n="clashTitle">يوجد تعارض في الجدول</h3><p id="conflictList"></p></div>
   </div>
   <div class="sched-actions">
-    <button class="btn-ghost" onclick="printSchedule()" data-i18n="print">🖨️ اطبع الجدول</button>
+    <button class="btn-ghost" onclick="toggleCrn()" id="crnBtn" data-i18n="crnBtn">🔢 أرقام CRN</button>
+    <button class="btn-ghost" onclick="printSchedule()" data-i18n="print">🖨️ اطبع</button>
     <button class="btn-ghost danger" onclick="clearSchedule()" data-i18n="clearAll">🗑️ امسح الكل</button>
   </div>
+  <div class="crn-panel" id="crnPanel"></div>
   <div class="state-box visible" id="schedEmpty">
     <div class="state-icon">📅</div><div class="state-title">جدولك فاضي</div>
     <div class="state-sub">روح لصفحة البحث واضغط ➕ على أي مادة</div>
@@ -2626,13 +2658,26 @@ function findPlanCourse(code){return allPlanCourses().find(c=>c.c===code)}
 const FAIL_GRADES=['D','F','WF'];
 function isFailed(code){ return FAIL_GRADES.includes(grades[code]); }
 
+/* الانسحاب: الطالب ما اجتاز المادة، فهي باقية عليه كمتطلب
+   ولا تفتح المواد اللاحقة، ولا تُحسب ضمن ساعاته المكتسبة. */
+const WITHDRAW_GRADES=['W','WP'];
+function isWithdrawn(code){ return WITHDRAW_GRADES.includes(grades[code]); }
+
 /* "خلّصها" للعرض والتقدّم — يشمل حتى اللي رسب فيها بـ D */
 function isDone(code){return completed.includes(code)}
 
-/* "نجح فيها" لفتح المواد اللاحقة — يستثني الرسوب */
-function isPassed(code){ return completed.includes(code) && !isFailed(code); }
+/* "نجح فيها" لفتح المواد اللاحقة — يستثني الرسوب والانسحاب */
+function isPassed(code){
+  return completed.includes(code) && !isFailed(code) && !isWithdrawn(code);
+}
+/* الساعات المنجزة من الخطة: تستثني الراسب والمنسحب مثل نظام الجامعة،
+   لأنها تُستخدم في شريط التقدّم وفي متطلبات المستوى (مثل: يلزم 60 ساعة) */
 function doneCredits(){
-  let t=0;allPlanCourses().forEach(c=>{if(isDone(c.c))t+=c.h});return t;
+  let t=0;
+  allPlanCourses().forEach(c=>{
+    if(isDone(c.c) && !isFailed(c.c) && !isWithdrawn(c.c)) t+=c.h;
+  });
+  return t;
 }
 function level(cr){return cr>=90?'Senior':cr>=60?'Junior':cr>=30?'Sophomore':'Freshman'}
 
@@ -2678,7 +2723,7 @@ function suggestNext(){
   const cands=[]; let intern=null;
   PLAN.forEach((sem,si)=>sem.courses.forEach(c=>{
     /* المادة اللي رسب فيها لازم يعيدها — تبقى في المقترح */
-    if((isDone(c.c)&&!isFailed(c.c))||c.el)return;
+    if(isPassed(c.c)||c.el)return;   /* الراسب والمنسحب يبقيان في المقترح */
     if(!prereqCheck(c.c).ok)return;
     const item={...c,order:si,unlocks:unlocksCount(c.c),retake:isFailed(c.c)};
     if(isInternship(c)){ if(!intern)intern=item; return; }
@@ -2697,7 +2742,15 @@ function suggestNext(){
 }
 
 /* ===== Tabs ===== */
+/* موضع التمرير محفوظ لكل تبويب: الطالب اللي نزل في نتائج البحث
+   ورجع لجدوله يقارن، يرجع لنفس المكان بدل ما يبدأ من فوق. */
+const TAB_SCROLL={};
+let CUR_TAB='search';
+
 function switchTab(n){
+  /* ما نحفظ لو التبويب نفسه، عشان لا نطمس تصفيراً مقصوداً */
+  if(n!==CUR_TAB)TAB_SCROLL[CUR_TAB]=window.scrollY||0;
+  CUR_TAB=n;
   ['search','sched','plan','docs','set'].forEach(t=>{
     document.getElementById('page'+t[0].toUpperCase()+t.slice(1)).classList.toggle('active',t===n);
     document.getElementById('tab'+t[0].toUpperCase()+t.slice(1)).classList.toggle('active',t===n);
@@ -2709,7 +2762,16 @@ function switchTab(n){
   if(n==='docs'){if(!currentDoc){document.getElementById('docsList').style.display='block';
     document.getElementById('docDetail').style.display='none';
     if(!instructors.length)loadInstructors();else renderDocs();}}
-  window.scrollTo(0,0);
+  /* ننتظر رسم المحتوى قبل الاسترجاع، وإلا الصفحة أقصر من الموضع المحفوظ */
+  const y=TAB_SCROLL[n]||0;
+  requestAnimationFrame(()=>window.scrollTo(0,y));
+}
+
+/* بحث جديد يعني نتائج جديدة — نرجع لفوق بدل ما نبقى في وسط قائمة قديمة */
+function resetTabScroll(n){
+  const k=n||CUR_TAB;
+  TAB_SCROLL[k]=0;
+  if(k===CUR_TAB)window.scrollTo(0,0);
 }
 
 /* ===== Time ===== */
@@ -2755,6 +2817,7 @@ function scheduleCredits(){
 
 /* ===== Search ===== */
 async function doSearch(){
+  resetTabScroll('search');   /* نتائج جديدة تبدأ من فوق */
   const term=document.getElementById('term').value,college=document.getElementById('college').value,
         gender=document.getElementById('gender').value,filter=document.getElementById('courseFilter').value.trim();
   showLoading(true);setStatus(t('searching'));
@@ -2836,7 +2899,7 @@ function renderResults(){
     if(inSch)tags+=`<div class="tag ok">${t('inSchedule')}</div>`;
     else if(clash.length)tags+=`<div class="tag warn">${t('clashWith')} ${clash.map(x=>x.courseCode+' §'+x.section).join('، ')}</div>`;
     else if(schedule.length&&parseTime(c.courseTiming))tags+=`<div class="tag ok">${t('noClash')}</div>`;
-    if(pre.known&&pre.ok&&isDone(c.courseCode))tags+=`<div class="tag ok">${t('alreadyDone')}</div>`;
+    if(pre.known&&pre.ok&&isPassed(c.courseCode))tags+=`<div class="tag ok">${t('alreadyDone')}</div>`;
 
     const lock=pre.known&&!pre.ok;
     return `<div class="course-card ${c.status==='OPEN'?'is-open':'is-close'} ${inSch?'in-schedule':''}">
@@ -2879,8 +2942,71 @@ function removeFromSchedule(crn){
   const i=schedule.findIndex(s=>s.crn===crn);
   if(i>-1){const r=schedule.splice(i,1)[0];saveSchedules();pushSchedule();updateBadge();renderSchedule();renderResults();showToast(`${t('removed')} ${r.courseCode}`)}
 }
+/* ═══════════ أرقام التسجيل (CRN) ═══════════
+   وقت التسجيل الطالب يحتاج الأرقام بسرعة، فنعرضها مطوية
+   عشان لا تزحم الصفحة، وننسخها بضغطة. */
+function copyText(txt,okMsg){
+  const done=()=>showToast(okMsg,'ok');
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(done).catch(()=>fallback());
+  }else fallback();
+  function fallback(){
+    /* بعض المتصفحات تمنع الحافظة بدون https — نرجع للطريقة القديمة */
+    try{
+      const ta=document.createElement('textarea');
+      ta.value=txt; ta.setAttribute('readonly','');
+      ta.style.cssText='position:fixed;top:-9999px';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+      done();
+    }catch(e){ showToast(LANG==='ar'?'ما قدرت أنسخ — اضغط مطوّلاً على الرقم':'Copy failed — long-press the number','warn'); }
+  }
+}
+
+function toggleCrn(){
+  const p=document.getElementById('crnPanel');
+  if(!p)return;
+  if(!schedule.length){
+    showToast(LANG==='ar'?'جدولك فاضي — ضيف مواد أول':'Your schedule is empty','warn');
+    return;
+  }
+  const on=p.classList.toggle('on');
+  if(on)renderCrn();
+}
+
+function renderCrn(){
+  const p=document.getElementById('crnPanel');
+  if(!p||!p.classList.contains('on'))return;
+  const ar=LANG==='ar';
+  p.innerHTML=schedule.map(c=>`
+    <div class="crn-row" onclick="copyCrn('${escapeHtml(String(c.crn||''))}')">
+      <span class="crn-num">${escapeHtml(String(c.crn||'—'))}</span>
+      <span class="crn-code">${escapeHtml(c.courseCode)} §${escapeHtml(c.section||'')}</span>
+      <span class="crn-copy">${ar?'نسخ':'copy'}</span>
+    </div>`).join('')
+    +`<button class="crn-all" onclick="copyAllCrn()">${
+      ar?`📋 انسخ الأرقام كلها (${schedule.length})`:`📋 Copy all (${schedule.length})`}</button>`
+    +`<div class="crn-hint">${ar
+      ?'اضغط أي رقم لنسخه لحاله. الأرقام تُطبع كذلك مع الجدول.'
+      :'Tap a number to copy it. They are printed with your schedule too.'}</div>`;
+}
+
+function copyCrn(crn){
+  copyText(crn,(LANG==='ar'?'انتسخ ':'Copied ')+crn);
+}
+
+function copyAllCrn(){
+  const txt=schedule.map(c=>c.crn).filter(Boolean).join('\n');
+  copyText(txt,LANG==='ar'?`انتسخت ${schedule.length} أرقام`:`Copied ${schedule.length} numbers`);
+}
+
 function clearSchedule(){
   if(!schedule.length)return;
+  const n=schedule.length;
+  const msg=LANG==='ar'
+    ? `تمسح ${n} مادة من "جدول ${SLOT+1}"؟ ما فيه تراجع.`
+    : `Delete ${n} courses from "Plan ${SLOT+1}"? This cannot be undone.`;
+  if(!confirm(msg))return;
   schedule.length=0;   /* نفرّغه بدون ما نكسر الإشارة */
   saveSchedules();pushSchedule();updateBadge();renderSchedule();renderResults();showToast(t('clearedSched'));
 }
@@ -2970,6 +3096,7 @@ function renderLabWarn(){
 }
 
 function renderSchedule(){
+  renderCrn();   /* لو اللوحة مفتوحة، تتحدث مع كل إضافة أو حذف */
   const empty=document.getElementById('schedEmpty'),wrap=document.getElementById('schedDays');
   document.getElementById('sumCourses').textContent=schedule.length;
   document.getElementById('sumHours').textContent=scheduleCredits();
@@ -3146,7 +3273,7 @@ const REG_CAL={
 /* الساعات المكتسبة بنظام الجامعة:
    الراسب (D / F / WF) والمنسحب (W / WP) ما ينحسبون،
    والمعادلة (TR) تنحسب لأنها مادة مكتملة بلا درجة. */
-const NO_CREDIT_GRADES=FAIL_GRADES.concat(['W','WP']);
+const NO_CREDIT_GRADES=FAIL_GRADES.concat(WITHDRAW_GRADES);
 function earnedCredits(){
   let t=0;
   completed.forEach(code=>{
@@ -3543,6 +3670,12 @@ function buildPrintSheet(clashSet){
   const legend=`<div class="ps-legend">${Object.keys(colorOf).map(code=>
     `<div class="ps-lg" style="--c:${colorOf[code][0]}"><i></i><b>${escapeHtml(code)}</b></div>`).join('')}</div>`;
 
+  /* أرقام التسجيل — أهم شي في الورقة وقت التسجيل */
+  const crns=`<div class="ps-crn"><span class="ps-crn-t">${
+    LANG==='ar'?'أرقام التسجيل':'Registration numbers (CRN)'}</span>${
+    schedule.map(c=>`<span class="ps-crn-i"><b>${escapeHtml(String(c.crn||''))}</b>${
+      escapeHtml(c.courseCode)} §${escapeHtml(c.section||'')}</span>`).join('')}</div>`;
+
   /* مواد بدون وقت محدد */
   const note=untimed.length?`<div class="ps-note">${LANG==='ar'?'بدون وقت محدد:':'No fixed time:'} ${
     untimed.map(c=>`<b>${escapeHtml(c.courseCode)} §${escapeHtml(c.section||'')}</b>`).join(' · ')}</div>`:'';
@@ -3601,7 +3734,7 @@ function buildPrintSheet(clashSet){
   const foot=`<div class="ps-foot"><span>jadwalik.com</span><span>${
     new Date().toLocaleDateString(LANG==='ar'?'ar-SA':'en-GB')}</span></div>`;
 
-  el.innerHTML=head+grid+legend+note+warn+finals+foot;
+  el.innerHTML=head+grid+legend+crns+note+warn+finals+foot;
 }
 
 function printSchedule(){
@@ -4349,6 +4482,7 @@ function searchIn(query, note){
   term.value=UPCOMING_TERM; col.value='ALL'; gen.value='ALL';
   termHint();
 
+  resetTabScroll('search');
   switchTab('search');
   const f=document.getElementById('courseFilter');
   if(f){
@@ -4693,7 +4827,7 @@ filterHelp:'ابحث بكود المادة، أو الـ CRN، أو اسم ال�
 search:'🔍 ابحث',searching:'جاري البحث...',monitor:'📡 راقب',stopMonitor:'⏹ أوقف',
 total:'إجمالي',open:'مفتوح',closed:'مغلق',show:'عرض:',all:'الكل',onlyOpen:'مفتوح فقط',onlyClosed:'مغلق فقط',
 courses:'مادة',credits:'ساعة معتمدة',clashes:'تعارض',clashTitle:'يوجد تعارض في الجدول',
-print:'🖨️ اطبع الجدول',clearAll:'🗑️ امسح الكل',
+print:'🖨️ اطبع',clearAll:'🗑️ امسح الكل',crnBtn:'🔢 أرقام CRN',
 gpaLabel:'المعدل التراكمي',countedHrs:'ساعات محسوبة',
 suggestTitle:'💡 المقترح للترم الجاي',planTitle:'الخطة الدراسية',
 uni:'الجامعة',major:'التخصص',login:'دخول',tabDocs:'👨‍🏫 دكاترة',myReviews:'تقييماتي',docsTitle:'تقييمات الدكاترة',uniTitle:'جامعتك وتخصصك',docPh:'ابحث عن دكتور...',
@@ -4776,7 +4910,7 @@ filterHelp:'Search by course code, CRN, course title, or instructor name',
 search:'🔍 Search',searching:'Searching...',monitor:'📡 Monitor',stopMonitor:'⏹ Stop',
 total:'Total',open:'Open',closed:'Closed',show:'Show:',all:'All',onlyOpen:'Open only',onlyClosed:'Closed only',
 courses:'Courses',credits:'Credit hours',clashes:'Conflicts',clashTitle:'Schedule conflict detected',
-print:'🖨️ Print schedule',clearAll:'🗑️ Clear all',
+print:'🖨️ Print',clearAll:'🗑️ Clear all',crnBtn:'🔢 CRN numbers',
 gpaLabel:'Cumulative GPA',countedHrs:'Counted hours',
 suggestTitle:'💡 Suggested next term',planTitle:'Study Plan',
 uni:'University',major:'Major',login:'Sign in',tabDocs:'👨‍🏫 Faculty',myReviews:'My reviews',docsTitle:'Instructor reviews',uniTitle:'Your university & major',docPh:'Search for an instructor...',
@@ -5048,7 +5182,8 @@ function setGrade(code,val){
   if(val)grades[code]=val;else delete grades[code];
   save('pmu_grades',grades);
   pushGrades();
-  renderGPA();
+  /* الدرجة تؤثر في الشريط والساعات والمقترح والمتطلبات، لا في المعدل وحده */
+  renderPlan();
 }
 
 function renderGPA(){
