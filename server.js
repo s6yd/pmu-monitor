@@ -2323,6 +2323,23 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  /* قوقل يطلب أيقونة الموقع من /favicon.ico تحديداً، وبدونها يعرض
+     كرة أرضية عامة في نتائج البحث. نخدمها من أكبر أيقونة متوفرة. */
+  if (parsed.pathname === '/favicon.ico') {
+    const candidates = ['favicon-192.png', 'favicon-512.png', 'favicon-180.png', 'favicon-32.png'];
+    for (const name of candidates) {
+      try {
+        const buf = fs.readFileSync(path.join(__dirname, name));
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Cache-Control', 'public, max-age=604800');
+        res.writeHead(200); res.end(buf);
+        return;
+      } catch (e) { /* نجرّب اللي بعدها */ }
+    }
+    res.writeHead(404); res.end('Not found');
+    return;
+  }
+
   /* الأيقونات والمانيفست */
   if (/^\/(favicon-\d+\.png|manifest\.json|jadwalik-logo[\w-]*\.png)$/.test(parsed.pathname)) {
     try {
