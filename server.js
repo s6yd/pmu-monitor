@@ -2336,6 +2336,34 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  /* ملفات الفهرسة — يطلبها قوقل قبل ما يزحف الموقع */
+  if (parsed.pathname === '/robots.txt') {
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.writeHead(200);
+    res.end(
+      'User-agent: *\n' +
+      'Allow: /\n' +
+      'Disallow: /admin.html\n' +
+      'Disallow: /api/\n\n' +
+      'Sitemap: https://jadwalik.com/sitemap.xml\n');
+    return;
+  }
+
+  if (parsed.pathname === '/sitemap.xml') {
+    const today = riyadhDate();
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.writeHead(200);
+    res.end(
+      '<?xml version="1.0" encoding="UTF-8"?>\n' +
+      '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
+      ['https://jadwalik.com/', 'https://jadwalik.com/privacy', 'https://jadwalik.com/terms']
+        .map(u => `  <url><loc>${u}</loc><lastmod>${today}</lastmod></url>\n`).join('') +
+      '</urlset>\n');
+    return;
+  }
+
   /* الصفحات القانونية — يطلبها قوقل وبوابات الدفع */
   if (parsed.pathname === '/privacy' || parsed.pathname === '/privacy.html' ||
       parsed.pathname === '/terms'   || parsed.pathname === '/terms.html') {

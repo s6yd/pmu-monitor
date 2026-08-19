@@ -3,8 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>جدولك — Jadwalik</title>
-<meta name="description" content="جدولك — ابنِ جدولك الدراسي في جامعة الأمير محمد بن فهد، تابع خطتك، احسب معدلك، وراقب المواد المسكّرة.">
+<title>جدولك | Jadwalik — PMU Schedule Builder & Course Offering</title>
+<meta name="description" content="جدولك: ابنِ جدولك الدراسي لجامعة الأمير محمد بن فهد (PMU)، اعرض المواد المطروحة والشعب، تابع خطتك الدراسية، احسب معدلك، وشوف جدول الاختبارات النهائية. Build your PMU schedule, browse the course offering, track your degree plan and GPA.">
+<meta name="keywords" content="PMU, Prince Mohammad Bin Fahd University, PMU schedule, PMU course offering, PMU courses, PMU banner, جدولك, جدول PMU, مواد PMU, الخطة الدراسية, حاسبة المعدل">
+<link rel="canonical" href="https://jadwalik.com/">
+<meta name="robots" content="index, follow">
 <meta name="theme-color" content="#080b12">
 <link rel="icon" href="/favicon-32.png" sizes="32x32">
 <link rel="icon" href="/favicon-192.png" sizes="192x192">
@@ -14,11 +17,27 @@
 <meta name="apple-mobile-web-app-title" content="جدولك">
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="manifest" href="/manifest.json">
-<meta property="og:title" content="جدولك — Jadwalik">
-<meta property="og:description" content="جدولك الدراسي وخطتك ومعدلك ومراقبة المواد — كل شي في مكان واحد.">
+<meta property="og:title" content="جدولك | Jadwalik — PMU Schedule Builder">
+<meta property="og:description" content="جدولك الدراسي في PMU وخطتك ومعدلك ومواعيد التسجيل والاختبارات — كل شي في مكان واحد.">
+<meta property="og:site_name" content="جدولك | Jadwalik">
+<meta property="og:locale" content="ar_SA">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="جدولك | Jadwalik — PMU Schedule Builder">
+<meta name="twitter:description" content="ابنِ جدولك الدراسي في جامعة الأمير محمد بن فهد، تابع خطتك، واحسب معدلك.">
+<meta name="twitter:image" content="https://jadwalik.com/favicon-512.png">
 <meta property="og:image" content="https://jadwalik.com/favicon-512.png">
 <meta property="og:url" content="https://jadwalik.com">
 <meta property="og:type" content="website">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"WebApplication",
+ "name":"جدولك | Jadwalik",
+ "url":"https://jadwalik.com/",
+ "applicationCategory":"EducationalApplication",
+ "operatingSystem":"Web",
+ "inLanguage":["ar","en"],
+ "description":"أداة طلابية لبناء الجدول الدراسي ومتابعة الخطة وحساب المعدل لطلاب جامعة الأمير محمد بن فهد.",
+ "offers":{"@type":"Offer","price":"0","priceCurrency":"SAR"}}
+</script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 :root{
@@ -747,6 +766,17 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
+<noscript>
+  <h1>جدولك — أداة الجدول الدراسي لطلاب جامعة الأمير محمد بن فهد (PMU)</h1>
+  <p>جدولك أداة طلابية مستقلة تساعدك على بناء جدولك الدراسي، وعرض المواد المطروحة
+  والشعب المتاحة، ومتابعة خطتك الدراسية ومتطلباتها السابقة، وحساب معدلك التراكمي،
+  ومعرفة مواعيد التسجيل والحذف والإضافة وجدول الاختبارات النهائية.</p>
+  <p>Jadwalik is an independent student tool for Prince Mohammad Bin Fahd University:
+  build your class schedule, browse the course offering, track your degree plan and
+  prerequisites, calculate your GPA, and check registration and final exam dates.</p>
+  <p>هذا الموقع يحتاج تفعيل JavaScript ليعمل. الموقع غير رسمي وغير تابع للجامعة،
+  والمرجع الرسمي هو موقع الجامعة.</p>
+</noscript>
 
 <div class="env-bar" id="envBar"></div>
 <div class="topbar">
