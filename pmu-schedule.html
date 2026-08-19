@@ -191,6 +191,8 @@ display:flex;align-items:center;justify-content:space-between}
 .slot.clash{border-right-color:var(--warn);background:rgba(245,158,11,.06)}
 .slot-time{font-family:var(--mono);font-size:11px;color:var(--text2);min-width:80px;direction:ltr;text-align:center}
 .slot-info{flex:1;min-width:0}
+.slot-info.tap{cursor:pointer;-webkit-tap-highlight-color:transparent}
+.slot-info.tap:active{opacity:.55}
 .slot-name{font-size:13px;font-weight:600}
 .slot-title{font-size:11.5px;color:var(--text2);margin-top:3px;line-height:1.4}
 .slot-sub{font-size:11px;color:var(--text3);margin-top:3px}
@@ -2964,7 +2966,8 @@ function renderSchedule(){
     const body=items.length?`<div class="day-body">${items.map(({c,t})=>`
       <div class="slot ${cl.has(c.crn)?'clash':''}">
         <div class="slot-time">${t?fmtTime(t.start)+'–'+fmtTime(t.end):'—'}</div>
-        <div class="slot-info"><div class="slot-name">${c.courseCode} §${c.section}</div>
+        <div class="slot-info tap" data-code="${escapeHtml(c.courseCode)}"
+          onclick="searchIn(this.dataset.code)"><div class="slot-name">${c.courseCode} §${c.section}</div>
         ${c.courseTitle?`<div class="slot-title">${escapeHtml(c.courseTitle)}</div>`:''}
         <div class="slot-sub">${c.room||'—'} · ${c.instructor||'—'}</div></div>
         <button class="slot-remove" onclick="removeFromSchedule('${c.crn}')">✕</button>

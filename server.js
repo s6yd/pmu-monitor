@@ -1407,6 +1407,13 @@ async function adminHealth() {
     maintenance: MAINTENANCE,
     maintenanceMsg: MAINT_MSG,
     finalsOn: FINALS_ON,
+    schedSync: {
+      last: SCHED_SYNC.last,
+      lastChange: SCHED_SYNC.lastChange,
+      runs: SCHED_SYNC.runs,
+      totalUpdated: SCHED_SYNC.totalUpdated,
+      gapMin: Math.round(SCHED_SYNC_GAP / 60000)
+    },
     alerts: Object.entries(ALERTS).filter(([,v])=>v.active)
               .map(([k,v])=>({key:k,title:v.title,since:v.at})),
     ttl: ttlReason(),
@@ -1644,6 +1651,84 @@ function cacheSnapshot() {
     courses: v.courses.length
   })).sort((a, b) => a.ageSec - b.ageSec);
 }
+/* ================================================================
+   ====   تحديث جداول الطلاب المحفوظة من نتائج البحث   ====
+   ================================================================
+   الجدول المحفوظ لقطة ثابتة وقت الإضافة: لو غيّرت الجامعة الدكتور
+   أو القاعة أو الوقت، يبقى الطالب يشوف القديم.
+   الحل: كل ما تتحدث قائمة ALL/ALL في الذاكرة، نقارنها بالجداول
+   المحفوظة بالـ CRN (رقم فريد وثابت) ونصحّح المختلف — بدون أي
+   طلب إضافي على موقع الجامعة.
+   الصف الواحد يُصحَّح لكل الطلاب دفعة وحدة لأن الفلترة بالـ CRN. */
+
+let SCHED_SYNC = { at: 0, running: false, last: null, lastChange: null,
+                   runs: 0, totalUpdated: 0 };
+const SCHED_SYNC_GAP = 10 * 60 * 1000;   /* لا نكتب في القاعدة أكثر من مرة كل 10 دقائق */
+
+async function syncSchedules(term, courses, force) {
+  if (SCHED_SYNC.running) return null;
+  if (!force && Date.now() - SCHED_SYNC.at < SCHED_SYNC_GAP) return null;
+  SCHED_SYNC.running = true;
+  SCHED_SYNC.at = Date.now();
+
+  const stat = { at: Date.now(), term, rows: 0, changed: 0, updated: 0,
+                 missing: 0, error: null, ms: 0 };
+  const t0 = Date.now();
+  try {
+    const live = new Map();
+    (courses || []).forEach(c => live.set(String(c.crn || '').trim(), c));
+
+    const rows = await sb('GET', 'user_schedule', {
+      query: `?term=eq.${encodeURIComponent(term)}` +
+             `&select=crn,course_title,course_date,course_timing,instructor,room`
+    });
+    if (!Array.isArray(rows) || !rows.length) return stat;
+    stat.rows = rows.length;
+
+    /* CRN → البيانات الحية، فقط للصفوف اللي فعلاً مختلفة */
+    const stale = new Map();
+    const same = (a, b) => String(a || '').trim() === String(b || '').trim();
+    for (const r of rows) {
+      const crn = String(r.crn || '').trim();
+      const c = live.get(crn);
+      if (!c) { stat.missing++; continue; }        /* شعبة انحذفت من الجامعة — ما نلمسها */
+      if (same(r.course_title, c.courseTitle) &&
+          same(r.course_date, c.courseDate) &&
+          same(r.course_timing, c.courseTiming) &&
+          same(r.instructor, c.instructor) &&
+          same(r.room, c.room)) continue;
+      stale.set(crn, c);
+    }
+    stat.changed = stale.size;
+
+    for (const [crn, c] of stale) {
+      await sb('PATCH', 'user_schedule', {
+        query: `?term=eq.${encodeURIComponent(term)}&crn=eq.${encodeURIComponent(crn)}`,
+        body: {
+          course_title: c.courseTitle, course_date: c.courseDate,
+          course_timing: c.courseTiming, instructor: c.instructor, room: c.room
+        },
+        prefer: 'return=minimal'
+      });
+      stat.updated++;
+      await new Promise(r => setTimeout(r, 150));   /* ما نضغط على Supabase */
+    }
+  } catch (e) {
+    stat.error = e.message;
+  } finally {
+    stat.ms = Date.now() - t0;
+    SCHED_SYNC.running = false;
+    SCHED_SYNC.last = stat;
+    SCHED_SYNC.runs++;
+    /* نحتفظ بآخر جولة صحّحت شيئاً — الجولات الفاضية تطمس المفيد */
+    if (stat.updated > 0) {
+      SCHED_SYNC.lastChange = stat;
+      SCHED_SYNC.totalUpdated += stat.updated;
+    }
+  }
+  return stat;
+}
+
 const coursesCache = new Map();     // key → {at, courses}
 const inFlight     = new Map();     // key → Promise (يمنع سحبتين متزامنتين لنفس التركيبة)
 
@@ -1678,6 +1763,9 @@ async function getCourses(term, college, gender) {
     });
     coursesCache.set(key, { at: Date.now(), courses });
     resolve('search', 'البحث ما يشتغل');
+    /* قائمة ALL/ALL هي الأشمل — نصحّح بها جداول الطلاب المحفوظة */
+    if (college === 'ALL' && gender === 'ALL')
+      syncSchedules(term, courses).catch(() => {});
     if (coursesCache.size > 40) {                     /* تنظيف بسيط */
       const oldest = [...coursesCache.entries()].sort((a, b) => a[1].at - b[1].at)[0];
       if (oldest) coursesCache.delete(oldest[0]);
@@ -1984,6 +2072,17 @@ const server = http.createServer(async (req, res) => {
       if (act === 'user')     return send(200, await adminUserDetail(parsed.query.id || ''));
       if (act === 'tickets')  return send(200, { tickets: await adminTickets(parsed.query.status) });
       if (act === 'broadcast-status') return send(200, BROADCAST);
+
+      if (act === 'sync-schedules') {
+        if (req.method === 'POST') {
+          const b = await readBody(req);
+          const term = String(b.term || '202710').trim();
+          const r = await getCourses(term, 'ALL', 'ALL');
+          const stat = await syncSchedules(term, r.courses, true);
+          return send(200, { ok: true, stat });
+        }
+        return send(200, { last: SCHED_SYNC.last });
+      }
 
       if (act === 'finals-toggle') {
         if (req.method === 'POST') {
