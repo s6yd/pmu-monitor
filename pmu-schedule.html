@@ -4455,7 +4455,14 @@ function clearDocFilter(){
 }
 
 /* ---------- صفحة الدكتور ---------- */
+/* موضع القائمة محفوظ عشان الرجوع من الدكتور يوديك لمكانه لا لأولها */
+let DOCS_SCROLL=0;
+
 function openDoc(name){
+  /* من القائمة: نحفظ مكانها · من صفحة دكتور ثانٍ: نبقي المحفوظ
+     · من تبويب آخر (بحث أو جدول): ما فيه مكان نرجع له */
+  if(CUR_TAB==='docs'&&!currentDoc)DOCS_SCROLL=window.scrollY||0;
+  else if(!currentDoc)DOCS_SCROLL=0;
   currentDoc=name;
   switchTab('docs');
   document.getElementById('docsList').style.display='none';
@@ -4468,6 +4475,9 @@ function backToDocs(){
   document.getElementById('docDetail').style.display='none';
   currentDoc=null;
   renderDocs();
+  /* ننتظر رسم القائمة قبل الرجوع لموضعها */
+  const y=DOCS_SCROLL;
+  requestAnimationFrame(()=>window.scrollTo(0,y));
 }
 
 /* ينقلك للبحث في ترم التسجيل القادم دائماً، بكل الكليات والجنسين.
