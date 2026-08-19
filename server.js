@@ -1407,7 +1407,13 @@ async function adminHealth() {
     maintenance: MAINTENANCE,
     maintenanceMsg: MAINT_MSG,
     finalsOn: FINALS_ON,
-    schedSync: SCHED_SYNC.last,
+    schedSync: {
+      last: SCHED_SYNC.last,
+      lastChange: SCHED_SYNC.lastChange,
+      runs: SCHED_SYNC.runs,
+      totalUpdated: SCHED_SYNC.totalUpdated,
+      gapMin: Math.round(SCHED_SYNC_GAP / 60000)
+    },
     alerts: Object.entries(ALERTS).filter(([,v])=>v.active)
               .map(([k,v])=>({key:k,title:v.title,since:v.at})),
     ttl: ttlReason(),
@@ -1655,7 +1661,8 @@ function cacheSnapshot() {
    طلب إضافي على موقع الجامعة.
    الصف الواحد يُصحَّح لكل الطلاب دفعة وحدة لأن الفلترة بالـ CRN. */
 
-let SCHED_SYNC = { at: 0, running: false, last: null };
+let SCHED_SYNC = { at: 0, running: false, last: null, lastChange: null,
+                   runs: 0, totalUpdated: 0 };
 const SCHED_SYNC_GAP = 10 * 60 * 1000;   /* لا نكتب في القاعدة أكثر من مرة كل 10 دقائق */
 
 async function syncSchedules(term, courses, force) {
@@ -1712,6 +1719,12 @@ async function syncSchedules(term, courses, force) {
     stat.ms = Date.now() - t0;
     SCHED_SYNC.running = false;
     SCHED_SYNC.last = stat;
+    SCHED_SYNC.runs++;
+    /* نحتفظ بآخر جولة صحّحت شيئاً — الجولات الفاضية تطمس المفيد */
+    if (stat.updated > 0) {
+      SCHED_SYNC.lastChange = stat;
+      SCHED_SYNC.totalUpdated += stat.updated;
+    }
   }
   return stat;
 }

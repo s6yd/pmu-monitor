@@ -903,6 +903,19 @@ function renderFb(){
   </div>`).join('');
 }
 
+/* ══════════ تحديث جداول الطلاب ══════════ */
+async function runSchedSync(){
+  if(!confirm('تشغيل تحديث جداول الطلاب الآن؟ بيسحب قائمة الترم القادم ويصحّح الجداول المحفوظة.'))return;
+  try{
+    toast('جاري التحديث...','ok');
+    const r=await api('sync-schedules',{body:{}});
+    const s=r.stat||{};
+    toast(s.error?('خطأ: '+s.error)
+      :`تم · فُحص ${s.rows||0} صف · صُحّح ${s.updated||0}`, s.error?'err':'ok');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
 /* ══════════ جدول الاختبارات النهائية ══════════ */
 async function toggleFinals(on){
   if(on){
@@ -1099,6 +1112,29 @@ function renderSys(){
         h.ttl.ttlMin<60?h.ttl.ttlMin+' دقيقة':(h.ttl.ttlMin/60)+' ساعات'}</b></div>
     <div class="gauge-sub">${esc(h.ttl.ar)}${h.riyadhDate?` · اليوم ${h.riyadhDate}`:''}</div>`:''}
   </div>
+
+  ${h.schedSync?(()=>{
+    const S=h.schedSync, L=S.last, C=S.lastChange;
+    const ago=ms=>{const m=Math.round((Date.now()-ms)/60000);
+      return m<1?'الآن':m<60?`قبل ${m} د`:`قبل ${Math.round(m/60)} س`;};
+    return `<div class="sec-title">تحديث جداول الطلاب</div>
+  <div class="gauge">
+    <div class="kv"><span>آخر جولة</span>
+      <b class="${L?(L.error?'bad':'good'):''}">${L?ago(L.at):'ما اشتغلت بعد'}</b></div>
+    ${L?`<div class="kv"><span>صفوف مفحوصة</span><b>${L.rows}</b></div>
+    <div class="kv"><span>مواد صُحّحت</span>
+      <b class="${L.updated?'warn':'good'}">${L.updated}</b></div>
+    <div class="kv"><span>شعب مو موجودة في الجامعة</span>
+      <b class="${L.missing?'warn':'good'}">${L.missing}</b></div>
+    ${L.error?`<div class="kv"><span>خطأ</span><b class="bad">${esc(L.error)}</b></div>`:''}`:''}
+    <div class="kv"><span>إجمالي التصحيحات</span><b>${S.totalUpdated}</b></div>
+    ${C?`<div class="kv"><span>آخر تصحيح فعلي</span>
+      <b class="warn">${C.updated} مادة · ${ago(C.at)}</b></div>`:''}
+    <div class="gauge-sub">تشتغل تلقائياً كل ما تتحدث قائمة ALL/ALL،
+      بحد أدنى ${S.gapMin} دقيقة بين الجولتين. تصحّح الدكتور والقاعة والوقت
+      في جداول الطلاب المحفوظة بمطابقة الـ CRN.</div>
+    <button class="mini" style="margin-top:10px" onclick="runSchedSync()">🔄 شغّلها الآن</button>
+  </div>`;})():''}
 
   ${h.caches&&h.caches.finals?`<div class="sec-title">جدول الاختبارات</div>
   <div class="gauge">
