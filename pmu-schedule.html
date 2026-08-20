@@ -2712,6 +2712,10 @@ function unlockLabel(n){
   return `${t('unlocksN')} ${n} ${t('unlocksN2')}`;
 }
 /* التطبيق العملي (Internship / Co-op) ينزل لحاله — ممنوع معه مواد */
+/* التطبيق العملي للسينيور فقط. نشترط الساعات لأن بيانات المتطلبات
+   السابقة ناقصة في بعض التخصصات، فبدونها يظهر لطالب جديد ما بدأ. */
+const INTERN_MIN_CREDITS=90;
+
 function isInternship(c){
   const code=(c.c||'').toUpperCase(), name=(c.n||'').toUpperCase();
   return /\b(INTERN|COOP|CO-OP|TRAINING|PRACTIC)/.test(name) ||
@@ -2726,7 +2730,11 @@ function suggestNext(){
     if(isPassed(c.c)||c.el)return;   /* الراسب والمنسحب يبقيان في المقترح */
     if(!prereqCheck(c.c).ok)return;
     const item={...c,order:si,unlocks:unlocksCount(c.c),retake:isFailed(c.c)};
-    if(isInternship(c)){ if(!intern)intern=item; return; }
+    if(isInternship(c)){
+      /* ما نعرضه إلا لو وصل ساعات السينيور فعلاً */
+      if(!intern && doneCredits()>=INTERN_MIN_CREDITS)intern=item;
+      return;   /* وفي كل الأحوال ما ينزل ضمن المواد العادية */
+    }
     cands.push(item);
   }));
 
