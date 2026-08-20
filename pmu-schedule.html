@@ -3,9 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>جدولك — Jadwalik</title>
-<meta name="description" content="جدولك — ابنِ جدولك الدراسي في جامعة الأمير محمد بن فهد، تابع خطتك، احسب معدلك، وراقب المواد المسكّرة.">
+<title>جدولك | Jadwalik — PMU Schedule Builder & Course Offering</title>
+<meta name="description" content="جدولك: ابنِ جدولك الدراسي لجامعة الأمير محمد بن فهد (PMU)، اعرض المواد المطروحة والشعب، تابع خطتك الدراسية، احسب معدلك، وشوف جدول الاختبارات النهائية. Build your PMU schedule, browse the course offering, track your degree plan and GPA.">
+<meta name="keywords" content="PMU, Prince Mohammad Bin Fahd University, PMU schedule, PMU course offering, PMU courses, PMU banner, جدولك, جدول PMU, مواد PMU, الخطة الدراسية, حاسبة المعدل">
+<link rel="canonical" href="https://jadwalik.com/">
+<meta name="robots" content="index, follow">
 <meta name="theme-color" content="#080b12">
+<link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" href="/favicon-32.png" sizes="32x32">
 <link rel="icon" href="/favicon-192.png" sizes="192x192">
 <link rel="apple-touch-icon" href="/favicon-180.png">
@@ -14,11 +18,27 @@
 <meta name="apple-mobile-web-app-title" content="جدولك">
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="manifest" href="/manifest.json">
-<meta property="og:title" content="جدولك — Jadwalik">
-<meta property="og:description" content="جدولك الدراسي وخطتك ومعدلك ومراقبة المواد — كل شي في مكان واحد.">
+<meta property="og:title" content="جدولك | Jadwalik — PMU Schedule Builder">
+<meta property="og:description" content="جدولك الدراسي في PMU وخطتك ومعدلك ومواعيد التسجيل والاختبارات — كل شي في مكان واحد.">
+<meta property="og:site_name" content="جدولك | Jadwalik">
+<meta property="og:locale" content="ar_SA">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="جدولك | Jadwalik — PMU Schedule Builder">
+<meta name="twitter:description" content="ابنِ جدولك الدراسي في جامعة الأمير محمد بن فهد، تابع خطتك، واحسب معدلك.">
+<meta name="twitter:image" content="https://jadwalik.com/favicon-512.png">
 <meta property="og:image" content="https://jadwalik.com/favicon-512.png">
 <meta property="og:url" content="https://jadwalik.com">
 <meta property="og:type" content="website">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"WebApplication",
+ "name":"جدولك | Jadwalik",
+ "url":"https://jadwalik.com/",
+ "applicationCategory":"EducationalApplication",
+ "operatingSystem":"Web",
+ "inLanguage":["ar","en"],
+ "description":"أداة طلابية لبناء الجدول الدراسي ومتابعة الخطة وحساب المعدل لطلاب جامعة الأمير محمد بن فهد.",
+ "offers":{"@type":"Offer","price":"0","priceCurrency":"SAR"}}
+</script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 :root{
@@ -179,6 +199,10 @@ border:1px solid rgba(245,158,11,.35);border-radius:13px;padding:13px 15px;margi
 .ca-text h3{font-size:13px;font-weight:600;color:var(--warn);margin-bottom:4px}
 .ca-text p{font-size:12px;color:var(--text2);line-height:1.6}
 .sched-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:16px}
+/* المسح إجراء لا رجعة فيه — سطر ثانٍ وأصغر عشان ما يُضغط بالغلط */
+.sched-actions .btn-ghost.danger{grid-column:1/-1;padding:9px;font-size:12px;
+opacity:.75}
+.sched-actions .btn-ghost.danger:active{opacity:1}
 .btn-ghost{background:transparent;border:1px solid var(--border2);color:var(--text2);border-radius:11px;
 padding:11px;font-size:13px;font-weight:600;font-family:var(--sans);cursor:pointer}
 .btn-ghost.danger{color:var(--close);border-color:var(--close-border)}
@@ -551,7 +575,22 @@ overflow-y:auto;padding:20px 18px 34px;animation:slideUp .28s ease}
 .guide-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
 .guide-head h2{font-size:19px;font-weight:700}
 .guide-close{background:none;border:none;color:var(--text3);font-size:20px;cursor:pointer;padding:4px 8px}
-.guide-lead{font-size:12.5px;color:var(--text2);line-height:1.7;margin-bottom:18px}
+.guide-lead{font-size:12.5px;color:var(--text2);line-height:1.7;margin-bottom:14px}
+.pick-hint{display:none;background:rgba(245,158,11,.08);
+border:1px solid rgba(245,158,11,.3);border-radius:13px;
+padding:12px 14px;margin-bottom:13px;font-size:12.5px;
+color:var(--text2);line-height:1.7}
+.pick-hint.on{display:block}
+.pick-hint b{color:var(--warn);font-weight:700}
+.pick-hint button{margin-top:9px;background:var(--warn);color:#1a1200;border:none;
+font-family:inherit;font-size:12px;font-weight:700;padding:8px 14px;
+border-radius:10px;cursor:pointer}
+.state-link{display:inline-block;margin-top:14px;text-decoration:none;
+background:var(--card2,var(--card));border:1px solid var(--border2);
+color:var(--text2);font-size:12.5px;font-weight:600;padding:9px 16px;border-radius:11px}
+.guide-visual{display:block;text-align:center;text-decoration:none;margin-bottom:18px;
+background:var(--accent);color:#fff;font-size:13.5px;font-weight:700;
+padding:12px;border-radius:12px}
 .g-step{display:flex;gap:13px;padding:14px 0;border-bottom:1px solid var(--border)}
 .g-step:last-of-type{border-bottom:none}
 .g-num{width:27px;height:27px;border-radius:9px;background:var(--accent);color:#fff;
@@ -595,6 +634,25 @@ background:var(--bg);border:1px solid var(--border)}
 .cal-row.live .cal-badge{color:var(--open);border-color:rgba(16,185,129,.35);background:var(--open-bg)}
 .cal-row.warn .cal-name{color:var(--warn)}
 .cal-row.exam .cal-name{color:var(--close)}
+
+/* ---- أرقام التسجيل (CRN) ---- */
+.crn-panel{display:none;background:var(--card);border:1px solid var(--border);
+border-radius:15px;padding:14px;margin-top:12px}
+.crn-panel.on{display:block}
+.crn-row{display:flex;align-items:center;gap:10px;padding:8px 0;
+border-bottom:1px solid var(--border);cursor:pointer;
+-webkit-tap-highlight-color:transparent}
+.crn-row:last-of-type{border-bottom:none}
+.crn-row:active{opacity:.55}
+.crn-num{font-family:var(--mono);font-size:15px;font-weight:700;
+color:var(--accent);letter-spacing:.5px}
+.crn-code{flex:1;min-width:0;font-size:12.5px;color:var(--text2);
+overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crn-copy{font-size:11px;color:var(--text3);flex-shrink:0}
+.crn-all{width:100%;margin-top:11px;background:var(--accent);color:#fff;border:none;
+font-family:inherit;font-size:13px;font-weight:700;padding:11px;border-radius:11px;
+cursor:pointer}
+.crn-hint{font-size:11px;color:var(--text3);margin-top:9px;line-height:1.6}
 
 /* ---- جدول التسجيل حسب المستوى ---- */
 .reg-card{background:var(--card);border:1px solid var(--border);
@@ -663,7 +721,7 @@ margin:0!important;padding:0!important;min-height:0!important}
 
 /* اخفِ واجهة الشاشة كاملة */
 .topbar,.tabs,.sched-actions,.slot-remove,.conflict-alert,.sched-summary,.lab-warn,
-.guide-fab,.guide-overlay,.toast,.state-box,.sync-note,.next-check,
+.guide-fab,.guide-overlay,.toast,.state-box,.sync-note,.next-check,.reg-card,.crn-panel,
 #schedDays,.modal,.overlay,.finals-card,.cal-card,.legal-foot{display:none!important}
 .page{display:none!important}
 .main{padding:0!important;max-width:none!important;margin:0!important}
@@ -720,6 +778,13 @@ break-inside:avoid;page-break-inside:avoid}
 .ps-lg{display:flex;align-items:center;gap:5px;font-size:6.5pt;color:#5b6472}
 .ps-lg i{width:8px;height:8px;border-radius:2px;background:var(--c);flex-shrink:0}
 .ps-lg b{font-weight:700;color:#111827;direction:ltr}
+.ps-crn{margin-top:7px;padding-top:6px;border-top:1px solid #dfe3e9;
+display:flex;flex-wrap:wrap;align-items:center;gap:4px 9px;
+break-inside:avoid;page-break-inside:avoid}
+.ps-crn-t{font-size:6.5pt;font-weight:700;color:#111827}
+.ps-crn-i{font-size:6.5pt;color:#5b6472;direction:ltr;
+border:1px solid #dfe3e9;border-radius:3px;padding:1px 5px}
+.ps-crn-i b{font-family:var(--mono);font-size:8pt;color:#111827;margin-inline-end:4px}
 .ps-note{margin-top:6px;font-size:6.5pt;color:#5b6472;line-height:1.6;break-inside:avoid}
 .ps-note b{color:#111827;direction:ltr}
 .ps-warn{margin-top:6px;font-size:6.5pt;color:#b8442e;line-height:1.6}
@@ -747,6 +812,17 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
+<noscript>
+  <h1>جدولك — أداة الجدول الدراسي لطلاب جامعة الأمير محمد بن فهد (PMU)</h1>
+  <p>جدولك أداة طلابية مستقلة تساعدك على بناء جدولك الدراسي، وعرض المواد المطروحة
+  والشعب المتاحة، ومتابعة خطتك الدراسية ومتطلباتها السابقة، وحساب معدلك التراكمي،
+  ومعرفة مواعيد التسجيل والحذف والإضافة وجدول الاختبارات النهائية.</p>
+  <p>Jadwalik is an independent student tool for Prince Mohammad Bin Fahd University:
+  build your class schedule, browse the course offering, track your degree plan and
+  prerequisites, calculate your GPA, and check registration and final exam dates.</p>
+  <p>هذا الموقع يحتاج تفعيل JavaScript ليعمل. الموقع غير رسمي وغير تابع للجامعة،
+  والمرجع الرسمي هو موقع الجامعة.</p>
+</noscript>
 
 <div class="env-bar" id="envBar"></div>
 <div class="topbar">
@@ -850,6 +926,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
   <div class="state-box" id="emptyBox"><div class="state-icon">🔍</div><div class="state-title">ما في نتائج</div><div class="state-sub">جرب تغير الفلتر أو البحث</div></div>
   <div class="state-box visible" id="initialBox"><div class="state-icon">📚</div><div class="state-title">ابدأ البحث</div><div class="state-sub">اختار السيمستر والكلية واضغط ابحث</div></div>
 
+  <div class="pick-hint" id="searchPickHint"></div>
   <div class="results-list" id="resultsList"></div>
 </div>
 
@@ -865,12 +942,15 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     <div class="ca-text"><h3 data-i18n="clashTitle">يوجد تعارض في الجدول</h3><p id="conflictList"></p></div>
   </div>
   <div class="sched-actions">
-    <button class="btn-ghost" onclick="printSchedule()" data-i18n="print">🖨️ اطبع الجدول</button>
+    <button class="btn-ghost" onclick="toggleCrn()" id="crnBtn" data-i18n="crnBtn">🔢 أرقام CRN</button>
+    <button class="btn-ghost" onclick="printSchedule()" data-i18n="print">🖨️ اطبع</button>
     <button class="btn-ghost danger" onclick="clearSchedule()" data-i18n="clearAll">🗑️ امسح الكل</button>
   </div>
+  <div class="crn-panel" id="crnPanel"></div>
   <div class="state-box visible" id="schedEmpty">
     <div class="state-icon">📅</div><div class="state-title">جدولك فاضي</div>
     <div class="state-sub">روح لصفحة البحث واضغط ➕ على أي مادة</div>
+    <a class="state-link" href="/guide" target="_blank" rel="noopener" data-i18n="guideLink">📖 شوف الدليل بالصور</a>
   </div>
   <div class="slot-bar" id="slotBar"></div>
 
@@ -878,6 +958,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 
   <div id="schedDays"></div>
 
+  <div class="pick-hint" id="schedPickHint"></div>
   <!-- تواريخ التسجيل حسب المستوى -->
   <div class="reg-card" id="regCard">
     <div class="fin-head">
@@ -988,6 +1069,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
         <span id="docBtnText" data-i18n="docRefresh">🔄 حدّث القائمة</span>
       </button>
     </div>
+    <div class="pick-hint" id="docPickHint"></div>
     <div id="docRows"></div>
   </div>
 
@@ -1160,6 +1242,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
       <button class="guide-close" onclick="closeGuide()">✕</button>
     </div>
     <p class="guide-lead" id="gLead">دليل سريع لكل ميزة في الموقع</p>
+    <a class="guide-visual" href="/guide" target="_blank" rel="noopener" id="gVisual" data-i18n="guideLink">📖 شوف الدليل بالصور</a>
     <div id="guideBody"></div>
   </div>
 </div>
@@ -2573,6 +2656,7 @@ function applyMajor(code,silent,persist){
   const el=document.getElementById('majorSelect');
   if(el&&persist!==false&&el.value!==code)el.value=code;
   setPlanTitle();
+  if(typeof renderPickHints==='function')renderPickHints();
   if(!silent)renderPlan();
 }
 
@@ -2595,13 +2679,26 @@ function findPlanCourse(code){return allPlanCourses().find(c=>c.c===code)}
 const FAIL_GRADES=['D','F','WF'];
 function isFailed(code){ return FAIL_GRADES.includes(grades[code]); }
 
+/* الانسحاب: الطالب ما اجتاز المادة، فهي باقية عليه كمتطلب
+   ولا تفتح المواد اللاحقة، ولا تُحسب ضمن ساعاته المكتسبة. */
+const WITHDRAW_GRADES=['W','WP'];
+function isWithdrawn(code){ return WITHDRAW_GRADES.includes(grades[code]); }
+
 /* "خلّصها" للعرض والتقدّم — يشمل حتى اللي رسب فيها بـ D */
 function isDone(code){return completed.includes(code)}
 
-/* "نجح فيها" لفتح المواد اللاحقة — يستثني الرسوب */
-function isPassed(code){ return completed.includes(code) && !isFailed(code); }
+/* "نجح فيها" لفتح المواد اللاحقة — يستثني الرسوب والانسحاب */
+function isPassed(code){
+  return completed.includes(code) && !isFailed(code) && !isWithdrawn(code);
+}
+/* الساعات المنجزة من الخطة: تستثني الراسب والمنسحب مثل نظام الجامعة،
+   لأنها تُستخدم في شريط التقدّم وفي متطلبات المستوى (مثل: يلزم 60 ساعة) */
 function doneCredits(){
-  let t=0;allPlanCourses().forEach(c=>{if(isDone(c.c))t+=c.h});return t;
+  let t=0;
+  allPlanCourses().forEach(c=>{
+    if(isDone(c.c) && !isFailed(c.c) && !isWithdrawn(c.c)) t+=c.h;
+  });
+  return t;
 }
 function level(cr){return cr>=90?'Senior':cr>=60?'Junior':cr>=30?'Sophomore':'Freshman'}
 
@@ -2636,6 +2733,10 @@ function unlockLabel(n){
   return `${t('unlocksN')} ${n} ${t('unlocksN2')}`;
 }
 /* التطبيق العملي (Internship / Co-op) ينزل لحاله — ممنوع معه مواد */
+/* التطبيق العملي للسينيور فقط. نشترط الساعات لأن بيانات المتطلبات
+   السابقة ناقصة في بعض التخصصات، فبدونها يظهر لطالب جديد ما بدأ. */
+const INTERN_MIN_CREDITS=90;
+
 function isInternship(c){
   const code=(c.c||'').toUpperCase(), name=(c.n||'').toUpperCase();
   return /\b(INTERN|COOP|CO-OP|TRAINING|PRACTIC)/.test(name) ||
@@ -2647,10 +2748,14 @@ function suggestNext(){
   const cands=[]; let intern=null;
   PLAN.forEach((sem,si)=>sem.courses.forEach(c=>{
     /* المادة اللي رسب فيها لازم يعيدها — تبقى في المقترح */
-    if((isDone(c.c)&&!isFailed(c.c))||c.el)return;
+    if(isPassed(c.c)||c.el)return;   /* الراسب والمنسحب يبقيان في المقترح */
     if(!prereqCheck(c.c).ok)return;
     const item={...c,order:si,unlocks:unlocksCount(c.c),retake:isFailed(c.c)};
-    if(isInternship(c)){ if(!intern)intern=item; return; }
+    if(isInternship(c)){
+      /* ما نعرضه إلا لو وصل ساعات السينيور فعلاً */
+      if(!intern && doneCredits()>=INTERN_MIN_CREDITS)intern=item;
+      return;   /* وفي كل الأحوال ما ينزل ضمن المواد العادية */
+    }
     cands.push(item);
   }));
 
@@ -2666,7 +2771,15 @@ function suggestNext(){
 }
 
 /* ===== Tabs ===== */
+/* موضع التمرير محفوظ لكل تبويب: الطالب اللي نزل في نتائج البحث
+   ورجع لجدوله يقارن، يرجع لنفس المكان بدل ما يبدأ من فوق. */
+const TAB_SCROLL={};
+let CUR_TAB='search';
+
 function switchTab(n){
+  /* ما نحفظ لو التبويب نفسه، عشان لا نطمس تصفيراً مقصوداً */
+  if(n!==CUR_TAB)TAB_SCROLL[CUR_TAB]=window.scrollY||0;
+  CUR_TAB=n;
   ['search','sched','plan','docs','set'].forEach(t=>{
     document.getElementById('page'+t[0].toUpperCase()+t.slice(1)).classList.toggle('active',t===n);
     document.getElementById('tab'+t[0].toUpperCase()+t.slice(1)).classList.toggle('active',t===n);
@@ -2678,7 +2791,17 @@ function switchTab(n){
   if(n==='docs'){if(!currentDoc){document.getElementById('docsList').style.display='block';
     document.getElementById('docDetail').style.display='none';
     if(!instructors.length)loadInstructors();else renderDocs();}}
-  window.scrollTo(0,0);
+  /* ننتظر رسم المحتوى قبل الاسترجاع، وإلا الصفحة أقصر من الموضع المحفوظ */
+  renderPickHints();
+  const y=TAB_SCROLL[n]||0;
+  requestAnimationFrame(()=>window.scrollTo(0,y));
+}
+
+/* بحث جديد يعني نتائج جديدة — نرجع لفوق بدل ما نبقى في وسط قائمة قديمة */
+function resetTabScroll(n){
+  const k=n||CUR_TAB;
+  TAB_SCROLL[k]=0;
+  if(k===CUR_TAB)window.scrollTo(0,0);
 }
 
 /* ===== Time ===== */
@@ -2724,6 +2847,7 @@ function scheduleCredits(){
 
 /* ===== Search ===== */
 async function doSearch(){
+  resetTabScroll('search');   /* نتائج جديدة تبدأ من فوق */
   const term=document.getElementById('term').value,college=document.getElementById('college').value,
         gender=document.getElementById('gender').value,filter=document.getElementById('courseFilter').value.trim();
   showLoading(true);setStatus(t('searching'));
@@ -2805,7 +2929,7 @@ function renderResults(){
     if(inSch)tags+=`<div class="tag ok">${t('inSchedule')}</div>`;
     else if(clash.length)tags+=`<div class="tag warn">${t('clashWith')} ${clash.map(x=>x.courseCode+' §'+x.section).join('، ')}</div>`;
     else if(schedule.length&&parseTime(c.courseTiming))tags+=`<div class="tag ok">${t('noClash')}</div>`;
-    if(pre.known&&pre.ok&&isDone(c.courseCode))tags+=`<div class="tag ok">${t('alreadyDone')}</div>`;
+    if(pre.known&&pre.ok&&isPassed(c.courseCode))tags+=`<div class="tag ok">${t('alreadyDone')}</div>`;
 
     const lock=pre.known&&!pre.ok;
     return `<div class="course-card ${c.status==='OPEN'?'is-open':'is-close'} ${inSch?'in-schedule':''}">
@@ -2848,8 +2972,71 @@ function removeFromSchedule(crn){
   const i=schedule.findIndex(s=>s.crn===crn);
   if(i>-1){const r=schedule.splice(i,1)[0];saveSchedules();pushSchedule();updateBadge();renderSchedule();renderResults();showToast(`${t('removed')} ${r.courseCode}`)}
 }
+/* ═══════════ أرقام التسجيل (CRN) ═══════════
+   وقت التسجيل الطالب يحتاج الأرقام بسرعة، فنعرضها مطوية
+   عشان لا تزحم الصفحة، وننسخها بضغطة. */
+function copyText(txt,okMsg){
+  const done=()=>showToast(okMsg,'ok');
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(done).catch(()=>fallback());
+  }else fallback();
+  function fallback(){
+    /* بعض المتصفحات تمنع الحافظة بدون https — نرجع للطريقة القديمة */
+    try{
+      const ta=document.createElement('textarea');
+      ta.value=txt; ta.setAttribute('readonly','');
+      ta.style.cssText='position:fixed;top:-9999px';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+      done();
+    }catch(e){ showToast(LANG==='ar'?'ما قدرت أنسخ — اضغط مطوّلاً على الرقم':'Copy failed — long-press the number','warn'); }
+  }
+}
+
+function toggleCrn(){
+  const p=document.getElementById('crnPanel');
+  if(!p)return;
+  if(!schedule.length){
+    showToast(LANG==='ar'?'جدولك فاضي — ضيف مواد أول':'Your schedule is empty','warn');
+    return;
+  }
+  const on=p.classList.toggle('on');
+  if(on)renderCrn();
+}
+
+function renderCrn(){
+  const p=document.getElementById('crnPanel');
+  if(!p||!p.classList.contains('on'))return;
+  const ar=LANG==='ar';
+  p.innerHTML=schedule.map(c=>`
+    <div class="crn-row" onclick="copyCrn('${escapeHtml(String(c.crn||''))}')">
+      <span class="crn-num">${escapeHtml(String(c.crn||'—'))}</span>
+      <span class="crn-code">${escapeHtml(c.courseCode)} §${escapeHtml(c.section||'')}</span>
+      <span class="crn-copy">${ar?'نسخ':'copy'}</span>
+    </div>`).join('')
+    +`<button class="crn-all" onclick="copyAllCrn()">${
+      ar?`📋 انسخ الأرقام كلها (${schedule.length})`:`📋 Copy all (${schedule.length})`}</button>`
+    +`<div class="crn-hint">${ar
+      ?'اضغط أي رقم لنسخه لحاله. الأرقام تُطبع كذلك مع الجدول.'
+      :'Tap a number to copy it. They are printed with your schedule too.'}</div>`;
+}
+
+function copyCrn(crn){
+  copyText(crn,(LANG==='ar'?'انتسخ ':'Copied ')+crn);
+}
+
+function copyAllCrn(){
+  const txt=schedule.map(c=>c.crn).filter(Boolean).join('\n');
+  copyText(txt,LANG==='ar'?`انتسخت ${schedule.length} أرقام`:`Copied ${schedule.length} numbers`);
+}
+
 function clearSchedule(){
   if(!schedule.length)return;
+  const n=schedule.length;
+  const msg=LANG==='ar'
+    ? `تمسح ${n} مادة من "جدول ${SLOT+1}"؟ ما فيه تراجع.`
+    : `Delete ${n} courses from "Plan ${SLOT+1}"? This cannot be undone.`;
+  if(!confirm(msg))return;
   schedule.length=0;   /* نفرّغه بدون ما نكسر الإشارة */
   saveSchedules();pushSchedule();updateBadge();renderSchedule();renderResults();showToast(t('clearedSched'));
 }
@@ -2939,6 +3126,7 @@ function renderLabWarn(){
 }
 
 function renderSchedule(){
+  renderCrn();   /* لو اللوحة مفتوحة، تتحدث مع كل إضافة أو حذف */
   const empty=document.getElementById('schedEmpty'),wrap=document.getElementById('schedDays');
   document.getElementById('sumCourses').textContent=schedule.length;
   document.getElementById('sumHours').textContent=scheduleCredits();
@@ -3115,7 +3303,7 @@ const REG_CAL={
 /* الساعات المكتسبة بنظام الجامعة:
    الراسب (D / F / WF) والمنسحب (W / WP) ما ينحسبون،
    والمعادلة (TR) تنحسب لأنها مادة مكتملة بلا درجة. */
-const NO_CREDIT_GRADES=FAIL_GRADES.concat(['W','WP']);
+const NO_CREDIT_GRADES=FAIL_GRADES.concat(WITHDRAW_GRADES);
 function earnedCredits(){
   let t=0;
   completed.forEach(code=>{
@@ -3512,6 +3700,12 @@ function buildPrintSheet(clashSet){
   const legend=`<div class="ps-legend">${Object.keys(colorOf).map(code=>
     `<div class="ps-lg" style="--c:${colorOf[code][0]}"><i></i><b>${escapeHtml(code)}</b></div>`).join('')}</div>`;
 
+  /* أرقام التسجيل — أهم شي في الورقة وقت التسجيل */
+  const crns=`<div class="ps-crn"><span class="ps-crn-t">${
+    LANG==='ar'?'أرقام التسجيل':'Registration numbers (CRN)'}</span>${
+    schedule.map(c=>`<span class="ps-crn-i"><b>${escapeHtml(String(c.crn||''))}</b>${
+      escapeHtml(c.courseCode)} §${escapeHtml(c.section||'')}</span>`).join('')}</div>`;
+
   /* مواد بدون وقت محدد */
   const note=untimed.length?`<div class="ps-note">${LANG==='ar'?'بدون وقت محدد:':'No fixed time:'} ${
     untimed.map(c=>`<b>${escapeHtml(c.courseCode)} §${escapeHtml(c.section||'')}</b>`).join(' · ')}</div>`:'';
@@ -3570,7 +3764,7 @@ function buildPrintSheet(clashSet){
   const foot=`<div class="ps-foot"><span>jadwalik.com</span><span>${
     new Date().toLocaleDateString(LANG==='ar'?'ar-SA':'en-GB')}</span></div>`;
 
-  el.innerHTML=head+grid+legend+note+warn+finals+foot;
+  el.innerHTML=head+grid+legend+crns+note+warn+finals+foot;
 }
 
 function printSchedule(){
@@ -4232,6 +4426,27 @@ function docRelevance(name){
   return best;
 }
 
+/* أشياء تتحسّن لو الطالب اختار تخصصه — ننبّهه في مكان الفائدة نفسه */
+function renderPickHints(){
+  const ar=LANG==='ar', chosen=majorChosen();
+  const btn=ar?'⚙️ اختر تخصصك':'⚙️ Pick your major';
+  const set=(id,txt)=>{
+    const el=document.getElementById(id);
+    if(!el)return;
+    el.classList.toggle('on',!chosen);
+    if(!chosen)el.innerHTML=txt+`<br><button onclick="switchTab('set')">${btn}</button>`;
+  };
+  set('docPickHint', ar
+    ? '<b>اختر تخصصك</b> عشان يترتّب الدكاترة حسب مواد خطتك، ويبان لك مين يدرّس مادة تحتاجها.'
+    : '<b>Pick your major</b> to sort instructors by your plan and see who teaches courses you need.');
+  set('searchPickHint', ar
+    ? '<b>اختر تخصصك</b> عشان ينبّهك الموقع لو المادة متطلبها السابق ناقص عندك.'
+    : '<b>Pick your major</b> so we can warn you when a course prerequisite is missing.');
+  set('schedPickHint', ar
+    ? '<b>اختر تخصصك</b> وعلّم موادك المنتهية — بيطلع لك مقترح مواد الترم الجاي وتواريخ تسجيلك.'
+    : '<b>Pick your major</b> and mark completed courses to get next-term suggestions and your registration day.');
+}
+
 function renderDocs(){
   const ar=LANG==='ar';
   const q=norm(document.getElementById('docFilter').value);
@@ -4291,7 +4506,14 @@ function clearDocFilter(){
 }
 
 /* ---------- صفحة الدكتور ---------- */
+/* موضع القائمة محفوظ عشان الرجوع من الدكتور يوديك لمكانه لا لأولها */
+let DOCS_SCROLL=0;
+
 function openDoc(name){
+  /* من القائمة: نحفظ مكانها · من صفحة دكتور ثانٍ: نبقي المحفوظ
+     · من تبويب آخر (بحث أو جدول): ما فيه مكان نرجع له */
+  if(CUR_TAB==='docs'&&!currentDoc)DOCS_SCROLL=window.scrollY||0;
+  else if(!currentDoc)DOCS_SCROLL=0;
   currentDoc=name;
   switchTab('docs');
   document.getElementById('docsList').style.display='none';
@@ -4304,6 +4526,9 @@ function backToDocs(){
   document.getElementById('docDetail').style.display='none';
   currentDoc=null;
   renderDocs();
+  /* ننتظر رسم القائمة قبل الرجوع لموضعها */
+  const y=DOCS_SCROLL;
+  requestAnimationFrame(()=>window.scrollTo(0,y));
 }
 
 /* ينقلك للبحث في ترم التسجيل القادم دائماً، بكل الكليات والجنسين.
@@ -4318,6 +4543,7 @@ function searchIn(query, note){
   term.value=UPCOMING_TERM; col.value='ALL'; gen.value='ALL';
   termHint();
 
+  resetTabScroll('search');
   switchTab('search');
   const f=document.getElementById('courseFilter');
   if(f){
@@ -4662,11 +4888,11 @@ filterHelp:'ابحث بكود المادة، أو الـ CRN، أو اسم ال�
 search:'🔍 ابحث',searching:'جاري البحث...',monitor:'📡 راقب',stopMonitor:'⏹ أوقف',
 total:'إجمالي',open:'مفتوح',closed:'مغلق',show:'عرض:',all:'الكل',onlyOpen:'مفتوح فقط',onlyClosed:'مغلق فقط',
 courses:'مادة',credits:'ساعة معتمدة',clashes:'تعارض',clashTitle:'يوجد تعارض في الجدول',
-print:'🖨️ اطبع الجدول',clearAll:'🗑️ امسح الكل',
+print:'🖨️ اطبع',clearAll:'🗑️ امسح الكل',crnBtn:'🔢 أرقام CRN',
 gpaLabel:'المعدل التراكمي',countedHrs:'ساعات محسوبة',
 suggestTitle:'💡 المقترح للترم الجاي',planTitle:'الخطة الدراسية',
 uni:'الجامعة',major:'التخصص',login:'دخول',tabDocs:'👨‍🏫 دكاترة',myReviews:'تقييماتي',docsTitle:'تقييمات الدكاترة',uniTitle:'جامعتك وتخصصك',docPh:'ابحث عن دكتور...',
-schedEmptyT:'جدولك فاضي',schedEmptyS:'روح لصفحة البحث واضغط ➕ على أي مادة',
+guideLink:'📖 شوف الدليل بالصور',schedEmptyT:'جدولك فاضي',schedEmptyS:'روح لصفحة البحث واضغط ➕ على أي مادة',
 initT:'ابدأ البحث',initS:'اختار السيمستر والكلية واضغط ابحث',
 loadT:'جاري البحث...',loadS:'يجيب البيانات من موقع الجامعة',
 emptyT:'ما في نتائج',emptyS:'جرب تغير الفلتر أو البحث',
@@ -4745,11 +4971,11 @@ filterHelp:'Search by course code, CRN, course title, or instructor name',
 search:'🔍 Search',searching:'Searching...',monitor:'📡 Monitor',stopMonitor:'⏹ Stop',
 total:'Total',open:'Open',closed:'Closed',show:'Show:',all:'All',onlyOpen:'Open only',onlyClosed:'Closed only',
 courses:'Courses',credits:'Credit hours',clashes:'Conflicts',clashTitle:'Schedule conflict detected',
-print:'🖨️ Print schedule',clearAll:'🗑️ Clear all',
+print:'🖨️ Print',clearAll:'🗑️ Clear all',crnBtn:'🔢 CRN numbers',
 gpaLabel:'Cumulative GPA',countedHrs:'Counted hours',
 suggestTitle:'💡 Suggested next term',planTitle:'Study Plan',
 uni:'University',major:'Major',login:'Sign in',tabDocs:'👨‍🏫 Faculty',myReviews:'My reviews',docsTitle:'Instructor reviews',uniTitle:'Your university & major',docPh:'Search for an instructor...',
-schedEmptyT:'Your schedule is empty',schedEmptyS:'Go to Search and tap ➕ on any course',
+guideLink:'📖 Visual guide',schedEmptyT:'Your schedule is empty',schedEmptyS:'Go to Search and tap ➕ on any course',
 initT:'Start searching',initS:'Pick a semester and college, then tap Search',
 loadT:'Searching...',loadS:'Fetching data from the university site',
 emptyT:'No results',emptyS:'Try changing the filter or search',
@@ -4912,6 +5138,7 @@ function applyLang(){
   if(document.getElementById('pageSched').classList.contains('active'))renderSchedule();
   renderCalendar();
   renderRegCal();
+  renderPickHints();
   renderSlots();
   applyGpaHidden();
   applyTheme();
@@ -5017,7 +5244,8 @@ function setGrade(code,val){
   if(val)grades[code]=val;else delete grades[code];
   save('pmu_grades',grades);
   pushGrades();
-  renderGPA();
+  /* الدرجة تؤثر في الشريط والساعات والمقترح والمتطلبات، لا في المعدل وحده */
+  renderPlan();
 }
 
 function renderGPA(){

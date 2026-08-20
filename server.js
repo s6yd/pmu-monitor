@@ -2323,6 +2323,23 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  /* قوقل يطلب أيقونة الموقع من /favicon.ico تحديداً، وبدونها يعرض
+     كرة أرضية عامة في نتائج البحث. نخدمها من أكبر أيقونة متوفرة. */
+  if (parsed.pathname === '/favicon.ico') {
+    const candidates = ['favicon-192.png', 'favicon-512.png', 'favicon-180.png', 'favicon-32.png'];
+    for (const name of candidates) {
+      try {
+        const buf = fs.readFileSync(path.join(__dirname, name));
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Cache-Control', 'public, max-age=604800');
+        res.writeHead(200); res.end(buf);
+        return;
+      } catch (e) { /* نجرّب اللي بعدها */ }
+    }
+    res.writeHead(404); res.end('Not found');
+    return;
+  }
+
   /* الأيقونات والمانيفست */
   if (/^\/(favicon-\d+\.png|manifest\.json|jadwalik-logo[\w-]*\.png)$/.test(parsed.pathname)) {
     try {
@@ -2332,6 +2349,46 @@ const server = http.createServer(async (req, res) => {
         parsed.pathname.endsWith('.json') ? 'application/json' : 'image/png');
       res.setHeader('Cache-Control', 'public, max-age=604800');
       res.writeHead(200); res.end(buf);
+    } catch (e) { res.writeHead(404); res.end('Not found'); }
+    return;
+  }
+
+  /* ملفات الفهرسة — يطلبها قوقل قبل ما يزحف الموقع */
+  if (parsed.pathname === '/robots.txt') {
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.writeHead(200);
+    res.end(
+      'User-agent: *\n' +
+      'Allow: /\n' +
+      'Disallow: /admin.html\n' +
+      'Disallow: /api/\n\n' +
+      'Sitemap: https://jadwalik.com/sitemap.xml\n');
+    return;
+  }
+
+  if (parsed.pathname === '/sitemap.xml') {
+    const today = riyadhDate();
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.writeHead(200);
+    res.end(
+      '<?xml version="1.0" encoding="UTF-8"?>\n' +
+      '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
+      ['https://jadwalik.com/', 'https://jadwalik.com/guide',
+       'https://jadwalik.com/privacy', 'https://jadwalik.com/terms']
+        .map(u => `  <url><loc>${u}</loc><lastmod>${today}</lastmod></url>\n`).join('') +
+      '</urlset>\n');
+    return;
+  }
+
+  /* دليل الاستخدام بالصور */
+  if (parsed.pathname === '/guide' || parsed.pathname === '/guide.html') {
+    try {
+      const html = fs.readFileSync(path.join(__dirname, 'jadwalik-guide.html'), 'utf8');
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      res.writeHead(200); res.end(html);
     } catch (e) { res.writeHead(404); res.end('Not found'); }
     return;
   }
