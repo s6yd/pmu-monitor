@@ -1407,6 +1407,10 @@ async function adminHealth() {
     maintenance: MAINTENANCE,
     maintenanceMsg: MAINT_MSG,
     finalsOn: FINALS_ON,
+    ttlOverride: TTL_OVERRIDE,
+    ttlChoices: TTL_CHOICES,
+    ttlLimits: { min: TTL_MIN_ALLOWED, max: TTL_MAX_ALLOWED },
+    monitorJitterPct: Math.round(JITTER * 100),
     schedSync: {
       last: SCHED_SYNC.last,
       lastChange: SCHED_SYNC.lastChange,
@@ -1617,7 +1621,14 @@ const TTL_PEAK = 60 * 1000;
 const TTL_NEAR = 60 * 60 * 1000;
 const TTL_OFF  = 6 * 60 * 60 * 1000;
 
+/* تجاوز يدوي من لوحة التحكم — بالدقائق. null = تلقائي حسب الموسم */
+let TTL_OVERRIDE = null;
+const TTL_CHOICES = [1, 5, 15, 60, 360];   /* أزرار سريعة في اللوحة */
+const TTL_MIN_ALLOWED = 1;                 /* أقل من دقيقة يعني سحب متواصل */
+const TTL_MAX_ALLOWED = 24 * 60;           /* أكثر من يوم يعني بيانات بايتة */
+
 function coursesTTL() {
+  if (TTL_OVERRIDE) return TTL_OVERRIDE * 60 * 1000;
   if (currentWindow()) return TTL_PEAK;
   if (nearWindow())    return TTL_NEAR;
   return TTL_OFF;
@@ -1625,6 +1636,9 @@ function coursesTTL() {
 
 /* لماذا المستوى الحالي؟ — للعرض في لوحة التحكم */
 function ttlReason() {
+  if (TTL_OVERRIDE)
+    return { tier: 'manual', ttlMin: TTL_OVERRIDE, manual: true,
+             ar: `مضبوط يدوياً من اللوحة على ${TTL_OVERRIDE} دقيقة — يتجاهل الموسم` };
   const w = currentWindow();
   if (w) return { tier: 'peak', ttlMin: 1,
                   ar: `داخل نافذة "${w.ar}" — الجدول يتغيّر لحظياً` };
@@ -2082,6 +2096,20 @@ const server = http.createServer(async (req, res) => {
           return send(200, { ok: true, stat });
         }
         return send(200, { last: SCHED_SYNC.last });
+      }
+
+      if (act === 'cache-ttl') {
+        if (req.method === 'POST') {
+          const b = await readBody(req);
+          const v = Math.round(Number(b.min));
+          /* 0 أو فاضي أو قيمة غير صالحة = رجوع للتلقائي */
+          if (!v || !isFinite(v) || v <= 0) TTL_OVERRIDE = null;
+          else TTL_OVERRIDE = Math.min(TTL_MAX_ALLOWED, Math.max(TTL_MIN_ALLOWED, v));
+        }
+        return send(200, { override: TTL_OVERRIDE, choices: TTL_CHOICES,
+                           min: TTL_MIN_ALLOWED, max: TTL_MAX_ALLOWED,
+                           effectiveMin: Math.round(coursesTTL() / 60000),
+                           reason: ttlReason() });
       }
 
       if (act === 'finals-toggle') {
