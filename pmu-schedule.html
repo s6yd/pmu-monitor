@@ -576,6 +576,53 @@ overflow-y:auto;padding:20px 18px 34px;animation:slideUp .28s ease}
 .guide-head h2{font-size:19px;font-weight:700}
 .guide-close{background:none;border:none;color:var(--text3);font-size:20px;cursor:pointer;padding:4px 8px}
 .guide-lead{font-size:12.5px;color:var(--text2);line-height:1.7;margin-bottom:14px}
+.prep-ask{background:rgba(77,124,254,.09);border:1px solid rgba(77,124,254,.32);
+border-radius:15px;padding:14px 15px;margin-bottom:14px}
+.pa-t{font-size:14.5px;font-weight:800}
+.pa-s{font-size:12.5px;color:var(--text2);line-height:1.7;margin-top:6px}
+.pa-btns{display:flex;gap:9px;margin-top:12px}
+.pa-yes,.pa-no{flex:1;font-family:inherit;font-size:12.5px;font-weight:700;
+padding:10px;border-radius:11px;cursor:pointer}
+.pa-yes{background:var(--accent);color:#fff;border:none}
+.pa-no{background:transparent;color:var(--text3);border:1px solid var(--border)}
+.plan-fix{display:flex;align-items:center;justify-content:space-between;gap:11px;
+background:var(--card);border:1px dashed var(--border2);border-radius:13px;
+padding:12px 14px;margin-bottom:14px;font-size:12px;color:var(--text3);line-height:1.6}
+.plan-fix button{background:var(--bg);border:1px solid var(--border);color:var(--text2);
+font-family:inherit;font-size:11.5px;font-weight:700;padding:7px 14px;
+border-radius:9px;cursor:pointer;flex-shrink:0}
+.sem-all{background:transparent;border:1px solid var(--border2);color:var(--text3);
+font-family:var(--mono);font-size:10px;line-height:1;padding:5px 7px;
+border-radius:7px;cursor:pointer;margin-inline-start:7px;letter-spacing:-1px}
+.sem-all:active{background:var(--bg);color:var(--accent)}
+.prep-toggle{grid-column:1/-1;width:100%;display:flex;gap:11px;align-items:center;
+margin-top:12px;padding:11px 13px;background:var(--bg);border:1px solid var(--border);
+border-radius:12px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.prep-toggle input[type=checkbox]{width:20px;height:20px;flex-shrink:0;padding:0;
+border-radius:6px;-webkit-appearance:none;appearance:none;
+background:var(--bg);border:2px solid var(--border2);position:relative;cursor:pointer}
+.prep-toggle input[type=checkbox]:checked{background:var(--accent);border-color:var(--accent)}
+.prep-toggle input[type=checkbox]:checked::after{content:'';position:absolute;
+left:6px;top:2px;width:5px;height:10px;border:solid #fff;border-width:0 2px 2px 0;
+transform:rotate(45deg)}
+.prep-toggle:has(input:checked){border-color:var(--accent);background:rgba(77,124,254,.07)}
+.prep-toggle>span{flex:1;min-width:0}
+.prep-toggle b{display:block;font-size:13px;font-weight:700;line-height:1.4}
+.prep-toggle em{display:block;font-style:normal;font-size:11px;
+color:var(--text3);margin-top:2px;line-height:1.55}
+.major-flash{animation:majorFlash 1.6s ease}
+@keyframes majorFlash{0%,100%{box-shadow:none}
+20%,60%{box-shadow:0 0 0 3px rgba(77,124,254,.45)}}
+.prep-prog{background:var(--card);border:1px solid var(--border);
+border-radius:15px;padding:15px;margin-bottom:14px}
+.prep-num{font-size:26px;font-weight:800;letter-spacing:-.5px}
+.prep-num small{font-size:13px;color:var(--text3);font-weight:600}
+.prep-bar{height:7px;background:var(--bg);border-radius:20px;overflow:hidden;margin:10px 0 9px}
+.prep-fill{height:100%;background:var(--accent);border-radius:20px;transition:width .3s}
+.prep-meta{font-size:11.5px;color:var(--text3);line-height:1.7}
+.pc-adm{display:inline-block;font-size:10px;color:var(--warn);
+background:var(--warn-bg);border:1px solid rgba(245,158,11,.3);
+border-radius:6px;padding:2px 7px;margin-top:4px}
 .pick-hint{display:none;background:rgba(245,158,11,.08);
 border:1px solid rgba(245,158,11,.3);border-radius:13px;
 padding:12px 14px;margin-bottom:13px;font-size:12.5px;
@@ -1026,6 +1073,16 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     <div class="gpa-proj" id="gpaProj"></div>
   </div>
 
+  <div class="prep-ask" id="prepAsk" style="display:none">
+    <div class="pa-t">🎓 <b data-i18n="paTitle">جديد في الجامعة؟</b></div>
+    <div class="pa-s" data-i18n="paSub">لو أنت في البرنامج التحضيري، فعّل الخيار عشان تطلع لك مستوياتك ومقترح موادك بدل خطة التخصص.</div>
+    <div class="pa-btns">
+      <button class="pa-yes" onclick="goPrepToggle()" data-i18n="paYes">أنا في التحضيري</button>
+      <button class="pa-no" onclick="dismissPrepAsk()" data-i18n="paNo">لا، مو تحضيري</button>
+    </div>
+  </div>
+  <div class="prep-prog" id="prepProg" style="display:none"></div>
+
   <div class="progress-card">
     <div class="prog-top">
       <div class="prog-num" id="progDone">0<small> / 139 ساعة</small></div>
@@ -1049,6 +1106,8 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     </div>
     <div id="sugList"></div>
   </div>
+
+  <div class="plan-fix"><span data-i18n="planFix">📣 شفت مادة أو متطلب غلط في الخطة؟ بلّغنا وبنصلحها.</span><button onclick="reportPlan()" data-i18n="planFixBtn">بلّغ</button></div>
 
   <div class="sc-title" style="margin:20px 0 10px" id="planTitleBar"><span data-i18n="planTitle">الخطة الدراسية</span> — <span id="planMajorName">Mechanical Engineering</span></div>
   <div id="planSemesters"></div>
@@ -1168,6 +1227,13 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
           </optgroup>
         </select>
       </div>
+      <label class="prep-toggle" id="prepToggle">
+        <input type="checkbox" id="prepChk" onchange="onPrepToggle()">
+        <span>
+          <b data-i18n="prepTitle">🎓 أنا في البرنامج التحضيري</b>
+          <em data-i18n="prepSub">بيضيف مستويات التحضيري لخطتك، ويقفل مواد السنة الأولى اللي تحتاج اجتيازه</em>
+        </span>
+      </label>
     </div>
     <div class="sync-note" id="syncNote" style="margin-top:12px;margin-bottom:0">
       <span style="font-size:18px">☁️</span>
@@ -2649,7 +2715,7 @@ function setPlanTitle(){
 function applyMajor(code,silent,persist){
   if(!PLANS[code])return;
   MAJOR=code;
-  PLAN=PLANS[code].sems;
+  PLAN=prepOn()?prepSems().concat(PLANS[code].sems):PLANS[code].sems;
   TECH_ELECTIVES=PLANS[code].tech||{};
   TOTAL_CR=PLANS[code].total;
   if(persist!==false)save('pmu_major',code);
@@ -2658,6 +2724,65 @@ function applyMajor(code,silent,persist){
   setPlanTitle();
   if(typeof renderPickHints==='function')renderPickHints();
   if(!silent)renderPlan();
+}
+
+
+/* ═══════════ البرنامج التحضيري ═══════════
+   الأكواد من الخطط الرسمية الموقّعة (محاسبة · تمويل · موارد بشرية · قانون)
+   ومن صفحة البرنامج في موقع الجامعة. مواده بلا ساعات معتمدة ولا تدخل المعدل،
+   والاجتياز فيها من C فأعلى. مواد اللغة تنزّلها الإدارة ولا تظهر في البحث. */
+
+/* مادة رياضيات التحضيري حسب التخصص */
+const PREP_MATH={
+  MEEN:'PRPM 0022',EEEN:'PRPM 0022',CVEN:'PRPM 0022',CHEN:'PRPM 0022',
+  COEN:'PRPM 0022',COSC:'PRPM 0022',SOEN:'PRPM 0022',AINT:'PRPM 0022',
+  ARCH:'PRPM 0022',
+  CSEC:'PRPM 0012',ITAP:'PRPM 0012',IDES:'PRPM 0012',GDES:'PRPM 0012',
+  BUSI:'PRPM 0012',ACCT:'PRPM 0012',FINA:'PRPM 0012',MISY:'PRPM 0012',
+  HRMT:'PRPM 0012',MKDM:'PRPM 0012',LAWB:'PRPM 0012'
+};
+const PREP_MATH_NAME={'PRPM 0022':'Pre-Calculus','PRPM 0012':'Intermediate Algebra'};
+
+/* اجتياز المستوى المتقدم = شرط مواد اللغة والمقدمات في السنة الأولى */
+const PREP_EXIT='PREE 0061';
+
+/* مواد الخطة اللي تشترط اجتياز التحضيري — تُفحص فقط لو الطالب مفعّل الخانة */
+const PREP_GATE_LANG=['COMM 1311','UNIV 1211','ALIS 1211','PHED 1111'];
+const PREP_GATE_MATH=['MATH 1422','PHYS 1421','CHEM 1421','GEEN 1211',
+                      'MATH 1311','MATH 1313','ACCT 2311'];
+
+function prepOn(){ return !!load('pmu_prep',false); }
+
+/* مستويات التحضيري — مادة الرياضيات تتغيّر حسب التخصص */
+function prepSems(){
+  const mc=PREP_MATH[MAJOR]||'PRPM 0012';
+  const mn=PREP_MATH_NAME[mc]||'';
+  return [
+  {id:'PP1',label:'التحضيري — المستوى التأسيسي',hrs:0,prep:true,courses:[
+    {c:'PRPC 0002',n:'Pre-Beginner Communication Skills',h:0,p:[],adm:true,prep:true},
+    {c:'PRPW 0002',n:'Pre-Beginner Writing Skills',h:0,p:[],adm:true,prep:true},
+    {c:'PRPE 0002',n:'Pre-Beginner Enhanced Learning',h:0,p:[],adm:true,prep:true}]},
+
+  {id:'PP2',label:'التحضيري — المستوى المبتدئ',hrs:0,prep:true,courses:[
+    {c:'PRPC 0021',n:'Beginner Communication Skills',h:0,p:[],adm:true,prep:true},
+    {c:'PRPW 0021',n:'Beginner Writing Skills',h:0,p:[],adm:true,prep:true},
+    {c:'PRPE 0021',n:'Beginner Enhanced Learning',h:0,p:[],adm:true,prep:true}]},
+
+  {id:'PP3',label:'التحضيري — المستوى المتوسط',hrs:0,prep:true,courses:[
+    {c:'PRPC 0041',n:'Intermediate Communication Skills',h:0,p:[],adm:true,prep:true},
+    {c:'PRPW 0041',n:'Intermediate Writing Skills',h:0,p:[],adm:true,prep:true},
+    {c:'PRPI 0041',n:'Intermediate Enhanced Learning',h:0,p:[],adm:true,prep:true},
+    {c:'PRPL 0011',n:'Theories & Applications of Learning I',h:0,p:[],prep:true},
+    {c:'PRPM 0011',n:'Introductory Algebra',h:0,p:[],prep:true}]},
+
+  {id:'PP4',label:'التحضيري — المستوى المتقدم',hrs:0,prep:true,courses:[
+    {c:'PRPC 0061',n:'Advanced Communication Skills',h:0,p:[],adm:true,prep:true},
+    {c:'PRPW 0061',n:'Advanced Writing Skills',h:0,p:[],adm:true,prep:true},
+    {c:'PRPA 0061',n:'Advanced Enhanced Learning',h:0,p:[],adm:true,prep:true},
+    {c:'PRPL 0012',n:'Theories & Applications of Learning II',h:0,p:[],prep:true},
+    {c:mc,n:mn+' — مادة تخصصك',h:0,p:[],prep:true},
+    {c:PREP_EXIT,n:'Core Entry Exam — اختبار الخروج',h:0,p:[],adm:true,prep:true}]}
+  ];
 }
 
 
@@ -2677,7 +2802,12 @@ function findPlanCourse(code){return allPlanCourses().find(c=>c.c===code)}
 /* تقديرات الرسوب — المادة تُعاد وما تفتح اللي بعدها.
    جامعة الأمير محمد بن فهد: الحد الأدنى للنجاح في متطلب سابق هو C. */
 const FAIL_GRADES=['D','F','WF'];
-function isFailed(code){ return FAIL_GRADES.includes(grades[code]); }
+/* التحضيري: الاجتياز من C فأعلى — D+ و D رسوب فيه */
+const FAIL_GRADES_C=['D+','D','F','WF'];
+function failGrades(){
+  return (PLANS[MAJOR]&&PLANS[MAJOR].minPassC)?FAIL_GRADES_C:FAIL_GRADES;
+}
+function isFailed(code){ return failGrades().includes(grades[code]); }
 
 /* الانسحاب: الطالب ما اجتاز المادة، فهي باقية عليه كمتطلب
    ولا تفتح المواد اللاحقة، ولا تُحسب ضمن ساعاته المكتسبة. */
@@ -2702,13 +2832,38 @@ function doneCredits(){
 }
 function level(cr){return cr>=90?'Senior':cr>=60?'Junior':cr>=30?'Sophomore':'Freshman'}
 
+/* متطلبات التحضيري تُفحص فقط لمن فعّل الخانة —
+   الطالب المقبول مباشرة ما مرّ بالتحضيري فما نقفل عليه شي. */
+function prepGate(code){
+  if(!prepOn())return [];
+  if(PREP_GATE_LANG.includes(code))return [PREP_EXIT];
+  if(PREP_GATE_MATH.includes(code))return [PREP_MATH[MAJOR]||'PRPM 0012'];
+  return [];
+}
+
+/* التحضيري متسلسل: ما يفتح لك مستوى إلا بعد ما تخلّص اللي قبله */
+function prepLevelLock(code){
+  if(!prepOn())return null;
+  const i=PLAN.findIndex(sem=>sem.prep&&sem.courses.some(c=>c.c===code));
+  if(i<=0)return null;
+  for(let k=0;k<i;k++){
+    const sem=PLAN[k];
+    if(!sem.prep)continue;
+    if(!sem.courses.every(c=>isPassed(c.c)))
+      return t('sem')[sem.id]||sem.label;
+  }
+  return null;
+}
+
 function prereqCheck(code){
   const pc=findPlanCourse(code);
   let reqs=null;
   if(pc) reqs={p:pc.p||[],min:pc.min||0};
   else if(TECH_ELECTIVES[code]) reqs={p:TECH_ELECTIVES[code],min:0};
   if(!reqs) return {known:false,ok:true,missing:[]};
-  const missing=reqs.p.filter(r=>!isPassed(r));
+  const missing=reqs.p.concat(prepGate(code)).filter(r=>!isPassed(r));
+  const lock=prepLevelLock(code);
+  if(lock)missing.push(lock);
   const cr=doneCredits();
   const needCr=reqs.min&&cr<reqs.min?reqs.min:0;
   return {known:true,ok:missing.length===0&&!needCr,missing,needCr,haveCr:cr};
@@ -2744,11 +2899,24 @@ function isInternship(c){
          /\b(4399|4499|4999)\b/.test(code);
 }
 
+/* أول مستوى تحضيري ما خلّصه الطالب — التحضيري متسلسل، مستوى بعد مستوى */
+function currentPrepSem(){
+  if(!prepOn())return null;
+  return PLAN.find(sem=>sem.prep && !sem.courses.every(c=>isPassed(c.c))) || null;
+}
+
 function suggestNext(){
   const cands=[]; let intern=null;
+  /* طالب التحضيري يشوف مستواه الحالي فقط.
+     وفي المستوى المتقدم يقدر ينزل معه مواد من تخصصه. */
+  /* ما يبدأ مقترح مواد التخصص إلا بعد ما يخلّص التحضيري كامل — يمنع الخربطة */
+  const pSem=currentPrepSem();
   PLAN.forEach((sem,si)=>sem.courses.forEach(c=>{
     /* المادة اللي رسب فيها لازم يعيدها — تبقى في المقترح */
     if(isPassed(c.c)||c.el)return;   /* الراسب والمنسحب يبقيان في المقترح */
+    if(c.adm)return;                 /* مواد تنزّلها الإدارة — الطالب ما يسجّلها بنفسه */
+    if(c.prep && (!pSem || sem.id!==pSem.id))return;   /* مستوى التحضيري الحالي فقط */
+    if(!c.prep && pSem)return;                         /* مواد التخصص تنتظر إنهاء التحضيري */
     if(!prereqCheck(c.c).ok)return;
     const item={...c,order:si,unlocks:unlocksCount(c.c),retake:isFailed(c.c)};
     if(isInternship(c)){
@@ -2759,15 +2927,22 @@ function suggestNext(){
     cands.push(item);
   }));
 
+  /* مستوى تحضيري كل مواده تنزّلها الإدارة — نوضّح بدل ما نترك فراغاً */
+  const admOnly = !!pSem && !cands.length &&
+    pSem.courses.every(c=>c.adm||isPassed(c.c));
+
   /* التطبيق العملي ينزل لحاله — ممنوع معه أي مادة */
   if(intern && !cands.length)
     return {crit:[intern],opt:[],hours:intern.h,internOnly:true};
 
-  cands.sort((a,b)=>(b.retake?1:0)-(a.retake?1:0)||(b.unlocks-a.unlocks)||(a.order-b.order));
+  cands.sort((a,b)=>(b.prep?1:0)-(a.prep?1:0)||(b.retake?1:0)-(a.retake?1:0)||(b.unlocks-a.unlocks)||(a.order-b.order));
   const crit=[],opt=[];let hrs=0;
-  cands.filter(c=>c.retake||c.unlocks>0).forEach(c=>{if(hrs+c.h<=20){crit.push(c);hrs+=c.h}});
-  cands.filter(c=>!c.retake&&c.unlocks===0).forEach(c=>{if(hrs+c.h<=20){opt.push(c);hrs+=c.h}});
-  return {crit,opt,hours:hrs,internAvailable:!!intern};
+  /* مواد التحضيري أساسية دائماً وما يحدّها سقف الساعات */
+  cands.filter(c=>c.prep).forEach(c=>{crit.push(c);hrs+=c.h});
+  cands.filter(c=>!c.prep&&(c.retake||c.unlocks>0)).forEach(c=>{if(hrs+c.h<=20){crit.push(c);hrs+=c.h}});
+  cands.filter(c=>!c.prep&&!c.retake&&c.unlocks===0).forEach(c=>{if(hrs+c.h<=20){opt.push(c);hrs+=c.h}});
+  return {crit,opt,hours:hrs,internAvailable:!!intern,admOnly,
+          prepLevel:pSem?(t('sem')[pSem.id]||pSem.label):null};
 }
 
 /* ===== Tabs ===== */
@@ -3303,11 +3478,11 @@ const REG_CAL={
 /* الساعات المكتسبة بنظام الجامعة:
    الراسب (D / F / WF) والمنسحب (W / WP) ما ينحسبون،
    والمعادلة (TR) تنحسب لأنها مادة مكتملة بلا درجة. */
-const NO_CREDIT_GRADES=FAIL_GRADES.concat(WITHDRAW_GRADES);
+function noCreditGrades(){ return failGrades().concat(WITHDRAW_GRADES); }
 function earnedCredits(){
   let t=0;
   completed.forEach(code=>{
-    if(NO_CREDIT_GRADES.includes(grades[code]))return;
+    if(noCreditGrades().includes(grades[code]))return;
     t+=creditsOf(code);
   });
   return t;
@@ -3830,7 +4005,24 @@ function renderPlan(){
   if(!chosen)return;
 
   renderGPA();
-  const cr=doneCredits(),pct=Math.round(cr/TOTAL_CR*100);
+  renderPrepAsk();
+  /* عدّاد التحضيري — مواده بلا ساعات فما تظهر في شريط الساعات */
+  const box=document.getElementById('prepProg');
+  if(box){
+    if(prepOn()){
+      const pc=prepSems().flatMap(x=>x.courses);
+      const dn=pc.filter(c=>isDone(c.c)&&!isFailed(c.c)).length;
+      box.style.display='block';
+      box.innerHTML=`<div class="prep-num">${dn}<small> / ${pc.length} ${
+        LANG==='ar'?'مادة تحضيري':'prep courses'}</small></div>
+        <div class="prep-bar"><div class="prep-fill" style="width:${
+          Math.round(dn/pc.length*100)}%"></div></div>
+        <div class="prep-meta">${LANG==='ar'
+          ?'مواد التحضيري بلا ساعات معتمدة وما تدخل المعدل · الاجتياز من C فأعلى'
+          :'Prep courses carry no credit hours and do not affect GPA · pass with C or better'}</div>`;
+    } else box.style.display='none';
+  }
+  const cr=doneCredits(),pct=TOTAL_CR>0?Math.round(cr/TOTAL_CR*100):0;
   document.getElementById('progDone').innerHTML=`${cr}<small> / ${TOTAL_CR} ${t('hrsUnit')}</small>`;
   document.getElementById('progPct').textContent=pct+'%';
   document.getElementById('progFill').style.width=pct+'%';
@@ -3844,13 +4036,25 @@ function renderPlan(){
     <span class="sug-code">${c.c}</span>
     <span class="sug-name">${c.n}${
       c.retake?`<span class="sug-badge retake">${t('retakeBadge')}</span>`
-      :crit?`<span class="sug-badge">${unlockLabel(c.unlocks)}</span>`:''}</span>
-    <span class="sug-cr">${c.h}H</span></div>`;
+      :(crit&&c.unlocks>0)?`<span class="sug-badge">${unlockLabel(c.unlocks)}</span>`:''}</span>
+    <span class="sug-cr">${c.h?c.h+'H':'—'}</span></div>`;
   let html='';
+  if(sug.admOnly)
+    html+=`<div class="sug-note">${LANG==='ar'
+      ?'🏛️ مواد مستواك الحالي في التحضيري تنزّلها الإدارة تلقائياً — ما تحتاج تسجّلها بنفسك.'
+      :'🏛️ Your current prep level is registered for you by the administration.'}</div>`;
   if(sug.internOnly)
     html+=`<div class="sug-note">${t('internOnly')}</div>`;
-  if(sug.crit.length)html+=`<div class="sug-group crit">${t('critGroup')}</div>`+sug.crit.map(c=>row(c,1)).join('');
-  if(sug.opt.length)html+=`<div class="sug-group">${t('optGroup')}</div>`+sug.opt.map(c=>row(c,0)).join('');
+  const critLbl=sug.prepLevel?(LANG==='ar'
+      ?'🔴 مستواك الحالي في التحضيري — خلّصه أول'
+      :'🔴 Your current prep level — finish it first'):t('critGroup');
+  const optLbl=t('optGroup');
+  if(sug.prepLevel)
+    html+=`<div class="sug-note">${LANG==='ar'
+      ?`🎓 مقترح مواد تخصصك يبدأ بعد ما تخلّص التحضيري كامل — باقي عليك <b>${sug.prepLevel}</b>.`
+      :`🎓 Major course suggestions start once you finish the whole prep program — remaining: <b>${sug.prepLevel}</b>.`}</div>`;
+  if(sug.crit.length)html+=`<div class="sug-group crit">${critLbl}</div>`+sug.crit.map(c=>row(c,1)).join('');
+  if(sug.opt.length)html+=`<div class="sug-group">${optLbl}</div>`+sug.opt.map(c=>row(c,0)).join('');
   if(sug.internAvailable&&!sug.internOnly)
     html+=`<div class="sug-note">${t('internSoon')}</div>`;
   document.getElementById('sugList').innerHTML=html||`<div style="font-size:12.5px;color:var(--text2);padding:6px 0">${t('sugEmpty')}</div>`;
@@ -3867,7 +4071,9 @@ function renderPlan(){
     return `<div class="sem-block ${isOpen?'open':''}" id="sem-${s.id}">
       <div class="sem-head" onclick="document.getElementById('sem-${s.id}').classList.toggle('open')">
         <div class="sem-head-l"><span class="sem-title">${t('sem')[s.id]||s.label}</span>
-        <span class="sem-chip ${allDone?'done':''}">${done}/${s.courses.length}</span></div>
+        <span class="sem-chip ${allDone?'done':''}">${done}/${s.courses.length}</span>
+        <button class="sem-all" title="${LANG==='ar'?'علّم الفصل كامل':'Mark whole term'}"
+          onclick="event.stopPropagation();markSem('${s.id}')">${allDone?'✓✕':'✓✓'}</button></div>
         <span class="sem-arrow">▼</span>
       </div>
       <div class="sem-body">${s.courses.map(c=>{
@@ -3880,6 +4086,9 @@ function renderPlan(){
           if(chk.needCr)parts.push(`${chk.needCr} ${t('hrsUnit')}`);
           req=`<div class="pc-req">🔒 ${t('needs')}: ${parts.join(' + ')}</div>`;
         }
+        const adm=c.adm?`<div class="pc-adm">${LANG==='ar'
+          ?'🏛️ تنزّلها الإدارة — ما تلقاها في البحث'
+          :'🏛️ Registered by the administration'}</div>`:'';
         const g=grades[c.c]||'';
         /* المادة المنتهية: قائمة درجة حقيقية.
            غير المنتهية وغير مقفلة: قائمة تقدير افتراضي لتوقّع المعدل. */
@@ -3890,20 +4099,21 @@ function renderPlan(){
             ${GRADE_LIST.map(x=>`<option value="${x}" ${g===x?'selected':''}>${x}</option>`).join('')}
           </select>`
           : (c.el || locked
-             ? `<div class="pc-cr">${c.h}H</div>`
+             ? `<div class="pc-cr">${c.h?c.h+'H':'—'}</div>`
              : `<select class="pc-wi ${wi?'set':''}" title="${LANG==='ar'?'تقدير افتراضي':'Projected grade'}"
                   onchange="setWhatIf('${c.c}',this.value)">
-                <option value="">${c.h}H</option>
+                <option value="">${c.h?c.h+'H':'—'}</option>
                 ${['A+','A','B+','B','C+','C','D+','D'].map(x=>
                   `<option value="${x}" ${wi===x?'selected':''}>${x}</option>`).join('')}
               </select>`);
-        /* الاختيارية خانة مو مادة حقيقية، فما لها شعب نبحث عنها */
-        const tap=!c.el;
+        /* الاختيارية خانة مو مادة حقيقية، ومواد الإدارة ما لها شعب في البحث */
+        const tap=!c.el&&!c.adm;
+        const hrs=c.h?` <span style="color:var(--text3);font-family:var(--mono);font-size:10.5px">${c.h}H</span>`:'';
         return `<div class="pc ${d?'done':''} ${locked?'locked':''}">
           <button class="pc-check" onclick="toggleDone('${c.c}')">✓</button>
           <div class="pc-info${tap?' tappable':''}"${tap?` onclick="searchSuggested('${c.c}')"`:''}>
-          <div class="pc-code">${c.c} <span style="color:var(--text3);font-family:var(--mono);font-size:10.5px">${c.h}H</span></div>
-          <div class="pc-name">${c.n}</div>${req}</div>
+          <div class="pc-code">${c.c}${hrs}</div>
+          <div class="pc-name">${c.n}</div>${adm}${req}</div>
           ${gradeSel}</div>`;
       }).join('')}</div></div>`;
   }).join('');
@@ -4052,6 +4262,9 @@ async function removeMonitor(id){
 /* ---- settings render ---- */
 function renderSettings(){
   const ar=LANG==='ar';
+  /* نرجّع حالة خانة التحضيري من التخزين */
+  const pchk=document.getElementById('prepChk');
+  if(pchk)pchk.checked=prepOn();
   const pro=isPro();
   const card=document.getElementById('proCard');
   const btn=document.getElementById('btnPro');
@@ -4427,6 +4640,43 @@ function docRelevance(name){
 }
 
 /* أشياء تتحسّن لو الطالب اختار تخصصه — ننبّهه في مكان الفائدة نفسه */
+/* ينقلك للإعدادات وينزّلك عند قائمة التخصص ويضيئها بدل ما يوقفك فوق الصفحة */
+function goPickMajor(){
+  switchTab('set');
+  requestAnimationFrame(()=>{
+    const el=document.getElementById('majorSelect');
+    if(!el)return;
+    el.scrollIntoView({behavior:'smooth',block:'center'});
+    el.classList.remove('major-flash');
+    void el.offsetWidth;
+    el.classList.add('major-flash');
+    setTimeout(()=>el.classList.remove('major-flash'),1800);
+  });
+}
+
+/* سؤال يُعرض مرة وحدة لمن اختار تخصصه وخطته فاضية —
+   قد يكون تحضيرياً وقد يكون مستجداً مقبولاً مباشرة، فنسأل ولا نجزم. */
+function renderPrepAsk(){
+  const el=document.getElementById('prepAsk');
+  if(!el)return;
+  const show = majorChosen() && !prepOn() && !completed.length
+               && !load('pmu_prep_asked',false);
+  el.style.display=show?'block':'none';
+}
+function dismissPrepAsk(){ save('pmu_prep_asked',true); renderPrepAsk(); }
+function goPrepToggle(){
+  save('pmu_prep_asked',true);
+  switchTab('set');
+  requestAnimationFrame(()=>{
+    const box=document.getElementById('prepToggle');
+    if(!box)return;
+    box.scrollIntoView({behavior:'smooth',block:'center'});
+    box.classList.remove('major-flash');void box.offsetWidth;
+    box.classList.add('major-flash');
+    setTimeout(()=>box.classList.remove('major-flash'),1800);
+  });
+}
+
 function renderPickHints(){
   const ar=LANG==='ar', chosen=majorChosen();
   const btn=ar?'⚙️ اختر تخصصك':'⚙️ Pick your major';
@@ -4434,7 +4684,7 @@ function renderPickHints(){
     const el=document.getElementById(id);
     if(!el)return;
     el.classList.toggle('on',!chosen);
-    if(!chosen)el.innerHTML=txt+`<br><button onclick="switchTab('set')">${btn}</button>`;
+    if(!chosen)el.innerHTML=txt+`<br><button onclick="goPickMajor()">${btn}</button>`;
   };
   set('docPickHint', ar
     ? '<b>اختر تخصصك</b> عشان يترتّب الدكاترة حسب مواد خطتك، ويبان لك مين يدرّس مادة تحتاجها.'
@@ -4916,7 +5166,7 @@ internOnly:'🎓 <b>التطبيق العملي ينزل لحاله</b> — ما
 internSoon:'🎓 التطبيق العملي متاح لك، بس لازم ينزل لحاله بدون أي مادة معه.',
 pmTitle:'اختر تخصصك أول',
 pmSub:'الخطة الدراسية والمواد والمتطلبات تتغيّر حسب تخصصك. اختره مرة وحدة وينحفظ لك.',
-pmBtn:'⚙️ روح للإعدادات واختر تخصصك',
+pmBtn:'⚙️ روح للإعدادات واختر تخصصك',prepTitle:'🎓 أنا في البرنامج التحضيري',paTitle:'جديد في الجامعة؟',paSub:'لو أنت في البرنامج التحضيري، فعّل الخيار عشان تطلع لك مستوياتك ومقترح موادك بدل خطة التخصص.',paYes:'أنا في التحضيري',paNo:'لا، مو تحضيري',prepSub:'بيضيف مستويات التحضيري لخطتك، ويقفل مواد السنة الأولى اللي تحتاج اجتيازه',planFix:'📣 شفت مادة أو متطلب غلط في الخطة؟ بلّغنا وبنصلحها.',planFixBtn:'بلّغ',
 fbTitle:'💬 رأيك يهمنا',fbLead:'وش ناقص؟ وش ما عجبك؟ وش تبينا نضيف؟ اكتب بصراحة — كل رسالة تُقرأ.',
 fbIdea:'💡 اقتراح',fbBug:'🐞 مشكلة',fbOther:'💬 غير ذلك',fbSend:'إرسال',
 fbPh:'اكتب هنا...',fbMailPh:'إيميلك',fbTgPh:'@معرّفك في تيليغرام',
@@ -4962,7 +5212,7 @@ sem:{F1:'السنة الأولى — الترم الأول',F2:'السنة ال�
 S1:'السنة الثانية — الترم الأول',S2:'السنة الثانية — الترم الثاني',
 J1:'السنة الثالثة — الترم الأول',J2:'السنة الثالثة — الترم الثاني',
 SU:'الصيف — التدريب',R1:'السنة الرابعة — الترم الأول',R2:'السنة الرابعة — الترم الثاني',
-T1:'السنة الخامسة — الترم الأول',T2:'السنة الخامسة — الترم الثاني'}},
+PP1:'المستوى التأسيسي — Pre-Beginner',PP2:'المستوى المبتدئ — Beginner',PP3:'المستوى المتوسط — Intermediate',PP4:'المستوى المتقدم — Advanced',T1:'السنة الخامسة — الترم الأول',T2:'السنة الخامسة — الترم الثاني'}},
 
 en:{brand:'Jadwalik',tabSearch:'🔍 Search',tabSched:'📅 Schedule ',tabPlan:'📋 My Plan',
 searchTitle:'Course Search',semester:'Semester',college:'College',gender:'Gender',
@@ -4999,7 +5249,7 @@ internOnly:'🎓 <b>Internship is taken alone</b> — you cannot register any ot
 internSoon:'🎓 Internship is available, but it must be taken alone with no other courses.',
 pmTitle:'Pick your major first',
 pmSub:'Your degree plan, courses and prerequisites depend on your major. Choose once and it is saved for you.',
-pmBtn:'⚙️ Go to Settings and pick your major',
+pmBtn:'⚙️ Go to Settings and pick your major',prepTitle:'🎓 I am in the Preparatory Program',paTitle:'New at the university?',paSub:'If you are in the Preparatory Program, turn the option on to see your levels and course suggestions.',paYes:'I am in prep',paNo:'Not prep',prepSub:'Adds prep levels to your plan and locks freshman courses that require passing it',planFix:'📣 Spotted a wrong course or prerequisite? Tell us and we will fix it.',planFixBtn:'Report',
 fbTitle:'💬 Your feedback matters',fbLead:'What is missing? What annoyed you? What should we add? Write honestly — every message is read.',
 fbIdea:'💡 Idea',fbBug:'🐞 Problem',fbOther:'💬 Other',fbSend:'Send',
 fbPh:'Write here...',fbMailPh:'Your email',fbTgPh:'@your Telegram username',
@@ -5041,7 +5291,7 @@ clearedSched:'Schedule cleared',markedAnyway:'Marked complete although a prerequ
 errConn:'Connection error',errConnSub:'The server may be asleep — wait 30 seconds and try again',
 crn:'CRN',sec:'Sec',
 days:{U:'Sunday',M:'Monday',T:'Tuesday',W:'Wednesday',R:'Thursday',F:'Friday',S:'Saturday'},
-sem:{F1:'Freshman — 1st Term',F2:'Freshman — 2nd Term',
+sem:{PP1:'Pre-Beginner Level',PP2:'Beginner Level',PP3:'Intermediate Level',PP4:'Advanced Level',F1:'Freshman — 1st Term',F2:'Freshman — 2nd Term',
 S1:'Sophomore — 1st Term',S2:'Sophomore — 2nd Term',
 J1:'Junior — 1st Term',J2:'Junior — 2nd Term',
 SU:'Summer — Internship',R1:'Senior — 1st Term',R2:'Senior — 2nd Term',
@@ -5158,10 +5408,71 @@ function onUniChange(){
   if(v==='SOON'){document.getElementById('uniSelect').value='PMU';return}
   document.getElementById('brandUni').textContent=v;
 }
+/* تفعيل التحضيري: يعيد بناء الخطة بمستوياته + مادة رياضيات تخصصه */
+/* علّم مستوى كامل بضغطة — التحضيري يُنهى مستوى مستوى */
+/* الخطط مجمّعة من ملفات الجامعة، فأي غلط نبيه يوصلنا */
+function reportPlan(){
+  switchTab('set');
+  requestAnimationFrame(()=>{
+    const cat=document.querySelector('.fb-cat[data-c="bug"]');
+    if(cat)pickFb(cat);
+    const ta=document.getElementById('fbText');
+    if(ta){
+      const m=majorChosen()?MAJOR:'—';
+      ta.value=(LANG==='ar'
+        ?`غلط في الخطة (${m}${prepOn()?' + تحضيري':''}):\n`
+        :`Plan issue (${m}${prepOn()?' + prep':''}):\n`);
+      ta.focus();
+      if(typeof updateFbCount==='function')updateFbCount();
+      ta.scrollIntoView({behavior:'smooth',block:'center'});
+    }
+  });
+}
+
+function markSem(id){
+  const sem=PLAN.find(x=>x.id===id);
+  if(!sem)return;
+  const allDone=sem.courses.every(c=>isDone(c.c));
+  sem.courses.forEach(c=>{
+    const i=completed.indexOf(c.c);
+    if(allDone){ if(i>-1)completed.splice(i,1); }
+    else if(i===-1)completed.push(c.c);
+  });
+  save('pmu_completed',completed);
+  pushCompleted();
+  renderPlan();
+}
+
+function onPrepToggle(){
+  const el=document.getElementById('prepChk');
+  const on=!!(el&&el.checked);
+  save('pmu_prep',on);
+  if(majorChosen())applyMajor(MAJOR,false,false);
+  else if(el)showToast(LANG==='ar'?'اختر تخصصك أول':'Pick your major first','warn');
+  renderPlan();
+  renderPickHints();
+}
+
 function onMajorChange(){
   const el=document.getElementById('majorSelect');
   const code=el.value;
-  if(!code)return;                          /* لسا على "اختر تخصصك" */
+
+  /* رجع لـ«اختر تخصصك» = يبي يلغي تخصصه */
+  if(!code){
+    if(!majorChosen())return;
+    const ok=confirm(LANG==='ar'
+      ? 'تلغي تخصصك؟\n\nالخطة والمقترح بيختفون، وموادك المعلّمة تبقى محفوظة وترجع لك لما تختار تخصصاً.'
+      : 'Clear your major?\n\nYour plan and suggestions will be hidden. Completed courses stay saved.');
+    if(!ok){ syncMajorSelect(); return; }
+    try{ localStorage.removeItem('pmu_major'); }catch(e){}
+    save('pmu_prep',false);
+    const pc=document.getElementById('prepChk'); if(pc)pc.checked=false;
+    if(USER)pushProfile&&pushProfile();
+    applyMajor(MAJOR,false,false);   /* نرسم بلا حفظ — تظهر شاشة «اختر تخصصك» */
+    renderPickHints();
+    showToast(LANG==='ar'?'انلغى تخصصك':'Major cleared','ok');
+    return;
+  }
   if(!PLANS[code]){el.value=majorChosen()?MAJOR:'';return}
   if(code===MAJOR){
     /* نفس التخصص المعروض، لكنه أول اختيار فعلي منه — نثبّته */
