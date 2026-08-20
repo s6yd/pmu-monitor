@@ -5509,6 +5509,10 @@ function calcGPA(){
     const g=grades[code];
     if(!g||GRADE_SKIP.includes(g)||!(g in GRADE_POINTS))return;
     if(!isDone(code))return;
+    /* درجات مواد مو في خطتك الحالية ما تُحسب — أكواد المواد تختلف
+       بين التخصصات، فلو غيّرت تخصصك تبقى درجة قديمة تؤثر على معدلك
+       وأنت ما تشوفها ولا تقدر تعدّلها. */
+    if(!findPlanCourse(code) && !TECH_ELECTIVES[code])return;
     const h=creditsOf(code);
     pts+=GRADE_POINTS[g]*h;hrs+=h;n++;
   });
