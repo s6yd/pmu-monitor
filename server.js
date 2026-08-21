@@ -1467,6 +1467,8 @@ async function adminHealth() {
       lastChange: SCHED_SYNC.lastChange,
       runs: SCHED_SYNC.runs,
       totalUpdated: SCHED_SYNC.totalUpdated,
+      log: SCHED_LOG.slice(0, 15),
+      missingList: (SCHED_SYNC.last && SCHED_SYNC.last.missingList) || [],
       gapMin: Math.round(SCHED_SYNC_GAP / 60000)
     },
     alerts: Object.entries(ALERTS).filter(([,v])=>v.active)
@@ -1753,6 +1755,15 @@ let SCHED_SYNC = { at: 0, running: false, last: null, lastChange: null,
                    runs: 0, totalUpdated: 0 };
 const SCHED_SYNC_GAP = 10 * 60 * 1000;   /* لا نكتب في القاعدة أكثر من مرة كل 10 دقائق */
 
+/* سجل التغييرات: آخر 40 تصحيحاً بتفاصيلها (من → إلى).
+   في الذاكرة فقط — يُصفَّر مع كل إعادة نشر على Render. */
+const SCHED_LOG = [];
+const SCHED_LOG_MAX = 40;
+const FIELD_AR = {
+  course_title: 'اسم المادة', course_date: 'الأيام',
+  course_timing: 'الوقت', instructor: 'الدكتور', room: 'القاعة'
+};
+
 async function syncSchedules(term, courses, force) {
   if (SCHED_SYNC.running) return null;
   if (!force && Date.now() - SCHED_SYNC.at < SCHED_SYNC_GAP) return null;
@@ -1768,26 +1779,42 @@ async function syncSchedules(term, courses, force) {
 
     const rows = await sb('GET', 'user_schedule', {
       query: `?term=eq.${encodeURIComponent(term)}` +
-             `&select=crn,course_title,course_date,course_timing,instructor,room`
+             `&select=crn,course_code,course_title,course_date,course_timing,instructor,room`
     });
     if (!Array.isArray(rows) || !rows.length) return stat;
     stat.rows = rows.length;
 
     /* CRN → البيانات الحية، فقط للصفوف اللي فعلاً مختلفة */
     const stale = new Map();
+    const diffs = new Map();                       /* CRN → تفاصيل الفروق */
     const same = (a, b) => String(a || '').trim() === String(b || '').trim();
+    const missingList = [];
     for (const r of rows) {
       const crn = String(r.crn || '').trim();
       const c = live.get(crn);
-      if (!c) { stat.missing++; continue; }        /* شعبة انحذفت من الجامعة — ما نلمسها */
-      if (same(r.course_title, c.courseTitle) &&
-          same(r.course_date, c.courseDate) &&
-          same(r.course_timing, c.courseTiming) &&
-          same(r.instructor, c.instructor) &&
-          same(r.room, c.room)) continue;
+      if (!c) {                                    /* شعبة انحذفت من الجامعة — ما نلمسها */
+        stat.missing++;
+        if (!missingList.some(m => m.crn === crn))
+          missingList.push({ crn, code: r.course_code || '', title: r.course_title || '' });
+        continue;
+      }
+      const pairs = [
+        ['course_title', r.course_title, c.courseTitle],
+        ['course_date', r.course_date, c.courseDate],
+        ['course_timing', r.course_timing, c.courseTiming],
+        ['instructor', r.instructor, c.instructor],
+        ['room', r.room, c.room]
+      ];
+      const changed = pairs.filter(([, a, b]) => !same(a, b))
+        .map(([f, a, b]) => ({ field: f, ar: FIELD_AR[f] || f,
+                               from: String(a || '—'), to: String(b || '—') }));
+      if (!changed.length) continue;
       stale.set(crn, c);
+      if (!diffs.has(crn))
+        diffs.set(crn, { crn, code: r.course_code || c.courseCode || '', fields: changed });
     }
     stat.changed = stale.size;
+    stat.missingList = missingList.slice(0, 20);
 
     for (const [crn, c] of stale) {
       await sb('PATCH', 'user_schedule', {
@@ -1799,8 +1826,11 @@ async function syncSchedules(term, courses, force) {
         prefer: 'return=minimal'
       });
       stat.updated++;
+      const d = diffs.get(crn);
+      if (d) SCHED_LOG.unshift({ at: Date.now(), term, ...d });
       await new Promise(r => setTimeout(r, 150));   /* ما نضغط على Supabase */
     }
+    if (SCHED_LOG.length > SCHED_LOG_MAX) SCHED_LOG.length = SCHED_LOG_MAX;
   } catch (e) {
     stat.error = e.message;
   } finally {

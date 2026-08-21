@@ -123,6 +123,17 @@ font-size:12px;line-height:1.7;align-items:flex-start}
 .mon-row+.mon-row{border-top:1px solid rgba(255,255,255,.04)}
 .mon-k{color:var(--text3);flex-shrink:0}
 .mon-v{color:var(--text);text-align:left;direction:rtl}
+.chg{padding:9px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+.chg:last-of-type{border-bottom:none}
+.chg-top{display:flex;justify-content:space-between;gap:10px;margin-bottom:5px}
+.chg-code{font-size:12px;font-weight:700;font-family:var(--mono)}
+.chg-ago{font-size:10.5px;color:var(--text3)}
+.chg-row{display:flex;justify-content:space-between;gap:10px;
+font-size:11.5px;line-height:1.9;padding:1px 0}
+.chg-f{color:var(--text3);flex-shrink:0}
+.chg-v{color:var(--text2);text-align:left;min-width:0;word-break:break-word}
+.chg-v s{color:var(--close,#f43f5e);opacity:.75}
+.chg-v b{color:var(--ok,#10b981);font-weight:600}
 .alert{border-radius:12px;padding:12px 14px;margin-bottom:9px;
 display:flex;gap:11px;align-items:flex-start}
 .alert.bad{background:var(--close-bg);border:1px solid rgba(244,63,94,.32)}
@@ -256,13 +267,22 @@ padding:16px;margin:14px 0;display:flex;align-items:center;justify-content:space
 .dw-day{margin-bottom:8px}
 .dw-daylabel{font-size:11px;font-weight:600;color:var(--text3);
 letter-spacing:.5px;margin-bottom:5px}
-.dw-slot{background:var(--card);border:1px solid var(--border);border-radius:10px;
-padding:9px 11px;display:flex;align-items:center;gap:10px;margin-bottom:5px;
+.dw-slot{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:9px 11px;display:flex;align-items:center;gap:10px;margin-bottom:5px;
 border-right:3px solid var(--accent)}
 .dw-time{font-family:var(--mono);font-size:10.5px;color:var(--text2);
 min-width:78px;direction:ltr;text-align:center}
 .dw-slot-name{font-size:12.5px;font-weight:600}
 .dw-slot-sub{font-size:10.5px;color:var(--text3);margin-top:2px}
+
+.sched-box{border:1px solid var(--border);border-radius:12px;padding:11px;margin-bottom:10px;background:rgba(255,255,255,.015)}
+.sched-head{display:flex;justify-content:space-between;align-items:center;
+margin-bottom:9px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.sched-name{font-size:12.5px;font-weight:700}
+.sched-meta{font-size:11px;color:var(--text3)}
+.prep-line{font-size:12px;color:var(--text2);line-height:1.8;padding:10px 12px;
+border-radius:10px;background:var(--card);border:1px solid var(--border);margin-bottom:14px}
+.prep-line.yes{background:var(--open-bg);border-color:rgba(16,185,129,.28)}
+.prep-note{display:block;font-size:10.5px;color:var(--text3);margin-top:5px}
 
 .grades{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:6px}
 .grade{background:var(--card);border:1px solid var(--border);border-radius:9px;
@@ -665,22 +685,46 @@ function renderUserDetail(d){
     </div>
   </div>`;
 
-  /* الجدول مرتب بالأيام */
-  let sched='';
-  if(d.schedule.length){
+  /* الجداول الثلاثة، كل واحد على حدة */
+  const slotOf=s=>Number(s.slot)||1;
+  const credits=list=>list.reduce((t,s)=>{
+    const m=String(s.code||'').match(/(\d{4})/);
+    const n=m?+m[1][2]:3;                     /* نفس منطق السيرفر تقريباً */
+    return t+(n>=0&&n<=6?n||3:3);
+  },0);
+
+  const buildDays=list=>{
+    let out='';
     DAY_ORDER.forEach(day=>{
-      const items=d.schedule
+      const items=list
         .filter(s=>String(s.days||'').toUpperCase().includes(day))
         .map(s=>({s,t:tmin(s.time)}))
         .sort((a,b)=>(a.t?a.t.sort:0)-(b.t?b.t.sort:0));
       if(!items.length) return;
-      sched+=`<div class="dw-day"><div class="dw-daylabel">${DAY_AR[day]}</div>`+
+      out+=`<div class="dw-day"><div class="dw-daylabel">${DAY_AR[day]}</div>`+
         items.map(({s,t})=>`<div class="dw-slot">
           <div class="dw-time">${t?t.a+'–'+t.b:'—'}</div>
           <div style="flex:1;min-width:0">
-            <div class="dw-slot-name">${esc(s.code)} §${esc(s.section||'')}</div>
+            <div class="dw-slot-name">${esc(s.code)} §${esc(s.section||'')} <span style="color:var(--text3);font-weight:400">· ${esc(s.crn||'')}</span></div>
             <div class="dw-slot-sub">${esc(s.room||'—')} · ${esc(s.instructor||'—')}</div>
           </div></div>`).join('')+`</div>`;
+    });
+    return out;
+  };
+
+  let sched='';
+  const used=[1,2,3].filter(n=>d.schedule.some(s=>slotOf(s)===n));
+  if(used.length){
+    used.forEach(n=>{
+      const list=d.schedule.filter(s=>slotOf(s)===n);
+      const body=buildDays(list);
+      sched+=`<div class="sched-box">
+        <div class="sched-head">
+          <span class="sched-name">جدول ${n}</span>
+          <span class="sched-meta">${list.length} مادة · ${credits(list)} ساعة</span>
+        </div>
+        ${body||`<div class="dw-empty">مواد بدون أوقات</div>`}
+      </div>`;
     });
   }
   if(!sched) sched=`<div class="dw-empty">ما بنى جدول بعد</div>`;
@@ -711,7 +755,15 @@ function renderUserDetail(d){
 
     ${gpaBox}
 
-    <div class="sec-title">جدوله الحالي · ${d.scheduleCredits} ساعة</div>
+    ${(()=>{const ph=d.prepHint||{};
+      return `<div class="prep-line ${ph.likely?'yes':''}">
+        ${ph.likely
+          ?`🎓 <b>على الأرجح في البرنامج التحضيري</b> — عنده ${ph.done} مادة تحضيري مكتملة و${ph.sched} في جدوله.`
+          :`ما فيه أي مادة تحضيري عنده — على الأرجح مو في التحضيري.`}
+        <span class="prep-note">استدلال من مواده. خانة التحضيري نفسها محفوظة في متصفح الطالب وما توصل القاعدة.</span>
+      </div>`})()}
+
+    <div class="sec-title">جداوله المحفوظة · ${used.length} من ٣</div>
     ${sched}
 
     <div class="sec-title">المواد المكتملة ودرجاتها</div>
@@ -1225,7 +1277,30 @@ function renderSys(){
       بحد أدنى ${S.gapMin} دقيقة بين الجولتين. تصحّح الدكتور والقاعة والوقت
       في جداول الطلاب المحفوظة بمطابقة الـ CRN.</div>
     <button class="mini" style="margin-top:10px" onclick="runSchedSync()">🔄 شغّلها الآن</button>
-  </div>`;})():''}
+  </div>
+
+  ${(S.missingList&&S.missingList.length)?`<div class="sec-title">شعب في جداول الطلاب ومو موجودة في الجامعة</div>
+  <div class="gauge">
+    ${S.missingList.map(m=>`<div class="kv"><span>${esc(m.code||'—')} · ${esc(m.title||'')}</span>
+      <b class="warn">CRN ${esc(m.crn)}</b></div>`).join('')}
+    <div class="gauge-sub">ما نلمس هذي الصفوف — يحتمل إن الجامعة حذفت الشعبة.
+      ابحث عن الـ CRN في <code>user_schedule</code> عشان تعرف أصحابها وتنبّههم.</div>
+  </div>`:''}
+
+  ${(S.log&&S.log.length)?`<div class="sec-title">سجل التصحيحات · آخر ${S.log.length}</div>
+  <div class="gauge">
+    ${S.log.map(e=>`<div class="chg">
+      <div class="chg-top">
+        <span class="chg-code">${esc(e.code||'—')} · CRN ${esc(e.crn)}</span>
+        <span class="chg-ago">${ago(e.at)}</span>
+      </div>
+      ${e.fields.map(f=>`<div class="chg-row">
+        <span class="chg-f">${esc(f.ar)}</span>
+        <span class="chg-v"><s>${esc(f.from)}</s> ← <b>${esc(f.to)}</b></span>
+      </div>`).join('')}
+    </div>`).join('')}
+    <div class="gauge-sub">السجل في الذاكرة فقط — يُصفَّر مع كل إعادة نشر.</div>
+  </div>`:''}`;})():''}
 
   ${h.caches&&h.caches.finals?`<div class="sec-title">جدول الاختبارات</div>
   <div class="gauge">
