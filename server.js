@@ -2396,10 +2396,13 @@ const server = http.createServer(async (req, res) => {
       const f = path.join(__dirname, parsed.pathname.slice(1));
       const buf = fs.readFileSync(f);
       res.setHeader('Content-Type',
-        parsed.pathname.endsWith('.json') ? 'application/json' : 'image/png');
+        parsed.pathname.endsWith('.json') ? 'application/json; charset=utf-8' : 'image/png');
       res.setHeader('Cache-Control', 'public, max-age=604800');
       res.writeHead(200); res.end(buf);
-    } catch (e) { res.writeHead(404); res.end('Not found'); }
+    } catch (e) {
+      console.log('404 asset ' + parsed.pathname + ' — الملف غير موجود في المستودع');
+      res.writeHead(404); res.end('Not found');
+    }
     return;
   }
 
@@ -2480,6 +2483,11 @@ const server = http.createServer(async (req, res) => {
     }
     return;
   }
+
+  /* تسجيل مؤقت لمصدر الـ404 — يظهر في سجل Render.
+     احذف هذا السطر بعد ما نعرف المسار المسبّب. */
+  console.log('404 ' + req.method + ' ' + parsed.pathname +
+    ' | ref: ' + (req.headers.referer || '-'));
 
   res.setHeader('Content-Type', 'application/json');
   res.writeHead(404);
