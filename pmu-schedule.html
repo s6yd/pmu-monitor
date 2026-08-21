@@ -25,8 +25,12 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="جدولك | Jadwalik — PMU Schedule Builder">
 <meta name="twitter:description" content="ابنِ جدولك الدراسي في جامعة الأمير محمد بن فهد، تابع خطتك، واحسب معدلك.">
-<meta name="twitter:image" content="https://jadwalik.com/favicon-512.png">
-<meta property="og:image" content="https://jadwalik.com/favicon-512.png">
+<meta name="twitter:image" content="https://jadwalik.com/og.png">
+<meta property="og:image" content="https://jadwalik.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:alt" content="جدولك | Jadwalik — PMU Schedule Builder & Degree Planner">
 <meta property="og:url" content="https://jadwalik.com">
 <meta property="og:type" content="website">
 <script type="application/ld+json">
@@ -5664,6 +5668,86 @@ const sb=window.supabase.createClient(SB_URL,SB_KEY,{
 });
 let USER=null, PROFILE=null, syncing=false;
 
+/* ══════════ ما قبل تسجيل الدخول ══════════
+   لحظة الدخول هي اللحظة الوحيدة اللي يفكّر فيها الطالب ببياناته،
+   فنوضّح فيها بالضبط وش نطلب ووش ما نطلبه، ونذكّره بعدم مشاركة
+   بياناته الجامعية مع أي جهة غير الجامعة نفسها. */
+function closeAuthNote(){
+  const el=document.getElementById('authNote');
+  if(el)el.remove();
+}
+
+function showAuthNote(){
+  closeAuthNote();
+  const ar=LANG==='ar';
+  const t=ar?{
+    title:'قبل ما تسجّل دخول',
+    lead:'جدولك يسجّل دخولك بحساب قوقل الشخصي فقط.',
+    never:'ما نطلبها أبداً:',
+    n1:'الرقم السري للجامعة',
+    n2:'إيميل الجامعة أو رقمك الجامعي',
+    n3:'أي بيانات دخول للبانر',
+    why:'ولهذا جدولك ما يقدر يسجّل لك مواد — يجهّز لك جدولك وخطتك، والتسجيل تسويه بنفسك في البانر.',
+    tip:'نصيحة تهمك: لا تعطِ بيانات دخولك الجامعية لأي موقع أو تطبيق غير تابع للجامعة رسمياً، مهما كان مفيداً. البانر وحده المكان الصحيح لها.',
+    go:'متابعة بحساب قوقل',
+    back:'رجوع'
+  }:{
+    title:'Before you sign in',
+    lead:'Jadwalik signs you in with your personal Google account only.',
+    never:'We never ask for:',
+    n1:'Your university password',
+    n2:'Your university email or student ID',
+    n3:'Any Banner login details',
+    why:'That is also why Jadwalik cannot register courses for you — it prepares your schedule and plan, and you register yourself in Banner.',
+    tip:'Worth knowing: never give your university login to any site or app that is not officially run by the university, however useful it looks. Banner is the only right place for it.',
+    go:'Continue with Google',
+    back:'Back'
+  };
+
+  const wrap=document.createElement('div');
+  wrap.id='authNote';
+  wrap.setAttribute('dir',ar?'rtl':'ltr');
+  wrap.style.cssText='position:fixed;inset:0;z-index:9999;display:flex;align-items:center;'+
+    'justify-content:center;padding:18px;background:rgba(0,0,0,.62);backdrop-filter:blur(3px)';
+  wrap.onclick=e=>{ if(e.target===wrap) closeAuthNote(); };
+
+  wrap.innerHTML=
+    '<div style="background:var(--card);border:1px solid var(--border);border-radius:18px;'+
+      'max-width:440px;width:100%;max-height:86vh;overflow:auto;padding:22px">'+
+      '<div style="font-size:17px;font-weight:700;margin-bottom:6px">🔒 '+t.title+'</div>'+
+      '<div style="font-size:13.5px;color:var(--text2);line-height:1.85">'+t.lead+'</div>'+
+      '<div style="margin-top:14px;padding:12px 14px;border-radius:12px;'+
+        'background:var(--bg);border:1px solid var(--border)">'+
+        '<div style="font-size:12.5px;font-weight:600;margin-bottom:8px">'+t.never+'</div>'+
+        '<div style="font-size:13px;color:var(--text2);line-height:2">'+
+          '✕ '+t.n1+'<br>✕ '+t.n2+'<br>✕ '+t.n3+'</div>'+
+      '</div>'+
+      '<div style="font-size:12.5px;color:var(--text2);line-height:1.85;margin-top:13px">'+t.why+'</div>'+
+      '<div style="font-size:12.5px;line-height:1.85;margin-top:13px;padding:11px 13px;'+
+        'border-radius:11px;background:var(--warn-bg,rgba(245,158,11,.1));'+
+        'border:1px solid rgba(245,158,11,.28)">💡 '+t.tip+'</div>'+
+      '<div style="display:flex;gap:9px;margin-top:18px">'+
+        '<button id="authGo" style="flex:1;padding:13px;border-radius:12px;border:none;'+
+          'background:var(--accent);color:#fff;font-weight:700;font-size:14px;'+
+          'font-family:inherit;cursor:pointer">'+t.go+'</button>'+
+        '<button id="authBack" style="padding:13px 18px;border-radius:12px;'+
+          'border:1px solid var(--border);background:transparent;color:var(--text2);'+
+          'font-size:14px;font-family:inherit;cursor:pointer">'+t.back+'</button>'+
+      '</div>'+
+    '</div>';
+
+  document.body.appendChild(wrap);
+  document.getElementById('authBack').onclick=closeAuthNote;
+  document.getElementById('authGo').onclick=()=>{ closeAuthNote(); googleSignIn(); };
+}
+
+async function googleSignIn(){
+  await sb.auth.signInWithOAuth({provider:'google',options:{
+    redirectTo:location.origin+location.pathname,
+    queryParams:{prompt:'select_account'}
+  }});
+}
+
 async function handleAuth(){
   if(USER){
     if(!confirm(LANG==='ar'?'تسجيل خروج؟':'Sign out?'))return;
@@ -5671,10 +5755,7 @@ async function handleAuth(){
     try{Object.keys(localStorage).forEach(k=>{if(k.startsWith('sb-'))localStorage.removeItem(k)})}catch(e){}
     location.href=location.pathname;
   }else{
-    await sb.auth.signInWithOAuth({provider:'google',options:{
-      redirectTo:location.origin+location.pathname,
-      queryParams:{prompt:'select_account'}
-    }});
+    showAuthNote();
   }
 }
 
