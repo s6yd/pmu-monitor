@@ -963,6 +963,36 @@ async function toggleFinals(on){
   }catch(e){ toast(e.message,'err') }
 }
 
+/* ══════════ إيقاف/تشغيل المراقبة فوراً ══════════ */
+async function toggleMonitor(on){
+  if(!on&&!confirm('إيقاف المراقبة؟ ما راح يستلم أي طالب إشعار فتح شعبة حتى تشغّلها مرة ثانية.'))return;
+  try{
+    await api('monitor-toggle',{body:{on:!!on}});
+    toast(on?'المراقبة رجعت تشتغل':'المراقبة موقوفة','ok');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
+/* ══════════ مسح الكاش الآن ══════════ */
+async function clearCache(){
+  if(!confirm('مسح الكاش؟ أول بحث بعدها بيسحب نسخة جديدة من موقع الجامعة — استخدمها لو شفت بيانات قديمة أو غلط.'))return;
+  try{
+    const r=await api('cache-clear',{body:{}});
+    toast(`مُسحت ${r.cleared||0} نسخة`,'ok');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
+/* ══════════ التسخين المسبق ══════════ */
+async function togglePrewarm(on){
+  if(on&&!confirm('تشغيل التسخين المسبق؟ السيرفر بيجدّد أكثر ٣ تركيبات بحث طلباً قبل انتهاء صلاحيتها، فما ينتظر أي طالب سحبة كاملة.\n\nهذا يزيد الطلبات على موقع الجامعة — أوقفه لو لاحظت بطئاً منهم.'))return;
+  try{
+    const r=await api('prewarm-toggle',{body:{on:!!on}});
+    toast(on?`التسخين شغّال — يتبع صلاحية ${r.ttlMin} دقيقة`:'التسخين موقوف','ok');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
 /* ══════════ وضع الصيانة ══════════ */
 async function toggleMaint(on){
   if(on){
@@ -1234,7 +1264,47 @@ function renderSys(){
     العدّادات تُصفّر مع كل إعادة نشر على Render. الدورة تشتغل كل 5 دقائق (300 ثانية).
   </div>`;
 
-  box.innerHTML=maint+finals+alerts+liveBox+gauge+spark+detail;
+  /* ── تحكم سريع وقت التسجيل ── */
+  const monOn=!h.monitorPaused;
+  const monCard=`<div class="maint ${monOn?'':'on'}">
+    <div class="maint-top">
+      <div>
+        <div class="maint-t">${monOn?'🔔 المراقبة شغّالة':'⏸️ المراقبة موقوفة يدوياً'}</div>
+        <div class="maint-s">${monOn
+          ?'أوقفها فوراً لو ضغط موقع الجامعة زاد أو شفت إشعارات غلط — بدون إعادة تشغيل الخدمة.'
+          :'ما يستلم أحد إشعارات فتح شعب الآن. شغّلها لما يستقر الوضع.'}</div>
+      </div>
+      <button class="mini ${monOn?'no':'go'}" onclick="toggleMonitor(${monOn?'false':'true'})">
+        ${monOn?'⏸️ أوقف المراقبة':'▶️ شغّل المراقبة'}</button>
+    </div>
+  </div>`;
+
+  const pOn=!!h.prewarmOn;
+  const pw=h.prewarm||{};
+  const pwCard=`<div class="maint ${pOn?'':''}">
+    <div class="maint-top">
+      <div>
+        <div class="maint-t">${pOn?'🔥 التسخين المسبق شغّال':'💤 التسخين المسبق موقوف'}</div>
+        <div class="maint-s">${pOn
+          ?`يجدّد أكثر ٣ تركيبات طلباً قبل انتهاء صلاحيتها · جُدّد ${pw.refreshed||0} مرة${pw.err?' · آخر خطأ: '+esc(pw.err.msg):''}`
+          :'شغّله وقت الذروة عشان ما ينتظر أي طالب سحبة كاملة من موقع الجامعة.'}</div>
+      </div>
+      <button class="mini ${pOn?'no':'go'}" onclick="togglePrewarm(${pOn?'false':'true'})">
+        ${pOn?'⏸️ أوقفه':'▶️ شغّله'}</button>
+    </div>
+  </div>`;
+
+  const cacheCard=`<div class="maint">
+    <div class="maint-top">
+      <div>
+        <div class="maint-t">🗂️ الكاش: ${h.cacheSize||0} نسخة</div>
+        <div class="maint-s">امسحه لو شفت بيانات قديمة أو غلط — أول بحث بعدها يسحب نسخة جديدة.</div>
+      </div>
+      <button class="mini no" onclick="clearCache()">🗑️ امسح الكاش</button>
+    </div>
+  </div>`;
+
+  box.innerHTML=maint+monCard+pwCard+cacheCard+finals+alerts+liveBox+gauge+spark+detail;
 }
 
 /* ══════════ المراقبة ══════════ */

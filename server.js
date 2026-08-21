@@ -1429,6 +1429,13 @@ async function adminHealth() {
     maintenance: MAINTENANCE,
     maintenanceMsg: MAINT_MSG,
     finalsOn: FINALS_ON,
+    monitorPaused: MONITOR_PAUSED,
+    prewarmOn: PREWARM_ON,
+    prewarm: {
+      runs: PREWARM.runs, refreshed: PREWARM.refreshed,
+      lastAt: PREWARM.lastAt, lastKeys: PREWARM.lastKeys, err: PREWARM.err
+    },
+    cacheSize: coursesCache.size,
     ttlOverride: TTL_OVERRIDE,
     ttlChoices: TTL_CHOICES,
     ttlLimits: { min: TTL_MIN_ALLOWED, max: TTL_MAX_ALLOWED },
@@ -1645,6 +1652,17 @@ const TTL_OFF  = 6 * 60 * 60 * 1000;
 
 /* تجاوز يدوي من لوحة التحكم — بالدقائق. null = تلقائي حسب الموسم */
 let TTL_OVERRIDE = null;
+
+/* ═══ مفاتيح تشغيل لحظية من اللوحة (بدون إعادة تشغيل الخدمة) ═══
+   MONITOR_ENABLED متغيّر بيئة — تغييره يتطلب إعادة تشغيل، وهذا آخر
+   شي نبيه وقت التسجيل. هذا المفتاح يوقف المراقبة فوراً بضغطة. */
+let MONITOR_PAUSED = false;
+
+/* التسخين المسبق: يجدّد نسخ الكاش المطلوبة كثيراً قبل ما تنتهي صلاحيتها،
+   فما ينتظر أي طالب سحبة كاملة من موقع الجامعة.
+   يبدأ مطفأً — تشغّله من اللوحة وقت الحاجة فقط. */
+let PREWARM_ON = false;
+const PREWARM = { runs: 0, refreshed: 0, lastAt: 0, lastKeys: [], err: null };
 const TTL_CHOICES = [1, 5, 15, 60, 360];   /* أزرار سريعة في اللوحة */
 const TTL_MIN_ALLOWED = 1;                 /* أقل من دقيقة يعني سحب متواصل */
 const TTL_MAX_ALLOWED = 24 * 60;           /* أكثر من يوم يعني بيانات بايتة */
@@ -1768,12 +1786,13 @@ async function syncSchedules(term, courses, force) {
 const coursesCache = new Map();     // key → {at, courses}
 const inFlight     = new Map();     // key → Promise (يمنع سحبتين متزامنتين لنفس التركيبة)
 
-async function getCourses(term, college, gender) {
+async function getCourses(term, college, gender, force) {
   const key = `${term}|${college}|${gender}`;
   OPS.searches++;
   const TTL = coursesTTL();
   const hit = coursesCache.get(key);
-  if (hit && Date.now() - hit.at < TTL) {
+  if (hit && !force && Date.now() - hit.at < TTL) {
+    hit.lastHit = Date.now();          /* لمعرفة أي التركيبات تستحق التسخين */
     OPS.searchesCached++;
     return { courses: hit.courses, cached: true, age: Date.now() - hit.at };
   }
@@ -1797,7 +1816,7 @@ async function getCourses(term, college, gender) {
       const sec = String(c.section || '').trim();
       c.gender = /^2/.test(sec) ? 'F' : /^1/.test(sec) ? 'M' : null;
     });
-    coursesCache.set(key, { at: Date.now(), courses });
+    coursesCache.set(key, { at: Date.now(), lastHit: (hit && hit.lastHit) || Date.now(), courses });
     resolve('search', 'البحث ما يشتغل');
     /* قائمة ALL/ALL هي الأشمل — نصحّح بها جداول الطلاب المحفوظة */
     if (college === 'ALL' && gender === 'ALL')
@@ -1867,11 +1886,57 @@ function nearWindow() {
     d >= dayShift(w.from, -NEAR_DAYS) && d <= dayShift(w.to, NEAR_DAYS));
 }
 
+/* ═══ التسخين المسبق ═══
+   يجدّد نسخ الكاش الأكثر طلباً قبل ما تنتهي صلاحيتها بقليل، فيلقى
+   الطالب النتيجة جاهزة بدل ما ينتظر سحبة كاملة من موقع الجامعة.
+   يتبع مدة الصلاحية الفعلية — بما فيها القيمة اليدوية من اللوحة. */
+const PREWARM_MAX_KEYS = 3;          /* أكثر ثلاث تركيبات طلباً فقط */
+const PREWARM_RECENT   = 30 * 60000; /* تركيبة ما طُلبت منذ نصف ساعة نتركها */
+
+async function prewarmTick() {
+  if (!PREWARM_ON) return;
+  if (!MONITOR_ENABLED) return;
+  const now = Date.now();
+  const TTL = coursesTTL();
+  /* عتبة عشوائية في كل دورة (70%–95% من الصلاحية) — نفس فلسفة التشويش
+     في دورة المراقبة: ما نبي نمطاً منتظماً يُقرأ من طرف الجامعة. */
+  const at = 0.70 + Math.random() * 0.25;
+
+  const due = [...coursesCache.entries()]
+    .filter(([, v]) => now - (v.lastHit || v.at) < PREWARM_RECENT)
+    .filter(([, v]) => now - v.at >= TTL * at)      /* قاربت تنتهي */
+    .sort((a, b) => (b[1].lastHit || b[1].at) - (a[1].lastHit || a[1].at))
+    .slice(0, PREWARM_MAX_KEYS);
+
+  if (!due.length) return;
+  PREWARM.runs++;
+  PREWARM.lastAt = now;
+  PREWARM.lastKeys = due.map(([k]) => k);
+
+  for (const [k] of due) {
+    const [term, college, gender] = k.split('|');
+    try {
+      await getCourses(term, college, gender, true);
+      PREWARM.refreshed++;
+      PREWARM.err = null;
+    } catch (e) {
+      /* الفشل ما يضر: النسخة القديمة تبقى في الكاش ويخدمها البحث */
+      PREWARM.err = { at: Date.now(), msg: e.message };
+    }
+  }
+}
+
 function monitorState() {
   if (!MONITOR_ENABLED) {
     return { active: false, reason: 'disabled',
              ar: 'المراقبة معطّلة في هذي النسخة', en: 'Monitoring disabled on this instance',
              window: null, intervalMin: null };
+  }
+  if (MONITOR_PAUSED) {
+    return { active: false, reason: 'paused',
+             ar: 'المراقبة موقوفة يدوياً من اللوحة',
+             en: 'Monitoring paused manually from the dashboard',
+             window: currentWindow(), intervalMin: null, paused: true };
   }
   const hour = riyadhHour();
   const win = currentWindow();
@@ -2028,16 +2093,28 @@ const server = http.createServer(async (req, res) => {
   if (parsed.pathname === '/api/courses') {
     touchVisitor(req);
     res.setHeader('Content-Type', 'application/json');
+    /* قائمة المواد كبيرة (مئات الكيلوبايتات لقائمة ALL) — الضغط يقصّها
+       لعُشر حجمها تقريباً، وهذا أكبر فرق يحسّه الطالب على بيانات الجوال. */
+    const sendJSON = obj => {
+      const buf = Buffer.from(JSON.stringify(obj), 'utf8');
+      if (/\bgzip\b/.test(req.headers['accept-encoding'] || '')) {
+        zlib.gzip(buf, (err, gz) => {
+          if (err) { res.writeHead(200); return res.end(buf); }
+          res.setHeader('Content-Encoding', 'gzip');
+          res.setHeader('Vary', 'Accept-Encoding');
+          res.writeHead(200); res.end(gz);
+        });
+      } else { res.writeHead(200); res.end(buf); }
+    };
     const { term = '202630', college = 'ALL', gender = 'M1' } = parsed.query;
     try {
       const r = await getCourses(term, college, gender);
-      res.writeHead(200);
-      res.end(JSON.stringify({
+      sendJSON({
         success: true, count: r.courses.length,
         cached: r.cached, ageMs: r.age,
         ttlMin: Math.round(coursesTTL() / 60000),
         courses: r.courses
-      }));
+      });
     } catch (err) {
       /* لو الجامعة تعطلت، نخدم آخر نسخة محفوظة بدل ما نفشل */
       OPS.lastError = { at: Date.now(), where: 'search', msg: err.message };
@@ -2047,12 +2124,11 @@ const server = http.createServer(async (req, res) => {
       const stale = coursesCache.get(`${term}|${college}|${gender}`);
       if (stale) {
         OPS.searchStale++;
-        res.writeHead(200);
-        res.end(JSON.stringify({
+        sendJSON({
           success: true, count: stale.courses.length,
           cached: true, stale: true, ageMs: Date.now() - stale.at,
           courses: stale.courses
-        }));
+        });
       } else {
         res.writeHead(500);
         res.end(JSON.stringify({ success: false, error: err.message }));
@@ -2118,6 +2194,39 @@ const server = http.createServer(async (req, res) => {
           return send(200, { ok: true, stat });
         }
         return send(200, { last: SCHED_SYNC.last });
+      }
+
+      if (act === 'monitor-toggle') {
+        if (req.method === 'POST') {
+          const b = await readBody(req);
+          const was = MONITOR_PAUSED;
+          /* بدون حقل on نرجّع الحالة فقط — ما نغيّر شي بالغلط */
+          if ('on' in b) MONITOR_PAUSED = !b.on;   /* on = المراقبة شغالة */
+          if (was !== MONITOR_PAUSED)
+            sendMsg(ADMIN_CHAT_ID, MONITOR_PAUSED
+              ? '⏸️ <b>المراقبة موقوفة يدوياً</b>\n\nما راح يستلم أحد إشعارات فتح شعب حتى تشغّلها.'
+              : '▶️ <b>المراقبة رجعت تشتغل</b>').catch(() => {});
+        }
+        return send(200, { on: !MONITOR_PAUSED, state: monitorState() });
+      }
+
+      if (act === 'cache-clear') {
+        if (req.method === 'POST') {
+          const n = coursesCache.size;
+          coursesCache.clear();
+          return send(200, { ok: true, cleared: n });
+        }
+        return send(200, { size: coursesCache.size });
+      }
+
+      if (act === 'prewarm-toggle') {
+        if (req.method === 'POST') {
+          const b = await readBody(req);
+          if ('on' in b) PREWARM_ON = !!b.on;
+          if (PREWARM_ON) prewarmTick().catch(() => {});   /* دورة فورية */
+        }
+        return send(200, { on: PREWARM_ON, stat: PREWARM,
+                           ttlMin: Math.round(coursesTTL() / 60000) });
       }
 
       if (act === 'cache-ttl') {
@@ -2496,6 +2605,9 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log('Jadwalik running on ' + PORT);
+  /* التسخين المسبق: فحص كل 20 ثانية، وما يسحب إلا لو فيه تركيبة
+     مطلوبة قاربت صلاحيتها تنتهي — والمفتاح مطفأ افتراضياً. */
+  setInterval(() => { prewarmTick().catch(() => {}) }, 20000);
   const st = monitorState();
   console.log(`env=${SITE_ENV} | freeBeta=${FREE_BETA} | monitor: ${st.reason} — ${st.ar}`);
   /* أول دورة بعد 20-60 ثانية عشوائياً، ثم جدولة ذكية */
