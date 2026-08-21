@@ -1552,9 +1552,18 @@ async function adminUserDetail(userId) {
                 .sort((a, b) => String(a.code).localeCompare(String(b.code))),
     schedule: S.map(s => ({
       crn: s.crn, code: s.course_code, section: s.section,
+      slot: s.slot || 1,
       days: s.course_date, time: s.course_timing,
       room: s.room, instructor: s.instructor, term: s.term
     })),
+    /* مؤشر استدلالي للتحضيري: خانة pmu_prep محفوظة في متصفح الطالب فقط
+       وما توصل القاعدة، فنستدل عليها من وجود مواد التحضيري عنده. */
+    prepHint: (() => {
+      const isPrep = c => /^(PRP|PREE)/i.test(String(c || '').trim());
+      const inDone = D.filter(c => isPrep(c.course_code)).length;
+      const inSched = S.filter(s => isPrep(s.course_code)).length;
+      return { done: inDone, sched: inSched, likely: inDone + inSched > 0 };
+    })(),
     scheduleCredits: S.reduce((t, s) => t + creditsFromCode(s.course_code), 0)
   };
 }
@@ -2526,7 +2535,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   /* الأيقونات والمانيفست */
-  if (/^\/(favicon-\d+\.png|manifest\.json|jadwalik-logo[\w-]*\.png)$/.test(parsed.pathname)) {
+  if (/^\/(favicon-\d+\.png|og\.png|manifest\.json|jadwalik-logo[\w-]*\.png)$/.test(parsed.pathname)) {
     try {
       const f = path.join(__dirname, parsed.pathname.slice(1));
       const buf = fs.readFileSync(f);
