@@ -5614,14 +5614,47 @@ function renderGPA(){
     `${t('gpaRank')}: <b style="color:${color}">${rank}</b> — ${t('gpaFrom')} ${n} ${t('gpaFrom2')}`;
 }
 
-async function pushGrades(){
-  if(!USER||syncing)return;
-  try{
-    const rows=completed.map(c=>({user_id:USER.id,course_code:c,grade:grades[c]||null}));
-    await sb.from('completed_courses').delete().eq('user_id',USER.id);
-    if(rows.length)await sb.from('completed_courses').insert(rows);
-  }catch(e){console.log('push grades',e)}
+/* ═══════════ طابور الحفظ ═══════════
+   دوال الحفظ تمسح صفوف الطالب ثم تعيد إدخالها. لو تتالت نداءات بسرعة
+   (زر «علّم الفصل كامل» مثلاً) تتداخل العمليتان: يمسح الثاني بعد ما
+   أدخل الأول، فيفشل إدخاله بخطأ duplicate key — والنتيجة ضياع بيانات
+   الطالب بدون أي رسالة.
+   الحل: لكل جدول طابور واحد. لو فيه عملية شغالة، النداء الجديد ينتظرها
+   بدل ما يتداخل معها، والنداءات المتراكمة تُدمج في عملية واحدة تقرأ
+   أحدث البيانات وقت تنفيذها. الانتظار (await) يبقى صحيحاً كما كان. */
+const _saveQ={};
+function saveQueue(key,fn){
+  const s=_saveQ[key]||(_saveQ[key]={running:null,pending:null});
+  if(s.pending)return s.pending;              /* في الانتظار أصلاً وسيرفع أحدث نسخة */
+  if(!s.running){
+    s.running=(async()=>{
+      try{await fn()}catch(e){console.log('save '+key,e)}
+      finally{s.running=null}
+    })();
+    return s.running;
+  }
+  s.pending=s.running.then(()=>{s.pending=null;return saveQueue(key,fn)});
+  return s.pending;
 }
+
+/* إزالة التكرار قبل الإرسال — صف مكرر يكسر العملية كلها */
+function dedupeBy(rows,keyFn){
+  const seen=new Set(),out=[];
+  for(const r of rows){const k=keyFn(r);if(seen.has(k))continue;seen.add(k);out.push(r)}
+  return out;
+}
+
+/* الكتابة الفعلية لجدول المواد المكتملة — نقطة واحدة يستخدمها الجميع */
+async function writeCompleted(){
+  if(!USER||syncing)return;
+  const rows=dedupeBy(
+    completed.map(c=>({user_id:USER.id,course_code:c,grade:grades[c]||null})),
+    r=>r.course_code);
+  await sb.from('completed_courses').delete().eq('user_id',USER.id);
+  if(rows.length)await sb.from('completed_courses').insert(rows);
+}
+
+async function pushGrades(){ return saveQueue('completed',writeCompleted) }
 
 /* ================= SUPABASE AUTH & SYNC ================= */
 const SB_URL='https://komdznyfqmheaqywenbf.supabase.co';
@@ -5724,28 +5757,22 @@ async function pushProfile(){
   catch(e){ console.log('major sync',e); }
 }
 
-async function pushCompleted(){
+async function pushCompleted(){ return saveQueue('completed',writeCompleted) }
+
+async function writeSchedule(){
   if(!USER||syncing)return;
-  try{
-    await sb.from('completed_courses').delete().eq('user_id',USER.id);
-    if(completed.length)
-      await sb.from('completed_courses').insert(completed.map(c=>({user_id:USER.id,course_code:c,grade:grades[c]||null})));
-  }catch(e){console.log('push cc',e)}
+  /* نرفع الجداول الثلاثة، وكل صف يحمل رقم جدوله */
+  const rows=[];
+  SCHEDULES.forEach((sc,i)=>sc.forEach(c=>rows.push({
+    user_id:USER.id,slot:i+1,crn:c.crn,course_code:c.courseCode,course_title:c.courseTitle,
+    section:c.section,course_date:c.courseDate,course_timing:c.courseTiming,
+    instructor:c.instructor,room:c.room,term:document.getElementById('term').value})));
+  const clean=dedupeBy(rows,r=>r.slot+'|'+r.crn);
+  await sb.from('user_schedule').delete().eq('user_id',USER.id);
+  if(clean.length) await sb.from('user_schedule').insert(clean);
 }
 
-async function pushSchedule(){
-  if(!USER||syncing)return;
-  try{
-    await sb.from('user_schedule').delete().eq('user_id',USER.id);
-    /* نرفع الجداول الثلاثة، وكل صف يحمل رقم جدوله */
-    const rows=[];
-    SCHEDULES.forEach((sc,i)=>sc.forEach(c=>rows.push({
-      user_id:USER.id,slot:i+1,crn:c.crn,course_code:c.courseCode,course_title:c.courseTitle,
-      section:c.section,course_date:c.courseDate,course_timing:c.courseTiming,
-      instructor:c.instructor,room:c.room,term:document.getElementById('term').value})));
-    if(rows.length) await sb.from('user_schedule').insert(rows);
-  }catch(e){console.log('push sch',e)}
-}
+async function pushSchedule(){ return saveQueue('schedule',writeSchedule) }
 
 /* بدء الجلسة */
 (async function initAuth(){

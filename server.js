@@ -4,6 +4,28 @@ const url = require('url');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const zlib = require('zlib');
+
+/* ═══ صفحة الموقع: تُقرأ وتُضغط مرة وحدة عند تشغيل السيرفر ═══
+   قبل كذا كنا نقرأها من القرص مع كل زيارة (300KB لكل طالب).
+   الآن تُحفظ في الذاكرة مضغوطة (~60KB) مع ETag.
+   أي رفع جديد للملف يعيد تشغيل Render فتتجدد النسخة تلقائياً. */
+let PAGE = null;
+function loadPage() {
+  try {
+    const raw = fs.readFileSync(path.join(__dirname, 'pmu-schedule.html'));
+    PAGE = {
+      raw,
+      gz: zlib.gzipSync(raw, { level: 9 }),
+      etag: '"' + crypto.createHash('sha1').update(raw).digest('hex').slice(0, 16) + '"'
+    };
+    console.log(`page cached: ${(raw.length / 1024).toFixed(0)}KB → gzip ${(PAGE.gz.length / 1024).toFixed(0)}KB`);
+  } catch (e) {
+    PAGE = null;
+    console.log('page load failed:', e.message);
+  }
+}
+loadPage();
 
 /* .trim() مهم: أي مسافة أو سطر زائد في متغيرات Render
    يكسر الطلبات برسالة "Request path contains unescaped characters" */
@@ -2437,11 +2459,25 @@ const server = http.createServer(async (req, res) => {
   /* الصفحة */
   if (parsed.pathname === '/' || parsed.pathname === '/index.html') {
     touchVisitor(req);
-    try {
-      const html = fs.readFileSync(path.join(__dirname, 'pmu-schedule.html'), 'utf8');
-      res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      res.writeHead(200); res.end(html);
-    } catch (e) { res.writeHead(500); res.end('Page not found'); }
+    if (!PAGE) loadPage();                       /* محاولة أخيرة لو فشلت عند الإقلاع */
+    if (!PAGE) { res.writeHead(500); res.end('Page not found'); return; }
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache');  /* يتحقق مع كل زيارة — ما يعلق على نسخة قديمة */
+    res.setHeader('ETag', PAGE.etag);
+    res.setHeader('Vary', 'Accept-Encoding');
+
+    /* الصفحة ما تغيّرت عند الطالب — نرد بدون إرسال أي محتوى */
+    if ((req.headers['if-none-match'] || '') === PAGE.etag) {
+      res.writeHead(304); res.end(); return;
+    }
+
+    if (/\bgzip\b/.test(req.headers['accept-encoding'] || '')) {
+      res.setHeader('Content-Encoding', 'gzip');
+      res.writeHead(200); res.end(PAGE.gz);
+    } else {
+      res.writeHead(200); res.end(PAGE.raw);
+    }
     return;
   }
 
