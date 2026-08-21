@@ -116,8 +116,13 @@ padding:14px;margin-bottom:12px}
 .maint-t{font-size:14px;font-weight:700}
 .maint.on .maint-t{color:var(--warn)}
 .maint-s{font-size:11.5px;color:var(--text2);margin-top:5px;line-height:1.6}
-.maint-msg{margin-top:11px;padding:9px 11px;background:var(--bg);border-radius:9px;
-font-size:12px;color:var(--text2);line-height:1.7}
+.maint-msg{margin-top:11px;padding:9px 11px;background:var(--bg);border-radius:9px;font-size:12px;color:var(--text2);line-height:1.7}
+.mon-grid{margin-top:12px;padding-top:11px;border-top:1px solid var(--border)}
+.mon-row{display:flex;justify-content:space-between;gap:12px;padding:6px 0;
+font-size:12px;line-height:1.7;align-items:flex-start}
+.mon-row+.mon-row{border-top:1px solid rgba(255,255,255,.04)}
+.mon-k{color:var(--text3);flex-shrink:0}
+.mon-v{color:var(--text);text-align:left;direction:rtl}
 .alert{border-radius:12px;padding:12px 14px;margin-bottom:9px;
 display:flex;gap:11px;align-items:flex-start}
 .alert.bad{background:var(--close-bg);border:1px solid rgba(244,63,94,.32)}
@@ -1264,18 +1269,69 @@ function renderSys(){
     العدّادات تُصفّر مع كل إعادة نشر على Render. الدورة تشتغل كل 5 دقائق (300 ثانية).
   </div>`;
 
-  /* ── تحكم سريع وقت التسجيل ── */
+  /* ── تحكم سريع + تفاصيل جدولة المراقبة ── */
+  const mi=h.monitorInfo||{};
+  const mst=mi.state||{};
   const monOn=!h.monitorPaused;
-  const monCard=`<div class="maint ${monOn?'':'on'}">
+  const running=!!mst.active;
+
+  const fmtIn=s=>{
+    if(s===null||s===undefined)return '—';
+    if(s<60)return `بعد ${s} ثانية`;
+    const m=Math.floor(s/60);
+    if(m<60)return `بعد ${m} دقيقة`;
+    const hh=Math.floor(m/60);
+    return `بعد ${hh} ساعة و${m%60} دقيقة`;
+  };
+  const arDate=iso=>{
+    if(!iso)return '—';
+    const M=['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+    const p=iso.split('-');
+    return `${+p[2]} ${M[+p[1]-1]}`;
+  };
+
+  /* لماذا هي متوقفة الآن؟ سبب واحد واضح بدل التخمين */
+  let why='';
+  if(!monOn) why='أنت أوقفتها من هذا الزر.';
+  else if(mst.reason==='disabled') why='معطّلة في متغيرات Render (MONITOR_ENABLED).';
+  else if(mst.reason==='hours') why=`خارج ساعات العمل — الساعة الآن ${mi.riyadhHour}:00 بتوقيت الرياض، وتبدأ ${mi.hoursFrom}:00.`;
+  else if(mst.reason==='offseason') why=mi.nextWindow
+      ? `خارج نوافذ التسجيل — تستأنف تلقائياً في «${esc(mi.nextWindow.ar)}» يوم ${arDate(mi.nextWindow.from)}.`
+      : 'خارج نوافذ التسجيل، وما فيه نافذة قادمة في التقويم.';
+
+  const rows=[
+    ['الحالة الآن', running
+      ? `<b style="color:var(--ok)">تفحص الشعب</b>`
+      : `<b style="color:var(--warn)">متوقفة</b>`],
+    !running&&why ? ['السبب', why] : null,
+    ['الفاصل بين الدورات', `كل ${mi.intervalMin} دقائق · مع تشويش ±${mi.jitterPct}% (${mi.intervalMinLow}–${mi.intervalMinHigh} دقيقة)`],
+    ['الدورة القادمة', running?fmtIn(mi.nextCycleInSec):'—'],
+    ['آخر دورة', h.lastCycleAgoSec!==null&&h.lastCycleAgoSec!==undefined
+      ? `قبل ${h.lastCycleAgoSec<60?h.lastCycleAgoSec+' ثانية':Math.round(h.lastCycleAgoSec/60)+' دقيقة'}`
+      : 'ما صارت ولا دورة بعد إعادة التشغيل'],
+    ['ساعات العمل', `${mi.hoursFrom}:00 – ${mi.hoursTo}:00 بتوقيت الرياض · الساعة الآن ${mi.riyadhHour}:00`],
+    ['النافذة الحالية', mi.window
+      ? `${esc(mi.window.ar)} — من ${arDate(mi.window.from)} إلى ${arDate(mi.window.to)}`
+      : 'ما فيه — خارج فترات التسجيل'],
+    mi.window?null:['النافذة القادمة', mi.nextWindow
+      ? `${esc(mi.nextWindow.ar)} — تبدأ ${arDate(mi.nextWindow.from)}`
+      : 'ما فيه نافذة قادمة'],
+    ['خارج النوافذ', mi.idleOff?'المراقبة تتوقف تماماً':'مراقبة مخفّفة']
+  ].filter(Boolean);
+
+  const monCard=`<div class="maint ${running?'':'on'}">
     <div class="maint-top">
       <div>
-        <div class="maint-t">${monOn?'🔔 المراقبة شغّالة':'⏸️ المراقبة موقوفة يدوياً'}</div>
+        <div class="maint-t">${monOn?(running?'🔔 المراقبة تشتغل الآن':'🔕 المراقبة مفعّلة بس غير نشطة'):'⏸️ المراقبة موقوفة يدوياً'}</div>
         <div class="maint-s">${monOn
           ?'أوقفها فوراً لو ضغط موقع الجامعة زاد أو شفت إشعارات غلط — بدون إعادة تشغيل الخدمة.'
           :'ما يستلم أحد إشعارات فتح شعب الآن. شغّلها لما يستقر الوضع.'}</div>
       </div>
       <button class="mini ${monOn?'no':'go'}" onclick="toggleMonitor(${monOn?'false':'true'})">
         ${monOn?'⏸️ أوقف المراقبة':'▶️ شغّل المراقبة'}</button>
+    </div>
+    <div class="mon-grid">
+      ${rows.map(([k,v])=>`<div class="mon-row"><span class="mon-k">${k}</span><span class="mon-v">${v}</span></div>`).join('')}
     </div>
   </div>`;
 

@@ -1430,6 +1430,28 @@ async function adminHealth() {
     maintenanceMsg: MAINT_MSG,
     finalsOn: FINALS_ON,
     monitorPaused: MONITOR_PAUSED,
+
+    /* ── تفاصيل جدولة المراقبة، للعرض في اللوحة ── */
+    monitorInfo: {
+      state: ms,
+      paused: MONITOR_PAUSED,
+      enabled: MONITOR_ENABLED,
+      hoursFrom: ACTIVE_FROM_HOUR,
+      hoursTo: ACTIVE_TO_HOUR,
+      riyadhHour: riyadhHour(),
+      riyadhDate: riyadhDate(),
+      intervalMin: INTERVAL_PEAK / 60000,
+      jitterPct: Math.round(JITTER * 100),
+      intervalMinLow: Number(((INTERVAL_PEAK * (1 - JITTER)) / 60000).toFixed(2)),
+      intervalMinHigh: Number(((INTERVAL_PEAK * (1 + JITTER)) / 60000).toFixed(2)),
+      idleOff: !INTERVAL_IDLE,
+      window: currentWindow(),
+      nextWindow: nextWindow(),
+      windows: MONITOR_WINDOWS,
+      nextCycleAt: NEXT_CYCLE_AT || null,
+      nextCycleInSec: NEXT_CYCLE_AT ? Math.max(0, Math.round((NEXT_CYCLE_AT - now) / 1000)) : null
+    },
+
     prewarmOn: PREWARM_ON,
     prewarm: {
       runs: PREWARM.runs, refreshed: PREWARM.refreshed,
@@ -1663,6 +1685,9 @@ let MONITOR_PAUSED = false;
    يبدأ مطفأً — تشغّله من اللوحة وقت الحاجة فقط. */
 let PREWARM_ON = false;
 const PREWARM = { runs: 0, refreshed: 0, lastAt: 0, lastKeys: [], err: null };
+
+/* موعد الدورة القادمة — يُحدَّث مع كل جدولة، ويُعرض في اللوحة */
+let NEXT_CYCLE_AT = 0;
 const TTL_CHOICES = [1, 5, 15, 60, 360];   /* أزرار سريعة في اللوحة */
 const TTL_MIN_ALLOWED = 1;                 /* أقل من دقيقة يعني سحب متواصل */
 const TTL_MAX_ALLOWED = 24 * 60;           /* أكثر من يوم يعني بيانات بايتة */
@@ -1842,7 +1867,7 @@ async function getCourses(term, college, gender, force) {
 
 /* نوافذ التسجيل من التقويم الأكاديمي المعتمد (تشمل يومين احتياط قبل وبعد) */
 const MONITOR_WINDOWS = [
-  { from: '2026-08-21', to: '2026-09-10', ar: 'تسجيل الترم الأول' },
+  { from: '2026-08-23', to: '2026-09-10', ar: 'تسجيل الترم الأول' },
   { from: '2027-01-08', to: '2027-01-28', ar: 'تسجيل الترم الثاني' },
   { from: '2027-04-09', to: '2027-04-17', ar: 'التسجيل المبكر للصيفي' },
   { from: '2027-06-13', to: '2027-06-22', ar: 'تسجيل الصيفي' }
@@ -1988,6 +2013,7 @@ function nextDelay() {
 function scheduleNextCycle() {
   const delay = nextDelay();
   const st = monitorState();
+  NEXT_CYCLE_AT = Date.now() + delay;      /* لعرضه في اللوحة */
   console.log(`next cycle in ${(delay / 60000).toFixed(1)} min — ${st.reason}`);
   setTimeout(async () => {
     if (monitorState().active) {
