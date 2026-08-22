@@ -3170,7 +3170,12 @@ function toggleCourse(crn){
 }
 function removeFromSchedule(crn){
   const i=schedule.findIndex(s=>s.crn===crn);
-  if(i>-1){const r=schedule.splice(i,1)[0];saveSchedules();pushSchedule();updateBadge();renderSchedule();renderResults();showToast(`${t('removed')} ${r.courseCode}`)}
+  if(i<0)return;
+  const r=schedule[i];
+  /* نشيل كل جلسات نفس الـCRN — المحاضرة والمعمل وحدة واحدة */
+  for(let k=schedule.length-1;k>=0;k--) if(schedule[k].crn===crn) schedule.splice(k,1);
+  saveSchedules();pushSchedule();updateBadge();renderSchedule();renderResults();
+  showToast(`${t('removed')} ${r.courseCode}`);
 }
 /* ═══════════ أرقام التسجيل (CRN) ═══════════
    وقت التسجيل الطالب يحتاج الأرقام بسرعة، فنعرضها مطوية
