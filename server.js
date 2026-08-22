@@ -1429,6 +1429,35 @@ async function adminHealth() {
     maintenance: MAINTENANCE,
     maintenanceMsg: MAINT_MSG,
     finalsOn: FINALS_ON,
+    monitorPaused: MONITOR_PAUSED,
+
+    /* ── تفاصيل جدولة المراقبة، للعرض في اللوحة ── */
+    monitorInfo: {
+      state: ms,
+      paused: MONITOR_PAUSED,
+      enabled: MONITOR_ENABLED,
+      hoursFrom: ACTIVE_FROM_HOUR,
+      hoursTo: ACTIVE_TO_HOUR,
+      riyadhHour: riyadhHour(),
+      riyadhDate: riyadhDate(),
+      intervalMin: INTERVAL_PEAK / 60000,
+      jitterPct: Math.round(JITTER * 100),
+      intervalMinLow: Number(((INTERVAL_PEAK * (1 - JITTER)) / 60000).toFixed(2)),
+      intervalMinHigh: Number(((INTERVAL_PEAK * (1 + JITTER)) / 60000).toFixed(2)),
+      idleOff: !INTERVAL_IDLE,
+      window: currentWindow(),
+      nextWindow: nextWindow(),
+      windows: MONITOR_WINDOWS,
+      nextCycleAt: NEXT_CYCLE_AT || null,
+      nextCycleInSec: NEXT_CYCLE_AT ? Math.max(0, Math.round((NEXT_CYCLE_AT - now) / 1000)) : null
+    },
+
+    prewarmOn: PREWARM_ON,
+    prewarm: {
+      runs: PREWARM.runs, refreshed: PREWARM.refreshed,
+      lastAt: PREWARM.lastAt, lastKeys: PREWARM.lastKeys, err: PREWARM.err
+    },
+    cacheSize: coursesCache.size,
     ttlOverride: TTL_OVERRIDE,
     ttlChoices: TTL_CHOICES,
     ttlLimits: { min: TTL_MIN_ALLOWED, max: TTL_MAX_ALLOWED },
@@ -1438,6 +1467,8 @@ async function adminHealth() {
       lastChange: SCHED_SYNC.lastChange,
       runs: SCHED_SYNC.runs,
       totalUpdated: SCHED_SYNC.totalUpdated,
+      log: SCHED_LOG.slice(0, 15),
+      missingList: (SCHED_SYNC.last && SCHED_SYNC.last.missingList) || [],
       gapMin: Math.round(SCHED_SYNC_GAP / 60000)
     },
     alerts: Object.entries(ALERTS).filter(([,v])=>v.active)
@@ -1523,9 +1554,18 @@ async function adminUserDetail(userId) {
                 .sort((a, b) => String(a.code).localeCompare(String(b.code))),
     schedule: S.map(s => ({
       crn: s.crn, code: s.course_code, section: s.section,
+      slot: s.slot || 1,
       days: s.course_date, time: s.course_timing,
       room: s.room, instructor: s.instructor, term: s.term
     })),
+    /* مؤشر استدلالي للتحضيري: خانة pmu_prep محفوظة في متصفح الطالب فقط
+       وما توصل القاعدة، فنستدل عليها من وجود مواد التحضيري عنده. */
+    prepHint: (() => {
+      const isPrep = c => /^(PRP|PREE)/i.test(String(c || '').trim());
+      const inDone = D.filter(c => isPrep(c.course_code)).length;
+      const inSched = S.filter(s => isPrep(s.course_code)).length;
+      return { done: inDone, sched: inSched, likely: inDone + inSched > 0 };
+    })(),
     scheduleCredits: S.reduce((t, s) => t + creditsFromCode(s.course_code), 0)
   };
 }
@@ -1645,6 +1685,20 @@ const TTL_OFF  = 6 * 60 * 60 * 1000;
 
 /* تجاوز يدوي من لوحة التحكم — بالدقائق. null = تلقائي حسب الموسم */
 let TTL_OVERRIDE = null;
+
+/* ═══ مفاتيح تشغيل لحظية من اللوحة (بدون إعادة تشغيل الخدمة) ═══
+   MONITOR_ENABLED متغيّر بيئة — تغييره يتطلب إعادة تشغيل، وهذا آخر
+   شي نبيه وقت التسجيل. هذا المفتاح يوقف المراقبة فوراً بضغطة. */
+let MONITOR_PAUSED = false;
+
+/* التسخين المسبق: يجدّد نسخ الكاش المطلوبة كثيراً قبل ما تنتهي صلاحيتها،
+   فما ينتظر أي طالب سحبة كاملة من موقع الجامعة.
+   يبدأ مطفأً — تشغّله من اللوحة وقت الحاجة فقط. */
+let PREWARM_ON = false;
+const PREWARM = { runs: 0, refreshed: 0, lastAt: 0, lastKeys: [], err: null };
+
+/* موعد الدورة القادمة — يُحدَّث مع كل جدولة، ويُعرض في اللوحة */
+let NEXT_CYCLE_AT = 0;
 const TTL_CHOICES = [1, 5, 15, 60, 360];   /* أزرار سريعة في اللوحة */
 const TTL_MIN_ALLOWED = 1;                 /* أقل من دقيقة يعني سحب متواصل */
 const TTL_MAX_ALLOWED = 24 * 60;           /* أكثر من يوم يعني بيانات بايتة */
@@ -1701,6 +1755,15 @@ let SCHED_SYNC = { at: 0, running: false, last: null, lastChange: null,
                    runs: 0, totalUpdated: 0 };
 const SCHED_SYNC_GAP = 10 * 60 * 1000;   /* لا نكتب في القاعدة أكثر من مرة كل 10 دقائق */
 
+/* سجل التغييرات: آخر 40 تصحيحاً بتفاصيلها (من → إلى).
+   في الذاكرة فقط — يُصفَّر مع كل إعادة نشر على Render. */
+const SCHED_LOG = [];
+const SCHED_LOG_MAX = 40;
+const FIELD_AR = {
+  course_title: 'اسم المادة', course_date: 'الأيام',
+  course_timing: 'الوقت', instructor: 'الدكتور', room: 'القاعة'
+};
+
 async function syncSchedules(term, courses, force) {
   if (SCHED_SYNC.running) return null;
   if (!force && Date.now() - SCHED_SYNC.at < SCHED_SYNC_GAP) return null;
@@ -1711,35 +1774,89 @@ async function syncSchedules(term, courses, force) {
                  missing: 0, error: null, ms: 0 };
   const t0 = Date.now();
   try {
-    const live = new Map();
-    (courses || []).forEach(c => live.set(String(c.crn || '').trim(), c));
+    /* المادة قد تجي بجلستين بنفس الـCRN (محاضرة + معمل) وأيام مختلفة.
+       لو للـCRN جلسة وحدة نطابق بالـCRN وحده — فنمسك حتى تغيّر اليوم.
+       ولو له أكثر من جلسة نطابق بالـCRN + الأيام + الوقت، وما نخمّن أبداً:
+       الجلسة اللي ما نلقى لها مثيلاً نتركها كما هي بدل ما نكتب فوقها غلط. */
+    const byCrn = new Map();                       /* CRN → [جلسات] */
+    (courses || []).forEach(c => {
+      const k = String(c.crn || '').trim();
+      if (!byCrn.has(k)) byCrn.set(k, []);
+      byCrn.get(k).push(c);
+    });
+    const sessionKey = (d, t) =>
+      String(d || '').trim() + '|' + String(t || '').trim();
+    const live = new Map();                        /* مفتاح → مادة */
+    for (const [crn, list] of byCrn) {
+      if (list.length === 1) { live.set(crn, list[0]); continue; }
+      for (const c of list)
+        live.set(crn + '#' + sessionKey(c.courseDate, c.courseTiming), c);
+    }
+    const lookup = r => {
+      const crn = String(r.crn || '').trim();
+      const list = byCrn.get(crn);
+      if (!list) return null;                      /* شعبة مو موجودة أصلاً */
+      if (list.length === 1) return list[0];
+      return live.get(crn + '#' + sessionKey(r.course_date, r.course_timing)) || 'skip';
+    };
 
     const rows = await sb('GET', 'user_schedule', {
       query: `?term=eq.${encodeURIComponent(term)}` +
-             `&select=crn,course_title,course_date,course_timing,instructor,room`
+             `&select=crn,course_code,course_title,course_date,course_timing,instructor,room`
     });
     if (!Array.isArray(rows) || !rows.length) return stat;
     stat.rows = rows.length;
 
     /* CRN → البيانات الحية، فقط للصفوف اللي فعلاً مختلفة */
     const stale = new Map();
+    const diffs = new Map();                       /* CRN → تفاصيل الفروق */
     const same = (a, b) => String(a || '').trim() === String(b || '').trim();
+    const missingList = [];
     for (const r of rows) {
       const crn = String(r.crn || '').trim();
-      const c = live.get(crn);
-      if (!c) { stat.missing++; continue; }        /* شعبة انحذفت من الجامعة — ما نلمسها */
-      if (same(r.course_title, c.courseTitle) &&
-          same(r.course_date, c.courseDate) &&
-          same(r.course_timing, c.courseTiming) &&
-          same(r.instructor, c.instructor) &&
-          same(r.room, c.room)) continue;
-      stale.set(crn, c);
+      const c = lookup(r);
+      if (c === 'skip') { stat.skipped = (stat.skipped || 0) + 1; continue; }
+      if (!c) {                                    /* شعبة انحذفت من الجامعة — ما نلمسها */
+        stat.missing++;
+        if (!missingList.some(m => m.crn === crn))
+          missingList.push({ crn, code: r.course_code || '', title: r.course_title || '' });
+        continue;
+      }
+      const pairs = [
+        ['course_title', r.course_title, c.courseTitle],
+        ['course_date', r.course_date, c.courseDate],
+        ['course_timing', r.course_timing, c.courseTiming],
+        ['instructor', r.instructor, c.instructor],
+        ['room', r.room, c.room]
+      ];
+      const changed = pairs.filter(([, a, b]) => !same(a, b))
+        .map(([f, a, b]) => ({ field: f, ar: FIELD_AR[f] || f,
+                               from: String(a || '—'), to: String(b || '—') }));
+      if (!changed.length) continue;
+      /* المفتاح: للجلسة الواحدة CRN فقط، وللمتعددة CRN + أيامها ووقتها،
+         عشان التحديث ما يكتب فوق الجلسة الثانية. */
+      const multi = (byCrn.get(crn) || []).length > 1;
+      const key = multi ? crn + '#' + sessionKey(r.course_date, r.course_timing) : crn;
+      if (!stale.has(key)) stale.set(key, {
+        crn, course: c,
+        scope: multi ? { date: r.course_date, timing: r.course_timing } : null
+      });
+      if (!diffs.has(key))
+        diffs.set(key, { crn, code: r.course_code || c.courseCode || '', fields: changed });
     }
     stat.changed = stale.size;
+    stat.missingList = missingList.slice(0, 20);
 
-    for (const [crn, c] of stale) {
+    for (const [key, item] of stale) {
+      const c = item.course;
+      let q = `?term=eq.${encodeURIComponent(term)}` +
+              `&crn=eq.${encodeURIComponent(item.crn)}`;
+      if (item.scope) {                            /* جلسة بعينها لا كل جلسات الـCRN */
+        q += `&course_date=eq.${encodeURIComponent(item.scope.date || '')}` +
+             `&course_timing=eq.${encodeURIComponent(item.scope.timing || '')}`;
+      }
       await sb('PATCH', 'user_schedule', {
-        query: `?term=eq.${encodeURIComponent(term)}&crn=eq.${encodeURIComponent(crn)}`,
+        query: q,
         body: {
           course_title: c.courseTitle, course_date: c.courseDate,
           course_timing: c.courseTiming, instructor: c.instructor, room: c.room
@@ -1747,8 +1864,11 @@ async function syncSchedules(term, courses, force) {
         prefer: 'return=minimal'
       });
       stat.updated++;
+      const d = diffs.get(key);
+      if (d) SCHED_LOG.unshift({ at: Date.now(), term, ...d });
       await new Promise(r => setTimeout(r, 150));   /* ما نضغط على Supabase */
     }
+    if (SCHED_LOG.length > SCHED_LOG_MAX) SCHED_LOG.length = SCHED_LOG_MAX;
   } catch (e) {
     stat.error = e.message;
   } finally {
@@ -1768,12 +1888,13 @@ async function syncSchedules(term, courses, force) {
 const coursesCache = new Map();     // key → {at, courses}
 const inFlight     = new Map();     // key → Promise (يمنع سحبتين متزامنتين لنفس التركيبة)
 
-async function getCourses(term, college, gender) {
+async function getCourses(term, college, gender, force) {
   const key = `${term}|${college}|${gender}`;
   OPS.searches++;
   const TTL = coursesTTL();
   const hit = coursesCache.get(key);
-  if (hit && Date.now() - hit.at < TTL) {
+  if (hit && !force && Date.now() - hit.at < TTL) {
+    hit.lastHit = Date.now();          /* لمعرفة أي التركيبات تستحق التسخين */
     OPS.searchesCached++;
     return { courses: hit.courses, cached: true, age: Date.now() - hit.at };
   }
@@ -1797,7 +1918,7 @@ async function getCourses(term, college, gender) {
       const sec = String(c.section || '').trim();
       c.gender = /^2/.test(sec) ? 'F' : /^1/.test(sec) ? 'M' : null;
     });
-    coursesCache.set(key, { at: Date.now(), courses });
+    coursesCache.set(key, { at: Date.now(), lastHit: (hit && hit.lastHit) || Date.now(), courses });
     resolve('search', 'البحث ما يشتغل');
     /* قائمة ALL/ALL هي الأشمل — نصحّح بها جداول الطلاب المحفوظة */
     if (college === 'ALL' && gender === 'ALL')
@@ -1823,7 +1944,7 @@ async function getCourses(term, college, gender) {
 
 /* نوافذ التسجيل من التقويم الأكاديمي المعتمد (تشمل يومين احتياط قبل وبعد) */
 const MONITOR_WINDOWS = [
-  { from: '2026-08-21', to: '2026-09-10', ar: 'تسجيل الترم الأول' },
+  { from: '2026-08-23', to: '2026-09-10', ar: 'تسجيل الترم الأول' },
   { from: '2027-01-08', to: '2027-01-28', ar: 'تسجيل الترم الثاني' },
   { from: '2027-04-09', to: '2027-04-17', ar: 'التسجيل المبكر للصيفي' },
   { from: '2027-06-13', to: '2027-06-22', ar: 'تسجيل الصيفي' }
@@ -1867,11 +1988,57 @@ function nearWindow() {
     d >= dayShift(w.from, -NEAR_DAYS) && d <= dayShift(w.to, NEAR_DAYS));
 }
 
+/* ═══ التسخين المسبق ═══
+   يجدّد نسخ الكاش الأكثر طلباً قبل ما تنتهي صلاحيتها بقليل، فيلقى
+   الطالب النتيجة جاهزة بدل ما ينتظر سحبة كاملة من موقع الجامعة.
+   يتبع مدة الصلاحية الفعلية — بما فيها القيمة اليدوية من اللوحة. */
+const PREWARM_MAX_KEYS = 3;          /* أكثر ثلاث تركيبات طلباً فقط */
+const PREWARM_RECENT   = 30 * 60000; /* تركيبة ما طُلبت منذ نصف ساعة نتركها */
+
+async function prewarmTick() {
+  if (!PREWARM_ON) return;
+  if (!MONITOR_ENABLED) return;
+  const now = Date.now();
+  const TTL = coursesTTL();
+  /* عتبة عشوائية في كل دورة (70%–95% من الصلاحية) — نفس فلسفة التشويش
+     في دورة المراقبة: ما نبي نمطاً منتظماً يُقرأ من طرف الجامعة. */
+  const at = 0.70 + Math.random() * 0.25;
+
+  const due = [...coursesCache.entries()]
+    .filter(([, v]) => now - (v.lastHit || v.at) < PREWARM_RECENT)
+    .filter(([, v]) => now - v.at >= TTL * at)      /* قاربت تنتهي */
+    .sort((a, b) => (b[1].lastHit || b[1].at) - (a[1].lastHit || a[1].at))
+    .slice(0, PREWARM_MAX_KEYS);
+
+  if (!due.length) return;
+  PREWARM.runs++;
+  PREWARM.lastAt = now;
+  PREWARM.lastKeys = due.map(([k]) => k);
+
+  for (const [k] of due) {
+    const [term, college, gender] = k.split('|');
+    try {
+      await getCourses(term, college, gender, true);
+      PREWARM.refreshed++;
+      PREWARM.err = null;
+    } catch (e) {
+      /* الفشل ما يضر: النسخة القديمة تبقى في الكاش ويخدمها البحث */
+      PREWARM.err = { at: Date.now(), msg: e.message };
+    }
+  }
+}
+
 function monitorState() {
   if (!MONITOR_ENABLED) {
     return { active: false, reason: 'disabled',
              ar: 'المراقبة معطّلة في هذي النسخة', en: 'Monitoring disabled on this instance',
              window: null, intervalMin: null };
+  }
+  if (MONITOR_PAUSED) {
+    return { active: false, reason: 'paused',
+             ar: 'المراقبة موقوفة يدوياً من اللوحة',
+             en: 'Monitoring paused manually from the dashboard',
+             window: currentWindow(), intervalMin: null, paused: true };
   }
   const hour = riyadhHour();
   const win = currentWindow();
@@ -1923,6 +2090,7 @@ function nextDelay() {
 function scheduleNextCycle() {
   const delay = nextDelay();
   const st = monitorState();
+  NEXT_CYCLE_AT = Date.now() + delay;      /* لعرضه في اللوحة */
   console.log(`next cycle in ${(delay / 60000).toFixed(1)} min — ${st.reason}`);
   setTimeout(async () => {
     if (monitorState().active) {
@@ -2028,16 +2196,28 @@ const server = http.createServer(async (req, res) => {
   if (parsed.pathname === '/api/courses') {
     touchVisitor(req);
     res.setHeader('Content-Type', 'application/json');
+    /* قائمة المواد كبيرة (مئات الكيلوبايتات لقائمة ALL) — الضغط يقصّها
+       لعُشر حجمها تقريباً، وهذا أكبر فرق يحسّه الطالب على بيانات الجوال. */
+    const sendJSON = obj => {
+      const buf = Buffer.from(JSON.stringify(obj), 'utf8');
+      if (/\bgzip\b/.test(req.headers['accept-encoding'] || '')) {
+        zlib.gzip(buf, (err, gz) => {
+          if (err) { res.writeHead(200); return res.end(buf); }
+          res.setHeader('Content-Encoding', 'gzip');
+          res.setHeader('Vary', 'Accept-Encoding');
+          res.writeHead(200); res.end(gz);
+        });
+      } else { res.writeHead(200); res.end(buf); }
+    };
     const { term = '202630', college = 'ALL', gender = 'M1' } = parsed.query;
     try {
       const r = await getCourses(term, college, gender);
-      res.writeHead(200);
-      res.end(JSON.stringify({
+      sendJSON({
         success: true, count: r.courses.length,
         cached: r.cached, ageMs: r.age,
         ttlMin: Math.round(coursesTTL() / 60000),
         courses: r.courses
-      }));
+      });
     } catch (err) {
       /* لو الجامعة تعطلت، نخدم آخر نسخة محفوظة بدل ما نفشل */
       OPS.lastError = { at: Date.now(), where: 'search', msg: err.message };
@@ -2047,12 +2227,11 @@ const server = http.createServer(async (req, res) => {
       const stale = coursesCache.get(`${term}|${college}|${gender}`);
       if (stale) {
         OPS.searchStale++;
-        res.writeHead(200);
-        res.end(JSON.stringify({
+        sendJSON({
           success: true, count: stale.courses.length,
           cached: true, stale: true, ageMs: Date.now() - stale.at,
           courses: stale.courses
-        }));
+        });
       } else {
         res.writeHead(500);
         res.end(JSON.stringify({ success: false, error: err.message }));
@@ -2118,6 +2297,39 @@ const server = http.createServer(async (req, res) => {
           return send(200, { ok: true, stat });
         }
         return send(200, { last: SCHED_SYNC.last });
+      }
+
+      if (act === 'monitor-toggle') {
+        if (req.method === 'POST') {
+          const b = await readBody(req);
+          const was = MONITOR_PAUSED;
+          /* بدون حقل on نرجّع الحالة فقط — ما نغيّر شي بالغلط */
+          if ('on' in b) MONITOR_PAUSED = !b.on;   /* on = المراقبة شغالة */
+          if (was !== MONITOR_PAUSED)
+            sendMsg(ADMIN_CHAT_ID, MONITOR_PAUSED
+              ? '⏸️ <b>المراقبة موقوفة يدوياً</b>\n\nما راح يستلم أحد إشعارات فتح شعب حتى تشغّلها.'
+              : '▶️ <b>المراقبة رجعت تشتغل</b>').catch(() => {});
+        }
+        return send(200, { on: !MONITOR_PAUSED, state: monitorState() });
+      }
+
+      if (act === 'cache-clear') {
+        if (req.method === 'POST') {
+          const n = coursesCache.size;
+          coursesCache.clear();
+          return send(200, { ok: true, cleared: n });
+        }
+        return send(200, { size: coursesCache.size });
+      }
+
+      if (act === 'prewarm-toggle') {
+        if (req.method === 'POST') {
+          const b = await readBody(req);
+          if ('on' in b) PREWARM_ON = !!b.on;
+          if (PREWARM_ON) prewarmTick().catch(() => {});   /* دورة فورية */
+        }
+        return send(200, { on: PREWARM_ON, stat: PREWARM,
+                           ttlMin: Math.round(coursesTTL() / 60000) });
       }
 
       if (act === 'cache-ttl') {
@@ -2391,15 +2603,18 @@ const server = http.createServer(async (req, res) => {
   }
 
   /* الأيقونات والمانيفست */
-  if (/^\/(favicon-\d+\.png|manifest\.json|jadwalik-logo[\w-]*\.png)$/.test(parsed.pathname)) {
+  if (/^\/(favicon-\d+\.png|og\.png|manifest\.json|jadwalik-logo[\w-]*\.png)$/.test(parsed.pathname)) {
     try {
       const f = path.join(__dirname, parsed.pathname.slice(1));
       const buf = fs.readFileSync(f);
       res.setHeader('Content-Type',
-        parsed.pathname.endsWith('.json') ? 'application/json' : 'image/png');
+        parsed.pathname.endsWith('.json') ? 'application/json; charset=utf-8' : 'image/png');
       res.setHeader('Cache-Control', 'public, max-age=604800');
       res.writeHead(200); res.end(buf);
-    } catch (e) { res.writeHead(404); res.end('Not found'); }
+    } catch (e) {
+      console.log('404 asset ' + parsed.pathname + ' — الملف غير موجود في المستودع');
+      res.writeHead(404); res.end('Not found');
+    }
     return;
   }
 
@@ -2481,6 +2696,11 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  /* تسجيل مؤقت لمصدر الـ404 — يظهر في سجل Render.
+     احذف هذا السطر بعد ما نعرف المسار المسبّب. */
+  console.log('404 ' + req.method + ' ' + parsed.pathname +
+    ' | ref: ' + (req.headers.referer || '-'));
+
   res.setHeader('Content-Type', 'application/json');
   res.writeHead(404);
   res.end(JSON.stringify({ error: 'Not found' }));
@@ -2488,6 +2708,9 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log('Jadwalik running on ' + PORT);
+  /* التسخين المسبق: فحص كل 20 ثانية، وما يسحب إلا لو فيه تركيبة
+     مطلوبة قاربت صلاحيتها تنتهي — والمفتاح مطفأ افتراضياً. */
+  setInterval(() => { prewarmTick().catch(() => {}) }, 20000);
   const st = monitorState();
   console.log(`env=${SITE_ENV} | freeBeta=${FREE_BETA} | monitor: ${st.reason} — ${st.ar}`);
   /* أول دورة بعد 20-60 ثانية عشوائياً، ثم جدولة ذكية */
