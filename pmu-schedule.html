@@ -3133,23 +3133,49 @@ function renderResults(){
 }
 
 /* ===== Schedule ===== */
+/* المادة قد تجي بجلستين (محاضرة + معمل) بنفس الـCRN وأيام/أوقات مختلفة.
+   التسجيل يعاملهما وحدة واحدة، فنضيفهما ونشيلهما معاً. */
+function sessionsOf(crn){
+  const list=allCourses.filter(x=>x.crn===crn);
+  const seen=new Set(),out=[];
+  for(const c of list){
+    const k=(c.courseDate||'')+'|'+(c.courseTiming||'');
+    if(seen.has(k))continue;
+    seen.add(k); out.push(c);
+  }
+  return out;
+}
+
 function toggleCourse(crn){
   const i=schedule.findIndex(s=>s.crn===crn);
-  if(i>-1){const r=schedule.splice(i,1)[0];saveSchedules();pushSchedule();updateBadge();renderResults();showToast(`${t('removed')} ${r.courseCode}`);return}
-  const c=allCourses.find(x=>x.crn===crn);if(!c)return;
+  if(i>-1){
+    const r=schedule[i];
+    /* نشيل كل جلسات نفس الـCRN لا واحدة */
+    for(let k=schedule.length-1;k>=0;k--) if(schedule[k].crn===crn) schedule.splice(k,1);
+    saveSchedules();pushSchedule();updateBadge();renderResults();
+    showToast(`${t('removed')} ${r.courseCode}`);return;
+  }
+  const sess=sessionsOf(crn);
+  const c=sess[0];if(!c)return;
   const pre=prereqCheck(c.courseCode);
   if(pre.known&&!pre.ok){
     showToast(`${t('cantAdd')} ${pre.missing.join('، ')||pre.needCr+' '+t('hrsUnit')}`,'err');
     return;
   }
   const clash=findConflicts(c,schedule);
-  schedule.push(c);saveSchedules();pushSchedule();updateBadge();renderResults();
+  sess.forEach(s=>schedule.push(s));
+  saveSchedules();pushSchedule();updateBadge();renderResults();
   if(clash.length)showToast(`${t('addedButClash')} ${clash[0].courseCode}`,'warn');
   else showToast(`${t('addedTo')} ${c.courseCode} ${t('toSchedule')}`);
 }
 function removeFromSchedule(crn){
   const i=schedule.findIndex(s=>s.crn===crn);
-  if(i>-1){const r=schedule.splice(i,1)[0];saveSchedules();pushSchedule();updateBadge();renderSchedule();renderResults();showToast(`${t('removed')} ${r.courseCode}`)}
+  if(i<0)return;
+  const r=schedule[i];
+  /* نشيل كل جلسات نفس الـCRN — المحاضرة والمعمل وحدة واحدة */
+  for(let k=schedule.length-1;k>=0;k--) if(schedule[k].crn===crn) schedule.splice(k,1);
+  saveSchedules();pushSchedule();updateBadge();renderSchedule();renderResults();
+  showToast(`${t('removed')} ${r.courseCode}`);
 }
 /* ═══════════ أرقام التسجيل (CRN) ═══════════
    وقت التسجيل الطالب يحتاج الأرقام بسرعة، فنعرضها مطوية
@@ -5848,7 +5874,8 @@ async function writeSchedule(){
     user_id:USER.id,slot:i+1,crn:c.crn,course_code:c.courseCode,course_title:c.courseTitle,
     section:c.section,course_date:c.courseDate,course_timing:c.courseTiming,
     instructor:c.instructor,room:c.room,term:document.getElementById('term').value})));
-  const clean=dedupeBy(rows,r=>r.slot+'|'+r.crn);
+  /* الجلستان بنفس الـCRN صفّان مستقلان — نميّزهما بالأيام والوقت */
+  const clean=dedupeBy(rows,r=>r.slot+'|'+r.crn+'|'+(r.course_date||'')+'|'+(r.course_timing||''));
   await sb.from('user_schedule').delete().eq('user_id',USER.id);
   if(clean.length) await sb.from('user_schedule').insert(clean);
 }

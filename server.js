@@ -1774,8 +1774,31 @@ async function syncSchedules(term, courses, force) {
                  missing: 0, error: null, ms: 0 };
   const t0 = Date.now();
   try {
-    const live = new Map();
-    (courses || []).forEach(c => live.set(String(c.crn || '').trim(), c));
+    /* المادة قد تجي بجلستين بنفس الـCRN (محاضرة + معمل) وأيام مختلفة.
+       لو للـCRN جلسة وحدة نطابق بالـCRN وحده — فنمسك حتى تغيّر اليوم.
+       ولو له أكثر من جلسة نطابق بالـCRN + الأيام + الوقت، وما نخمّن أبداً:
+       الجلسة اللي ما نلقى لها مثيلاً نتركها كما هي بدل ما نكتب فوقها غلط. */
+    const byCrn = new Map();                       /* CRN → [جلسات] */
+    (courses || []).forEach(c => {
+      const k = String(c.crn || '').trim();
+      if (!byCrn.has(k)) byCrn.set(k, []);
+      byCrn.get(k).push(c);
+    });
+    const sessionKey = (d, t) =>
+      String(d || '').trim() + '|' + String(t || '').trim();
+    const live = new Map();                        /* مفتاح → مادة */
+    for (const [crn, list] of byCrn) {
+      if (list.length === 1) { live.set(crn, list[0]); continue; }
+      for (const c of list)
+        live.set(crn + '#' + sessionKey(c.courseDate, c.courseTiming), c);
+    }
+    const lookup = r => {
+      const crn = String(r.crn || '').trim();
+      const list = byCrn.get(crn);
+      if (!list) return null;                      /* شعبة مو موجودة أصلاً */
+      if (list.length === 1) return list[0];
+      return live.get(crn + '#' + sessionKey(r.course_date, r.course_timing)) || 'skip';
+    };
 
     const rows = await sb('GET', 'user_schedule', {
       query: `?term=eq.${encodeURIComponent(term)}` +
@@ -1791,7 +1814,8 @@ async function syncSchedules(term, courses, force) {
     const missingList = [];
     for (const r of rows) {
       const crn = String(r.crn || '').trim();
-      const c = live.get(crn);
+      const c = lookup(r);
+      if (c === 'skip') { stat.skipped = (stat.skipped || 0) + 1; continue; }
       if (!c) {                                    /* شعبة انحذفت من الجامعة — ما نلمسها */
         stat.missing++;
         if (!missingList.some(m => m.crn === crn))
@@ -1809,16 +1833,30 @@ async function syncSchedules(term, courses, force) {
         .map(([f, a, b]) => ({ field: f, ar: FIELD_AR[f] || f,
                                from: String(a || '—'), to: String(b || '—') }));
       if (!changed.length) continue;
-      stale.set(crn, c);
-      if (!diffs.has(crn))
-        diffs.set(crn, { crn, code: r.course_code || c.courseCode || '', fields: changed });
+      /* المفتاح: للجلسة الواحدة CRN فقط، وللمتعددة CRN + أيامها ووقتها،
+         عشان التحديث ما يكتب فوق الجلسة الثانية. */
+      const multi = (byCrn.get(crn) || []).length > 1;
+      const key = multi ? crn + '#' + sessionKey(r.course_date, r.course_timing) : crn;
+      if (!stale.has(key)) stale.set(key, {
+        crn, course: c,
+        scope: multi ? { date: r.course_date, timing: r.course_timing } : null
+      });
+      if (!diffs.has(key))
+        diffs.set(key, { crn, code: r.course_code || c.courseCode || '', fields: changed });
     }
     stat.changed = stale.size;
     stat.missingList = missingList.slice(0, 20);
 
-    for (const [crn, c] of stale) {
+    for (const [key, item] of stale) {
+      const c = item.course;
+      let q = `?term=eq.${encodeURIComponent(term)}` +
+              `&crn=eq.${encodeURIComponent(item.crn)}`;
+      if (item.scope) {                            /* جلسة بعينها لا كل جلسات الـCRN */
+        q += `&course_date=eq.${encodeURIComponent(item.scope.date || '')}` +
+             `&course_timing=eq.${encodeURIComponent(item.scope.timing || '')}`;
+      }
       await sb('PATCH', 'user_schedule', {
-        query: `?term=eq.${encodeURIComponent(term)}&crn=eq.${encodeURIComponent(crn)}`,
+        query: q,
         body: {
           course_title: c.courseTitle, course_date: c.courseDate,
           course_timing: c.courseTiming, instructor: c.instructor, room: c.room
@@ -1826,7 +1864,7 @@ async function syncSchedules(term, courses, force) {
         prefer: 'return=minimal'
       });
       stat.updated++;
-      const d = diffs.get(crn);
+      const d = diffs.get(key);
       if (d) SCHED_LOG.unshift({ at: Date.now(), term, ...d });
       await new Promise(r => setTimeout(r, 150));   /* ما نضغط على Supabase */
     }
