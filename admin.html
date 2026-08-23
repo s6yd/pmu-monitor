@@ -1227,6 +1227,7 @@ function renderSys(){
     <div class="kv"><span>مخدومة من الكاش</span>
       <b class="${h.cacheHitPct===null?'':h.cacheHitPct>=60?'good':'warn'}">${h.cacheHitPct===null?'—':h.cacheHitPct+'%'}</b></div>
     <div class="kv"><span>من نسخة قديمة</span><b class="${h.searchStale?'warn':'good'}">${h.searchStale}</b></div>
+    <div class="kv"><span>نسخ من دورة المراقبة</span><b class="good">${h.cacheFromMonitor||0}</b></div>
     ${h.ttl?`<div class="kv"><span>مدة الصلاحية الحالية</span>
       <b class="${h.ttl.tier==='peak'?'bad':h.ttl.tier==='near'?'warn':'good'}">${
         h.ttl.ttlMin<60?h.ttl.ttlMin+' دقيقة':(h.ttl.ttlMin/60)+' ساعات'}</b></div>

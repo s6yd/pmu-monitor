@@ -201,6 +201,7 @@ const OPS = {
   feedback: 0,         // ملاحظات وصلت
   searchesCached: 0,   // منها المخدومة من الكاش
   searchStale: 0,      // مخدومة من نسخة قديمة (الجامعة واقعة)
+  cacheFromMonitor: 0, // نسخ عبّأتها دورة المراقبة مجاناً للبحث
   lastError: null
 };
 /* ═══ إنذارات تيليغرام ═══
@@ -263,7 +264,22 @@ async function runMonitorCycle() {
     for (const term of terms) {
       try {
         const html = await fetchPMUData(term, 'ALL', 'ALL');
-        parseHTML(html).forEach(c => { snapshot[term + ':' + c.crn] = c; });
+        const parsed = parseHTML(html);
+        parsed.forEach(c => { snapshot[term + ':' + c.crn] = c; });
+
+        /* نفس البيانات اللي سحبناها للمراقبة هي اللي يحتاجها البحث،
+           فنغذّي بها كاش البحث بدل ما نسحبها مرة ثانية.
+           يقلّل الطلبات على موقع الجامعة، ويخلي الطالب يلقى النتيجة جاهزة. */
+        const ck = `${term}|ALL|ALL`;
+        const prev = coursesCache.get(ck);
+        coursesCache.set(ck, {
+          at: Date.now(),
+          lastHit: (prev && prev.lastHit) || 0,   /* ما نوهم التسخين إنها مطلوبة */
+          courses: parsed
+        });
+        while (coursesCache.size > 40)
+          coursesCache.delete(coursesCache.keys().next().value);
+        OPS.cacheFromMonitor = (OPS.cacheFromMonitor || 0) + 1;
       } catch (e) {
         OPS.pmuFails++;
         console.log('fetch fail', term, e.message);
@@ -1417,6 +1433,7 @@ async function adminHealth() {
     feedbackCount: OPS.feedback,
     cacheHitPct: cacheHitRate === null ? null : Math.round(cacheHitRate * 100),
     searchStale: OPS.searchStale,
+    cacheFromMonitor: OPS.cacheFromMonitor,
 
     /* الحمل */
     monitorRows: monitors,
