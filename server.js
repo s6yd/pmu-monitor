@@ -280,6 +280,11 @@ async function runMonitorCycle() {
         while (coursesCache.size > 40)
           coursesCache.delete(coursesCache.keys().next().value);
         OPS.cacheFromMonitor = (OPS.cacheFromMonitor || 0) + 1;
+
+        /* المزامنة كانت مربوطة بسحبة getCourses. وبما إن المراقبة صارت
+           تعبّي الكاش، ما عادت تنطلق من هناك — فنطلقها من هنا.
+           الحارس الزمني داخل syncSchedules يمنع الكتابة المتكررة. */
+        syncSchedules(term, parsed).catch(() => {});
       } catch (e) {
         OPS.pmuFails++;
         console.log('fetch fail', term, e.message);
