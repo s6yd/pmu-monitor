@@ -53,7 +53,10 @@ const PUSHOVER_USER  = (process.env.PUSHOVER_USER  || '').trim();
 const PUSHOVER_ON = !!(PUSHOVER_TOKEN && PUSHOVER_USER);
 
 function pushover(title, message, priority) {
-  if (!PUSHOVER_ON) return Promise.resolve(null);
+  if (!PUSHOVER_ON) {
+    console.log('pushover: معطّل — PUSHOVER_TOKEN أو PUSHOVER_USER ناقص');
+    return Promise.resolve(null);
+  }
   return new Promise(resolve => {
     try {
       const body = new URLSearchParams({
@@ -66,11 +69,19 @@ function pushover(title, message, priority) {
         hostname: 'api.pushover.net', path: '/1/messages.json', method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded',
                    'Content-Length': Buffer.byteLength(body) }
-      }, res => { res.resume(); res.on('end', () => resolve(res.statusCode === 200)); });
-      req.on('error', () => resolve(false));          /* فشله ما يوقف شي */
-      req.setTimeout(8000, () => { req.destroy(); resolve(false) });
+      }, res => {
+        let out = '';
+        res.on('data', c => { if (out.length < 400) out += c; });
+        res.on('end', () => {
+          if (res.statusCode === 200) console.log('pushover: تم الإرسال ✓');
+          else console.log(`pushover: فشل ${res.statusCode} — ${out.slice(0, 300)}`);
+          resolve(res.statusCode === 200);
+        });
+      });
+      req.on('error', e => { console.log('pushover: خطأ اتصال —', e.message); resolve(false) });
+      req.setTimeout(8000, () => { req.destroy(); console.log('pushover: انتهت المهلة'); resolve(false) });
       req.write(body); req.end();
-    } catch (e) { resolve(false) }
+    } catch (e) { console.log('pushover: استثناء —', e.message); resolve(false) }
   });
 }
 
@@ -2773,6 +2784,11 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log('Jadwalik running on ' + PORT);
+  console.log('pushover: ' + (PUSHOVER_ON
+    ? `مفعّل (token ${PUSHOVER_TOKEN.length} حرف · user ${PUSHOVER_USER.length} حرف)`
+    : 'معطّل — المتغيران ناقصان'));
+  if (PUSHOVER_ON)
+    pushover('✅ جدولك شغّال', 'السيرفر اشتغل و Pushover موصول.', 0).catch(() => {});
   /* التسخين المسبق: فحص كل 20 ثانية، وما يسحب إلا لو فيه تركيبة
      مطلوبة قاربت صلاحيتها تنتهي — والمفتاح مطفأ افتراضياً. */
   setInterval(() => { prewarmTick().catch(() => {}) }, 20000);
