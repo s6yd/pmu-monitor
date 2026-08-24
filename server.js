@@ -320,7 +320,8 @@ async function runMonitorCycle() {
     for (const term of terms) {
       try {
         const html = await fetchPMUData(term, 'ALL', 'ALL');
-        const parsed = parseHTML(html);
+        /* نوسم الجنس هنا أيضاً — الكاش يخدم البحث مباشرة */
+        const parsed = tagGender(parseHTML(html), 'ALL');
         parsed.forEach(c => { snapshot[term + ':' + c.crn] = c; });
 
         /* نفس البيانات اللي سحبناها للمراقبة هي اللي يحتاجها البحث،
@@ -1857,6 +1858,19 @@ const FIELD_AR = {
   course_timing: 'الوقت', instructor: 'الدكتور', room: 'القاعة'
 };
 
+/* توزيع الجنس من رقم الشعبة: 1xx طلاب · 2xx طالبات — قاعدة الجامعة الثابتة.
+   لازم تُطبَّق على أي قائمة تدخل كاش البحث، سواء جت من بحث الطالب
+   أو من دورة المراقبة، وإلا اختفت علامة طلاب/طالبات عشوائياً. */
+function tagGender(courses, gender) {
+  const forced = gender === 'F1' ? 'F' : gender === 'M1' ? 'M' : null;
+  (courses || []).forEach(c => {
+    if (forced) { c.gender = forced; return; }
+    const sec = String(c.section || '').trim();
+    c.gender = /^2/.test(sec) ? 'F' : /^1/.test(sec) ? 'M' : null;
+  });
+  return courses;
+}
+
 async function syncSchedules(term, courses, force) {
   if (SCHED_SYNC.running) return null;
   if (!force && Date.now() - SCHED_SYNC.at < SCHED_SYNC_GAP) return null;
@@ -2004,13 +2018,7 @@ async function getCourses(term, college, gender, force) {
     /* سحبة واحدة بـ ALL، ونوزّع الجنس من رقم الشعبة:
        1xx = طلاب · 2xx = طالبات — قاعدة الجامعة الثابتة.
        أوفر من سحبتين منفصلتين، وأدق من التخمين من القاعة. */
-    const courses = parseHTML(await fetchPMUData(term, college, gender));
-    const forced = gender === 'F1' ? 'F' : gender === 'M1' ? 'M' : null;
-    courses.forEach(c => {
-      if (forced) { c.gender = forced; return; }
-      const sec = String(c.section || '').trim();
-      c.gender = /^2/.test(sec) ? 'F' : /^1/.test(sec) ? 'M' : null;
-    });
+    const courses = tagGender(parseHTML(await fetchPMUData(term, college, gender)), gender);
     coursesCache.set(key, { at: Date.now(), lastHit: (hit && hit.lastHit) || Date.now(), courses });
     resolve('search', 'البحث ما يشتغل');
     /* قائمة ALL/ALL هي الأشمل — نصحّح بها جداول الطلاب المحفوظة */
