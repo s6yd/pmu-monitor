@@ -837,12 +837,18 @@ break-inside:avoid;page-break-inside:avoid}
 .ps-list table{width:100%;border-collapse:collapse;table-layout:fixed}
 .ps-list th{font-size:6pt;font-weight:700;color:#5b6472;text-align:right;
 padding:0 3px 3px;border-bottom:1px solid #111827;white-space:nowrap}
-.ps-list td{font-size:6.4pt;color:#111827;text-align:right;padding:2.6px 3px;
-border-bottom:1px solid #eef0f3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ps-list td{font-size:6.6pt;color:#111827;text-align:right;padding:2.8px 4px;
+border-bottom:1px solid #eef0f3;line-height:1.35;
+white-space:normal;overflow-wrap:anywhere}
 .ps-list tr:last-child td{border-bottom:none}
-.ps-list .w-code{width:13%}
-.ps-list .w-name{width:24%}
-.ps-list .w-inst{width:17%}
+.ps-list .w-code{width:12%}
+.ps-list .w-name{width:25%}
+.ps-list .w-sec{width:6%}
+.ps-list .w-days{width:13%}
+.ps-list .w-time{width:12%}
+.ps-list .w-room{width:14%}
+.ps-list .w-inst{width:18%}
+.ps-list .c-mono,.ps-list .c-time{white-space:nowrap}
 .ps-list .c-code{font-weight:700;direction:ltr;text-align:right;color:var(--c);
 position:relative;padding-inline-end:9px}
 .ps-list .c-code i{position:absolute;inset-inline-end:0;top:50%;transform:translateY(-50%);
@@ -4029,11 +4035,10 @@ function buildPrintSheet(clashSet){
       <thead><tr>
         <th class="w-code">${LANG==='ar'?'المادة':'Course'}</th>
         <th class="w-name">${LANG==='ar'?'الاسم':'Title'}</th>
-        <th>${LANG==='ar'?'شعبة':'Sec'}</th>
-        <th>CRN</th>
-        <th>${LANG==='ar'?'الأيام':'Days'}</th>
-        <th>${LANG==='ar'?'الوقت':'Time'}</th>
-        <th>${LANG==='ar'?'القاعة':'Room'}</th>
+        <th class="w-sec">${LANG==='ar'?'شعبة':'Sec'}</th>
+        <th class="w-days">${LANG==='ar'?'الأيام':'Days'}</th>
+        <th class="w-time">${LANG==='ar'?'الوقت':'Time'}</th>
+        <th class="w-room">${LANG==='ar'?'القاعة':'Room'}</th>
         <th class="w-inst">${LANG==='ar'?'الدكتور':'Instructor'}</th>
       </tr></thead>
       <tbody>${listRows.map(c=>{
@@ -4042,9 +4047,8 @@ function buildPrintSheet(clashSet){
         <td class="c-code"><i></i>${escapeHtml(c.courseCode||'')}</td>
         <td class="c-name">${escapeHtml(c.courseTitle||'—')}</td>
         <td class="c-mono">${escapeHtml(c.section||'—')}</td>
-        <td class="c-mono b">${escapeHtml(String(c.crn||'—'))}</td>
         <td>${daysLabel(c)}</td>
-        <td class="c-mono">${escapeHtml(timeLabel(c))}</td>
+        <td class="c-mono c-time">${escapeHtml(timeLabel(c))}</td>
         <td>${escapeHtml(c.room||'—')}</td>
         <td>${escapeHtml(c.instructor||'—')}</td>
       </tr>`}).join('')}</tbody>
