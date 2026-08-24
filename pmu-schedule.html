@@ -843,7 +843,11 @@ border-bottom:1px solid #eef0f3;overflow:hidden;text-overflow:ellipsis;white-spa
 .ps-list .w-code{width:13%}
 .ps-list .w-name{width:24%}
 .ps-list .w-inst{width:17%}
-.ps-list .c-code{font-weight:700;direction:ltr;text-align:right}
+.ps-list .c-code{font-weight:700;direction:ltr;text-align:right;color:var(--c);
+position:relative;padding-inline-end:9px}
+.ps-list .c-code i{position:absolute;inset-inline-end:0;top:50%;transform:translateY(-50%);
+width:4px;height:9px;border-radius:2px;background:var(--c)}
+.ps-list tbody tr{background:var(--c2)}
 .ps-list .c-name{color:#5b6472}
 .ps-list .c-mono{font-family:var(--mono);direction:ltr;text-align:right;font-size:6pt}
 .ps-list .c-mono.b{font-weight:700;font-size:6.8pt}
@@ -860,8 +864,9 @@ display:flex;flex-wrap:wrap;align-items:center;gap:4px 9px;
 break-inside:avoid;page-break-inside:avoid}
 .ps-crn-t{font-size:6.5pt;font-weight:700;color:#111827}
 .ps-crn-i{font-size:6.5pt;color:#5b6472;direction:ltr;
-border:1px solid #dfe3e9;border-radius:3px;padding:1px 5px}
-.ps-crn-i b{font-family:var(--mono);font-size:8pt;color:#111827;margin-inline-end:4px}
+border:1px solid #dfe3e9;border-inline-end:2.5px solid var(--c,#dfe3e9);
+background:var(--c2,transparent);border-radius:3px;padding:1px 5px}
+.ps-crn-i b{font-family:var(--mono);font-size:8pt;color:var(--c,#111827);margin-inline-end:4px}
 .ps-note{margin-top:6px;font-size:6.5pt;color:#5b6472;line-height:1.6;break-inside:avoid}
 .ps-note b{color:#111827;direction:ltr}
 .ps-warn{margin-top:6px;font-size:6.5pt;color:#b8442e;line-height:1.6}
@@ -3942,8 +3947,11 @@ function buildPrintSheet(clashSet){
   /* أرقام التسجيل — أهم شي في الورقة وقت التسجيل */
   const crns=`<div class="ps-crn"><span class="ps-crn-t">${
     LANG==='ar'?'أرقام التسجيل':'Registration numbers (CRN)'}</span>${
-    schedule.map(c=>`<span class="ps-crn-i"><b>${escapeHtml(String(c.crn||''))}</b>${
-      escapeHtml(c.courseCode)} §${escapeHtml(c.section||'')}</span>`).join('')}</div>`;
+    schedule.map(c=>{
+      const col=colorOf[c.courseCode]||['#5b6472','#f2f4f7'];
+      return `<span class="ps-crn-i" style="--c:${col[0]};--c2:${col[1]}"><b>${
+        escapeHtml(String(c.crn||''))}</b>${
+        escapeHtml(c.courseCode)} §${escapeHtml(c.section||'')}</span>`}).join('')}</div>`;
 
   /* مواد بدون وقت محدد */
   const note=untimed.length?`<div class="ps-note">${LANG==='ar'?'بدون وقت محدد:':'No fixed time:'} ${
@@ -4028,8 +4036,10 @@ function buildPrintSheet(clashSet){
         <th>${LANG==='ar'?'القاعة':'Room'}</th>
         <th class="w-inst">${LANG==='ar'?'الدكتور':'Instructor'}</th>
       </tr></thead>
-      <tbody>${listRows.map(c=>`<tr>
-        <td class="c-code">${escapeHtml(c.courseCode||'')}</td>
+      <tbody>${listRows.map(c=>{
+        const col=colorOf[c.courseCode]||['#5b6472','#f2f4f7'];
+        return `<tr style="--c:${col[0]};--c2:${col[1]}">
+        <td class="c-code"><i></i>${escapeHtml(c.courseCode||'')}</td>
         <td class="c-name">${escapeHtml(c.courseTitle||'—')}</td>
         <td class="c-mono">${escapeHtml(c.section||'—')}</td>
         <td class="c-mono b">${escapeHtml(String(c.crn||'—'))}</td>
@@ -4037,7 +4047,7 @@ function buildPrintSheet(clashSet){
         <td class="c-mono">${escapeHtml(timeLabel(c))}</td>
         <td>${escapeHtml(c.room||'—')}</td>
         <td>${escapeHtml(c.instructor||'—')}</td>
-      </tr>`).join('')}</tbody>
+      </tr>`}).join('')}</tbody>
     </table>
   </div>`;
 
