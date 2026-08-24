@@ -773,6 +773,7 @@ margin:0!important;padding:0!important;min-height:0!important}
 /* اخفِ واجهة الشاشة كاملة */
 .topbar,.tabs,.sched-actions,.slot-remove,.conflict-alert,.sched-summary,.lab-warn,
 .guide-fab,.guide-overlay,.toast,.state-box,.sync-note,.next-check,.reg-card,.crn-panel,
+.slot-bar,#slotBar,
 #schedDays,.modal,.overlay,.finals-card,.cal-card,.legal-foot{display:none!important}
 .page{display:none!important}
 .main{padding:0!important;max-width:none!important;margin:0!important}
@@ -793,7 +794,7 @@ color:#111827;font-family:var(--mono)}
 .ps-stat.bad b{color:#b8442e}
 
 /* شبكة الأسبوع */
-.ps-grid{margin-top:7px;display:grid;gap:0;break-inside:avoid;page-break-inside:avoid}
+.ps-grid{margin-top:7px;padding-top:5px;display:grid;gap:0;break-inside:avoid;page-break-inside:avoid}
 .ps-colhead{font-size:8pt;font-weight:700;text-align:center;padding:4px 0 5px;
 border-bottom:1px solid #111827;color:#111827}
 .ps-colhead small{display:block;font-size:5.5pt;font-weight:500;color:#9aa3b0;
@@ -3828,7 +3829,9 @@ function buildPrintSheet(clashSet){
   lo=Math.floor(lo/60)*60;hi=Math.ceil(hi/60)*60;
 
   const rows=Math.max(4,Math.round((hi-lo)/15));
-  const rowH=Math.max(3.0,Math.min(5.4,150/rows));           // مم — نترك مساحة للاختبارات تحت
+  /* الارتفاع الكلي محسوب عشان الشبكة + المفتاح + أرقام التسجيل
+     تطلع في ورقة وحدة. الجداول الطويلة (10ص–10م) تضغط للحد الأدنى. */
+  const rowH=Math.max(2.4,Math.min(5.4,118/rows));           // مم
   const rowCSS=`grid-template-rows:repeat(${rows},${rowH.toFixed(2)}mm)`;
   const rowOf=m=>Math.min(rows+1,Math.max(1,Math.round((m-lo)/15)+1));
 
