@@ -820,8 +820,16 @@ direction:ltr;text-align:right}
 direction:ltr;text-align:right}
 .ps-time{font-size:5.8pt;color:#9aa3b0;font-family:var(--mono);
 direction:ltr;text-align:right;margin-top:1px}
+/* ثلاث درجات حسب ارتفاع البلوك: كامل · مضغوط (سطر واحد) · كود فقط */
+.ps-mini{display:none;font-size:5pt;color:#5b6472;line-height:1.25;
+margin-top:.5px;direction:ltr;text-align:right;
+white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ps-cls.sm{padding:1px 3px}
 .ps-cls.sm .ps-meta,.ps-cls.sm .ps-time{display:none}
-.ps-cls.sm .ps-code{font-size:6.5pt}
+.ps-cls.sm .ps-mini{display:block}
+.ps-cls.sm .ps-code{font-size:6.4pt;line-height:1.1}
+.ps-cls.xs .ps-mini{display:none}
+.ps-cls.xs .ps-code{font-size:6pt}
 
 /* المفتاح والحواشي */
 .ps-legend{margin-top:8px;padding-top:6px;border-top:1px solid #dfe3e9;
@@ -3863,13 +3871,19 @@ function buildPrintSheet(clashSet){
     const blocks=items.map(it=>{
       const c=it.o.c,col=colorOf[c.courseCode],
             span=it.r2-it.r1,
-            small=span*rowH<9.5,
+            hmm=span*rowH,                       /* ارتفاع البلوك بالمليمتر */
+            small=hmm<9.5,                       /* سطر واحد مضغوط */
+            tiny=hmm<5.2,                        /* ما يسع إلا الكود */
             clash=clashSet.has(c.crn);
-      return `<div class="ps-cls${small?' sm':''}${clash?' clash':''}"
+      const mini=[fmtTime(it.o.tm.start)+'–'+fmtTime(it.o.tm.end),
+                  c.room||'', shortName(c.instructor)||'']
+                 .filter(Boolean).join(' · ');
+      return `<div class="ps-cls${small?' sm':''}${tiny?' xs':''}${clash?' clash':''}"
         style="grid-row:${it.r1}/${it.r2};grid-column:${it.lane};--c:${col[0]};--c2:${col[1]}">
         <div class="ps-code">${escapeHtml(c.courseCode)} §${escapeHtml(c.section||'')}</div>
         <div class="ps-meta">${escapeHtml(c.room||'—')} · ${escapeHtml(shortName(c.instructor))}</div>
         <div class="ps-time">${fmtTime(it.o.tm.start)}–${fmtTime(it.o.tm.end)}</div>
+        <div class="ps-mini">${escapeHtml(mini)}</div>
       </div>`;
     }).join('');
 
