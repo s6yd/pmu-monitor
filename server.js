@@ -43,6 +43,37 @@ const FREE_BETA = (process.env.FREE_BETA || 'true').trim() !== 'false';
    تجيبه بإرسال /whoami للبوت، ثم تحطه في Render باسم ADMIN_CHAT_ID */
 const ADMIN_CHAT_ID = (process.env.ADMIN_CHAT_ID || '').trim();
 
+/* ═══ Pushover — قناة تنبيه إضافية لك أنت فقط ═══
+   تحتاج متغيرين في Render: PUSHOVER_TOKEN (من تطبيق تنشئه في
+   pushover.net/apps) و PUSHOVER_USER (مفتاحك في إعدادات التطبيق).
+   بدونهما هذي الدالة ما تسوي شي، والموقع يشتغل كما هو تماماً.
+   ما تُستخدم أبداً لإشعارات الطلاب — لك وحدك. */
+const PUSHOVER_TOKEN = (process.env.PUSHOVER_TOKEN || '').trim();
+const PUSHOVER_USER  = (process.env.PUSHOVER_USER  || '').trim();
+const PUSHOVER_ON = !!(PUSHOVER_TOKEN && PUSHOVER_USER);
+
+function pushover(title, message, priority) {
+  if (!PUSHOVER_ON) return Promise.resolve(null);
+  return new Promise(resolve => {
+    try {
+      const body = new URLSearchParams({
+        token: PUSHOVER_TOKEN, user: PUSHOVER_USER,
+        title: String(title || 'جدولك').slice(0, 250),
+        message: String(message || '').slice(0, 1024),
+        priority: String(priority || 0)
+      }).toString();
+      const req = https.request({
+        hostname: 'api.pushover.net', path: '/1/messages.json', method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded',
+                   'Content-Length': Buffer.byteLength(body) }
+      }, res => { res.resume(); res.on('end', () => resolve(res.statusCode === 200)); });
+      req.on('error', () => resolve(false));          /* فشله ما يوقف شي */
+      req.setTimeout(8000, () => { req.destroy(); resolve(false) });
+      req.write(body); req.end();
+    } catch (e) { resolve(false) }
+  });
+}
+
 /* وضع الصيانة: MAINTENANCE=on في Render يقفل الموقع للطلاب.
    لوحة التحكم و/api/admin تبقى شغالة عشان تقدر تتابع. */
 let MAINTENANCE = (process.env.MAINTENANCE || '').trim() === 'on';
@@ -218,6 +249,8 @@ async function alert(key, title, detail) {
     `🔴 <b>${title}</b>\n\n${detail}\n\n` +
     `🕐 ${new Date(now + 3*3600e3).toISOString().slice(11,16)} بتوقيت الرياض\n` +
     `📊 jadwalik.com/admin`).catch(() => {});
+  /* نسخة على Pushover — أعلى أولوية عشان ما يفوتك عطل */
+  pushover('🔴 ' + title, detail, 1).catch(() => {});
 }
 
 async function resolve(key, title) {
@@ -377,6 +410,16 @@ async function runMonitorCycle() {
         `🏛️ ${live.room || '—'}\n\n` +
         `⚡️ سجّل الحين قبل ما تنسكر!`);
       if (r && r.ok) notified.push(m.id); else OPS.tgFails++;
+
+      /* لو المستلم أنت، نرسل نسخة على Pushover كمان — إشعار أقوى
+         ما يفوتك. الطلاب ما يتأثرون: الشرط عليك وحدك. */
+      if (PUSHOVER_ON && ADMIN_CHAT_ID &&
+          String(p.telegram_chat_id) === String(ADMIN_CHAT_ID)) {
+        pushover(`🟢 فتحت ${live.courseCode} §${live.section}`,
+          `${live.courseTitle}\nCRN ${live.crn}\n` +
+          `${live.courseDate} · ${live.courseTiming}\n` +
+          `${live.instructor || '—'} · ${live.room || '—'}`, 1).catch(() => {});
+      }
       await new Promise(r2 => setTimeout(r2, 700));   // تهدئة بين الدفعات
     });
 
