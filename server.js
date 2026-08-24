@@ -52,19 +52,31 @@ const PUSHOVER_TOKEN = (process.env.PUSHOVER_TOKEN || '').trim();
 const PUSHOVER_USER  = (process.env.PUSHOVER_USER  || '').trim();
 const PUSHOVER_ON = !!(PUSHOVER_TOKEN && PUSHOVER_USER);
 
-function pushover(title, message, priority) {
+function pushover(title, message, opts) {
   if (!PUSHOVER_ON) {
     console.log('pushover: معطّل — PUSHOVER_TOKEN أو PUSHOVER_USER ناقص');
     return Promise.resolve(null);
   }
+  /* opts رقم = الأولوية فقط (توافق مع الاستدعاءات القديمة)،
+     أو كائن {priority, sound, retry, expire}.
+     الأولوية 2 = طارئ: يعيد التنبيه حتى تضغط «تأكيد» بنفسك،
+     وتيليغرام يشترط معها retry و expire. */
+  const o = (typeof opts === 'object' && opts) ? opts : { priority: opts || 0 };
+  const pr = Number(o.priority || 0);
   return new Promise(resolve => {
     try {
-      const body = new URLSearchParams({
+      const fields = {
         token: PUSHOVER_TOKEN, user: PUSHOVER_USER,
         title: String(title || 'جدولك').slice(0, 250),
         message: String(message || '').slice(0, 1024),
-        priority: String(priority || 0)
-      }).toString();
+        priority: String(pr)
+      };
+      if (o.sound) fields.sound = String(o.sound);
+      if (pr === 2) {
+        fields.retry  = String(o.retry  || 30);    /* يعيد كل 30 ثانية */
+        fields.expire = String(o.expire || 3600);  /* يوقف بعد ساعة */
+      }
+      const body = new URLSearchParams(fields).toString();
       const req = https.request({
         hostname: 'api.pushover.net', path: '/1/messages.json', method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded',
@@ -73,7 +85,7 @@ function pushover(title, message, priority) {
         let out = '';
         res.on('data', c => { if (out.length < 400) out += c; });
         res.on('end', () => {
-          if (res.statusCode === 200) console.log('pushover: تم الإرسال ✓');
+          if (res.statusCode === 200) console.log(`pushover: تم الإرسال ✓ (أولوية ${pr})`);
           else console.log(`pushover: فشل ${res.statusCode} — ${out.slice(0, 300)}`);
           resolve(res.statusCode === 200);
         });
@@ -260,8 +272,8 @@ async function alert(key, title, detail) {
     `🔴 <b>${title}</b>\n\n${detail}\n\n` +
     `🕐 ${new Date(now + 3*3600e3).toISOString().slice(11,16)} بتوقيت الرياض\n` +
     `📊 jadwalik.com/admin`).catch(() => {});
-  /* نسخة على Pushover — أعلى أولوية عشان ما يفوتك عطل */
-  pushover('🔴 ' + title, detail, 1).catch(() => {});
+  /* نسخة على Pushover — أولوية عادية وصوت هادئ، مو زي إشعار الشعب */
+  pushover('🔴 ' + title, detail, { priority: 0, sound: 'pushover' }).catch(() => {});
 }
 
 async function resolve(key, title) {
@@ -429,7 +441,10 @@ async function runMonitorCycle() {
         pushover(`🟢 فتحت ${live.courseCode} §${live.section}`,
           `${live.courseTitle}\nCRN ${live.crn}\n` +
           `${live.courseDate} · ${live.courseTiming}\n` +
-          `${live.instructor || '—'} · ${live.room || '—'}`, 1).catch(() => {});
+          `${live.instructor || '—'} · ${live.room || '—'}`,
+          /* طارئ: صفارة تتكرر كل 30 ثانية لمدة نصف ساعة
+             حتى تضغط «تأكيد» — الشعبة ما تفوتك. */
+          { priority: 2, sound: 'siren', retry: 30, expire: 1800 }).catch(() => {});
       }
       await new Promise(r2 => setTimeout(r2, 700));   // تهدئة بين الدفعات
     });
