@@ -1527,8 +1527,10 @@ async function adminHealth() {
       state: ms,
       paused: MONITOR_PAUSED,
       enabled: MONITOR_ENABLED,
-      hoursFrom: ACTIVE_FROM_HOUR,
-      hoursTo: ACTIVE_TO_HOUR,
+      hoursFrom: activeFrom(),
+      hoursTo: activeTo(),
+      hoursCustom: !!HOURS_OVERRIDE,
+      windowCustom: !!WINDOW_OVERRIDE,
       riyadhHour: riyadhHour(),
       riyadhDate: riyadhDate(),
       intervalMin: INTERVAL_PEAK / 60000,
@@ -2041,8 +2043,16 @@ const MONITOR_WINDOWS = [
   { from: '2027-06-13', to: '2027-06-22', ar: 'تسجيل الصيفي' }
 ];
 
-const ACTIVE_FROM_HOUR = 7;    // 7 صباحاً بتوقيت الرياض
-const ACTIVE_TO_HOUR   = 23;   // حتى 11 مساءً
+const ACTIVE_FROM_DEFAULT = 7;    // 7 صباحاً بتوقيت الرياض
+const ACTIVE_TO_DEFAULT   = 24;   // حتى منتصف الليل
+
+/* تُعدَّل من اللوحة بدون إعادة تشغيل. null = القيمة الافتراضية.
+   تُصفَّر مع كل إعادة نشر على Render. */
+let HOURS_OVERRIDE = null;        // {from, to}
+let WINDOW_OVERRIDE = null;       // {from:'YYYY-MM-DD', to:'YYYY-MM-DD', ar}
+
+const activeFrom = () => HOURS_OVERRIDE ? HOURS_OVERRIDE.from : ACTIVE_FROM_DEFAULT;
+const activeTo   = () => HOURS_OVERRIDE ? HOURS_OVERRIDE.to   : ACTIVE_TO_DEFAULT;
 
 const INTERVAL_PEAK = 5 * 60 * 1000;    // داخل نافذة التسجيل
 const JITTER        = 0.25;             // ±25% تفادياً لنمط منتظم تماماً
@@ -2061,13 +2071,17 @@ function riyadhNow() {
 function riyadhHour() { return riyadhNow().getUTCHours(); }
 function riyadhDate() { return riyadhNow().toISOString().slice(0, 10); }
 
+function windowList() {
+  /* نافذة يدوية من اللوحة تتقدّم على قائمة التقويم */
+  return WINDOW_OVERRIDE ? [WINDOW_OVERRIDE] : MONITOR_WINDOWS;
+}
 function currentWindow() {
   const d = riyadhDate();
-  return MONITOR_WINDOWS.find(w => d >= w.from && d <= w.to) || null;
+  return windowList().find(w => d >= w.from && d <= w.to) || null;
 }
 function nextWindow() {
   const d = riyadhDate();
-  return MONITOR_WINDOWS.find(w => d < w.from) || null;
+  return windowList().find(w => d < w.from) || null;
 }
 const dayShift = (iso, n) =>
   new Date(Date.parse(iso + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
@@ -2133,11 +2147,14 @@ function monitorState() {
   }
   const hour = riyadhHour();
   const win = currentWindow();
-  const inHours = hour >= ACTIVE_FROM_HOUR && hour < ACTIVE_TO_HOUR;
+  const hFrom = activeFrom(), hTo = activeTo();
+  const inHours = hour >= hFrom && hour < hTo;
 
   if (!inHours) {
-    return { active: false, reason: 'hours', ar: 'خارج ساعات العمل (7 ص – 11 م)',
-             en: 'Outside active hours (7am–11pm)', window: win, intervalMin: null };
+    return { active: false, reason: 'hours',
+             ar: `خارج ساعات العمل (${hFrom}:00 – ${hTo}:00)`,
+             en: `Outside active hours (${hFrom}:00–${hTo}:00)`,
+             window: win, intervalMin: null };
   }
   if (win) {
     return { active: true, reason: 'peak', ar: 'مراقبة مكثفة — ' + win.ar,
@@ -2169,7 +2186,7 @@ function nextDelay() {
     /* ننام حتى 7 صباحاً بالضبط */
     const now = riyadhNow();
     const target = new Date(now);
-    target.setUTCHours(ACTIVE_FROM_HOUR, 0, 0, 0);
+    target.setUTCHours(activeFrom(), 0, 0, 0);
     if (target <= now) target.setUTCDate(target.getUTCDate() + 1);
     return Math.max(60000, target - now) + Math.random() * 120000;
   }
@@ -2388,6 +2405,41 @@ const server = http.createServer(async (req, res) => {
           return send(200, { ok: true, stat });
         }
         return send(200, { last: SCHED_SYNC.last });
+      }
+
+      if (act === 'monitor-hours') {
+        if (req.method === 'POST') {
+          const b = await readBody(req);
+          if (b.reset) HOURS_OVERRIDE = null;
+          else if ('from' in b && 'to' in b) {
+            const f = Math.max(0, Math.min(23, parseInt(b.from, 10)));
+            const t = Math.max(1, Math.min(24, parseInt(b.to, 10)));
+            if (Number.isFinite(f) && Number.isFinite(t) && t > f)
+              HOURS_OVERRIDE = { from: f, to: t };
+            else return send(400, { error: 'ساعات غير صالحة — لازم "من" أصغر من "إلى"' });
+          }
+        }
+        return send(200, { from: activeFrom(), to: activeTo(),
+                           custom: !!HOURS_OVERRIDE, state: monitorState() });
+      }
+
+      if (act === 'monitor-window') {
+        if (req.method === 'POST') {
+          const b = await readBody(req);
+          if (b.reset) WINDOW_OVERRIDE = null;
+          else if (b.from && b.to) {
+            const ok = d => /^\d{4}-\d{2}-\d{2}$/.test(String(d));
+            if (!ok(b.from) || !ok(b.to))
+              return send(400, { error: 'التاريخ لازم يكون بصيغة YYYY-MM-DD' });
+            if (String(b.to) < String(b.from))
+              return send(400, { error: 'تاريخ النهاية قبل البداية' });
+            WINDOW_OVERRIDE = { from: String(b.from), to: String(b.to),
+                                ar: String(b.ar || 'نافذة يدوية من اللوحة') };
+          }
+        }
+        return send(200, { window: WINDOW_OVERRIDE, custom: !!WINDOW_OVERRIDE,
+                           current: currentWindow(), next: nextWindow(),
+                           state: monitorState() });
       }
 
       if (act === 'monitor-toggle') {
@@ -2636,7 +2688,7 @@ const server = http.createServer(async (req, res) => {
       dataTtlMin: Math.round(coursesTTL() / 60000),
       ar: st.ar, en: st.en,
       intervalMin: st.intervalMin,
-      activeHours: [ACTIVE_FROM_HOUR, ACTIVE_TO_HOUR],
+      activeHours: [activeFrom(), activeTo()],
       windows: MONITOR_WINDOWS
     }));
     return;

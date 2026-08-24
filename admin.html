@@ -123,6 +123,15 @@ font-size:12px;line-height:1.7;align-items:flex-start}
 .mon-row+.mon-row{border-top:1px solid rgba(255,255,255,.04)}
 .mon-k{color:var(--text3);flex-shrink:0}
 .mon-v{color:var(--text);text-align:left;direction:rtl}
+.mon-edit{margin-top:12px;padding-top:11px;border-top:1px solid var(--border)}
+.mon-elabel{font-size:12px;font-weight:700;margin-bottom:7px}
+.mon-elabel .warn{color:var(--warn);font-weight:600}
+.mon-erow{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:6px;
+font-size:12px;color:var(--text3)}
+.mon-erow input{background:var(--bg);border:1px solid var(--border);border-radius:9px;
+color:var(--text);font-family:inherit;font-size:12.5px;padding:7px 9px;width:82px}
+.mon-erow input[type=date]{width:132px}
+.mon-ehint{font-size:10.5px;color:var(--text3);line-height:1.6;margin-top:3px}
 .chg{padding:9px 0;border-bottom:1px solid rgba(255,255,255,.05)}
 .chg:last-of-type{border-bottom:none}
 .chg-top{display:flex;justify-content:space-between;gap:10px;margin-bottom:5px}
@@ -1020,6 +1029,30 @@ async function toggleFinals(on){
   }catch(e){ toast(e.message,'err') }
 }
 
+/* ══════════ ساعات المراقبة ونافذتها ══════════ */
+async function saveHours(reset){
+  try{
+    const body=reset?{reset:true}:{
+      from:+document.getElementById('hFrom').value,
+      to:+document.getElementById('hTo').value};
+    const r=await api('monitor-hours',{body});
+    toast(reset?`رجعت للتلقائي (${r.from}:00–${r.to}:00)`:`الساعات ${r.from}:00–${r.to}:00`,'ok');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
+async function saveWindow(reset){
+  try{
+    const body=reset?{reset:true}:{
+      from:document.getElementById('wFrom').value,
+      to:document.getElementById('wTo').value};
+    if(!reset&&(!body.from||!body.to))return toast('حدد التاريخين','err');
+    const r=await api('monitor-window',{body});
+    toast(reset?'رجعت لتقويم الكود':`النافذة ${r.window.from} → ${r.window.to}`,'ok');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
 /* ══════════ إيقاف/تشغيل المراقبة فوراً ══════════ */
 async function toggleMonitor(on){
   if(!on&&!confirm('إيقاف المراقبة؟ ما راح يستلم أي طالب إشعار فتح شعبة حتى تشغّلها مرة ثانية.'))return;
@@ -1408,6 +1441,27 @@ function renderSys(){
     </div>
     <div class="mon-grid">
       ${rows.map(([k,v])=>`<div class="mon-row"><span class="mon-k">${k}</span><span class="mon-v">${v}</span></div>`).join('')}
+    </div>
+    <div class="mon-edit">
+      <div class="mon-elabel">⏰ ساعات العمل ${mi.hoursCustom?'<b class="warn">· يدوية</b>':''}</div>
+      <div class="mon-erow">
+        <span>من</span><input type="number" id="hFrom" min="0" max="23" value="${mi.hoursFrom}">
+        <span>إلى</span><input type="number" id="hTo" min="1" max="24" value="${mi.hoursTo}">
+        <button class="mini go" onclick="saveHours()">حفظ</button>
+        ${mi.hoursCustom?'<button class="mini" onclick="saveHours(true)">تلقائي</button>':''}
+      </div>
+      <div class="mon-ehint">٢٤ = منتصف الليل. المراقبة تشتغل داخل هذا المدى فقط.</div>
+
+      <div class="mon-elabel" style="margin-top:12px">📅 نافذة المراقبة ${mi.windowCustom?'<b class="warn">· يدوية</b>':''}</div>
+      <div class="mon-erow">
+        <span>من</span><input type="date" id="wFrom" value="${(mi.window&&mi.window.from)||(mi.nextWindow&&mi.nextWindow.from)||''}">
+        <span>إلى</span><input type="date" id="wTo" value="${(mi.window&&mi.window.to)||(mi.nextWindow&&mi.nextWindow.to)||''}">
+      </div>
+      <div class="mon-erow">
+        <button class="mini go" onclick="saveWindow()">حفظ</button>
+        ${mi.windowCustom?'<button class="mini" onclick="saveWindow(true)">رجوع للتقويم</button>':''}
+      </div>
+      <div class="mon-ehint">النافذة اليدوية تتجاهل تواريخ التقويم المكتوبة في الكود.</div>
     </div>
   </div>`;
 
