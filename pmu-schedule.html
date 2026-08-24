@@ -831,6 +831,23 @@ white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ps-cls.xs .ps-mini{display:none}
 .ps-cls.xs .ps-code{font-size:6pt}
 
+/* جدول المواد التفصيلي */
+.ps-list{margin-top:8px;padding-top:6px;border-top:1px solid #dfe3e9;
+break-inside:avoid;page-break-inside:avoid}
+.ps-list table{width:100%;border-collapse:collapse;table-layout:fixed}
+.ps-list th{font-size:6pt;font-weight:700;color:#5b6472;text-align:right;
+padding:0 3px 3px;border-bottom:1px solid #111827;white-space:nowrap}
+.ps-list td{font-size:6.4pt;color:#111827;text-align:right;padding:2.6px 3px;
+border-bottom:1px solid #eef0f3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ps-list tr:last-child td{border-bottom:none}
+.ps-list .w-code{width:13%}
+.ps-list .w-name{width:24%}
+.ps-list .w-inst{width:17%}
+.ps-list .c-code{font-weight:700;direction:ltr;text-align:right}
+.ps-list .c-name{color:#5b6472}
+.ps-list .c-mono{font-family:var(--mono);direction:ltr;text-align:right;font-size:6pt}
+.ps-list .c-mono.b{font-weight:700;font-size:6.8pt}
+
 /* المفتاح والحواشي */
 .ps-legend{margin-top:8px;padding-top:6px;border-top:1px solid #dfe3e9;
 display:grid;grid-template-columns:repeat(4,1fr);gap:3px 10px;
@@ -3983,10 +4000,51 @@ function buildPrintSheet(clashSet){
     }
   }
 
+  /* جدول المواد بالتفصيل — بين الشبكة وأرقام التسجيل */
+  const dayAr={U:'أحد',M:'اثنين',T:'ثلاثاء',W:'أربعاء',R:'خميس',
+               H:'خميس',F:'جمعة',S:'سبت'};
+  const daysLabel=c=>{
+    const s=String(c.courseDate||'').toUpperCase().replace(/[^A-Z]/g,'');
+    if(!s)return '—';
+    const out=[];
+    for(const ch of s) if(dayAr[ch]&&!out.includes(dayAr[ch])) out.push(dayAr[ch]);
+    return out.length?out.join('·'):escapeHtml(c.courseDate||'—');
+  };
+  const timeLabel=c=>{
+    const t=parseTime(c.courseTiming);
+    return t?fmtTime(t.start)+'–'+fmtTime(t.end):(c.courseTiming||'—');
+  };
+  const listRows=[...schedule].sort((a,b)=>
+    String(a.courseCode).localeCompare(String(b.courseCode)));
+  const table=`<div class="ps-list">
+    <table>
+      <thead><tr>
+        <th class="w-code">${LANG==='ar'?'المادة':'Course'}</th>
+        <th class="w-name">${LANG==='ar'?'الاسم':'Title'}</th>
+        <th>${LANG==='ar'?'شعبة':'Sec'}</th>
+        <th>CRN</th>
+        <th>${LANG==='ar'?'الأيام':'Days'}</th>
+        <th>${LANG==='ar'?'الوقت':'Time'}</th>
+        <th>${LANG==='ar'?'القاعة':'Room'}</th>
+        <th class="w-inst">${LANG==='ar'?'الدكتور':'Instructor'}</th>
+      </tr></thead>
+      <tbody>${listRows.map(c=>`<tr>
+        <td class="c-code">${escapeHtml(c.courseCode||'')}</td>
+        <td class="c-name">${escapeHtml(c.courseTitle||'—')}</td>
+        <td class="c-mono">${escapeHtml(c.section||'—')}</td>
+        <td class="c-mono b">${escapeHtml(String(c.crn||'—'))}</td>
+        <td>${daysLabel(c)}</td>
+        <td class="c-mono">${escapeHtml(timeLabel(c))}</td>
+        <td>${escapeHtml(c.room||'—')}</td>
+        <td>${escapeHtml(c.instructor||'—')}</td>
+      </tr>`).join('')}</tbody>
+    </table>
+  </div>`;
+
   const foot=`<div class="ps-foot"><span>jadwalik.com</span><span>${
     new Date().toLocaleDateString(LANG==='ar'?'ar-SA':'en-GB')}</span></div>`;
 
-  el.innerHTML=head+grid+legend+crns+note+warn+finals+foot;
+  el.innerHTML=head+grid+legend+table+crns+note+warn+finals+foot;
 }
 
 function printSchedule(){
