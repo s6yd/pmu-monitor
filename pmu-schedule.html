@@ -4364,15 +4364,39 @@ async function loadMonitored(){
   monitored=data||[];
 }
 
-/* شريط ثابت أعلى كل الصفحات لمن ما ربط تيليغرام */
+/* شريط ثابت أعلى كل الصفحات — حالتان يستحيل اجتماعهما،
+   فنستخدم عنصراً واحداً بدل شريطين يتكدّسان فوق بعض */
 function renderTgBar(){
   const bar=document.getElementById('tgBar');
   if(!bar)return;
-  const show=!!USER&&!tgLinked();
-  bar.hidden=!show;
-  if(!show){bar.innerHTML='';return}
   const ar=LANG==='ar';
+  const hide=()=>{bar.hidden=true;bar.innerHTML=''};
+
+  /* ── غير مسجّل دخول: شغله محلي فقط ── */
+  if(!USER){
+    /* ما ننبّه قبل ما نتأكد من الجلسة، وإلا ومض الشريط ثانية عند كل فتح */
+    if(!AUTH_READY)return hide();
+    /* ولا ننبّه إلا لمن عنده شي يخسره — التحذير الفارغ ضجيج يُتجاهل */
+    let n=0;
+    try{
+      if(typeof SCHEDULES!=='undefined'&&SCHEDULES)
+        SCHEDULES.forEach(s=>{ if(s&&s.length)n+=s.length });
+      if(typeof completed!=='undefined'&&completed) n+=completed.length;
+    }catch(e){}
+    if(!n)return hide();
+    bar.hidden=false;
+    bar.innerHTML='<span>⚠️ '+
+      (ar?'<b>ما سجّلت دخولك</b> — شغلك محفوظ على هذا الجهاز فقط، ويروح لو مسحت بيانات المتصفح أو فتحت الموقع من جهاز ثاني'
+         :'<b>Not signed in</b> — your work is saved on this device only, and is lost if you clear browser data or switch devices')+
+      '</span><button onclick="showAuthNote()">'+
+      (ar?'💾 احفظه في حسابك':'💾 Save to my account')+'</button>';
+    return;
+  }
+
+  /* ── مسجّل لكن ما ربط تيليغرام ── */
+  if(tgLinked())return hide();
   const n=(typeof monitored!=='undefined'&&monitored)?monitored.length:0;
+  bar.hidden=false;
   bar.innerHTML='<span>⚠️ '+
     (ar?'<b>تيليغرام غير مربوط</b> — تنبيهات فتح الشعب ما توصلك'
        :'<b>Telegram not linked</b> — you will not receive section alerts')+
@@ -5921,6 +5945,8 @@ const sb=window.supabase.createClient(SB_URL,SB_KEY,{
   auth:{flowType:'implicit',detectSessionInUrl:true,persistSession:true,autoRefreshToken:true}
 });
 let USER=null, PROFILE=null, syncing=false;
+/* يصير true بعد أول فحص للجلسة — الشريط ما يظهر قبلها */
+let AUTH_READY=false;
 
 /* ══════════ ما قبل تسجيل الدخول ══════════
    لحظة الدخول هي اللحظة الوحيدة اللي يفكّر فيها الطالب ببياناته،
@@ -6127,6 +6153,7 @@ async function pushSchedule(){ return saveQueue('schedule',writeSchedule) }
   if(session&&(location.hash||location.search))
     history.replaceState({},'',location.pathname);
   USER=session?session.user:null;
+  AUTH_READY=true;
   setAuthUI();
   if(USER){await pullCloud();setAuthUI();renderPlan();
     if(document.getElementById('pageSched').classList.contains('active'))renderSchedule();}

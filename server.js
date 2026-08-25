@@ -695,6 +695,28 @@ function editMsg(cq, text) {
   }).catch(() => {});
 }
 
+/* ═══ تحديث معرّف تيليغرام ═══
+   الحقل كان يُكتب مرة واحدة عند /start ثم يتجمّد، فيصير
+   قديماً لو غيّر الطالب معرّفه — والمعرّفات المهجورة تُعاد للتداول.
+   نصحّحه ذاتياً كل ما راسلنا الطالب. الكتابة تحصل فقط عند الاختلاف. */
+async function refreshTgUsername(chatId, from) {
+  if (!chatId || !from) return;
+  const fresh = from.username || null;
+  const rows = await sb('GET', 'profiles', {
+    query: `?telegram_chat_id=eq.${encodeURIComponent(String(chatId))}` +
+           `&select=id,telegram_username&limit=1`
+  });
+  const row = Array.isArray(rows) && rows[0] ? rows[0] : null;
+  if (!row) return;                       /* غير مرتبط بعد — لا شيء نحدّثه */
+  const stored = row.telegram_username || null;
+  if (stored === fresh) return;           /* الحالة الغالبة: لا كتابة */
+  await sb('PATCH', 'profiles', {
+    query: `?id=eq.${row.id}`,
+    body: { telegram_username: fresh }
+  });
+  console.log(`تيليغرام: تحديث معرّف ${chatId} — ${stored || '(فارغ)'} ← ${fresh || '(فارغ)'}`);
+}
+
 async function handleTelegramUpdate(update) {
   if (update.callback_query) return handleCallback(update.callback_query);
   const msg = update.message;
@@ -704,6 +726,11 @@ async function handleTelegramUpdate(update) {
   if (!msg.text && !photo) return;
   const chatId = msg.chat.id;
   const text = (msg.text || msg.caption || '').trim();
+
+  /* بلا await — ما نأخّر رد البوت على شيء تجميلي.
+     الـcatch إجباري وإلا صار رفضاً غير معالج يسقط العملية. */
+  refreshTgUsername(chatId, msg.from).catch(e =>
+    console.log('تحديث معرّف تيليغرام فشل: ' + (e && e.message ? e.message : e)));
 
   /* صور من المشرف — سواء أُرسلت كألبوم أو صوراً منفصلة متتالية.
      تيليغرام ما يجمّعها إلا لو اختار خيار الألبوم، فنجمّعها نحن. */
@@ -2570,6 +2597,16 @@ const server = http.createServer(async (req, res) => {
       host.includes('onrender.com') && !req.url.startsWith('/tg-webhook')) {
     /* 308 بدل 301: يحافظ على POST بدل ما المتصفح يحوّلها GET */
     res.writeHead(308, { Location: 'https://jadwalik.com' + req.url });
+    res.end(); return;
+  }
+
+  /* ═══ http → https ═══
+     قوقل فهرس نسخة http كصفحة منفصلة (١٢ ظهوراً في أسبوع).
+     Render ينهي TLS ويمرّر البروتوكول الأصلي في هذي الترويسة،
+     فنحوّل فقط لو صرّحت بـ http — وغيابها يعني تشغيلاً محلياً فلا نلمسه. */
+  const proto = (req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
+  if (proto === 'http' && host && !req.url.startsWith('/tg-webhook')) {
+    res.writeHead(308, { Location: 'https://' + host + req.url });
     res.end(); return;
   }
 
