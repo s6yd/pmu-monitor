@@ -502,6 +502,15 @@ textarea:focus{border-color:var(--accent)}
 font-weight:600;font-family:var(--sans);cursor:pointer;padding:6px 0;margin-bottom:10px}
 
 /* ---- Guide ---- */
+.tg-bar[hidden]{display:none!important}   /* لازم تسبق قاعدة العرض */
+.tg-bar:empty{display:none!important}
+.tg-bar{position:sticky;top:0;z-index:60;display:flex;align-items:center;
+justify-content:space-between;gap:10px;flex-wrap:wrap;
+padding:9px 14px;background:var(--warn-bg);
+border-bottom:1px solid rgba(245,158,11,.4);
+font-size:12.5px;line-height:1.7;color:var(--text)}
+.tg-bar button{background:var(--warn);color:#1a1200;border:none;border-radius:9px;
+padding:7px 13px;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer;flex-shrink:0}
 .env-bar{display:none;background:#f59e0b;color:#1a1200;text-align:center;
 padding:6px 12px;font-size:12px;font-weight:700;position:sticky;top:0;z-index:200}
 .env-bar.on{display:block}
@@ -916,6 +925,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 </noscript>
 
 <div class="env-bar" id="envBar"></div>
+<div class="tg-bar" id="tgBar" hidden></div>
 <div class="topbar">
   <div class="logo">
     <div class="logo-icon">🎓</div>
@@ -4354,6 +4364,64 @@ async function loadMonitored(){
   monitored=data||[];
 }
 
+/* شريط ثابت أعلى كل الصفحات لمن ما ربط تيليغرام */
+function renderTgBar(){
+  const bar=document.getElementById('tgBar');
+  if(!bar)return;
+  const show=!!USER&&!tgLinked();
+  bar.hidden=!show;
+  if(!show){bar.innerHTML='';return}
+  const ar=LANG==='ar';
+  const n=(typeof monitored!=='undefined'&&monitored)?monitored.length:0;
+  bar.innerHTML='<span>⚠️ '+
+    (ar?'<b>تيليغرام غير مربوط</b> — تنبيهات فتح الشعب ما توصلك'
+       :'<b>Telegram not linked</b> — you will not receive section alerts')+
+    (n?(ar?` · عندك ${n} مراقبة معطّلة`:` · ${n} inactive watches`):'')+
+    '</span><button onclick="linkTelegram()">'+(ar?'🔗 اربط الحين':'🔗 Link now')+'</button>';
+}
+
+/* ── التنبيه ما يوصل بلا تيليغرام ──
+   كان الطالب يفعّل المراقبة وهو غير مربوط، فتُنشأ بلا وسيلة إيصال
+   ويظن أنها تشتغل. الآن نوضّح له قبل الإنشاء ونعطيه زر الربط. */
+function tgLinked(){ return !!(PROFILE&&PROFILE.telegram_chat_id) }
+
+function needTelegram(){
+  if(tgLinked())return true;
+  const ar=LANG==='ar';
+  const old=document.getElementById('tgWarn'); if(old)old.remove();
+  const w=document.createElement('div');
+  w.id='tgWarn'; w.setAttribute('dir',ar?'rtl':'ltr');
+  w.style.cssText='position:fixed;inset:0;z-index:9999;display:flex;align-items:center;'+
+    'justify-content:center;padding:18px;background:rgba(0,0,0,.62)';
+  w.onclick=e=>{ if(e.target===w)w.remove() };
+  w.innerHTML='<div style="background:var(--card);border:1px solid var(--border);'+
+    'border-radius:18px;max-width:400px;width:100%;padding:22px">'+
+    '<div style="font-size:16px;font-weight:700;margin-bottom:8px">⚠️ '+
+      (ar?'تيليغرام غير مربوط':'Telegram not linked')+'</div>'+
+    '<div style="font-size:13px;color:var(--text2);line-height:1.9">'+
+      (ar?'المراقبة ترسل التنبيه على تيليغرام فقط. بدون ربط، ما راح يوصلك شي — حتى لو فتحت الشعبة.'
+         :'Alerts are sent via Telegram only. Without linking, you will not receive anything.')+
+    '</div>'+
+    '<div style="display:flex;gap:9px;margin-top:18px">'+
+      '<button id="tgWarnLink" style="flex:1;padding:13px;border-radius:12px;border:none;'+
+        'background:var(--accent);color:#fff;font-weight:700;font-size:14px;font-family:inherit">'+
+        (ar?'🔗 اربط تيليغرام الحين':'🔗 Link Telegram')+'</button>'+
+      '<button id="tgWarnSkip" style="padding:13px 16px;border-radius:12px;'+
+        'border:1px solid var(--border);background:transparent;color:var(--text2);'+
+        'font-size:13px;font-family:inherit">'+(ar?'لاحقاً':'Later')+'</button>'+
+    '</div>'+
+    '<div style="font-size:11px;color:var(--text3);margin-top:11px;line-height:1.7">'+
+      (ar?'الربط ياخذ أقل من دقيقة، ومرة وحدة بس.'
+         :'Linking takes less than a minute, once only.')+'</div>'+
+  '</div>';
+  document.body.appendChild(w);
+  document.getElementById('tgWarnLink').onclick=()=>{ w.remove(); switchTab('set'); linkTelegram() };
+  document.getElementById('tgWarnSkip').onclick=()=>{ w.remove() };   /* ما نفعّل بلا ربط */
+  return false;
+}
+
+setInterval(()=>{try{renderTgBar()}catch(e){}},4000);
+
 function isMonitored(crn){return monitored.some(m=>m.scope!=='course'&&m.crn===crn)}
 
 /* ── مراقبة المادة كاملة ──
@@ -4368,6 +4436,10 @@ function isCourseMonitored(code){
 }
 
 async function toggleMonitorAll(code){
+  if(USER&&isPro()&&!isCourseMonitored(code)&&!needTelegram())return;
+  return toggleMonitorAllGo(code);
+}
+async function toggleMonitorAllGo(code){
   if(!USER){showToast(LANG==='ar'?'سجّل دخول أول':'Sign in first','warn');return}
   if(!isPro()){
     showToast(LANG==='ar'?'🔒 المراقبة تحتاج اشتراك':'🔒 Monitoring requires a subscription','warn');
@@ -4392,6 +4464,10 @@ async function toggleMonitorAll(code){
 }
 
 async function toggleMonitorCourse(crn){
+  if(!isMonitored(crn)&&!needTelegram())return;      /* بلا ربط ما نفعّل */
+  return toggleMonitorCourseGo(crn);
+}
+async function toggleMonitorCourseGo(crn){
   if(!USER){showToast(LANG==='ar'?'سجّل دخول أول':'Sign in first','warn');return}
   if(!isPro()){
     showToast(LANG==='ar'?'🔒 المراقبة تحتاج اشتراك':'🔒 Monitoring requires a subscription','warn');
@@ -4531,6 +4607,25 @@ function renderTgAndMon(ar){
   tb.textContent=linked?(ar?'إعادة ربط':'Relink'):(ar?'ربط':'Link');
   tb.className='btn-sm'+(linked?' ghost':'');
   if(linked)document.getElementById('tgCode').style.display='none';
+
+  /* تحذير دائم لمن عنده مراقبات بلا ربط — يشمل اللي أنشأها قبل التعديل */
+  const ml0=document.getElementById('monList');
+  if(ml0){
+    const old=document.getElementById('monNoTg'); if(old)old.remove();
+    if(!linked&&monitored.length){
+      const d=document.createElement('div');
+      d.id='monNoTg';
+      d.style.cssText='margin-bottom:12px;padding:12px 14px;border-radius:12px;'+
+        'background:var(--warn-bg);border:1px solid rgba(245,158,11,.35);'+
+        'font-size:12.5px;line-height:1.85;color:var(--text)';
+      d.innerHTML='⚠️ <b>'+(ar?'مراقباتك ما تشتغل':'Your alerts are not active')+'</b><br>'+
+        (ar?`عندك ${monitored.length} مراقبة، وتيليغرام غير مربوط — فما يوصلك أي تنبيه.`
+           :`You have ${monitored.length} watches but Telegram is not linked.`)+
+        '<br><button class="btn-sm" style="margin-top:9px" onclick="linkTelegram()">'+
+        (ar?'🔗 اربط تيليغرام':'🔗 Link Telegram')+'</button>';
+      ml0.parentNode.insertBefore(d,ml0);
+    }
+  }
 
   /* monitored list */
   const ml=document.getElementById('monList');
