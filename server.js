@@ -178,7 +178,7 @@ const MSG_LOG_MAX = 300;
 const CHAT_NAMES = new Map();
 
 function logMsg(chatId, text, kind, ok, err) {
-  MSG_LOG.unshift({
+  const row = {
     at: Date.now(),
     chatId: String(chatId),
     who: CHAT_NAMES.get(String(chatId)) || null,
@@ -188,8 +188,10 @@ function logMsg(chatId, text, kind, ok, err) {
     text: String(text || '').slice(0, 1200),
     ok: !!ok,
     err: err || null
-  });
+  };
+  MSG_LOG.unshift(row);
   if (MSG_LOG.length > MSG_LOG_MAX) MSG_LOG.length = MSG_LOG_MAX;
+  if (EVENTS_READY) logEvent('message', row);
 }
 
 /* نستعلم مرة واحدة عن الأرقام المجهولة فقط، لا عن السجل كله كل مرة */
@@ -244,6 +246,76 @@ const inList = arr => arr.join(',');
 /* معرّفات Supabase كلها UUID — أي شيء غيره ما له أن يصل الاستعلام */
 const isUuid = v => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
   .test(String(v == null ? '' : v).trim());
+
+/* ═══ استمرارية السجلات ═══
+   كل ما في الذاكرة يضيع مع كل نشر — وأنت تنشر عدة مرات يومياً في الموسم.
+   فنكتب كل حدث في القاعدة فور وقوعه (بلا await: التسجيل ما يؤخّر شيئاً)،
+   ونستعيد الأحدث عند الإقلاع.
+   ما نحفظ الكاش عمداً: صلاحيته دقيقة داخل الذروة، ويُبنى بسحبة واحدة. */
+const EVENT_KEEP = { message: 300, correction: 60, flap: 60 };
+const EVENT_MAX_AGE_DAYS = 30;
+let EVENTS_READY = false;          /* قبل الاستعادة ما نكتب، لئلا نضاعف */
+
+function logEvent(kind, payload) {
+  sb('POST', 'app_events', {
+    body: { kind, at: new Date(payload.at || Date.now()).toISOString(), payload },
+    prefer: 'return=minimal'
+  }).catch(e => console.log('logEvent ' + kind + ': ' + (e && e.message)));
+}
+
+async function restoreEvents() {
+  for (const [kind, limit] of Object.entries(EVENT_KEEP)) {
+    const rows = await sb('GET', 'app_events', {
+      query: `?kind=eq.${kind}&select=payload&order=at.desc&limit=${limit}`
+    }).catch(() => []);
+    const list = (Array.isArray(rows) ? rows : []).map(r => r.payload);
+    const target = kind === 'message' ? MSG_LOG
+                 : kind === 'correction' ? SCHED_LOG : FLAP_LOG;
+    target.length = 0;
+    list.forEach(p => target.push(p));
+  }
+  console.log(`استعادة: ${MSG_LOG.length} رسالة · ${SCHED_LOG.length} تصحيح · ` +
+              `${FLAP_LOG.length} رفّة`);
+}
+
+/* عدّادات وذروة التغذية — الذروة أهمها:
+   بدونها يبدأ قاطع الدائرة أعمى بعد كل نشر ولا يحميه إلا الحد المطلق. */
+async function saveState() {
+  const body = {
+    key: 'runtime',
+    value: {
+      feedPeak: [...FEED_PEAK.entries()],
+      totalUpdated: SCHED_SYNC.totalUpdated,
+      runs: SCHED_SYNC.runs,
+      confirmForces: CONFIRM_STAT.forces,
+      confirmPurged: CONFIRM_STAT.purged,
+      ops: { searches: OPS.searches, feedback: OPS.feedback,
+             pmuFails: OPS.pmuFails, tgFails: OPS.tgFails,
+             searchesCached: OPS.searchesCached, searchStale: OPS.searchStale,
+             cacheFromMonitor: OPS.cacheFromMonitor }
+    },
+    updated_at: new Date().toISOString()
+  };
+  await sb('POST', 'app_state', {
+    body, prefer: 'resolution=merge-duplicates,return=minimal'
+  }).catch(e => console.log('saveState: ' + (e && e.message)));
+}
+
+async function restoreState() {
+  const rows = await sb('GET', 'app_state', {
+    query: '?key=eq.runtime&select=value&limit=1'
+  }).catch(() => []);
+  const v = Array.isArray(rows) && rows[0] ? rows[0].value : null;
+  if (!v) { console.log('استعادة الحالة: ما فيه نسخة محفوظة بعد'); return; }
+  (v.feedPeak || []).forEach(([t, n]) => FEED_PEAK.set(t, n));
+  SCHED_SYNC.totalUpdated = v.totalUpdated || 0;
+  SCHED_SYNC.runs = v.runs || 0;
+  CONFIRM_STAT.forces = v.confirmForces || 0;
+  CONFIRM_STAT.purged = v.confirmPurged || 0;
+  Object.assign(OPS, v.ops || {});
+  console.log('استعادة الحالة: ذروة التغذية ' +
+    ([...FEED_PEAK.values()][0] || '—') + ' · تصحيحات ' + SCHED_SYNC.totalUpdated);
+}
 
 const sendMsg = async (chatId, text, markup) => {
   const r = await tg('sendMessage', Object.assign(
@@ -1830,7 +1902,10 @@ async function adminHealth() {
     add('warn', 'كلمة سر اللوحة قصيرة', 'Admin password is short',
         'استخدم 16 حرف فأكثر.');
 
-  if (last && (now - last.at) > 12 * 60 * 1000)
+  /* الإنذار لا يسري إلا لو المراقبة يفترض أنها شغّالة —
+     الاشتكاء من غياب دورة أوقفتها بنفسك خارج ساعات العمل
+     يضيء نقطة حمراء كل ليلة، فتتعوّد تجاهلها يوم يتعطل شيء حقيقي. */
+  if (last && (now - last.at) > 12 * 60 * 1000 && monitorState().active)
     add('bad', 'ما فيه دورة مراقبة منذ فترة', 'No monitor cycle recently',
         'المفروض كل 5 دقائق. تحقق من سجل Render.');
 
@@ -2525,8 +2600,10 @@ async function syncSchedules(term, courses, force) {
         query: `?id=eq.${enc(prev.id)}`, prefer: 'return=minimal'
       }).catch(() => {});
       stat.updated++; stat.confirmed++;
-      SCHED_LOG.unshift({ at: Date.now(), term, confirmed: true,
-                          waitedMin: Math.round(age / 60000), ...d0 });
+      const corr = { at: Date.now(), term, confirmed: true,
+                     waitedMin: Math.round(age / 60000), ...d0 };
+      SCHED_LOG.unshift(corr);
+      if (EVENTS_READY) logEvent('correction', corr);
       await new Promise(r => setTimeout(r, 150));   /* ما نضغط على Supabase */
     }
 
@@ -2539,9 +2616,11 @@ async function syncSchedules(term, courses, force) {
         query: `?id=eq.${enc(p.id)}`, prefer: 'return=minimal'
       }).catch(() => {});
       stat.discarded++;
-      FLAP_LOG.unshift({ at: Date.now(), term, crn: p.crn,
+      const flap = { at: Date.now(), term, crn: p.crn,
         code: p.course_code, fields: p.fields,
-        livedMin: Math.round((Date.now() - new Date(p.first_seen).getTime()) / 60000) });
+        livedMin: Math.round((Date.now() - new Date(p.first_seen).getTime()) / 60000) };
+      FLAP_LOG.unshift(flap);
+      if (EVENTS_READY) logEvent('flap', flap);
       if (FLAP_LOG.length > FLAP_LOG_MAX) FLAP_LOG.length = FLAP_LOG_MAX;
     }
     if (SCHED_LOG.length > SCHED_LOG_MAX) SCHED_LOG.length = SCHED_LOG_MAX;
@@ -3537,6 +3616,16 @@ async function confirmTick() {
                   `${Math.round(PENDING_MAX_AGE / 3600000)} ساعة`);
     }
 
+    /* تنظيف السجل: بلا هذا يكبر الجدول بلا سقف.
+       مرة كل ساعة تكفي — لا حاجة لها كل خمس دقائق. */
+    if (Date.now() - (CONFIRM_STAT.lastPurgeEvents || 0) > 60 * 60 * 1000) {
+      CONFIRM_STAT.lastPurgeEvents = Date.now();
+      const old = new Date(Date.now() - EVENT_MAX_AGE_DAYS * 864e5).toISOString();
+      await sb('DELETE', 'app_events', {
+        query: `?at=lt.${encodeURIComponent(old)}`, prefer: 'return=minimal'
+      }).catch(() => {});
+    }
+
     /* استعلام خفيف: هل نضج شيء؟ الطابور فاضي في الغالب فالتكلفة صفر عملياً */
     const cutoff = new Date(Date.now() - CONFIRM_AFTER).toISOString();
     const ripe = await sb('GET', 'pending_changes', {
@@ -3573,6 +3662,22 @@ server.listen(PORT, () => {
   setInterval(() => { prewarmTick().catch(() => {}) }, 20000);
   /* ساعة التأكيد: تفحص الطابور كل 5 دقائق، وما تسحب إلا لو نضج صفّ */
   setInterval(() => { confirmTick().catch(() => {}) }, CONFIRM_TICK);
+
+  /* الاستعادة أولاً، ثم نسمح بالكتابة — وإلا ضاعفنا ما استعدناه */
+  (async () => {
+    try {
+      await restoreState();
+      await restoreEvents();
+    } catch (e) {
+      console.log('الاستعادة فشلت (نكمل بذاكرة فاضية): ' + e.message);
+    } finally {
+      EVENTS_READY = true;
+    }
+  })();
+  /* حفظ العدّادات كل 5 دقائق، وعند الإغلاق النظيف */
+  setInterval(() => { saveState().catch(() => {}) }, 5 * 60 * 1000);
+  for (const sig of ['SIGTERM', 'SIGINT'])
+    process.on(sig, () => { saveState().catch(() => {}).finally(() => process.exit(0)); });
   const st = monitorState();
   console.log(`env=${SITE_ENV} | freeBeta=${FREE_BETA} | monitor: ${st.reason} — ${st.ar}`);
   /* أول دورة بعد 20-60 ثانية عشوائياً، ثم جدولة ذكية */
