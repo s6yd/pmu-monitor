@@ -1807,6 +1807,7 @@ async function adminHealth() {
       lastChange: SCHED_SYNC.lastChange,
       runs: SCHED_SYNC.runs,
       totalUpdated: SCHED_SYNC.totalUpdated,
+      markedMissing: (SCHED_SYNC.last && SCHED_SYNC.last.markedMissing) || 0,
       log: SCHED_LOG.slice(0, 15),
       missingList: (SCHED_SYNC.last && SCHED_SYNC.last.missingList) || [],
       gapMin: Math.round(SCHED_SYNC_GAP / 60000)
@@ -2162,7 +2163,11 @@ async function syncSchedules(term, courses, force) {
 
     /* CRN → البيانات الحية، فقط للصفوف اللي فعلاً مختلفة */
     const stale = new Map();
-    const diffs = new Map();                       /* CRN → تفاصيل الفروق */
+    const diffs = new Map();
+    /* تتبّع صامت: نعلّم الصفوف المتغيّرة والشعب المفقودة في القاعدة.
+       ما يظهر للطالب شي في هذي المرحلة — نجمع بيانات موثوقة أولاً. */
+    const missingCrns = new Set();
+    const presentCrns = new Set();                       /* CRN → تفاصيل الفروق */
     const same = (a, b) => String(a || '').trim() === String(b || '').trim();
     const missingList = [];
     for (const r of rows) {
@@ -2173,8 +2178,10 @@ async function syncSchedules(term, courses, force) {
         stat.missing++;
         if (!missingList.some(m => m.crn === crn))
           missingList.push({ crn, code: r.course_code || '', title: r.course_title || '' });
+        missingCrns.add(crn);
         continue;
       }
+      presentCrns.add(crn);
       const pairs = [
         ['course_title', r.course_title, c.courseTitle],
         ['course_date', r.course_date, c.courseDate],
@@ -2200,6 +2207,27 @@ async function syncSchedules(term, courses, force) {
     stat.changed = stale.size;
     stat.missingList = missingList.slice(0, 20);
 
+    /* نعلّم الشعبة المفقودة أول مرة فقط (missing_since فاضي)،
+       ونمسح العلامة عن أي شعبة رجعت — كتابتان محدودتان لا أكثر. */
+    const enc = encodeURIComponent;
+    if (missingCrns.size) {
+      const list = [...missingCrns].map(x => `"${x}"`).join(',');
+      await sb('PATCH', 'user_schedule', {
+        query: `?term=eq.${enc(term)}&crn=in.(${list})&missing_since=is.null`,
+        body: { missing_since: new Date().toISOString() },
+        prefer: 'return=minimal'
+      }).catch(() => {});
+      stat.markedMissing = missingCrns.size;
+    }
+    if (presentCrns.size) {
+      const list = [...presentCrns].map(x => `"${x}"`).join(',');
+      await sb('PATCH', 'user_schedule', {
+        query: `?term=eq.${enc(term)}&crn=in.(${list})&missing_since=not.is.null`,
+        body: { missing_since: null },
+        prefer: 'return=minimal'
+      }).catch(() => {});
+    }
+
     for (const [key, item] of stale) {
       const c = item.course;
       let q = `?term=eq.${encodeURIComponent(term)}` +
@@ -2208,11 +2236,14 @@ async function syncSchedules(term, courses, force) {
         q += `&course_date=eq.${encodeURIComponent(item.scope.date || '')}` +
              `&course_timing=eq.${encodeURIComponent(item.scope.timing || '')}`;
       }
+      const d0 = diffs.get(key);
       await sb('PATCH', 'user_schedule', {
         query: q,
         body: {
           course_title: c.courseTitle, course_date: c.courseDate,
-          course_timing: c.courseTiming, instructor: c.instructor, room: c.room
+          course_timing: c.courseTiming, instructor: c.instructor, room: c.room,
+          changed_at: new Date().toISOString(),
+          change_note: d0 ? { at: Date.now(), fields: d0.fields } : null
         },
         prefer: 'return=minimal'
       });
