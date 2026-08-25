@@ -408,6 +408,9 @@ background:transparent;color:var(--text3);font-size:15px;cursor:pointer;
 display:flex;align-items:center;justify-content:center}
 .btn-bell.on{border-color:var(--warn);color:var(--warn);background:var(--warn-bg)}
 .btn-bell.locked{opacity:.45}
+.btn-bell.all{font-size:13px}
+.btn-bell.all.on{border-color:var(--accent);color:var(--accent);
+background:rgba(61,111,255,.12)}
 
 .my-rev{background:var(--bg);border:1px solid var(--border);border-radius:12px;
 padding:12px 14px;margin-bottom:8px}
@@ -3156,7 +3159,10 @@ function renderResults(){
           ${genderChip(c)}
           <span class="badge ${c.status==='OPEN'?'open':'close'}">${c.status}</span>
           <button class="btn-add ${inSch?'added':''} ${lock?'locked':clash.length?'blocked':''}" onclick="toggleCourse('${c.crn}')">${inSch?'✓':'+'}</button>
-          ${c.status==='CLOSE'?`<button class="btn-bell ${isMonitored(c.crn)?'on':''} ${isPro()?'':'locked'}" onclick="toggleMonitorCourse('${c.crn}')" title="مراقبة">${isMonitored(c.crn)?'🔔':'🔕'}</button>`:''}
+          ${c.status==='CLOSE'?`<button class="btn-bell ${isMonitored(c.crn)?'on':''} ${isPro()?'':'locked'}" onclick="toggleMonitorCourse('${c.crn}')" title="مراقبة هذي الشعبة">${isMonitored(c.crn)?'🔔':'🔕'}</button>`:''}
+          <button class="btn-bell all ${isCourseMonitored(c.courseCode)?'on':''} ${isPro()?'':'locked'}"
+            onclick="toggleMonitorAll('${escapeHtml(c.courseCode)}')"
+            title="${isCourseMonitored(c.courseCode)?'توقف مراقبة كل شعب المادة':'راقب كل شعب هذي المادة'}">📡</button>
         </div>
       </div>
       <div class="cc-meta">
@@ -4348,7 +4354,42 @@ async function loadMonitored(){
   monitored=data||[];
 }
 
-function isMonitored(crn){return monitored.some(m=>m.crn===crn)}
+function isMonitored(crn){return monitored.some(m=>m.scope!=='course'&&m.crn===crn)}
+
+/* ── مراقبة المادة كاملة ──
+   بدل شعبة بعينها، نراقب كل شعب المادة: أي شعبة تفتح، وأي شعبة
+   جديدة تنزل، يوصل إشعار. مفيدة لما تكون كل الشعب مقفلة. */
+const sameCode=(a,b)=>String(a||'').trim().toUpperCase().replace(/\s+/g,' ')
+                    ===String(b||'').trim().toUpperCase().replace(/\s+/g,' ');
+
+function isCourseMonitored(code){
+  const term=document.getElementById('term').value;
+  return monitored.some(m=>m.scope==='course'&&sameCode(m.course_code,code)&&m.term===term);
+}
+
+async function toggleMonitorAll(code){
+  if(!USER){showToast(LANG==='ar'?'سجّل دخول أول':'Sign in first','warn');return}
+  if(!isPro()){
+    showToast(LANG==='ar'?'🔒 المراقبة تحتاج اشتراك':'🔒 Monitoring requires a subscription','warn');
+    switchTab('set');return;
+  }
+  const term=document.getElementById('term').value;
+  const ex=monitored.find(m=>m.scope==='course'&&sameCode(m.course_code,code)&&m.term===term);
+  if(ex){
+    await sb.from('monitored_courses').delete().eq('id',ex.id);
+    monitored=monitored.filter(m=>m.id!==ex.id);
+    showToast(LANG==='ar'?`وقفت مراقبة كل شعب ${code}`:`Stopped watching all ${code}`);
+  }else{
+    const row={user_id:USER.id,scope:'course',course_code:code,term};
+    const {data,error}=await sb.from('monitored_courses').insert(row).select();
+    if(error){showToast(LANG==='ar'?'ما ضبطت — جرّب مرة ثانية':'Failed — try again','err');return}
+    if(data&&data[0])monitored.push(data[0]);
+    showToast(LANG==='ar'
+      ?`📡 تراقب كل شعب ${code} — أي شعبة تفتح أو تنزل يوصلك إشعار`
+      :`📡 Watching all sections of ${code}`);
+  }
+  renderResults();renderSettings();
+}
 
 async function toggleMonitorCourse(crn){
   if(!USER){showToast(LANG==='ar'?'سجّل دخول أول':'Sign in first','warn');return}
@@ -4498,14 +4539,17 @@ function renderTgAndMon(ar){
       ar?'ما تراقب أي مادة. روح للبحث واضغط 🔔 على أي مادة مسكّرة.':
           'Not watching any course. Go to Search and tap 🔔 on a closed course.'}</div>`;
   }else{
-    ml.innerHTML=monitored.map(m=>`
-      <div class="set-row">
+    ml.innerHTML=monitored.map(m=>{
+      const all=m.scope==='course';
+      return `<div class="set-row">
         <div class="set-info">
-          <h4>${m.course_code} §${m.section}</h4>
-          <p>CRN ${m.crn} · ${m.last_status==='OPEN'?'🟢 OPEN':'🔴 CLOSE'}</p>
+          <h4>${m.course_code}${all?'':' §'+(m.section||'')}</h4>
+          <p>${all
+            ? (ar?'📡 كل الشعب — أي شعبة تفتح أو تنزل':'📡 All sections')
+            : `CRN ${m.crn} · ${m.last_status==='OPEN'?'🟢 OPEN':'🔴 CLOSE'}`}</p>
         </div>
         <button class="btn-sm ghost" onclick="removeMonitor(${m.id})">${ar?'إيقاف':'Stop'}</button>
-      </div>`).join('');
+      </div>`}).join('');
   }
 
   renderMyReviews();
