@@ -1467,7 +1467,7 @@ function renderSys(){
   let why='';
   if(!monOn) why='أنت أوقفتها من هذا الزر.';
   else if(mst.reason==='disabled') why='معطّلة في متغيرات Render (MONITOR_ENABLED).';
-  else if(mst.reason==='hours') why=`خارج ساعات العمل — الساعة الآن ${mi.riyadhHour}:00 بتوقيت الرياض، وتبدأ ${mi.hoursFrom}:00.`;
+  else if(mst.reason==='hours') why=`خارج ساعات العمل — الساعة الآن ${mi.riyadhTime||mi.riyadhHour+':00'} بتوقيت الرياض، وتبدأ ${mi.hoursFrom}:00.`;
   else if(mst.reason==='offseason') why=mi.nextWindow
       ? `خارج نوافذ التسجيل — تستأنف تلقائياً في «${esc(mi.nextWindow.ar)}» يوم ${arDate(mi.nextWindow.from)}.`
       : 'خارج نوافذ التسجيل، وما فيه نافذة قادمة في التقويم.';
@@ -1482,7 +1482,7 @@ function renderSys(){
     ['آخر دورة', h.lastCycleAgoSec!==null&&h.lastCycleAgoSec!==undefined
       ? `قبل ${h.lastCycleAgoSec<60?h.lastCycleAgoSec+' ثانية':Math.round(h.lastCycleAgoSec/60)+' دقيقة'}`
       : 'ما صارت ولا دورة بعد إعادة التشغيل'],
-    ['ساعات العمل', `${mi.hoursFrom}:00 – ${mi.hoursTo}:00 بتوقيت الرياض · الساعة الآن ${mi.riyadhHour}:00`],
+    ['ساعات العمل', `${mi.hoursFrom}:00 – ${mi.hoursTo}:00 بتوقيت الرياض · الساعة الآن ${mi.riyadhTime||mi.riyadhHour+':00'}`],
     ['النافذة الحالية', mi.window
       ? `${esc(mi.window.ar)} — من ${arDate(mi.window.from)} إلى ${arDate(mi.window.to)}`
       : 'ما فيه — خارج فترات التسجيل'],

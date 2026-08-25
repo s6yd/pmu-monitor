@@ -1003,6 +1003,20 @@ async function handleTelegramUpdate(update) {
       `المواد المراقبة: ${mons.length}\n` +
       (mons.length ? mons.map(m => `• ${m.course_code} §${m.section}`).join('\n') : ''));
   }
+
+  /* ═══ أمر غير معروف ═══
+     السكوت هنا كلّفنا تشخيصاً خاطئاً من قبل — نرد بوضوح.
+     نشرط على '/' فقط، فالكلام الحر تكفّل به الفرع أعلاه،
+     ورد المشرف على صورة (بلا نص) ما يتأثر. */
+  if (text.startsWith('/')) {
+    return sendMsg(chatId,
+      `❓ <b>أمر غير معروف</b>\n\n` +
+      `الأوامر المتاحة:\n` +
+      `<code>/start</code> — ربط حسابك\n` +
+      `<code>/status</code> — حالتك ومراقباتك\n` +
+      `<code>/stop</code> — إيقاف الإشعارات\n\n` +
+      `💬 وأي ملاحظة؟ اكتبها هنا مباشرة بدون أمر.`);
+  }
 }
 
 /* ================================================================
@@ -1779,6 +1793,7 @@ async function adminHealth() {
       hoursCustom: !!HOURS_OVERRIDE,
       windowCustom: !!WINDOW_OVERRIDE,
       riyadhHour: riyadhHour(),
+      riyadhTime: riyadhTime(),
       riyadhDate: riyadhDate(),
       intervalMin: INTERVAL_PEAK / 60000,
       jitterPct: Math.round(JITTER * 100),
@@ -2354,6 +2369,11 @@ function riyadhNow() {
   return new Date(Date.now() + 3 * 3600 * 1000);
 }
 function riyadhHour() { return riyadhNow().getUTCHours(); }
+/* الساعة بالدقائق «6:30» — اللوحة كانت تعرض 6 فقط */
+function riyadhTime() {
+  const d = riyadhNow();
+  return d.getUTCHours() + ':' + String(d.getUTCMinutes()).padStart(2, '0');
+}
 function riyadhDate() { return riyadhNow().toISOString().slice(0, 10); }
 
 function windowList() {
@@ -3182,11 +3202,6 @@ const server = http.createServer(async (req, res) => {
     }
     return;
   }
-
-  /* تسجيل مؤقت لمصدر الـ404 — يظهر في سجل Render.
-     احذف هذا السطر بعد ما نعرف المسار المسبّب. */
-  console.log('404 ' + req.method + ' ' + parsed.pathname +
-    ' | ref: ' + (req.headers.referer || '-'));
 
   res.setHeader('Content-Type', 'application/json');
   res.writeHead(404);
