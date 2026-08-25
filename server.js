@@ -343,6 +343,21 @@ async function sendFollowups() {
   return sent;
 }
 
+/* حذف صفوف انتهت مهلة تأكيدها ولا أحد أكّدها */
+async function dropExpired() {
+  if (!SB_URL || !SB_SERVICE_KEY) return 0;
+  const nowIso = new Date().toISOString();
+  const due = await sb('GET', 'monitored_courses', {
+    query: `?expires_at=not.is.null&expires_at=lte.${encodeURIComponent(nowIso)}&select=id&limit=200`
+  }).catch(() => null);
+  if (!Array.isArray(due) || !due.length) return 0;
+  const ids = due.map(r => r.id);
+  await sb('DELETE', 'monitored_courses',
+    { query: `?id=in.(${ids.join(',')})`, prefer: 'return=minimal' }).catch(() => {});
+  console.log(`expired: أوقفنا ${ids.length} مراقبة بلا تأكيد`);
+  return ids.length;
+}
+
 async function runMonitorCycle() {
   if (!SB_URL || !SB_SERVICE_KEY) return;
 
@@ -365,6 +380,7 @@ async function runMonitorCycle() {
   try {
     /* أسئلة المتابعة المستحقة — مستقلة عن وجود صفوف مراقبة متغيّرة */
     stat.followups = await sendFollowups().catch(() => 0);
+    stat.expired = await dropExpired().catch(() => 0);
 
     const monitors = await sb('GET', 'monitored_courses', { query: '?select=*' });
     if (!Array.isArray(monitors) || !monitors.length) return;
@@ -656,7 +672,8 @@ async function handleCallback(cq) {
   if (action === 'keep') {
     await sb('PATCH', 'monitored_courses', {
       query: `?id=eq.${rowId}`,
-      body: { followup_done: true, followup_at: null }, prefer: 'return=minimal'
+      body: { followup_done: true, followup_at: null, expires_at: null },
+      prefer: 'return=minimal'
     }).catch(() => {});
     await ack('تمام، المراقبة مستمرة');
     return editMsg(cq, `⏳ <b>المراقبة مستمرة</b>\n\n${label} — بنبلغك أول ما تفتح.`);
@@ -707,17 +724,16 @@ async function handleTelegramUpdate(update) {
           const who = sp > 0 ? rest.slice(0, sp).trim() : rest;
           let body = sp > 0 ? rest.slice(sp + 1).trim() : '';
           if (body.startsWith('!')) body = body.slice(1).trim();
-          let target = /^\d+$/.test(who) ? who : null;
+          const whoN = String(who || '').replace(/[\u0660-\u0669\u06F0-\u06F9]/g,
+            d => String(d.charCodeAt(0) & 0xf)).trim();
+          let target = /^\d+$/.test(whoN) ? whoN : null;
           if (!target) {
-            for (const col of ['email', 'user_email']) {
-              try {
-                const rows = await sb('GET', 'profiles', {
-                  query: `?${col}=eq.${encodeURIComponent(who)}&select=telegram_chat_id` });
-                if (Array.isArray(rows) && rows[0] && rows[0].telegram_chat_id) {
-                  target = rows[0].telegram_chat_id; break;
-                }
-              } catch (e) { /* العمود غير موجود */ }
-            }
+            try {
+              const rows = await sb('GET', 'profiles', {
+                query: `?email=ilike.${encodeURIComponent(whoN)}&select=telegram_chat_id` });
+              if (Array.isArray(rows) && rows[0] && rows[0].telegram_chat_id)
+                target = rows[0].telegram_chat_id;
+            } catch (e) { /* تجاهل */ }
           }
           if (!target) return sendMsg(chatId, '❌ ما لقيت أحداً بهذا البريد.');
           const r = await sendMedia(target, photos, body);
@@ -831,20 +847,26 @@ async function handleTelegramUpdate(update) {
     let bare = false;
     if (body.startsWith('!')) { bare = true; body = body.slice(1).trim(); }
 
-    let target = /^\d+$/.test(who) ? who : null;
+    /* لوحة الجوال تكبّر أول حرف تلقائياً، وقد تكتب الأرقام عربية.
+       نطبّع الاثنين قبل البحث بدل ما نرمي رسالة "ما لقيت أحداً". */
+    const arabicDigits = s => String(s || '').replace(/[\u0660-\u0669\u06F0-\u06F9]/g,
+      d => String(d.charCodeAt(0) & 0xf));
+    const whoNorm = arabicDigits(who).trim();
+
+    let target = /^\d+$/.test(whoNorm) ? whoNorm : null;
     if (!target) {
-      for (const col of ['email', 'user_email']) {
-        try {
-          const rows = await sb('GET', 'profiles', {
-            query: `?${col}=eq.${encodeURIComponent(who)}&select=telegram_chat_id`
-          });
-          if (Array.isArray(rows) && rows[0] && rows[0].telegram_chat_id) {
-            target = rows[0].telegram_chat_id; break;
-          }
-        } catch (e) { /* العمود غير موجود */ }
-      }
+      try {
+        const rows = await sb('GET', 'profiles', {
+          query: `?email=ilike.${encodeURIComponent(whoNorm)}&select=telegram_chat_id`
+        });
+        if (Array.isArray(rows) && rows[0] && rows[0].telegram_chat_id)
+          target = rows[0].telegram_chat_id;
+      } catch (e) { /* تجاهل */ }
     }
-    if (!target) return sendMsg(chatId, `❌ ما لقيت أحداً بهذا البريد، أو ما ربط تيليغرام.`);
+    if (!target) return sendMsg(chatId,
+      `❌ ما لقيت أحداً بهذا البريد، أو ما ربط تيليغرام.\n\n` +
+      `<i>البحث غير حساس لحالة الأحرف. جرّب رقم المحادثة بدل البريد:</i>\n` +
+      `<code>/reply 123456789 !النص</code>`);
 
     if (photo) {
       const rp = await tg('sendPhoto', { chat_id: target, photo,
@@ -1204,11 +1226,38 @@ async function adminReviews() {
 /* --- المواد المراقبة، مجمّعة --- */
 async function adminMonitors() {
   const M = await sb('GET', 'monitored_courses', { query: '?select=*' });
+  const list = Array.isArray(M) ? M : [];
+  /* أسماء المراقِبين عشان تشوف مين يراقب وش */
+  const uids = [...new Set(list.map(m => m.user_id).filter(Boolean))];
+  const who = {};
+  if (uids.length) {
+    const ps = await sb('GET', 'profiles', {
+      query: `?id=in.(${uids.map(u => `"${u}"`).join(',')})&select=id,name,email,telegram_chat_id`
+    }).catch(() => []);
+    (Array.isArray(ps) ? ps : []).forEach(p => { who[p.id] = p });
+  }
   const g = {};
-  (Array.isArray(M) ? M : []).forEach(m => {
-    const k = (m.course_code || '?') + ' §' + (m.section || '?');
-    if (!g[k]) g[k] = { key: k, crn: m.crn, term: m.term, status: m.last_status || '—', watchers: 0 };
+  list.forEach(m => {
+    /* صفوف المادة ما لها شعبة ولا CRN — نميّزها بدل ما تطلع "؟" */
+    const isCourse = m.scope === 'course';
+    const k = isCourse
+      ? (m.course_code || '?') + ' · كل الشعب'
+      : (m.course_code || '?') + ' §' + (m.section || '?');
+    if (!g[k]) g[k] = { key: k, crn: m.crn, term: m.term, scope: m.scope || 'section',
+                        sections: isCourse && m.sections_state
+                          ? Object.keys(m.sections_state).length : null,
+                        status: isCourse ? null : (m.last_status || '—'),
+                        watchers: 0, rows: [] };
     g[k].watchers++;
+    const p = who[m.user_id] || {};
+    g[k].rows.push({
+      id: m.id,
+      name: p.name || '—',
+      email: p.email || '—',
+      linked: !!p.telegram_chat_id,
+      askedAt: m.expires_at || null,
+      since: m.created_at || null
+    });
   });
   return Object.values(g).sort((a, b) => b.watchers - a.watchers);
 }
@@ -1523,16 +1572,14 @@ async function adminReply(chatId, email, text) {
 
   let target = chatId ? String(chatId) : null;
   if (!target && email) {
-    for (const col of ['email', 'user_email']) {
-      try {
-        const rows = await sb('GET', 'profiles', {
-          query: `?${col}=eq.${encodeURIComponent(email)}&select=telegram_chat_id`
-        });
-        if (Array.isArray(rows) && rows[0] && rows[0].telegram_chat_id) {
-          target = rows[0].telegram_chat_id; break;
-        }
-      } catch (e) { /* العمود غير موجود */ }
-    }
+    /* عمود user_email غير موجود في profiles — كان يرمي خطأ في كل نداء */
+    try {
+      const rows = await sb('GET', 'profiles', {
+        query: `?email=ilike.${encodeURIComponent(email)}&select=telegram_chat_id`
+      });
+      if (Array.isArray(rows) && rows[0] && rows[0].telegram_chat_id)
+        target = rows[0].telegram_chat_id;
+    } catch (e) { /* تجاهل */ }
   }
   if (!target) return { ok: false, error: 'ما ربط تيليغرام — رد بالإيميل' };
 
@@ -2612,6 +2659,65 @@ const server = http.createServer(async (req, res) => {
           return send(200, { ok: true, stat });
         }
         return send(200, { last: SCHED_SYNC.last });
+      }
+
+      if (act === 'monitor-row') {
+        if (req.method !== 'POST') return send(405, { error: 'POST فقط' });
+        const b = await readBody(req);
+        const ids = (Array.isArray(b.ids) ? b.ids : [b.id])
+          .map(x => parseInt(x, 10)).filter(Number.isFinite);
+        if (!ids.length) return send(400, { error: 'ما فيه صفوف' });
+
+        const rows = await sb('GET', 'monitored_courses', {
+          query: `?id=in.(${ids.join(',')})&select=*`
+        }).catch(() => []);
+        if (!Array.isArray(rows) || !rows.length) return send(404, { error: 'ما لقيت الصفوف' });
+
+        const uids = [...new Set(rows.map(r => r.user_id))].map(u => `"${u}"`).join(',');
+        const ps = await sb('GET', 'profiles', {
+          query: `?id=in.(${uids})&select=id,telegram_chat_id`
+        }).catch(() => []);
+        const chat = {};
+        (Array.isArray(ps) ? ps : []).forEach(p => { chat[p.id] = p.telegram_chat_id });
+
+        const label = r => (r.course_code || 'المادة') +
+          (r.scope === 'course' ? ' · كل الشعب' : (r.crn ? ' · CRN ' + r.crn : ''));
+
+        if (b.action === 'stop') {
+          await sb('DELETE', 'monitored_courses',
+            { query: `?id=in.(${ids.join(',')})`, prefer: 'return=minimal' });
+          if (b.notify) for (const r of rows) {
+            if (chat[r.user_id]) await sendMsg(chat[r.user_id],
+              `🔕 <b>أوقفنا مراقبة ${label(r)}</b>\n\n` +
+              `${b.reason ? b.reason + '\n\n' : ''}ترجّعها أي وقت من الجرس في الموقع.`)
+              .catch(() => {});
+          }
+          return send(200, { ok: true, stopped: ids.length });
+        }
+
+        if (b.action === 'ask') {
+          /* سؤال تأكيد مع مهلة — الصف يُحذف تلقائياً لو ما أكّد */
+          const hours = Math.max(1, Math.min(168, parseInt(b.hours, 10) || 24));
+          const deadline = new Date(Date.now() + hours * 3600e3).toISOString();
+          let sent = 0;
+          for (const r of rows) {
+            if (!chat[r.user_id]) continue;
+            const ok = await sendMsg(chat[r.user_id],
+              `⏳ <b>هل ما زلت تحتاج مراقبة ${label(r)}؟</b>\n\n` +
+              `لو ما أكّدت خلال <b>${hours} ساعة</b>، بنوقف المراقبة تلقائياً.`,
+              kb([[btn('✅ نعم، كمّل المراقبة', 'keep:' + r.id)],
+                  [btn('🔕 لا، أوقفها', 'stop:' + r.id)]])).catch(() => null);
+            if (ok && ok.ok) sent++;
+            await new Promise(x => setTimeout(x, 300));
+          }
+          await sb('PATCH', 'monitored_courses', {
+            query: `?id=in.(${ids.join(',')})`,
+            body: { expires_at: deadline }, prefer: 'return=minimal'
+          });
+          return send(200, { ok: true, asked: ids.length, sent, hours, deadline });
+        }
+
+        return send(400, { error: 'action لازم تكون stop أو ask' });
       }
 
       if (act === 'monitor-hours') {
