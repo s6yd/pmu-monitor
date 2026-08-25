@@ -1463,6 +1463,9 @@ function renderSys(){
       <b>${S.pendingNew} جديد · ${S.pendingWaiting} ينتظر ·
          <span class="${S.confirmed?'warn':''}">${S.confirmed} مؤكَّد</span> ·
          <span class="${S.discarded?'bad':''}">${S.discarded} مرفوض</span></b></div>
+    <div class="kv"><span>إشعارات أُرسلت</span>
+      <b class="${S.notifySuppressed?'bad':(S.notified?'warn':'')}">
+        ${S.notifySuppressed?`⛔️ كُبتت ${S.notifySuppressed} (الحد ${S.notifyCap})`:S.notified}</b></div>
     ${(S.pending&&S.pending.length)?S.pending.map(p=>`<div class="chg">
       <div class="chg-top">
         <span class="chg-code">${esc(p.code||'—')} · CRN ${esc(p.crn)}</span>

@@ -217,6 +217,7 @@ async function fillChatNames() {
 function msgKind(text) {
   const t = String(text || '');
   if (/فتحت مادة|نزلت شعبة|فتحت شعبة/.test(t)) return 'شعبة فتحت';
+  if (/تغيّر في جدولك/.test(t)) return 'تغيّر جدول';
   if (/سجّلت .*؟|أوقف المراقبة عشان/.test(t)) return 'متابعة';
   if (/تم الربط بنجاح/.test(t)) return 'ربط';
   if (/رد من فريق جدولك/.test(t)) return 'رد شخصي';
@@ -2027,6 +2028,9 @@ async function adminHealth() {
       pendingWaiting: (SCHED_SYNC.last && SCHED_SYNC.last.pendingWaiting) || 0,
       confirmed: (SCHED_SYNC.last && SCHED_SYNC.last.confirmed) || 0,
       discarded: (SCHED_SYNC.last && SCHED_SYNC.last.discarded) || 0,
+      notified: (SCHED_SYNC.last && SCHED_SYNC.last.notified) || 0,
+      notifySuppressed: (SCHED_SYNC.last && SCHED_SYNC.last.notifySuppressed) || 0,
+      notifyCap: NOTIFY_CAP,
       pending: await pendingSnapshot(),
       tick: { everyMin: Math.round(CONFIRM_TICK / 60000),
               maxAgeHr: Math.round(PENDING_MAX_AGE / 3600000),
@@ -2365,6 +2369,92 @@ async function pendingSnapshot() {
   });
 }
 
+/* تهريب لوسوم تيليغرام — أسماء الدكاترة والقاعات تجي من الجامعة،
+   و'&' وحدها في اسم كافية لتفشل الرسالة كلها بخطأ parse_mode. */
+function esc(v) {
+  return String(v == null ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/* ═══ كشف التعارض في السيرفر ═══
+   نسخة مطابقة لمنطق الصفحة. تغيّر الوقت قد يخلق تصادماً مع مادة
+   ثانية في جدول الطالب وهو لا يدري — وهذا أخطر من تغيّر الدكتور. */
+function schedDays(s) {
+  return String(s || '').toUpperCase().split('').filter(c => 'UMTWRFS'.includes(c));
+}
+function schedTime(s) {
+  const m = String(s || '').match(/(\d+):(\d+)\s*-\s*(\d+):(\d+)/);
+  return m ? { start: +m[1] * 60 + +m[2], end: +m[3] * 60 + +m[4] } : null;
+}
+function schedClash(a, b) {
+  const da = schedDays(a.courseDate || a.course_date);
+  const db = schedDays(b.courseDate || b.course_date);
+  if (!da.some(d => db.includes(d))) return false;
+  const ta = schedTime(a.courseTiming || a.course_timing);
+  const tb = schedTime(b.courseTiming || b.course_timing);
+  if (!ta || !tb) return false;
+  return ta.start < tb.end && tb.start < ta.end;
+}
+
+/* ═══ إشعار تغيّر الجدول ═══
+   يُرسل بعد التأكيد فقط. التغيير يمسّ كل من في جدوله تلك الشعبة،
+   فنجمّع لكل طالب رسالة واحدة مهما تعددت مواده المتغيّرة في الدورة. */
+const NOTIFY_CAP = 60;   /* أكثر من هذا في دورة واحدة = خلل لا تغيير */
+
+async function notifyChanges(list, stat) {
+  if (!list.length) return;
+
+  /* صمّام أمان: قاطع الدائرة يمسك التغذية الفارغة، وهذا يمسك
+     الحالة التي تمر منه ثم تولّد عاصفة رسائل لا تُسحب. */
+  if (list.length > NOTIFY_CAP) {
+    stat.notifySuppressed = list.length;
+    console.log(`notifyChanges: ${list.length} إشعاراً — تجاوز الحد، أُلغي الإرسال`);
+    alert('notify-storm', '⛔️ عاصفة إشعارات — أوقفناها',
+      `دورة واحدة ولّدت ${list.length} إشعار تغيير، والحد ${NOTIFY_CAP}.\n\n` +
+      `ما أُرسلت أي رسالة. التغييرات مكتوبة في القاعدة، فراجع طابور التأكيد.`);
+    return;
+  }
+  resolve('notify-storm', 'عاصفة الإشعارات');
+
+  /* من user_id إلى محادثة تيليغرام — استعلام واحد */
+  const ids = [...new Set(list.map(x => x.userId))].filter(isUuid);
+  if (!ids.length) return;
+  const profs = await sb('GET', 'profiles', {
+    query: `?id=in.(${ids.join(',')})&select=id,name,telegram_chat_id`
+  }).catch(() => []);
+  const chat = new Map();
+  (Array.isArray(profs) ? profs : []).forEach(p => {
+    /* من كتب /stop انمسح رقمه، فالاحترام تلقائي */
+    if (p.telegram_chat_id) chat.set(p.id, String(p.telegram_chat_id));
+  });
+
+  /* رسالة واحدة لكل طالب */
+  const byStudent = new Map();
+  list.forEach(x => {
+    if (!chat.has(x.userId)) return;
+    if (!byStudent.has(x.userId)) byStudent.set(x.userId, []);
+    byStudent.get(x.userId).push(x);
+  });
+  stat.notified = 0;
+
+  for (const [uid, items] of byStudent) {
+    const body = items.map(it => {
+      const lines = it.fields.map(f =>
+        `${f.ar || f.field}: <s>${esc(f.from || '—')}</s> ← <b>${esc(f.to || '—')}</b>`);
+      const cl = it.clashes && it.clashes.length
+        ? `\n⚠️ <b>صار يتعارض مع ${it.clashes.map(esc).join('، ')}</b>` : '';
+      return `📌 <b>${esc(it.code)} §${esc(it.section)}</b>\n` + lines.join('\n') + cl;
+    }).join('\n\n');
+
+    const r = await sendMsg(chat.get(uid),
+      `🔔 <b>تغيّر في جدولك</b>\n\n${body}\n\n` +
+      `التغيير من نظام الجامعة وتأكدنا منه قبل ما نرسله.\n` +
+      `راجع جدولك في jadwalik.com`);
+    if (r && r.ok) stat.notified++;
+    await new Promise(x => setTimeout(x, 700));   /* تهدئة مثل إشعارات الشعب */
+  }
+}
+
 const SCHED_LOG = [];
 const SCHED_LOG_MAX = 40;
 const FIELD_AR = {
@@ -2448,10 +2538,20 @@ async function syncSchedules(term, courses, force) {
 
     const rows = await sb('GET', 'user_schedule', {
       query: `?term=eq.${encodeURIComponent(term)}` +
-             `&select=crn,course_code,course_title,course_date,course_timing,instructor,room`
+             `&select=user_id,crn,section,course_code,course_title,` +
+             `course_date,course_timing,instructor,room`
     });
     if (!Array.isArray(rows) || !rows.length) return stat;
     stat.rows = rows.length;
+
+    /* جدول كل طالب كاملاً — نحتاجه لكشف التعارض الصامت عند تغيّر الوقت.
+       مبني من نفس الصفوف المسحوبة، فلا استعلام إضافي. */
+    const byUser = new Map();
+    for (const r of rows) {
+      if (!r.user_id) continue;
+      if (!byUser.has(r.user_id)) byUser.set(r.user_id, []);
+      byUser.get(r.user_id).push(r);
+    }
 
     /* CRN → البيانات الحية، فقط للصفوف اللي فعلاً مختلفة */
     const stale = new Map();
@@ -2540,6 +2640,7 @@ async function syncSchedules(term, courses, force) {
     const nowIso = new Date().toISOString();
     const seenKeys = new Set();
     stat.pendingNew = 0; stat.pendingWaiting = 0; stat.confirmed = 0; stat.discarded = 0;
+    const notifyList = [];
 
     for (const [key, item] of stale) {
       const c = item.course;
@@ -2600,6 +2701,27 @@ async function syncSchedules(term, courses, force) {
         query: `?id=eq.${enc(prev.id)}`, prefer: 'return=minimal'
       }).catch(() => {});
       stat.updated++; stat.confirmed++;
+
+      /* من يملك هذي الشعبة؟ من الصفوف المسحوبة أصلاً — بلا استعلام إضافي */
+      const owners = rows.filter(r =>
+        String(r.crn || '').trim() === String(item.crn).trim() &&
+        (!item.scope ||
+          (same(r.course_date, item.scope.date) && same(r.course_timing, item.scope.timing))));
+      const moved = d0.fields.some(f =>
+        f.field === 'course_timing' || f.field === 'course_date');
+      for (const o of owners) {
+        if (!o.user_id) continue;
+        /* التعارض يُحسب بالوقت الجديد ضد بقية جدوله */
+        const others = (byUser.get(o.user_id) || []).filter(x =>
+          !(String(x.crn).trim() === String(o.crn).trim() &&
+            same(x.course_date, o.course_date) && same(x.course_timing, o.course_timing)));
+        const clashes = moved
+          ? others.filter(x => schedClash(c, x))
+                  .map(x => `${x.course_code} §${x.section}`)
+          : [];
+        notifyList.push({ userId: o.user_id, code: o.course_code || d0.code,
+                          section: o.section || '—', fields: d0.fields, clashes });
+      }
       const corr = { at: Date.now(), term, confirmed: true,
                      waitedMin: Math.round(age / 60000), ...d0 };
       SCHED_LOG.unshift(corr);
@@ -2623,6 +2745,11 @@ async function syncSchedules(term, courses, force) {
       if (EVENTS_READY) logEvent('flap', flap);
       if (FLAP_LOG.length > FLAP_LOG_MAX) FLAP_LOG.length = FLAP_LOG_MAX;
     }
+
+    /* الإرسال بعد اكتمال الكتابة كلها — لو انكسر شيء في المنتصف
+       ما نكون أرسلنا نصف الطلاب خبراً وتركنا القاعدة ناقصة. */
+    await notifyChanges(notifyList, stat).catch(e =>
+      console.log('notifyChanges: ' + (e && e.message)));
     if (SCHED_LOG.length > SCHED_LOG_MAX) SCHED_LOG.length = SCHED_LOG_MAX;
   } catch (e) {
     stat.error = e.message;
