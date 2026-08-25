@@ -353,6 +353,7 @@ padding:1px 6px;border-radius:5px;color:var(--accent2)}
   <button class="tab"        data-p="revs"  onclick="go('revs')">التقييمات</button>
   <button class="tab"        data-p="mons"  onclick="go('mons')">المراقبة</button>
   <button class="tab"        data-p="fb"    onclick="go('fb')">تذاكر<span class="tab-badge" id="fbBadge"></span></button>
+  <button class="tab"        data-p="msgs"  onclick="go('msgs')">الرسائل</button>
   <button class="tab"        data-p="sys"   onclick="go('sys')">النظام<span class="tab-dot" id="sysDot"></span></button>
 </div>
 
@@ -409,6 +410,15 @@ padding:1px 6px;border-radius:5px;color:var(--accent2)}
     <div id="fbBody"><div class="spinner"></div></div>
   </div>
 
+  <div class="page" id="pageMsgs">
+    <div class="bar">
+      <select id="msgKind" onchange="renderMsgs()">
+        <option value="">كل الأنواع</option>
+      </select>
+    </div>
+    <div id="msgsBody"><div class="spinner"></div></div>
+  </div>
+
   <div class="page" id="pageSys">
     <div id="sysBody"><div class="spinner"></div></div>
   </div>
@@ -429,6 +439,7 @@ padding:1px 6px;border-radius:5px;color:var(--accent2)}
 /* ══════════ الحالة ══════════ */
 let TOKEN = sessionStorage.getItem('jdw_admin') || '';
 let USERS = [], REVS = [], MONS = [], STATS = null, HEALTH = null, FB = [], TICKETS = [];
+let MSGS = { messages:[], kinds:[] };
 
 /* كلمات تستدعي المراجعة — مؤشر فقط، القرار لك */
 const FLAGS = ['حمار','غبي','كلب','حقير','خرا','قذر','تافه','زبالة','حيوان','لعن',
@@ -478,7 +489,8 @@ function logout(){
 /* ══════════ تنقل ══════════ */
 function go(p){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.p===p));
-  const ids={over:'pageOver',users:'pageUsers',revs:'pageRevs',mons:'pageMons',fb:'pageFb',sys:'pageSys'};
+  const ids={over:'pageOver',users:'pageUsers',revs:'pageRevs',mons:'pageMons',
+             fb:'pageFb',msgs:'pageMsgs',sys:'pageSys'};
   document.querySelectorAll('.page').forEach(el=>el.classList.remove('active'));
   document.getElementById(ids[p]).classList.add('active');
 }
@@ -536,14 +548,16 @@ async function loadAll(silent){
 async function loadAllInner(silent){
   if(!TOKEN) return;
   try{
-    const [s,u,r,m,h,f,tk] = await Promise.all([
+    const [s,u,r,m,h,f,tk,mg] = await Promise.all([
       api('stats'), api('users'), api('reviews'), api('monitors'),
       api('health').catch(()=>null), api('feedback').catch(()=>({feedback:[]})),
-      api('tickets?status=all').catch(()=>({tickets:[]}))
+      api('tickets?status=all').catch(()=>({tickets:[]})),
+      api('messages').catch(()=>({messages:[],kinds:[]}))
     ]);
     STATS=s; USERS=u.users||[]; REVS=r.reviews||[]; MONS=m.monitors||[]; HEALTH=h;
-    FB=(f&&f.feedback)||[]; TICKETS=(tk&&tk.tickets)||[];
-    renderOver(); renderUsers(); renderRevs(); renderMons(); renderFb(); renderSys();
+    FB=(f&&f.feedback)||[]; TICKETS=(tk&&tk.tickets)||[]; MSGS=mg||{messages:[],kinds:[]};
+    renderOver(); renderUsers(); renderRevs(); renderMons(); renderFb();
+    renderMsgs(); renderSys();
   }catch(e){ toast(e.message,'err') }
 }
 
@@ -934,6 +948,64 @@ async function delRev(key,instructor){
 /* ══════════ آراء الطلاب ══════════ */
 const FB_ICON={idea:'💡',bug:'🐞',other:'💬'};
 const FB_NAME={idea:'اقتراح',bug:'مشكلة',other:'ملاحظة'};
+
+/* ══════════ الرسائل الصادرة ══════════ */
+function msgWhen(ms){
+  const d=new Date(ms); if(isNaN(d))return '—';
+  const diff=(Date.now()-ms)/1000;
+  const t=new Date(ms+3*3600e3).toISOString().slice(11,16);   /* توقيت الرياض */
+  if(diff<60) return 'الحين';
+  if(diff<3600) return Math.round(diff/60)+' د · '+t;
+  if(diff<86400) return Math.round(diff/3600)+' س · '+t;
+  return fdate(d)+' · '+t;
+}
+
+function renderMsgs(){
+  const box=document.getElementById('msgsBody');
+  const sel=document.getElementById('msgKind');
+  const all=(MSGS&&MSGS.messages)||[];
+
+  /* نبني قائمة الأنواع مرة، ونحافظ على اختيارك عند التحديث التلقائي */
+  const kinds=(MSGS&&MSGS.kinds)||[];
+  const cur=sel.value;
+  const want='<option value="">كل الأنواع</option>'+
+    kinds.map(k=>`<option value="${esc(k)}">${esc(k)}</option>`).join('');
+  if(sel.innerHTML!==want){ sel.innerHTML=want; sel.value=cur; }
+
+  const list=cur?all.filter(m=>m.kind===cur):all;
+
+  if(!list.length){
+    box.innerHTML=`<div class="empty"><div class="empty-icon">📨</div>
+      <div class="empty-t">ما أُرسلت رسائل بعد</div>
+      <div class="empty-s">السجل في الذاكرة — يبدأ من جديد بعد كل نشر</div></div>`;
+    return;
+  }
+
+  box.innerHTML=
+    `<div class="tk-meta" style="margin:0 2px 10px">
+       ${list.length} من ${MSGS.total||list.length} رسالة · منذ آخر تشغيل للسيرفر
+     </div>`+
+    list.map(m=>{
+      /* النص أُرسل بوسوم HTML لتيليغرام — نحوّلها لنص صافٍ قبل الهروب */
+      const plain=String(m.text||'')
+        .replace(/<br\s*\/?>/gi,'\n').replace(/<[^>]+>/g,'');
+      const who=m.admin ? 'أنت (المشرف)'
+                        : (m.who || 'غير معروف');
+      return `<div class="tk ${m.ok?'':'closed'}">
+        <div class="tk-top">
+          <div style="min-width:0">
+            <div class="tk-id">${esc(m.kind)}${m.ok?'':' · ✗ فشلت'}</div>
+            <div class="tk-who">${esc(who)}</div>
+            <div class="tk-meta">${esc(m.chatId)}${m.err?' · '+esc(m.err):''}</div>
+          </div>
+          <div class="tk-meta" style="flex-shrink:0">${esc(msgWhen(m.at))}</div>
+        </div>
+        <div class="tk-msgs">
+          <div class="tk-m admin" style="white-space:pre-wrap">${esc(plain)}</div>
+        </div>
+      </div>`;
+    }).join('');
+}
 
 function renderFb(){
   const box=document.getElementById('fbBody');
@@ -1368,6 +1440,14 @@ function renderSys(){
     <div class="kv"><span>شعب مو موجودة في الجامعة</span>
       <b class="${L.missing?'warn':'good'}">${L.missing}</b></div>
     ${L.error?`<div class="kv"><span>خطأ</span><b class="bad">${esc(L.error)}</b></div>`:''}`:''}
+    ${S.feedN!=null?`<div class="kv"><span>مواد وصلتنا من الجامعة</span>
+      <b class="${S.feedRejected?'bad':'good'}">${S.feedN}${S.feedPeak?` · الذروة ${S.feedPeak}`:''}</b></div>
+    <div class="kv"><span>حد الرفض</span>
+      <b>${S.feedFloor} أو أقل من 60% من الذروة</b></div>`:''}
+    ${S.feedRejected!=null?`<div class="kv"><span>⛔️ رُفضت التغذية</span>
+      <b class="bad">${S.feedRejected} مادة فقط — ما كتبنا شي</b></div>`:''}
+    ${S.crnRejected?`<div class="kv"><span>CRN مرفوض (شكل غير رقمي)</span>
+      <b class="warn">${S.crnRejected}</b></div>`:''}
     <div class="kv"><span>إجمالي التصحيحات</span><b>${S.totalUpdated}</b></div>
     ${C?`<div class="kv"><span>آخر تصحيح فعلي</span>
       <b class="warn">${C.updated} مادة · ${ago(C.at)}</b></div>`:''}
@@ -1376,6 +1456,42 @@ function renderSys(){
       في جداول الطلاب المحفوظة بمطابقة الـ CRN.</div>
     <button class="mini" style="margin-top:10px" onclick="runSchedSync()">🔄 شغّلها الآن</button>
   </div>
+
+  <div class="sec-title">طابور التأكيد${S.pending&&S.pending.length?` · ${S.pending.length}`:''}</div>
+  <div class="gauge">
+    <div class="kv"><span>هذي الجولة</span>
+      <b>${S.pendingNew} جديد · ${S.pendingWaiting} ينتظر ·
+         <span class="${S.confirmed?'warn':''}">${S.confirmed} مؤكَّد</span> ·
+         <span class="${S.discarded?'bad':''}">${S.discarded} مرفوض</span></b></div>
+    ${(S.pending&&S.pending.length)?S.pending.map(p=>`<div class="chg">
+      <div class="chg-top">
+        <span class="chg-code">${esc(p.code||'—')} · CRN ${esc(p.crn)}</span>
+        <span class="chg-ago ${p.ready?'warn':''}">${p.ready?'جاهز':`باقي ${p.leftMin} د`} · شوهد ${p.seen}×</span>
+      </div>
+      ${(p.fields||[]).map(f=>`<div class="chg-row">
+        <span class="chg-f">${esc(f.ar)}</span>
+        <span class="chg-v"><s>${esc(f.from)}</s> ← <b>${esc(f.to)}</b></span>
+      </div>`).join('')}
+    </div>`).join(''):'<div class="gauge-sub">ما فيه شي ينتظر التأكيد.</div>'}
+    <div class="gauge-sub">التغيير ما يُطبَّق ولا يُرسل إلا بعد ${S.confirmAfterMin} دقيقة
+      و${S.minSightings} رصدات على الأقل. الفرق الذي يختفي قبلها كان رفّة في بيانات الجامعة.</div>
+  </div>
+
+  ${(S.flaps&&S.flaps.length)?`<div class="sec-title">رفّات مرفوضة · آخر ${S.flaps.length}</div>
+  <div class="gauge">
+    ${S.flaps.map(f=>`<div class="chg">
+      <div class="chg-top">
+        <span class="chg-code">${esc(f.code||'—')} · CRN ${esc(f.crn)}</span>
+        <span class="chg-ago">عاشت ${f.livedMin} د · ${ago(f.at)}</span>
+      </div>
+      ${(f.fields||[]).map(x=>`<div class="chg-row">
+        <span class="chg-f">${esc(x.ar)}</span>
+        <span class="chg-v"><s>${esc(x.from)}</s> ← <b>${esc(x.to)}</b></span>
+      </div>`).join('')}
+    </div>`).join('')}
+    <div class="gauge-sub">هذي تغييرات ظهرت ثم اختفت قبل أن تنضج — لو ما كان فيه تأكيد
+      لوصلت لطلابك كرسائل. كل صفّ هنا رسالة خاطئة مُنعت.</div>
+  </div>`:''}
 
   ${(S.missingList&&S.missingList.length)?`<div class="sec-title">شعب في جداول الطلاب ومو موجودة في الجامعة</div>
   <div class="gauge">

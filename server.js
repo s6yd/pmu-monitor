@@ -168,10 +168,93 @@ function tg(method, payload) {
   });
 }
 
-const sendMsg = (chatId, text, markup) =>
-  tg('sendMessage', Object.assign(
+/* ═══ سجل الرسائل الصادرة ═══
+   نعترض في نقطة واحدة بدل ما نضيف تسجيلاً عند كل موضع إرسال —
+   موضع واحد منسي يعني رسالة راحت لطالب بلا أثر.
+   في الذاكرة فقط: يضيع مع كل إعادة تشغيل أو نشر. */
+const MSG_LOG = [];
+const MSG_LOG_MAX = 300;
+/* من أرقام المحادثات إلى أسماء — تُملأ كسولاً ولا تُستعلم لكل رسالة */
+const CHAT_NAMES = new Map();
+
+function logMsg(chatId, text, kind, ok, err) {
+  MSG_LOG.unshift({
+    at: Date.now(),
+    chatId: String(chatId),
+    who: CHAT_NAMES.get(String(chatId)) || null,
+    admin: !!(ADMIN_CHAT_ID && String(chatId) === String(ADMIN_CHAT_ID)),
+    kind,
+    /* نخزّن النص كما أُرسل بوسومه — اللوحة تنظّفه عند العرض */
+    text: String(text || '').slice(0, 1200),
+    ok: !!ok,
+    err: err || null
+  });
+  if (MSG_LOG.length > MSG_LOG_MAX) MSG_LOG.length = MSG_LOG_MAX;
+}
+
+/* نستعلم مرة واحدة عن الأرقام المجهولة فقط، لا عن السجل كله كل مرة */
+async function fillChatNames() {
+  const need = [...new Set(MSG_LOG.map(m => m.chatId))]
+    .filter(id => !CHAT_NAMES.has(id));
+  if (!need.length) return;
+  const safe = numList(need);            /* نفس فئة الحقن — الأرقام فقط */
+  need.forEach(id => { if (!safe.includes(id)) CHAT_NAMES.set(id, null); });
+  if (!safe.length) return;
+  const list = inList(safe);
+  const rows = await sb('GET', 'profiles', {
+    query: `?telegram_chat_id=in.(${list})&select=name,email,telegram_chat_id`
+  }).catch(() => []);
+  (Array.isArray(rows) ? rows : []).forEach(r => {
+    CHAT_NAMES.set(String(r.telegram_chat_id), r.name || r.email || null);
+  });
+  /* الأرقام اللي ما لها حساب نعلّمها عشان ما نعيد السؤال عنها */
+  need.forEach(id => { if (!CHAT_NAMES.has(id)) CHAT_NAMES.set(id, null); });
+}
+
+/* يصنّف الرسالة من محتواها — أرخص من تمرير وسم عند كل نداء */
+function msgKind(text) {
+  const t = String(text || '');
+  if (/فتحت مادة|نزلت شعبة|فتحت شعبة/.test(t)) return 'شعبة فتحت';
+  if (/سجّلت .*؟|أوقف المراقبة عشان/.test(t)) return 'متابعة';
+  if (/تم الربط بنجاح/.test(t)) return 'ربط';
+  if (/رد من فريق جدولك/.test(t)) return 'رد شخصي';
+  if (/^🔴|^✅ <b>رجع طبيعي/.test(t)) return 'إنذار مشرف';
+  if (/أمر غير معروف/.test(t)) return 'أمر غير معروف';
+  if (/وقفت الإشعارات/.test(t)) return 'إيقاف';
+  return 'أخرى';
+}
+
+/* ═══ تنقية قيم فلاتر PostgREST ═══
+   الـCRN ورقم محادثة تيليغرام يصلان من صفوف يكتبها الطالب بنفسه عبر RLS.
+   بناء `in.("a","b")` منها مباشرةً يسمح لطالب واحد بحقن `")&crn=not.is.null&x=in.("`
+   فيتحوّل الفلتر ليطابق جداول كل الطلاب — والاستعلام يعمل بمفتاح الخدمة
+   الذي يتجاوز RLS. نقبل الأرقام فقط، وكلاهما رقمي أصلاً. */
+function numList(values, maxLen) {
+  const out = [];
+  for (const v of values) {
+    const s = String(v == null ? '' : v).trim();
+    if (/^\d{1,20}$/.test(s) && (!maxLen || s.length <= maxLen)) out.push(s);
+  }
+  return [...new Set(out)];
+}
+
+/* نستخدم المصفوفة كما هي في in.(...) — الأرقام ما تحتاج تنصيص */
+const inList = arr => arr.join(',');
+
+/* معرّفات Supabase كلها UUID — أي شيء غيره ما له أن يصل الاستعلام */
+const isUuid = v => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  .test(String(v == null ? '' : v).trim());
+
+const sendMsg = async (chatId, text, markup) => {
+  const r = await tg('sendMessage', Object.assign(
     { chat_id: chatId, text, parse_mode: 'HTML', disable_web_page_preview: true },
     markup ? { reply_markup: markup } : {}));
+  try {
+    logMsg(chatId, text, msgKind(text), r && r.ok,
+           r && !r.ok ? (r.description || 'فشل') : null);
+  } catch (e) { /* التسجيل ما يعطّل الإرسال أبداً */ }
+  return r;
+};
 
 /* أزرار داخلية أسفل الرسالة */
 const btn = (label, data) => ({ text: label, callback_data: data });
@@ -1445,6 +1528,10 @@ async function reviewReact(reviewId, userId, kind, reason) {
   if (!['agree', 'disagree', 'report'].includes(kind))
     return { ok: false, error: 'نوع غير معروف' };
   if (!reviewId || !userId) return { ok: false, error: 'بيانات ناقصة' };
+  /* المسار مفتوح للإنترنت بلا توثيق، والمعرّف يدخل الفلتر —
+     نفرض شكل UUID قبل أي استعلام. */
+  if (!isUuid(reviewId) || !isUuid(userId))
+    return { ok: false, error: 'معرّف غير صالح' };
 
   try {
     /* موجود من قبل؟ نتراجع عنه (عدا التبليغ) */
@@ -1852,7 +1939,21 @@ async function adminHealth() {
       markedMissing: (SCHED_SYNC.last && SCHED_SYNC.last.markedMissing) || 0,
       log: SCHED_LOG.slice(0, 15),
       missingList: (SCHED_SYNC.last && SCHED_SYNC.last.missingList) || [],
-      gapMin: Math.round(SCHED_SYNC_GAP / 60000)
+      gapMin: Math.round(SCHED_SYNC_GAP / 60000),
+      /* ── طابور التأكيد ── */
+      confirmAfterMin: Math.round(CONFIRM_AFTER / 60000),
+      minSightings: CONFIRM_MIN_SIGHTINGS,
+      feedN: (SCHED_SYNC.last && SCHED_SYNC.last.feedN) || null,
+      feedPeak: (SCHED_SYNC.last && SCHED_SYNC.last.feedPeak) || null,
+      feedFloor: FEED_FLOOR,
+      feedRejected: (SCHED_SYNC.last && SCHED_SYNC.last.feedRejected) || null,
+      crnRejected: (SCHED_SYNC.last && SCHED_SYNC.last.crnRejected) || 0,
+      pendingNew: (SCHED_SYNC.last && SCHED_SYNC.last.pendingNew) || 0,
+      pendingWaiting: (SCHED_SYNC.last && SCHED_SYNC.last.pendingWaiting) || 0,
+      confirmed: (SCHED_SYNC.last && SCHED_SYNC.last.confirmed) || 0,
+      discarded: (SCHED_SYNC.last && SCHED_SYNC.last.discarded) || 0,
+      pending: await pendingSnapshot(),
+      flaps: FLAP_LOG.slice(0, 15)
     },
     alerts: Object.entries(ALERTS).filter(([,v])=>v.active)
               .map(([k,v])=>({key:k,title:v.title,since:v.at})),
@@ -2140,6 +2241,48 @@ const SCHED_SYNC_GAP = 10 * 60 * 1000;   /* لا نكتب في القاعدة أ
 
 /* سجل التغييرات: آخر 40 تصحيحاً بتفاصيلها (من → إلى).
    في الذاكرة فقط — يُصفَّر مع كل إعادة نشر على Render. */
+/* ═══ عتبات قاطع الدائرة ═══
+   الذروة تُبنى من أول دورة سليمة وتضيع عند إعادة التشغيل — وهذا مقصود:
+   بعد إعادة التشغيل يحمينا الحد المطلق وحده حتى تُبنى ذروة جديدة. */
+const FEED_PEAK = new Map();          /* ترم → أكبر عدد مواد شفناه */
+const FEED_FLOOR = 900;               /* الحقيقي ~1798 مادة — النصف تقريباً */
+const FEED_MIN_RATIO = 0.6;           /* أقل من ٦٠٪ من الذروة = مشبوه */
+
+/* ═══ تأكيد التغييرات ═══
+   المزامنة كل 10 دقائق، فنافذة 15 تضمن رصدتين على الأقل.
+   الشرطان معاً: مضى الوقت، وشفناه مرتين — الوقت وحده ما يكفي
+   لو تأخّرت دورة، والعدّ وحده ما يكفي لو تسارعت. */
+const CONFIRM_AFTER = 15 * 60 * 1000;
+const CONFIRM_MIN_SIGHTINGS = 2;
+
+/* بصمة مستقرة للفروق — الترتيب مثبّت عشان نفس التغيير يعطي نفس البصمة */
+function fingerprint(fields) {
+  return (fields || [])
+    .map(f => `${f.field}:${String(f.from || '')}>${String(f.to || '')}`)
+    .sort()
+    .join('|');
+}
+
+/* الرفّات المرفوضة — دليلك على أن الانتظار كان يستحق */
+const FLAP_LOG = [];
+const FLAP_LOG_MAX = 60;
+
+/* ما ينتظر التأكيد الآن، مع كم بقي له */
+async function pendingSnapshot() {
+  const rows = await sb('GET', 'pending_changes', {
+    query: '?select=*&order=first_seen.asc&limit=40'
+  }).catch(() => []);
+  return (Array.isArray(rows) ? rows : []).map(p => {
+    const age = Date.now() - new Date(p.first_seen).getTime();
+    return {
+      crn: p.crn, code: p.course_code, fields: p.fields,
+      seen: p.seen_count, ageMin: Math.round(age / 60000),
+      leftMin: Math.max(0, Math.ceil((CONFIRM_AFTER - age) / 60000)),
+      ready: age >= CONFIRM_AFTER && p.seen_count >= CONFIRM_MIN_SIGHTINGS
+    };
+  });
+}
+
 const SCHED_LOG = [];
 const SCHED_LOG_MAX = 40;
 const FIELD_AR = {
@@ -2170,6 +2313,31 @@ async function syncSchedules(term, courses, force) {
                  missing: 0, error: null, ms: 0 };
   const t0 = Date.now();
   try {
+    /* ═══ قاطع الدائرة ═══
+       أخطر حالة ليست فشل الاتصال — الفشل يرمي استثناءً فلا نصل هنا أصلاً.
+       الخطر أن يرجع الطلب "بنجاح" بصفحة صيانة أو جلسة منتهية أو تحليل ناقص،
+       فتطلع القائمة فارغة أو نصفها، ونعلّم جداول الطلاب كلها كمفقودة.
+       القاعدة تشفى ذاتياً في الدورة التالية — لكن رسالة تيليغرام لا تُسحب.
+       فنرفض العمل بالكامل بدل ما نكتب شيئاً مشكوكاً فيه. */
+    const feedN = Array.isArray(courses) ? courses.length : 0;
+    const peak = FEED_PEAK.get(term) || 0;
+    const tooSmall = feedN < FEED_FLOOR || (peak > 0 && feedN < peak * FEED_MIN_RATIO);
+    if (tooSmall) {
+      stat.error = `تغذية مشبوهة: ${feedN} مادة` +
+                   (peak ? ` مقابل ذروة ${peak}` : ' (لا ذروة مسجّلة بعد)') +
+                   ' — أُلغيت المزامنة';
+      stat.feedRejected = feedN;
+      console.log('syncSchedules: ' + stat.error);
+      alert('feed', 'تغذية الجامعة ناقصة — أوقفنا المزامنة',
+        `وصلتنا ${feedN} مادة فقط للترم ${term}` +
+        (peak ? `، والذروة المسجّلة ${peak}.` : '، ولا ذروة مسجّلة بعد.') +
+        `\n\nما كتبنا شيئاً على جداول الطلاب. المزامنة بتحاول تلقائياً في الدورة الجاية.`);
+      return stat;                       /* الـfinally يفكّ القفل */
+    }
+    if (feedN > peak) FEED_PEAK.set(term, feedN);
+    stat.feedN = feedN; stat.feedPeak = FEED_PEAK.get(term);
+    if (peak && feedN >= peak * FEED_MIN_RATIO) resolve('feed', 'تغذية الجامعة');
+
     /* المادة قد تجي بجلستين بنفس الـCRN (محاضرة + معمل) وأيام مختلفة.
        لو للـCRN جلسة وحدة نطابق بالـCRN وحده — فنمسك حتى تغيّر اليوم.
        ولو له أكثر من جلسة نطابق بالـCRN + الأيام + الوقت، وما نخمّن أبداً:
@@ -2252,17 +2420,22 @@ async function syncSchedules(term, courses, force) {
     /* نعلّم الشعبة المفقودة أول مرة فقط (missing_since فاضي)،
        ونمسح العلامة عن أي شعبة رجعت — كتابتان محدودتان لا أكثر. */
     const enc = encodeURIComponent;
-    if (missingCrns.size) {
-      const list = [...missingCrns].map(x => `"${x}"`).join(',');
+    /* أرقام فقط — الصفوف يكتبها الطالب، فقيمة مصنوعة تكسر الفلتر */
+    const missingSafe = numList(missingCrns);
+    const presentSafe = numList(presentCrns);
+    stat.crnRejected = (missingCrns.size + presentCrns.size)
+                     - (missingSafe.length + presentSafe.length);
+    if (missingSafe.length) {
+      const list = inList(missingSafe);
       await sb('PATCH', 'user_schedule', {
         query: `?term=eq.${enc(term)}&crn=in.(${list})&missing_since=is.null`,
         body: { missing_since: new Date().toISOString() },
         prefer: 'return=minimal'
       }).catch(() => {});
-      stat.markedMissing = missingCrns.size;
+      stat.markedMissing = missingSafe.length;
     }
-    if (presentCrns.size) {
-      const list = [...presentCrns].map(x => `"${x}"`).join(',');
+    if (presentSafe.length) {
+      const list = inList(presentSafe);
       await sb('PATCH', 'user_schedule', {
         query: `?term=eq.${enc(term)}&crn=in.(${list})&missing_since=not.is.null`,
         body: { missing_since: null },
@@ -2270,29 +2443,99 @@ async function syncSchedules(term, courses, force) {
       }).catch(() => {});
     }
 
+    /* ═══ طابور التأكيد ═══
+       التغيير ما يُطبَّق أول ما نشوفه. نسجّله وننتظر رصدة ثانية
+       بعد CONFIRM_AFTER. الفرق الذي يختفي بينهما كان رفّة في بيانات
+       الجامعة، ونرميه بلا أثر. قاطع الدائرة يمسك الانهيار الكامل،
+       وهذا يمسك الرفّة الصغيرة التي تعبره. */
+    const pend = await sb('GET', 'pending_changes', {
+      query: `?term=eq.${enc(term)}&select=*`
+    }).catch(() => []);
+    const pendBy = new Map();
+    (Array.isArray(pend) ? pend : []).forEach(p =>
+      pendBy.set(String(p.crn) + '|' + String(p.session_key || ''), p));
+
+    const nowIso = new Date().toISOString();
+    const seenKeys = new Set();
+    stat.pendingNew = 0; stat.pendingWaiting = 0; stat.confirmed = 0; stat.discarded = 0;
+
     for (const [key, item] of stale) {
       const c = item.course;
-      let q = `?term=eq.${encodeURIComponent(term)}` +
-              `&crn=eq.${encodeURIComponent(item.crn)}`;
-      if (item.scope) {                            /* جلسة بعينها لا كل جلسات الـCRN */
-        q += `&course_date=eq.${encodeURIComponent(item.scope.date || '')}` +
-             `&course_timing=eq.${encodeURIComponent(item.scope.timing || '')}`;
-      }
       const d0 = diffs.get(key);
+      if (!d0) continue;
+      const sessKey = item.scope
+        ? sessionKey(item.scope.date, item.scope.timing) : '';
+      const pk = String(item.crn) + '|' + sessKey;
+      seenKeys.add(pk);
+      const fp = fingerprint(d0.fields);
+      const prev = pendBy.get(pk);
+
+      /* أول رصدة، أو تغيّر التغيير نفسه → نبدأ العدّ من جديد */
+      if (!prev || prev.fingerprint !== fp) {
+        await sb(prev ? 'PATCH' : 'POST', 'pending_changes', {
+          query: prev ? `?id=eq.${enc(prev.id)}` : '',
+          body: prev
+            ? { fields: d0.fields, fingerprint: fp, first_seen: nowIso,
+                last_seen: nowIso, seen_count: 1, course_code: d0.code }
+            : { term, crn: String(item.crn), session_key: sessKey,
+                course_code: d0.code, fields: d0.fields, fingerprint: fp },
+          prefer: 'return=minimal'
+        }).catch(() => {});
+        stat.pendingNew++;
+        continue;
+      }
+
+      /* نفس الفرق — هل نضج؟ */
+      const age = Date.now() - new Date(prev.first_seen).getTime();
+      if (age < CONFIRM_AFTER || (prev.seen_count + 1) < CONFIRM_MIN_SIGHTINGS) {
+        await sb('PATCH', 'pending_changes', {
+          query: `?id=eq.${enc(prev.id)}`,
+          body: { last_seen: nowIso, seen_count: prev.seen_count + 1 },
+          prefer: 'return=minimal'
+        }).catch(() => {});
+        stat.pendingWaiting++;
+        continue;
+      }
+
+      /* مؤكَّد — الآن فقط نكتب على جدول الطالب */
+      let q = `?term=eq.${enc(term)}&crn=eq.${enc(item.crn)}`;
+      if (item.scope) {                            /* جلسة بعينها لا كل جلسات الـCRN */
+        q += `&course_date=eq.${enc(item.scope.date || '')}` +
+             `&course_timing=eq.${enc(item.scope.timing || '')}`;
+      }
       await sb('PATCH', 'user_schedule', {
         query: q,
         body: {
           course_title: c.courseTitle, course_date: c.courseDate,
           course_timing: c.courseTiming, instructor: c.instructor, room: c.room,
-          changed_at: new Date().toISOString(),
-          change_note: d0 ? { at: Date.now(), fields: d0.fields } : null
+          changed_at: nowIso,
+          change_note: { at: Date.now(), fields: d0.fields,
+                         confirmedAfterMin: Math.round(age / 60000) }
         },
         prefer: 'return=minimal'
       });
-      stat.updated++;
-      const d = diffs.get(key);
-      if (d) SCHED_LOG.unshift({ at: Date.now(), term, ...d });
+      await sb('DELETE', 'pending_changes', {
+        query: `?id=eq.${enc(prev.id)}`, prefer: 'return=minimal'
+      }).catch(() => {});
+      stat.updated++; stat.confirmed++;
+      SCHED_LOG.unshift({ at: Date.now(), term, confirmed: true,
+                          waitedMin: Math.round(age / 60000), ...d0 });
       await new Promise(r => setTimeout(r, 150));   /* ما نضغط على Supabase */
+    }
+
+    /* الفرق الذي اختفى قبل أن ينضج = رفّة. نرميه ونسجّلها لك.
+       شرط: الشعبة موجودة في التغذية — وإلا فغيابها سبب آخر لا نحكم عليه. */
+    for (const [pk, p] of pendBy) {
+      if (seenKeys.has(pk)) continue;
+      if (!presentCrns.has(String(p.crn))) continue;
+      await sb('DELETE', 'pending_changes', {
+        query: `?id=eq.${enc(p.id)}`, prefer: 'return=minimal'
+      }).catch(() => {});
+      stat.discarded++;
+      FLAP_LOG.unshift({ at: Date.now(), term, crn: p.crn,
+        code: p.course_code, fields: p.fields,
+        livedMin: Math.round((Date.now() - new Date(p.first_seen).getTime()) / 60000) });
+      if (FLAP_LOG.length > FLAP_LOG_MAX) FLAP_LOG.length = FLAP_LOG_MAX;
     }
     if (SCHED_LOG.length > SCHED_LOG_MAX) SCHED_LOG.length = SCHED_LOG_MAX;
   } catch (e) {
@@ -2737,6 +2980,18 @@ const server = http.createServer(async (req, res) => {
       if (act === 'user')     return send(200, await adminUserDetail(parsed.query.id || ''));
       if (act === 'tickets')  return send(200, { tickets: await adminTickets(parsed.query.status) });
       if (act === 'broadcast-status') return send(200, BROADCAST);
+      if (act === 'messages') {
+        await fillChatNames().catch(() => {});
+        const kind = (parsed.query.kind || '').trim();
+        const list = kind ? MSG_LOG.filter(m => m.kind === kind) : MSG_LOG;
+        return send(200, {
+          messages: list.slice(0, 150).map(m =>
+            Object.assign({}, m, { who: CHAT_NAMES.get(m.chatId) || m.who })),
+          total: MSG_LOG.length,
+          kinds: [...new Set(MSG_LOG.map(m => m.kind))],
+          sinceBoot: OPS.bootedAt
+        });
+      }
 
       if (act === 'sync-schedules') {
         if (req.method === 'POST') {
