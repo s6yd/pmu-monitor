@@ -1953,6 +1953,11 @@ async function adminHealth() {
       confirmed: (SCHED_SYNC.last && SCHED_SYNC.last.confirmed) || 0,
       discarded: (SCHED_SYNC.last && SCHED_SYNC.last.discarded) || 0,
       pending: await pendingSnapshot(),
+      tick: { everyMin: Math.round(CONFIRM_TICK / 60000),
+              maxAgeHr: Math.round(PENDING_MAX_AGE / 3600000),
+              lastTick: CONFIRM_STAT.lastTick || null,
+              lastForce: CONFIRM_STAT.lastForce || null,
+              forces: CONFIRM_STAT.forces, purged: CONFIRM_STAT.purged },
       flaps: FLAP_LOG.slice(0, 15)
     },
     alerts: Object.entries(ALERTS).filter(([,v])=>v.active)
@@ -2253,6 +2258,8 @@ const FEED_MIN_RATIO = 0.6;           /* أقل من ٦٠٪ من الذروة = 
    الشرطان معاً: مضى الوقت، وشفناه مرتين — الوقت وحده ما يكفي
    لو تأخّرت دورة، والعدّ وحده ما يكفي لو تسارعت. */
 const CONFIRM_AFTER = 15 * 60 * 1000;
+const CONFIRM_TICK = 5 * 60 * 1000;            /* كل كم نفحص الطابور */
+const PENDING_MAX_AGE = 24 * 60 * 60 * 1000;   /* صفّ ما نضج خلال يوم = عالق */
 const CONFIRM_MIN_SIGHTINGS = 2;
 
 /* بصمة مستقرة للفروق — الترتيب مثبّت عشان نفس التغيير يعطي نفس البصمة */
@@ -3500,6 +3507,60 @@ const server = http.createServer(async (req, res) => {
   res.end(JSON.stringify({ error: 'Not found' }));
 });
 
+/* ═══ ساعة التأكيد المستقلة ═══
+   المزامنة ما تملك ساعة خاصة — تنطلق فقط لما تسحب دورة المراقبة.
+   فتتوقف لو أُوقفت المراقبة، أو خرجنا من ساعات العمل، أو ما فيه
+   مراقبات أصلاً. وفي مسار البحث الكاش يعيش ساعة أو ست ساعات.
+   والأهم: إعادة الفحص على نفس النسخة المخزّنة ليست رصدة ثانية —
+   هي قراءة ثانية لنفس البيانات، تؤكد نفسها بلا معنى.
+   فهنا نجبر سحبة طازجة، ولا نفعل ذلك إلا لو فيه شيء نضج فعلاً. */
+let CONFIRM_BUSY = false;
+const CONFIRM_STAT = { lastTick: 0, lastForce: 0, forces: 0, ripe: 0, purged: 0 };
+
+async function confirmTick() {
+  if (CONFIRM_BUSY) return;
+  CONFIRM_BUSY = true;
+  try {
+    CONFIRM_STAT.lastTick = Date.now();
+
+    /* ── تنظيف أولاً ──
+       الشعبة الملغاة تُتجاوَز قبل رصد الفروق، فصفّها لا يتأكد ولا يُرمى.
+       بدون هذا كان يظل «ناضجاً» فيجبر سحبة كل خمس دقائق إلى الأبد. */
+    const dead = new Date(Date.now() - PENDING_MAX_AGE).toISOString();
+    const purged = await sb('DELETE', 'pending_changes', {
+      query: `?first_seen=lt.${encodeURIComponent(dead)}`,
+      prefer: 'return=representation'
+    }).catch(() => []);
+    if (Array.isArray(purged) && purged.length) {
+      CONFIRM_STAT.purged += purged.length;
+      console.log(`confirmTick: نظّفت ${purged.length} صفّاً عالقاً أقدم من ` +
+                  `${Math.round(PENDING_MAX_AGE / 3600000)} ساعة`);
+    }
+
+    /* استعلام خفيف: هل نضج شيء؟ الطابور فاضي في الغالب فالتكلفة صفر عملياً */
+    const cutoff = new Date(Date.now() - CONFIRM_AFTER).toISOString();
+    const ripe = await sb('GET', 'pending_changes', {
+      query: `?first_seen=lte.${encodeURIComponent(cutoff)}` +
+             `&first_seen=gte.${encodeURIComponent(dead)}` +
+             `&seen_count=gte.${CONFIRM_MIN_SIGHTINGS - 1}` +
+             `&select=term&limit=20`
+    }).catch(() => []);
+    CONFIRM_STAT.ripe = Array.isArray(ripe) ? ripe.length : 0;
+    if (!CONFIRM_STAT.ripe) return;
+
+    /* سحبة طازجة حقيقية لكل ترم فيه صفّ ناضج — هذي هي المشاهدة الثانية */
+    for (const term of [...new Set(ripe.map(r => r.term))]) {
+      try {
+        const r = await getCourses(term, 'ALL', 'ALL', true);   /* force = تجاوز الكاش */
+        await syncSchedules(term, r.courses, true);             /* force = تجاوز الفجوة */
+        CONFIRM_STAT.forces++; CONFIRM_STAT.lastForce = Date.now();
+      } catch (e) {
+        console.log('confirmTick: ' + term + ' — ' + e.message);
+      }
+    }
+  } finally { CONFIRM_BUSY = false; }
+}
+
 server.listen(PORT, () => {
   console.log('Jadwalik running on ' + PORT);
   console.log('pushover: ' + (PUSHOVER_ON
@@ -3510,6 +3571,8 @@ server.listen(PORT, () => {
   /* التسخين المسبق: فحص كل 20 ثانية، وما يسحب إلا لو فيه تركيبة
      مطلوبة قاربت صلاحيتها تنتهي — والمفتاح مطفأ افتراضياً. */
   setInterval(() => { prewarmTick().catch(() => {}) }, 20000);
+  /* ساعة التأكيد: تفحص الطابور كل 5 دقائق، وما تسحب إلا لو نضج صفّ */
+  setInterval(() => { confirmTick().catch(() => {}) }, CONFIRM_TICK);
   const st = monitorState();
   console.log(`env=${SITE_ENV} | freeBeta=${FREE_BETA} | monitor: ${st.reason} — ${st.ar}`);
   /* أول دورة بعد 20-60 ثانية عشوائياً، ثم جدولة ذكية */

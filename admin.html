@@ -1474,7 +1474,12 @@ function renderSys(){
       </div>`).join('')}
     </div>`).join(''):'<div class="gauge-sub">ما فيه شي ينتظر التأكيد.</div>'}
     <div class="gauge-sub">التغيير ما يُطبَّق ولا يُرسل إلا بعد ${S.confirmAfterMin} دقيقة
-      و${S.minSightings} رصدات على الأقل. الفرق الذي يختفي قبلها كان رفّة في بيانات الجامعة.</div>
+      و${S.minSightings} رصدات على الأقل. الفرق الذي يختفي قبلها كان رفّة في بيانات الجامعة.
+      ${S.tick?`<br><br>الطابور يُفحص كل ${S.tick.everyMin} دقائق بساعة مستقلة عن الكاش
+      ودورة المراقبة. لما ينضج صفّ نجبر <b>سحبة طازجة</b> من الجامعة — المشاهدة
+      الثانية لازم تكون حقيقية لا قراءة ثانية من الكاش.
+      سحبات مُجبَرة: ${S.tick.forces}${S.tick.purged?` · صفوف عالقة نُظِّفت: ${S.tick.purged}`:''}
+      · يُرمى الصفّ لو ما نضج خلال ${S.tick.maxAgeHr} ساعة.`:''}</div>
   </div>
 
   ${(S.flaps&&S.flaps.length)?`<div class="sec-title">رفّات مرفوضة · آخر ${S.flaps.length}</div>
