@@ -315,6 +315,26 @@ cursor:pointer;flex-shrink:0}
 border-radius:9px;padding:5px 7px;font-size:11px;font-family:var(--mono);
 outline:none;flex-shrink:0;max-width:78px}
 .pc-wi.set{border-style:solid;border-color:var(--accent);color:var(--accent2)}
+/* تنبيه تغيّر الجدول — يعيد استخدام رموز lab-warn نفسها */
+.chg-warn{display:none;flex-direction:column;gap:10px;margin-bottom:13px}
+.chg-warn.visible{display:flex}
+.cw-card{background:var(--warn-bg);border:1px solid rgba(245,158,11,.3);
+border-radius:13px;padding:12px 14px}
+.cw-head{display:flex;gap:9px;align-items:flex-start}
+.cw-ic{font-size:18px;flex-shrink:0}
+.cw-t{font-size:13px;font-weight:700;color:var(--warn);flex:1;min-width:0}
+.cw-x{background:none;border:none;color:var(--text3);font-size:15px;
+cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0}
+.cw-x:hover{color:var(--text2)}
+.cw-row{font-size:12.5px;color:var(--text2);margin-top:8px;line-height:1.9}
+.cw-f{color:var(--text3);margin-inline-end:5px}
+.cw-old{text-decoration:line-through;opacity:.65}
+.cw-new{font-weight:700;color:var(--text)}
+.cw-clash{font-size:12px;color:var(--bad);margin-top:8px;font-weight:600;line-height:1.7}
+.cw-n{font-size:11px;color:var(--text3);margin-top:8px;line-height:1.7}
+.cw-tg{display:block;margin-top:9px;font-size:11.5px;color:var(--accent);
+text-decoration:none;font-weight:600}
+
 .lab-warn{display:none;gap:11px;align-items:flex-start;background:var(--warn-bg);
 border:1px solid rgba(245,158,11,.3);border-radius:13px;padding:12px 14px;margin-bottom:13px}
 .lab-warn.visible{display:flex}
@@ -1054,6 +1074,8 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     <a class="state-link" href="/guide" target="_blank" rel="noopener" data-i18n="guideLink">📖 شوف الدليل بالصور</a>
   </div>
   <div class="slot-bar" id="slotBar"></div>
+
+  <div class="chg-warn" id="chgWarn"></div>
 
   <div class="lab-warn" id="labWarn"></div>
 
@@ -3342,6 +3364,86 @@ function isLabSection(c){
 }
 
 /* ينبّه لو المادة لها معمل في نتائج البحث وما أضافه، أو العكس */
+/* ════════ تنبيه تغيّر الجدول ════════
+   السيرفر يكتب change_note بعد ما يتأكد من التغيير (15 دقيقة ورصدتان).
+   نعرضه هنا، ونكتشف التعارض الصامت لو كان التغيير في الوقت أو الأيام.
+   الإخفاء محلي عمداً: يتطلب عموداً وسياسة RLS لو صار سحابياً،
+   وتعديل القاعدة في الموسم لا يستحق مزامنة الإخفاء بين الأجهزة. */
+function chgKey(c,note){
+  const f=(note.fields||[]).map(x=>`${x.field}:${x.from}>${x.to}`).sort().join('|');
+  return c.crn+'|'+(c.courseDate||'')+'|'+f;
+}
+let CHG_KEYS=[];
+function dismissChg(i){
+  const k=CHG_KEYS[i];
+  if(!k)return;
+  const d=load('pmu_chg_seen',[]);
+  if(!d.includes(k)){d.push(k);save('pmu_chg_seen',d.slice(-80))}
+  renderChgWarn();
+}
+
+function renderChgWarn(){
+  const box=document.getElementById('chgWarn');
+  if(!box)return;
+  const ar=LANG==='ar';
+  const seen=load('pmu_chg_seen',[]);
+
+  /* الحقول الثلاثة فقط — وترتيبها ترتيب أثرها على الطالب */
+  const RANK={course_timing:0,course_date:0,instructor:1,room:2};
+  /* السيرفر يرسل التسمية بالعربي فقط، فنترجمها هنا للواجهة الإنجليزية */
+  const FIELD_EN={course_timing:'Time',course_date:'Days',
+                  instructor:'Instructor',room:'Room'};
+  const hits=[];
+  (schedule||[]).forEach(c=>{
+    const note=c.changeNote;
+    if(!note||!Array.isArray(note.fields)||!note.fields.length)return;
+    const fields=note.fields.filter(f=>f&&RANK[f.field]!==undefined);
+    if(!fields.length)return;
+    const k=chgKey(c,{fields});
+    if(seen.includes(k))return;
+    hits.push({c,fields,k,rank:Math.min(...fields.map(f=>RANK[f.field]))});
+  });
+  if(!hits.length){box.classList.remove('visible');box.innerHTML='';CHG_KEYS=[];return}
+  hits.sort((a,b)=>a.rank-b.rank);
+  CHG_KEYS=hits.map(h=>h.k);
+
+  const linked=typeof tgLinked==='function'&&tgLinked();
+  box.classList.add('visible');
+  box.innerHTML=hits.map(({c,fields,k},i)=>{
+    /* التعارض الصامت: الوقت تغيّر فصار يصادم مادة ثانية وهو ما يدري */
+    const timeMoved=fields.some(f=>f.field==='course_timing'||f.field==='course_date');
+    const clash=timeMoved?findConflicts(c,schedule):[];
+
+    const when=c.changedAt?Math.round((Date.now()-new Date(c.changedAt).getTime())/3600000):null;
+    const whenTxt=when===null?'':(when<1?(ar?'قبل أقل من ساعة':'less than an hour ago')
+      :when<24?(ar?`قبل ${when} ساعة`:`${when}h ago`)
+      :(ar?`قبل ${Math.round(when/24)} يوم`:`${Math.round(when/24)}d ago`));
+
+    return `<div class="cw-card">
+      <div class="cw-head">
+        <span class="cw-ic">📌</span>
+        <span class="cw-t">${ar?'تغيّر في':'Change in'} ${escapeHtml(c.courseCode)} §${escapeHtml(c.section)}</span>
+        <button class="cw-x" title="${ar?'إخفاء':'Dismiss'}"
+          onclick="dismissChg(${i})">✕</button>
+      </div>
+      ${fields.map(f=>`<div class="cw-row">
+        <span class="cw-f">${escapeHtml(ar?(f.ar||f.field):(FIELD_EN[f.field]||f.field))}:</span>
+        <span class="cw-old">${escapeHtml(f.from||'—')}</span>
+        <span> ← </span>
+        <span class="cw-new">${escapeHtml(f.to||'—')}</span>
+      </div>`).join('')}
+      ${clash.length?`<div class="cw-clash">⚠️ ${ar?'صار يتعارض مع':'Now conflicts with'}
+        ${clash.map(x=>escapeHtml(x.courseCode)+' §'+escapeHtml(x.section)).join('، ')}</div>`:''}
+      <div class="cw-n">${ar
+        ?`التغيير من نظام الجامعة${whenTxt?' · '+whenTxt:''} — راجعه قبل ما تعتمد على جدولك.`
+        :`Change from the university system${whenTxt?' · '+whenTxt:''} — verify before relying on your schedule.`}</div>
+      ${linked?'':`<a class="cw-tg" href="javascript:void(0)" onclick="linkTelegram()">🔗 ${ar
+        ?`هذا التغيير وصلك${whenTxt?' '+whenTxt:''} — لو تربط تيليغرام يوصلك لحظة حدوثه`
+        :`You saw this ${whenTxt||'late'} — link Telegram to be notified the moment it happens`}</a>`}
+    </div>`;
+  }).join('');
+}
+
 function renderLabWarn(){
   const box=document.getElementById('labWarn');
   if(!box)return;
@@ -3397,6 +3499,7 @@ function renderSchedule(){
     document.getElementById('conflictList').innerHTML=pairs.map(p=>`${p[0].courseCode} §${p[0].section} ✕ ${p[1].courseCode} §${p[1].section}`).join('<br>');
   }else al.classList.remove('visible');
 
+  renderChgWarn();
   renderLabWarn();
 
   if(!schedule.length){empty.classList.add('visible');wrap.innerHTML='';buildPrintSheet(new Set());return}
@@ -6085,7 +6188,10 @@ async function pullCloud(){
         const i=Math.min(2,Math.max(0,(parseInt(r.slot,10)||1)-1));
         box[i].push({crn:r.crn,courseCode:r.course_code,courseTitle:r.course_title,
           section:r.section,courseDate:r.course_date,courseTiming:r.course_timing,
-          instructor:r.instructor,room:r.room});
+          instructor:r.instructor,room:r.room,
+          /* تتبّع التغيير — يجي من السيرفر ولا يُرفع أبداً في writeSchedule،
+             فما يقدر يفسد صفوف الطالب. */
+          changeNote:r.change_note||null, changedAt:r.changed_at||null});
       });
       SCHEDULES=box;
       schedule=SCHEDULES[SLOT];
@@ -6094,7 +6200,9 @@ async function pullCloud(){
 
     save('pmu_completed',completed);
     save('pmu_schedules',SCHEDULES);save('pmu_schedule',schedule);
-    updateBadge();renderSlots();
+    /* السحب يجيب change_note معه — بدون إعادة الرسم ما يظهر التحذير
+       إلا لو بدّل الطالب التبويب أو الجدول بنفسه. */
+    updateBadge();renderSlots();renderSchedule();
     await loadMonitored();
     await loadReviews();
     renderSettings();
