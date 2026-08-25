@@ -168,8 +168,14 @@ function tg(method, payload) {
   });
 }
 
-const sendMsg = (chatId, text) =>
-  tg('sendMessage', { chat_id: chatId, text, parse_mode: 'HTML', disable_web_page_preview: true });
+const sendMsg = (chatId, text, markup) =>
+  tg('sendMessage', Object.assign(
+    { chat_id: chatId, text, parse_mode: 'HTML', disable_web_page_preview: true },
+    markup ? { reply_markup: markup } : {}));
+
+/* أزرار داخلية أسفل الرسالة */
+const btn = (label, data) => ({ text: label, callback_data: data });
+const kb  = rows => ({ inline_keyboard: rows });
 
 /* ============ PMU fetch ============ */
 function fetchPMUData(termList, collegeList, genderList) {
@@ -291,6 +297,52 @@ function logCycle(c) {
   if (OPS.cycles.length > 40) OPS.cycles.shift();
 }
 
+const FOLLOWUP_AFTER = 10 * 60 * 1000;   /* نسأل الطالب بعد عشر دقائق */
+
+/* ═══ سؤال المتابعة: «سجّلتها؟» ═══
+   يشتغل مع كل دورة مراقبة. الموعد مخزّن في القاعدة، فإعادة نشر
+   السيرفر ما تضيّع السؤال — يُرسل في الدورة التالية لموعده. */
+async function sendFollowups() {
+  if (!SB_URL || !SB_SERVICE_KEY) return 0;
+  const nowIso = new Date().toISOString();
+  const due = await sb('GET', 'monitored_courses', {
+    query: `?followup_done=eq.false&followup_at=not.is.null` +
+           `&followup_at=lte.${encodeURIComponent(nowIso)}&select=*&limit=50`
+  }).catch(() => null);
+  if (!Array.isArray(due) || !due.length) return 0;
+
+  const ids = [...new Set(due.map(m => m.user_id))].map(u => `"${u}"`).join(',');
+  const profs = await sb('GET', 'profiles', {
+    query: `?id=in.(${ids})&select=id,telegram_chat_id`
+  }).catch(() => []);
+  const byUser = {};
+  (Array.isArray(profs) ? profs : []).forEach(p => { byUser[p.id] = p });
+
+  let sent = 0;
+  for (const m of due) {
+    const p = byUser[m.user_id];
+    const label = m.scope === 'course'
+      ? (m.course_code || 'المادة')
+      : `${m.course_code || 'المادة'}${m.crn ? ' · CRN ' + m.crn : ''}`;
+    if (p && p.telegram_chat_id) {
+      const r = await sendMsg(p.telegram_chat_id,
+        `⏳ <b>سجّلت ${label}؟</b>\n\n` +
+        `لو سجّلتها، أوقف المراقبة عشان ما توصلك إشعارات ما تحتاجها.`,
+        kb([[btn('✅ سجّلتها — أوقف المراقبة', 'stop:' + m.id)],
+            [btn('⏳ لا، كمّل المراقبة', 'keep:' + m.id)]]));
+      if (r && r.ok) sent++; else OPS.tgFails++;
+      await new Promise(r2 => setTimeout(r2, 400));
+    }
+    /* نعلّمها منتهية حتى لو فشل الإرسال — ما نكرر السؤال أبداً */
+    await sb('PATCH', 'monitored_courses', {
+      query: `?id=eq.${m.id}`,
+      body: { followup_done: true, followup_at: null },
+      prefer: 'return=minimal'
+    }).catch(() => {});
+  }
+  return sent;
+}
+
 async function runMonitorCycle() {
   if (!SB_URL || !SB_SERVICE_KEY) return;
 
@@ -311,6 +363,9 @@ async function runMonitorCycle() {
                  notified: 0, terms: 0, snapshot: 0, sec: 0, error: null };
 
   try {
+    /* أسئلة المتابعة المستحقة — مستقلة عن وجود صفوف مراقبة متغيّرة */
+    stat.followups = await sendFollowups().catch(() => 0);
+
     const monitors = await sb('GET', 'monitored_courses', { query: '?select=*' });
     if (!Array.isArray(monitors) || !monitors.length) return;
 
@@ -360,9 +415,21 @@ async function runMonitorCycle() {
     stat.snapshot = Object.keys(snapshot).length;
     if (stat.snapshot > 0) resolve('pmu', 'موقع الجامعة ما يستجيب');
 
+    /* فهرس المواد: ترم|كود → كل شعبها. نحتاجه لمراقبة المادة كاملة. */
+    const normCode = s => String(s || '').trim().toUpperCase().replace(/\s+/g, ' ');
+    const byCourse = {};
+    Object.values(snapshot).forEach(c => {
+      const k = (c.term || '') + '|' + normCode(c.courseCode);
+      (byCourse[k] = byCourse[k] || []).push(c);
+    });
+
+    const sectionMons = monitors.filter(m => m.scope !== 'course');
+    const courseMons  = monitors.filter(m => m.scope === 'course');
+    stat.courseRows = courseMons.length;
+
     const changed = [];      // {m, live}
     const toNotify = [];     // {m, live}
-    for (const m of monitors) {
+    for (const m of sectionMons) {
       const live = snapshot[(m.term || '202630') + ':' + m.crn];
       if (!live) continue;
       if (live.status !== m.last_status) {
@@ -370,9 +437,54 @@ async function runMonitorCycle() {
         if (live.status === 'OPEN' && m.last_status !== 'OPEN') toNotify.push({ m, live });
       }
     }
+
+    /* ── 2ب. مراقبة المادة كاملة ──
+       نخزّن حالة كل شعبها في sections_state، ونقارن بها كل دورة:
+       • شعبة فتحت بعد ما كانت مغلقة  → إشعار
+       • شعبة جديدة ما كانت موجودة    → إشعار «نزلت شعبة»
+       أول دورة لأي صف جديد نسجّل الحالة فقط بلا إشعار، عشان ما ننهال
+       على الطالب بكل الشعب المفتوحة أصلاً وقت ما فعّل المراقبة. */
+    const courseStateUpdates = [];   // {id, state}
+    for (const m of courseMons) {
+      const term = m.term || '202630';
+      const list = byCourse[term + '|' + normCode(m.course_code)] || [];
+      if (!list.length) continue;
+
+      const cur = {};
+      list.forEach(c => { cur[String(c.crn)] = c.status; });
+      const prev = (m.sections_state && typeof m.sections_state === 'object')
+        ? m.sections_state : null;
+
+      courseStateUpdates.push({ id: m.id, state: cur });
+      if (!prev) continue;                       /* أول دورة — تسجيل فقط */
+
+      const hits = [];
+      for (const c of list) {
+        const crn = String(c.crn);
+        const was = prev[crn];
+        const isNew = !(crn in prev);
+        if (c.status === 'OPEN' && was !== 'OPEN') hits.push({ c, isNew });
+        else if (isNew) hits.push({ c, isNew, closedNew: true });
+      }
+      /* سقف ثلاث شعب في الدورة الواحدة — الباقي يُذكر بالعدد */
+      hits.slice(0, 3).forEach(h => toNotify.push({
+        m, live: h.c, courseScope: true, isNew: h.isNew, closedNew: h.closedNew,
+        more: hits.length > 3 ? hits.length - 3 : 0
+      }));
+    }
+
+    /* حفظ حالة صفوف المادة — كل صف بحالته */
+    for (const u of courseStateUpdates) {
+      await sb('PATCH', 'monitored_courses', {
+        query: `?id=eq.${u.id}`,
+        body: { sections_state: u.state },
+        prefer: 'return=minimal'
+      }).catch(() => {});
+    }
+
     stat.changed = changed.length;
     stat.toNotify = toNotify.length;
-    if (!changed.length) return;
+    if (!changed.length && !toNotify.length) return;
 
     /* ── 3. تحديث الحالة بالجملة ──
        بدل PATCH لكل صف، نجمع الصفوف حسب الحالة الجديدة ونرسل طلباً واحداً
@@ -422,30 +534,45 @@ async function runMonitorCycle() {
        تيليغرام يسمح بحوالي 30 رسالة/ثانية، فدفعات من 20 مع فاصل بسيط آمنة. */
     stat.eligible = sendList.length;
     const notified = [];
-    await inBatches(sendList, 20, async ({ m, live }) => {
+    const followups = [];      /* نسأل صاحبها بعد عشر دقائق: سجّلتها؟ */
+    await inBatches(sendList, 20, async ({ m, live, courseScope, isNew, closedNew, more }) => {
       const p = profiles[m.user_id];
+      /* ثلاث حالات: شعبة مراقَبة فتحت · شعبة جديدة نزلت · شعبة من مادة مراقَبة فتحت */
+      const head = closedNew ? '🆕 <b>نزلت شعبة جديدة</b>'
+                 : isNew     ? '🆕 <b>نزلت شعبة جديدة ومفتوحة!</b>'
+                 :             '🟢 <b>فتحت مادة!</b>';
+      const tail = closedNew ? '📌 مقفلة حالياً — بنراقبها لك.'
+                             : '⚡️ سجّل الحين قبل ما تنسكر!';
+      const scopeLine = courseScope
+        ? `\n<i>مراقبة على مستوى المادة — كل شعب ${live.courseCode}</i>` : '';
+      const moreLine = more ? `\n<i>+ ${more} شعبة ثانية تغيّرت</i>` : '';
       const r = await sendMsg(p.telegram_chat_id,
-        `🟢 <b>فتحت مادة!</b>\n\n` +
+        `${head}\n\n` +
         `<b>${live.courseCode}</b> — شعبة ${live.section}\n` +
         `${live.courseTitle}\n\n` +
         `🔢 CRN: <code>${live.crn}</code>\n` +
         `📅 ${live.courseDate}  ⏰ ${live.courseTiming}\n` +
         `👤 ${live.instructor || '—'}\n` +
-        `🏛️ ${live.room || '—'}\n\n` +
-        `⚡️ سجّل الحين قبل ما تنسكر!`);
-      if (r && r.ok) notified.push(m.id); else OPS.tgFails++;
+        `🏛️ ${live.room || '—'}${scopeLine}${moreLine}\n\n` +
+        tail,
+        /* زر يوقف المراقبة من داخل تيليغرام — الطالب يسجّل وينسى
+           يرجع للموقع، فيظل يستقبل إشعارات ما عاد يحتاجها. */
+        kb([[btn(courseScope ? '🔕 أوقف مراقبة هذي المادة'
+                             : '🔕 أوقف مراقبة هذي الشعبة', 'stop:' + m.id)]]));
+      if (r && r.ok) { notified.push(m.id); followups.push(m.id); }
+      else OPS.tgFails++;
 
       /* لو المستلم أنت، نرسل نسخة على Pushover كمان — إشعار أقوى
          ما يفوتك. الطلاب ما يتأثرون: الشرط عليك وحدك. */
       if (PUSHOVER_ON && ADMIN_CHAT_ID &&
           String(p.telegram_chat_id) === String(ADMIN_CHAT_ID)) {
-        pushover(`🟢 فتحت ${live.courseCode} §${live.section}`,
+        pushover(`${closedNew || isNew ? '🆕' : '🟢'} ${live.courseCode} §${live.section}`,
           `${live.courseTitle}\nCRN ${live.crn}\n` +
           `${live.courseDate} · ${live.courseTiming}\n` +
           `${live.instructor || '—'} · ${live.room || '—'}`,
-          /* طارئ: صفارة تتكرر كل 30 ثانية لمدة نصف ساعة
-             حتى تضغط «تأكيد» — الشعبة ما تفوتك. */
-          { priority: 2, sound: 'siren', retry: 30, expire: 1800 }).catch(() => {});
+          /* الشعبة المغلقة الجديدة خبر لا طارئ */
+          closedNew ? { priority: 0, sound: 'pushover' }
+                    : { priority: 2, sound: 'siren', retry: 30, expire: 1800 }).catch(() => {});
       }
       await new Promise(r2 => setTimeout(r2, 700));   // تهدئة بين الدفعات
     });
@@ -458,6 +585,20 @@ async function runMonitorCycle() {
         body: { notified_at: now },
         prefer: 'return=minimal'
       });
+    }
+
+    /* ── 7ب. جدولة سؤال المتابعة في القاعدة ──
+       بالقاعدة لا بمؤقت في الذاكرة، عشان إعادة نشر السيرفر ما تضيّعها. */
+    if (followups.length) {
+      const at = new Date(Date.now() + FOLLOWUP_AFTER).toISOString();
+      const ids = [...new Set(followups)];
+      for (let i = 0; i < ids.length; i += 200) {
+        await sb('PATCH', 'monitored_courses', {
+          query: `?id=in.(${ids.slice(i, i + 200).join(',')})`,
+          body: { followup_at: at, followup_done: false },
+          prefer: 'return=minimal'
+        }).catch(() => {});
+      }
     }
 
     stat.notified = notified.length;
@@ -480,7 +621,65 @@ async function runMonitorCycle() {
 }
 
 /* ============ Telegram webhook ============ */
+/* ═══ ضغطات الأزرار الداخلية ═══
+   نتحقق أن الصف يخص صاحب المحادثة فعلاً قبل أي حذف — البيانات
+   في الزر تجي من العميل ولا يُوثق بها وحدها. */
+async function handleCallback(cq) {
+  const data = String(cq.data || '');
+  const chatId = cq.message && cq.message.chat && cq.message.chat.id;
+  const ack = (text) => tg('answerCallbackQuery',
+    { callback_query_id: cq.id, text: text || '', show_alert: false }).catch(() => {});
+
+  const mm = data.match(/^(stop|keep):(\d+)$/);
+  if (!mm || !chatId) return ack();
+  const action = mm[1], rowId = mm[2];
+
+  const profs = await sb('GET', 'profiles', {
+    query: `?telegram_chat_id=eq.${encodeURIComponent(String(chatId))}&select=id&limit=1`
+  }).catch(() => []);
+  const me = Array.isArray(profs) && profs[0] ? profs[0].id : null;
+  if (!me) return ack('ما لقيت حسابك');
+
+  const rows = await sb('GET', 'monitored_courses', {
+    query: `?id=eq.${rowId}&select=*&limit=1`
+  }).catch(() => []);
+  const row = Array.isArray(rows) && rows[0] ? rows[0] : null;
+  if (!row) {
+    await ack('المراقبة موقوفة أصلاً');
+    return editMsg(cq, '🔕 المراقبة على هذي المادة موقوفة.');
+  }
+  if (String(row.user_id) !== String(me)) return ack('هذا مو صفك');
+
+  const label = (row.course_code || 'المادة') +
+                (row.scope === 'course' ? '' : (row.crn ? ' · CRN ' + row.crn : ''));
+
+  if (action === 'keep') {
+    await sb('PATCH', 'monitored_courses', {
+      query: `?id=eq.${rowId}`,
+      body: { followup_done: true, followup_at: null }, prefer: 'return=minimal'
+    }).catch(() => {});
+    await ack('تمام، المراقبة مستمرة');
+    return editMsg(cq, `⏳ <b>المراقبة مستمرة</b>\n\n${label} — بنبلغك أول ما تفتح.`);
+  }
+
+  await sb('DELETE', 'monitored_courses', {
+    query: `?id=eq.${rowId}`, prefer: 'return=minimal'
+  }).catch(() => {});
+  await ack('أوقفت المراقبة');
+  return editMsg(cq, `🔕 <b>أوقفت المراقبة</b>\n\n${label}\n\n` +
+    `ترجّعها أي وقت من الجرس في الموقع.`);
+}
+
+function editMsg(cq, text) {
+  if (!cq.message) return Promise.resolve();
+  return tg('editMessageText', {
+    chat_id: cq.message.chat.id, message_id: cq.message.message_id,
+    text, parse_mode: 'HTML'
+  }).catch(() => {});
+}
+
 async function handleTelegramUpdate(update) {
+  if (update.callback_query) return handleCallback(update.callback_query);
   const msg = update.message;
   if (!msg) return;
   /* نقبل النص والصور — الصورة تجي مع caption أحياناً */
