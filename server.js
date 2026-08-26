@@ -2030,7 +2030,11 @@ async function adminHealth() {
       discarded: (SCHED_SYNC.last && SCHED_SYNC.last.discarded) || 0,
       notified: (SCHED_SYNC.last && SCHED_SYNC.last.notified) || 0,
       notifySuppressed: (SCHED_SYNC.last && SCHED_SYNC.last.notifySuppressed) || 0,
-      notifyCap: NOTIFY_CAP,
+      notifyCap: LAST_CAP,
+      notifyRatio: NOTIFY_RATIO,
+      notifyFloor: NOTIFY_FLOOR,
+      activeStudents: (SCHED_SYNC.last && SCHED_SYNC.last.activeStudents) || 0,
+      stormApproved: (SCHED_SYNC.last && SCHED_SYNC.last.stormApproved) || 0,
       stormAbort: (SCHED_SYNC.last && SCHED_SYNC.last.stormAbort) || 0,
       pending: await pendingSnapshot(),
       tick: { everyMin: Math.round(CONFIRM_TICK / 60000),
@@ -2400,18 +2404,30 @@ function schedClash(a, b) {
 /* ═══ إشعار تغيّر الجدول ═══
    يُرسل بعد التأكيد فقط. التغيير يمسّ كل من في جدوله تلك الشعبة،
    فنجمّع لكل طالب رسالة واحدة مهما تعددت مواده المتغيّرة في الدورة. */
-/* أكثر من هذا في دورة واحدة = خلل لا تغيير.
-   الرقم مبني على ~147 مستخدماً: 100 تعني ثلثيهم تقريباً، فتمر
-   ثلاث أو أربع شعب تتغيّر معاً في الحذف والإضافة (وارد جداً)،
-   ويبقى تحليل ناقص يمسّ الجميع محجوباً. اضبطه لو كبر عدد المستخدمين. */
-const NOTIFY_CAP = 100;
+/* ═══ حد العاصفة ═══
+   نسبة لا رقم ثابت: الرقم الثابت يشيخ مع نمو المستخدمين — 100 اليوم
+   ثلثا طلابك، وبعد سنة قد تكون خُمسهم فيصير الحد بلا معنى.
+   القاعدة: عدد الطلاب أصحاب الجداول في هذا الترم × النسبة.
+   والأرضية تمنع التوتر الزائد وقت قلة المستخدمين (60% من 10 = 6). */
+const NOTIFY_RATIO = 0.6;
+const NOTIFY_FLOOR = 25;
+function notifyCap(activeStudents) {
+  return Math.max(NOTIFY_FLOOR, Math.round((activeStudents || 0) * NOTIFY_RATIO));
+}
+let LAST_CAP = NOTIFY_FLOOR;        /* آخر حد محسوب — للعرض في اللوحة */
+
+/* موافقة يدوية لمرة واحدة: تراجع العاصفة في اللوحة، وإن طلعت
+   صحيحة تضغط «وافق وأرسل» فتمر الدورة التالية بلا حد.
+   النافذة قصيرة عمداً — الموافقة تخص ما رأيته لا ما يجي بعد ساعات. */
+const STORM_OK = { until: 0, affected: 0 };
+const STORM_OK_WINDOW = 30 * 60 * 1000;
 
 async function notifyChanges(list, stat) {
   if (!list.length) return;
 
   /* الصمّام صار يقرر قبل الكتابة داخل syncSchedules، فما نصل هنا
      أصلاً في العاصفة. نتركه هنا كشبكة أخيرة لا أكثر. */
-  if (list.length > NOTIFY_CAP * 2) {
+  if (list.length > LAST_CAP * 2) {
     stat.notifySuppressed = list.length;
     console.log(`notifyChanges: ${list.length} إشعاراً — كُبت احتياطياً`);
     return;
@@ -2440,8 +2456,19 @@ async function notifyChanges(list, stat) {
 
   for (const [uid, items] of byStudent) {
     const body = items.map(it => {
-      const lines = it.fields.map(f =>
-        `${f.ar || f.field}: <s>${esc(f.from || '—')}</s> ← <b>${esc(f.to || '—')}</b>`);
+      /* بلا سهم: القيم لاتينية والوصف عربي، فاتجاه القراءة ينقلب
+         بصرياً ولا يعرف الطالب أيهما القديم. سطران وكلام صريح
+         يزيلان اللبس، وما فيه شطب يعتمد عليه الفهم. */
+      const lines = it.fields.map(f => {
+        const from = esc(f.from || '—'), to = esc(f.to || '—');
+        /* الدكتور مذكّر والقاعة والمادة مؤنثة — الصياغة الموحّدة تطلع ركيكة */
+        const m = f.field === 'instructor';
+        if (!f.from || f.from === '—')
+          return `${f.ar || f.field}: ${m ? 'تحدّد' : 'تحدّدت'} — <b>${to}</b>`;
+        return `${f.ar || f.field}\n` +
+               `   ${m ? 'كان' : 'كانت'}: <s>${from}</s>\n` +
+               `   ${m ? 'صار' : 'صارت'}: <b>${to}</b>`;
+      });
       const cl = it.clashes && it.clashes.length
         ? `\n⚠️ <b>صار يتعارض مع ${it.clashes.map(esc).join('، ')}</b>` : '';
       return `📌 <b>${esc(it.code)} §${esc(it.section)}</b>\n` + lines.join('\n') + cl;
@@ -2449,8 +2476,7 @@ async function notifyChanges(list, stat) {
 
     const r = await sendMsg(chat.get(uid),
       `🔔 <b>تغيّر في جدولك</b>\n\n${body}\n\n` +
-      `التغيير من نظام الجامعة وتأكدنا منه قبل ما نرسله.\n` +
-      `راجع جدولك في jadwalik.com`);
+      `التغيير من نظام الجامعة · راجع جدولك في jadwalik.com`);
     if (r && r.ok) stat.notified++;
     await new Promise(x => setTimeout(x, 700));   /* تهدئة مثل إشعارات الشعب */
   }
@@ -2668,16 +2694,27 @@ async function syncSchedules(term, courses, force) {
             (same(r.course_date, item.scope.date) &&
              same(r.course_timing, item.scope.timing)))).length;
       }
-      if (affected > NOTIFY_CAP) {
+      const cap = notifyCap(byUser.size);
+      LAST_CAP = cap;
+      stat.notifyCap = cap; stat.activeStudents = byUser.size;
+      const approved = Date.now() < STORM_OK.until;
+      if (affected > cap && !approved) {
         stormAbort = affected;
         stat.stormAbort = affected;
-        console.log(`syncSchedules: ${affected} طالباً متأثراً — تجاوز ${NOTIFY_CAP}، أُلغي التأكيد`);
+        console.log(`syncSchedules: ${affected} طالباً متأثراً — تجاوز ${cap}، أُلغي التأكيد`);
         alert('notify-storm', '⛔️ عاصفة تغييرات — أوقفنا كل شيء',
-          `دورة واحدة كانت بتغيّر جداول ${affected} طالباً، والحد ${NOTIFY_CAP}.\n\n` +
-          `ما كتبنا شيئاً وما أرسلنا رسالة. الصفوف باقية في طابور التأكيد ` +
-          `وتُعاد المحاولة تلقائياً — افحص اللوحة أولاً.`);
-      } else if (affected) {
-        resolve('notify-storm', 'عاصفة التغييرات');
+          `دورة واحدة كانت بتغيّر جداول ${affected} طالباً من ${byUser.size}، ` +
+          `والحد ${cap}.\n\n` +
+          `ما كتبنا شيئاً وما أرسلنا رسالة. الصفوف باقية في طابور التأكيد.\n\n` +
+          `افتح اللوحة › النظام › طابور التأكيد. لو راجعتها وطلعت صحيحة ` +
+          `اضغط «وافق وأرسل» وتمر الدورة الجاية.`);
+      } else {
+        if (affected > cap && approved) {
+          stat.stormApproved = affected;
+          STORM_OK.until = 0;                  /* الموافقة تُستهلك مرة واحدة */
+          console.log(`syncSchedules: عاصفة ${affected} مرّت بموافقتك`);
+        }
+        if (affected) resolve('notify-storm', 'عاصفة التغييرات');
       }
     }
 
@@ -3244,6 +3281,19 @@ const server = http.createServer(async (req, res) => {
           kinds: [...new Set(MSG_LOG.map(m => m.kind))],
           sinceBoot: OPS.bootedAt
         });
+      }
+
+      /* موافقة يدوية على عاصفة راجعتها بنفسك */
+      if (act === 'approve-storm' && req.method === 'POST') {
+        STORM_OK.until = Date.now() + STORM_OK_WINDOW;
+        STORM_OK.affected = (SCHED_SYNC.last && SCHED_SYNC.last.stormAbort) || 0;
+        console.log(`approve-storm: وافق المشرف على ${STORM_OK.affected} — ` +
+                    `صالحة ${Math.round(STORM_OK_WINDOW / 60000)} دقيقة`);
+        /* نشغّلها فوراً بدل ما ننتظر الدورة — الموافقة تعني «الآن» */
+        const term = String((SCHED_SYNC.last && SCHED_SYNC.last.term) || '202710');
+        const r = await getCourses(term, 'ALL', 'ALL', true).catch(() => null);
+        const stat = r ? await syncSchedules(term, r.courses, true) : null;
+        return send(200, { ok: true, stat, windowMin: Math.round(STORM_OK_WINDOW / 60000) });
       }
 
       if (act === 'sync-schedules') {
