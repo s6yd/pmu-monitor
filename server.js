@@ -568,7 +568,10 @@ async function runMonitorCycle() {
         const html = await fetchPMUData(term, 'ALL', 'ALL');
         /* نوسم الجنس هنا أيضاً — الكاش يخدم البحث مباشرة */
         const parsed = tagGender(parseHTML(html), 'ALL');
-        parsed.forEach(c => { snapshot[term + ':' + c.crn] = c; });
+        /* parseHTML ما تضع الترم في المادة، و byCourse يبني مفتاحه من
+           c.term — فكان يطلع '|PHYS 1422' بدل '202710|PHYS 1422' ولا
+           يتطابق أبداً، فتتعطّل مراقبة المادة كاملة بصمت. نوسمه هنا. */
+        parsed.forEach(c => { c.term = term; snapshot[term + ':' + c.crn] = c; });
 
         /* نفس البيانات اللي سحبناها للمراقبة هي اللي يحتاجها البحث،
            فنغذّي بها كاش البحث بدل ما نسحبها مرة ثانية.
