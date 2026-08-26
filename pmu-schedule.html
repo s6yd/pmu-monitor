@@ -315,6 +315,21 @@ cursor:pointer;flex-shrink:0}
 border-radius:9px;padding:5px 7px;font-size:11px;font-family:var(--mono);
 outline:none;flex-shrink:0;max-width:78px}
 .pc-wi.set{border-style:solid;border-color:var(--accent);color:var(--accent2)}
+/* اختيار نسخة الخطة — القديمة/الجديدة */
+.plan-ver{display:none;background:var(--card);border:1px solid var(--border);
+border-radius:13px;padding:12px 14px;margin-bottom:13px}
+.plan-ver.visible{display:block}
+.pv-head{display:flex;gap:9px;align-items:flex-start}
+.pv-t{font-size:12.5px;color:var(--text2);line-height:1.8;flex:1;min-width:0}
+.pv-x{background:none;border:none;color:var(--text3);font-size:15px;
+cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0}
+.pv-x:hover{color:var(--text2)}
+.pv-btns{display:flex;gap:8px;margin-top:10px}
+.pv-b{flex:1;padding:9px;border-radius:10px;font-size:12.5px;font-weight:700;
+cursor:pointer;background:var(--bg);color:var(--text2);border:1px solid var(--border)}
+.pv-b.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.pv-n{font-size:11px;color:var(--text3);margin-top:8px;line-height:1.7}
+
 /* تنبيه تغيّر الجدول — يعيد استخدام رموز lab-warn نفسها */
 .chg-warn{display:none;flex-direction:column;gap:10px;margin-bottom:13px}
 .chg-warn.visible{display:flex}
@@ -1186,6 +1201,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
   <div class="plan-fix"><span data-i18n="planFix">📣 شفت مادة أو متطلب غلط في الخطة؟ بلّغنا وبنصلحها.</span><button onclick="reportPlan()" data-i18n="planFixBtn">بلّغ</button></div>
 
   <div class="sc-title" style="margin:20px 0 10px" id="planTitleBar"><span data-i18n="planTitle">الخطة الدراسية</span> — <span id="planMajorName">Mechanical Engineering</span></div>
+  <div class="plan-ver" id="planVerBox"></div>
   <div id="planSemesters"></div>
 
 </div>
@@ -1303,6 +1319,9 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
           </optgroup>
         </select>
       </div>
+    </div>
+    <div class="plan-ver" id="planVerBoxSet"></div>
+    <div class="uni-row" style="grid-template-columns:1fr">
       <label class="prep-toggle" id="prepToggle">
         <input type="checkbox" id="prepChk" onchange="onPrepToggle()">
         <span>
@@ -1405,6 +1424,92 @@ const API_BASE='';
 /* ===== خطط 20 تخصص — PMU ===== */
 const PLANS={
 
+/* ═══ الخطة القديمة للميكانيكال (2024/2025) ═══
+   الفرق عن الجديدة ثماني مواد مقابل ثماني، و43 مادة مشتركة:
+     ALIS 1211/1212/2211/2212  ←→  ISLM 1221 + UNIV 1221/2221/2222
+     COMM 1311/1312/2311/2312  ←→  COMM 1321/1322/2321/2322
+   المتطلبات السابقة منقولة من PDF الخطة القديمة كما هي. */
+MEEN_OLD:{name:'Mechanical Engineering',ar:'الهندسة الميكانيكية',total:139,
+tech:{
+'MEEN 4312':['GEEN 3311','MEEN 3322'],
+'MEEN 4315':['MEEN 3322','MEEN 3333'],
+'MEEN 4331':['MEEN 3322','MEEN 3333'],
+'MEEN 4332':['MEEN 3322','MEEN 3333'],
+'MEEN 4341':['MEEN 3322','MEEN 2311','MEEN 3333'],
+'MEEN 4344':['MEEN 3311','MEEN 4393'],
+'MEEN 4351':['MEEN 3395'],
+'MEEN 4394':['MEEN 4392']},
+sems:[
+{id:'F1',label:'Freshman — الترم الأول',hrs:18,courses:[
+{c:'ALIS 1211',n:'Introduction to Islamic Culture',h:2,p:[]},
+{c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]},
+{c:'COMM 1311',n:'Written Communication',h:3,p:[]},
+{c:'UNIV 1211',n:'Professional Development and Competencies',h:2,p:[]},
+{c:'MATH 1422',n:'Calculus I',h:4,p:[]},
+{c:'PHYS 1421',n:'Physics for Engineers I',h:4,p:[]},
+{c:'GEEN 1211',n:'Intro to Engineering',h:2,p:[]}]},
+
+{id:'F2',label:'Freshman — الترم الثاني',hrs:17,courses:[
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']},
+{c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
+{c:'UNIV 1212',n:'Critical Thinking & Problem Solving',h:2,p:['UNIV 1211']},
+{c:'MATH 1423',n:'Calculus II',h:4,p:['MATH 1422']},
+{c:'CHEM 1421',n:'Chemistry for Engineers I',h:4,p:[]},
+{c:'GEEN 2311',n:'Engineering Mechanics I: Statics',h:3,p:['PHYS 1421']}]},
+
+{id:'S1',label:'Sophomore — الترم الأول',hrs:18,courses:[
+{c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[],min:30},
+{c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
+{c:'UNIV 1213',n:'Leadership And Teamwork',h:2,p:['UNIV 1212']},
+{c:'MATH 1324',n:'Calculus III',h:3,p:['MATH 1423']},
+{c:'PHYS 1422',n:'Physics for Engineers II',h:4,p:['PHYS 1421','MATH 1422']},
+{c:'GEEN 2211',n:'Engineering Computing',h:2,p:['MATH 1423','GEEN 1211']},
+{c:'MEEN 2312',n:'Engineering Mechanics II: Dynamics',h:3,p:['GEEN 2311']}]},
+
+{id:'S2',label:'Sophomore — الترم الثاني',hrs:17,courses:[
+{c:'MEEN 2311',n:'Materials Engineering',h:3,p:['GEEN 2311','CHEM 1421']},
+{c:'GEEN 2313',n:'Thermodynamics I',h:3,p:['MATH 1423','CHEM 1421']},
+{c:'MATH 2332',n:'Ordinary Differential Equations',h:3,p:['MATH 1324']},
+{c:'MEEN 2313',n:'Solid Mechanics',h:3,p:['GEEN 2311']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'COMM 2312',n:'Technical & Professional Communication',h:3,p:['COMM 2311']}]},
+
+{id:'J1',label:'Junior — الترم الأول',hrs:18,courses:[
+{c:'MEEN 3394',n:'Computer Aided Design / Manufacturing',h:3,p:['MEEN 2313']},
+{c:'GEEN 3311',n:'Intro to Fluid Mechanics',h:3,p:['GEEN 2313']},
+{c:'MEEN 3311',n:'Manufacturing Processes',h:3,p:['MEEN 2311']},
+{c:'MEEN 3101',n:'Machine Shop Practice and Safety',h:1,p:['MEEN 2313']},
+{c:'MEEN 3322',n:'Thermodynamics II',h:3,p:['GEEN 2313']},
+{c:'MEEN 3391',n:'Design Of Mechanisms',h:3,p:['MEEN 2312']},
+{c:'ALIS 2211',n:'Linguistic Comm. Skills',h:2,p:['ALIS 1212']}]},
+
+{id:'J2',label:'Junior — الترم الثاني',hrs:16,courses:[
+{c:'GEEN 3314',n:'Electric Circuits and Electronics',h:3,p:['PHYS 1422'],min:60},
+{c:'ASSE 3211',n:'Learning Outcome Assessment II',h:2,p:['ASSE 2111'],min:60},
+{c:'MEEN 3432',n:'Computational Methods',h:4,p:['GEEN 2211','MATH 2332']},
+{c:'MEEN 3333',n:'Heat Transfer',h:3,p:['GEEN 3311']},
+{c:'MEEN 3395',n:'Mechanical Vibrations',h:3,p:['MEEN 3391']},
+{c:'MEEN 3111',n:'Thermofluids & Energy Lab',h:1,p:['GEEN 3311']}]},
+
+{id:'SU',label:'Summer — التدريب',hrs:3,courses:[
+{c:'MEEN 3301',n:'Internship',h:3,p:[],min:90}]},
+
+{id:'R1',label:'Senior — الترم الأول',hrs:18,courses:[
+{c:'MEEN 4392',n:'Feedback Control',h:3,p:['MEEN 3395','MEEN 3432','GEEN 3314']},
+{c:'MEEN 4393',n:'Machine Design',h:3,p:['MEEN 3394','MEEN 3311']},
+{c:'MEEN 4396',n:'ME Senior Design I',h:3,p:['MEEN 3395','MEEN 3333'],min:90},
+{c:'GEEN 4311',n:'Engineering Economy',h:3,p:['MEEN 3311']},
+{c:'MEEN 4322',n:'Power Generation',h:3,p:['MEEN 3322','MEEN 3333']},
+{c:'ELEC 1',n:'ME Technical Elective 1',h:3,p:[],el:1}]},
+
+{id:'R2',label:'Senior — الترم الثاني',hrs:14,courses:[
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'MEEN 4311',n:'Principles of HVAC',h:3,p:['MEEN 3322','MEEN 3333']},
+{c:'MEEN 4397',n:'ME Senior Design II',h:3,p:['GEEN 4311','MEEN 4396']},
+{c:'ELEC 3',n:'Social Science Elective',h:3,p:[],el:1},
+{c:'ELEC 2',n:'ME Technical Elective 2',h:3,p:[],el:1}]}
+]},
+
 MEEN:{name:'Mechanical Engineering',ar:'الهندسة الميكانيكية',total:139,
 tech:{
 'MEEN 4312':['GEEN 3311','MEEN 3322'],
@@ -1475,7 +1580,7 @@ sems:[
 {c:'MEEN 4392',n:'Feedback Control',h:3,p:['MEEN 3395','MEEN 3432','GEEN 3314']},
 {c:'GEEN 4311',n:'Engineering Economy',h:3,p:['MEEN 3311']},
 {c:'MEEN 4322',n:'Power Generation',h:3,p:['MEEN 3322','MEEN 3333']},
-{c:'MEEN 4396',n:'ME Senior Design I',h:3,p:['MEEN 3395','MEEN 3333']},
+{c:'MEEN 4396',n:'ME Senior Design I',h:3,p:['MEEN 3395','MEEN 3333'],min:90},
 {c:'ELEC 1',n:'ME Technical Elective 1',h:3,p:[],el:1}]},
 
 {id:'R2',label:'Senior — الترم الثاني',hrs:14,courses:[
@@ -2775,9 +2880,23 @@ LAWB:{name:'Law',ar:'القانون',total:138,tech:{},sems:[
 /* التخصص الحالي */
 let MAJOR=load('pmu_major','MEEN');
 if(!PLANS[MAJOR])MAJOR='MEEN';
-let PLAN=PLANS[MAJOR].sems;
-let TECH_ELECTIVES=PLANS[MAJOR].tech||{};
-let TOTAL_CR=PLANS[MAJOR].total;
+
+/* ═══ نسخة الخطة ═══
+   بعض التخصصات لها خطة قديمة وأخرى جديدة، والفرق في المتطلبات السابقة
+   لا في أسماء المواد فقط — فالمقترح يعطي ترتيباً خاطئاً لو استعملنا
+   النسخة الغلط. المواد المعلّمة تبقى محفوظة بكودها مهما بدّل الطالب،
+   فالتبديل لا يحذف شيئاً أبداً. */
+const PLAN_ALT={MEEN:'MEEN_OLD'};              /* تخصص → مفتاح خطته القديمة */
+let PLAN_VER=load('pmu_plan_ver','new');       /* 'new' أو 'old' */
+if(PLAN_VER!=='old')PLAN_VER='new';
+function hasAltPlan(code){ return !!(PLAN_ALT[code]&&PLANS[PLAN_ALT[code]]) }
+function planKey(code){
+  return (PLAN_VER==='old'&&hasAltPlan(code))?PLAN_ALT[code]:code;
+}
+function planOf(code){ return PLANS[planKey(code)]||PLANS[code] }
+let PLAN=planOf(MAJOR).sems;
+let TECH_ELECTIVES=planOf(MAJOR).tech||{};
+let TOTAL_CR=planOf(MAJOR).total;
 
 /* اسم التخصص المعروض فوق الخطة */
 function setPlanTitle(){
@@ -2791,9 +2910,10 @@ function setPlanTitle(){
 function applyMajor(code,silent,persist){
   if(!PLANS[code])return;
   MAJOR=code;
-  PLAN=prepOn()?prepSems().concat(PLANS[code].sems):PLANS[code].sems;
-  TECH_ELECTIVES=PLANS[code].tech||{};
-  TOTAL_CR=PLANS[code].total;
+  const _p=planOf(code);
+  PLAN=prepOn()?prepSems().concat(_p.sems):_p.sems;
+  TECH_ELECTIVES=_p.tech||{};
+  TOTAL_CR=_p.total;
   if(persist!==false)save('pmu_major',code);
   const el=document.getElementById('majorSelect');
   if(el&&persist!==false&&el.value!==code)el.value=code;
@@ -3380,6 +3500,101 @@ function dismissChg(i){
   const d=load('pmu_chg_seen',[]);
   if(!d.includes(k)){d.push(k);save('pmu_chg_seen',d.slice(-80))}
   renderChgWarn();
+}
+
+/* ═══ اختيار نسخة الخطة ═══
+   يظهر فقط للتخصصات التي لها نسختان. التبديل لا يمس المواد المعلّمة
+   إطلاقاً — هي محفوظة بكودها، وما يختفي من العرض يرجع بالتبديل العكسي. */
+/* البطاقة تُختار مرة واحدة في العمر، فتصدّرها لتبويب خطتي دائماً
+   يشغل مساحة بلا مقابل. الطالب يخفيها فتنتقل للإعدادات تحت اختيار
+   التخصص — مكانها الطبيعي — ويبقى تبديلها متاحاً متى شاء. */
+function planVerHidden(){ return !!load('pmu_planver_hidden',false) }
+function hidePlanVer(){
+  save('pmu_planver_hidden',true);
+  renderPlanVer();
+  showToast(LANG==='ar'
+    ?'نقلناها للإعدادات — تلقاها تحت اختيار التخصص'
+    :'Moved to Settings — under your major','ok');
+}
+
+function planVerHTML(inSettings){
+  const ar=LANG==='ar';
+  const isOld=PLAN_VER==='old';
+  return `<div class="pv-head">
+      <span class="pv-t">${ar
+        ?'الجامعة عدّلت خطة هذا التخصص. لو كنت على الخطة القديمة بدّلها من هنا.'
+        :'The plan for this major was revised. Switch if you follow the older one.'}</span>
+      ${inSettings?'':`<button class="pv-x" title="${ar?'انقلها للإعدادات':'Move to Settings'}"
+        onclick="hidePlanVer()">✕</button>`}
+    </div>
+    <div class="pv-btns">
+      <button class="pv-b${isOld?'':' on'}" onclick="setPlanVer('new')">
+        ${ar?'الجديدة':'New'}</button>
+      <button class="pv-b${isOld?' on':''}" onclick="setPlanVer('old')">
+        ${ar?'القديمة':'Old'}</button>
+    </div>
+    <div class="pv-n">${ar
+      ?'كل خطة تحتفظ بعلاماتها ودرجاتها لحالها — ترجع لك كما تركتها لما تبدّل.'
+      :'Each plan keeps its own checkmarks and grades — restored when you switch back.'}
+      <br>${ar
+      ?'🎓 مو متأكد من خطتك؟ قارن موادك بـ<b>Degree Audit</b> في بانر الجامعة — هو المرجع.'
+      :'🎓 Not sure? Compare with <b>Degree Audit</b> in the university Banner — it is the reference.'}
+    </div>`;
+}
+
+function renderPlanVer(){
+  const plan=document.getElementById('planVerBox');
+  const setg=document.getElementById('planVerBoxSet');
+  const show=majorChosen()&&hasAltPlan(MAJOR);
+  const inSettings=planVerHidden();
+  [[plan,show&&!inSettings,false],[setg,show&&inSettings,true]].forEach(([el,vis,st])=>{
+    if(!el)return;
+    if(!vis){el.classList.remove('visible');el.innerHTML='';return}
+    el.classList.add('visible');
+    el.innerHTML=planVerHTML(st);
+  });
+}
+
+/* ═══ بيانات مستقلة لكل نسخة خطة ═══
+   المشكلة: مواد النسخة الأخرى تبقى في completed فيصير المعدل محسوباً
+   من مواد لا تظهر علاماتها في الخطة — رقمان لا يتفقان أمام الطالب.
+   الحل: كل نسخة تحتفظ بعلاماتها ودرجاتها في صندوق خاص. التبديل
+   يودع الحالي ويستدعي المحفوظ، فلا شيء يضيع ولا شيء يتناقض. */
+function planBoxKey(v){ return 'pmu_planbox_'+MAJOR+'_'+v }
+
+function stashPlanData(v){
+  save(planBoxKey(v),{completed:completed.slice(),grades:Object.assign({},grades)});
+}
+function restorePlanData(v){
+  const box=load(planBoxKey(v),null);
+  if(box&&Array.isArray(box.completed)){
+    completed=box.completed.slice();
+    grades=Object.assign({},box.grades||{});
+  }else{
+    /* أول مرة على هذي النسخة: نبدأ بما يشترك مع النسخة الحالية فقط،
+       فلا تظهر مواد لا وجود لها في خطته. */
+    const keep=completed.filter(c=>findPlanCourse(c)||TECH_ELECTIVES[c]);
+    const g={}; keep.forEach(c=>{ if(grades[c])g[c]=grades[c] });
+    completed=keep; grades=g;
+  }
+  save('pmu_completed',completed);
+  save('pmu_grades',grades);
+}
+
+function setPlanVer(v){
+  const next=(v==='old')?'old':'new';
+  if(next===PLAN_VER)return;
+  stashPlanData(PLAN_VER);          /* نودع بيانات النسخة الحالية */
+  PLAN_VER=next;
+  save('pmu_plan_ver',PLAN_VER);
+  applyMajor(MAJOR,true,false);     /* الخطة الجديدة لازم تُشتق أولاً */
+  restorePlanData(next);            /* ثم نستدعي بيانات النسخة الجديدة */
+  if(USER){ pushCompleted&&pushCompleted(); pushProfile&&pushProfile(); }
+  renderPlan();renderPlanVer();renderGPA&&renderGPA();
+  renderPickHints&&renderPickHints();
+  showToast(LANG==='ar'
+    ?(next==='old'?'تحوّلت للخطة القديمة':'تحوّلت للخطة الجديدة')
+    :(next==='old'?'Switched to the old plan':'Switched to the new plan'),'ok');
 }
 
 function renderChgWarn(){
@@ -4235,6 +4450,7 @@ function goPickMajor(){
 
 function renderPlan(){
   applyGpaHidden();
+  try{ renderPlanVer() }catch(e){}
   /* أول زيارة بدون تخصص — نوجّهه بدل ما نعرض خطة غلط */
   const chosen=majorChosen();
   const pm=document.getElementById('pickMajor');
@@ -4672,6 +4888,7 @@ async function removeMonitor(id){
 /* ---- settings render ---- */
 function renderSettings(){
   const ar=LANG==='ar';
+  try{ renderPlanVer() }catch(e){}
   /* نرجّع حالة خانة التحضيري من التخزين */
   const pchk=document.getElementById('prepChk');
   if(pchk)pchk.checked=prepOn();
@@ -5944,6 +6161,8 @@ function calcGPA(){
     /* درجات مواد مو في خطتك الحالية ما تُحسب — أكواد المواد تختلف
        بين التخصصات، فلو غيّرت تخصصك تبقى درجة قديمة تؤثر على معدلك
        وأنت ما تشوفها ولا تقدر تعدّلها. */
+    /* لكل نسخة خطة علاماتها ودرجاتها المنفصلة (انظر swapPlanData)،
+       فما يصل هنا إلا مواد النسخة الحالية — والمعدل يطابق ما يُعرض. */
     if(!findPlanCourse(code) && !TECH_ELECTIVES[code])return;
     const h=creditsOf(code);
     pts+=GRADE_POINTS[g]*h;hrs+=h;n++;
@@ -6216,8 +6435,14 @@ async function pullCloud(){
     ]);
     PROFILE=prof||null;
 
+    /* نسخة الخطة قبل التخصص: applyMajor تشتق الخطة من PLAN_VER،
+       فلو ضبطناها بعده اشتُقّت الخطة الغلط ثم صُحّحت — ووميض في الواجهة. */
+    if(prof&&(prof.plan_ver==='old'||prof.plan_ver==='new')&&prof.plan_ver!==PLAN_VER){
+      PLAN_VER=prof.plan_ver; save('pmu_plan_ver',PLAN_VER);
+    }
     /* التخصص من السحابة — يجي معك لأي جهاز */
     if(prof&&prof.major&&PLANS[prof.major]&&prof.major!==MAJOR) applyMajor(prof.major,true);
+    else if(prof&&prof.major===MAJOR&&hasAltPlan(MAJOR)) applyMajor(MAJOR,true,false);
     else if(prof&&!prof.major&&MAJOR!=='MEEN') pushProfile();
 
     if(cc&&cc.length){
@@ -6269,7 +6494,7 @@ async function pullCloud(){
 /* حفظ التخصص في الحساب */
 async function pushProfile(){
   if(!USER)return;
-  try{ await sb.from('profiles').update({major:MAJOR}).eq('id',USER.id); }
+  try{ await sb.from('profiles').update({major:MAJOR,plan_ver:PLAN_VER}).eq('id',USER.id); }
   catch(e){ console.log('major sync',e); }
 }
 
