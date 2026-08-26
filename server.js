@@ -903,7 +903,7 @@ async function handleTelegramUpdate(update) {
             ? `📢 بدأ البث لـ <b>${r.total}</b> طالب مع <b>${photos.length}</b> صور.`
             : `❌ ${r.error}`);
         } else if (cmd.startsWith('/reply')) {
-          const rest = cmd.slice(6).trim(), sp = rest.indexOf(' ');
+          const rest = cmd.slice(6).trim(), sp = rest.search(/\s/);
           const who = sp > 0 ? rest.slice(0, sp).trim() : rest;
           let body = sp > 0 ? rest.slice(sp + 1).trim() : '';
           if (body.startsWith('!')) body = body.slice(1).trim();
@@ -1015,7 +1015,10 @@ async function handleTelegramUpdate(update) {
   /* ═══ /reply <إيميل أو معرّف> <النص> ═══ */
   if (isAdmin && text.startsWith('/reply')) {
     const rest = text.slice(6).trim();
-    const sp = rest.indexOf(' ');
+    /* الفاصل أي مسافة بيضاء لا المسافة وحدها: كتابة البريد ثم Enter
+       ثم النص هو الأسلوب الطبيعي في تيليغرام للرسائل الطويلة، وكان
+       يجعل who = "البريد\nأول كلمة" فلا يطابق أحداً. */
+    const sp = rest.search(/\s/);
     if (sp < 1) return sendMsg(chatId,
       `<b>رد على طالب:</b>\n<code>/reply البريد النص</code>\n` +
       `<i>يضيف ترويسة "رد من فريق جدولك"</i>\n\n` +
