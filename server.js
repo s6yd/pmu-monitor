@@ -2031,6 +2031,7 @@ async function adminHealth() {
       notified: (SCHED_SYNC.last && SCHED_SYNC.last.notified) || 0,
       notifySuppressed: (SCHED_SYNC.last && SCHED_SYNC.last.notifySuppressed) || 0,
       notifyCap: NOTIFY_CAP,
+      stormAbort: (SCHED_SYNC.last && SCHED_SYNC.last.stormAbort) || 0,
       pending: await pendingSnapshot(),
       tick: { everyMin: Math.round(CONFIRM_TICK / 60000),
               maxAgeHr: Math.round(PENDING_MAX_AGE / 3600000),
@@ -2399,22 +2400,22 @@ function schedClash(a, b) {
 /* ═══ إشعار تغيّر الجدول ═══
    يُرسل بعد التأكيد فقط. التغيير يمسّ كل من في جدوله تلك الشعبة،
    فنجمّع لكل طالب رسالة واحدة مهما تعددت مواده المتغيّرة في الدورة. */
-const NOTIFY_CAP = 60;   /* أكثر من هذا في دورة واحدة = خلل لا تغيير */
+/* أكثر من هذا في دورة واحدة = خلل لا تغيير.
+   الرقم مبني على ~147 مستخدماً: 100 تعني ثلثيهم تقريباً، فتمر
+   ثلاث أو أربع شعب تتغيّر معاً في الحذف والإضافة (وارد جداً)،
+   ويبقى تحليل ناقص يمسّ الجميع محجوباً. اضبطه لو كبر عدد المستخدمين. */
+const NOTIFY_CAP = 100;
 
 async function notifyChanges(list, stat) {
   if (!list.length) return;
 
-  /* صمّام أمان: قاطع الدائرة يمسك التغذية الفارغة، وهذا يمسك
-     الحالة التي تمر منه ثم تولّد عاصفة رسائل لا تُسحب. */
-  if (list.length > NOTIFY_CAP) {
+  /* الصمّام صار يقرر قبل الكتابة داخل syncSchedules، فما نصل هنا
+     أصلاً في العاصفة. نتركه هنا كشبكة أخيرة لا أكثر. */
+  if (list.length > NOTIFY_CAP * 2) {
     stat.notifySuppressed = list.length;
-    console.log(`notifyChanges: ${list.length} إشعاراً — تجاوز الحد، أُلغي الإرسال`);
-    alert('notify-storm', '⛔️ عاصفة إشعارات — أوقفناها',
-      `دورة واحدة ولّدت ${list.length} إشعار تغيير، والحد ${NOTIFY_CAP}.\n\n` +
-      `ما أُرسلت أي رسالة. التغييرات مكتوبة في القاعدة، فراجع طابور التأكيد.`);
+    console.log(`notifyChanges: ${list.length} إشعاراً — كُبت احتياطياً`);
     return;
   }
-  resolve('notify-storm', 'عاصفة الإشعارات');
 
   /* من user_id إلى محادثة تيليغرام — استعلام واحد */
   const ids = [...new Set(list.map(x => x.userId))].filter(isUuid);
@@ -2642,6 +2643,44 @@ async function syncSchedules(term, courses, force) {
     stat.pendingNew = 0; stat.pendingWaiting = 0; stat.confirmed = 0; stat.discarded = 0;
     const notifyList = [];
 
+    /* ═══ صمّام العاصفة — يقرر قبل أي كتابة ═══
+       كان يكبت الرسائل بعد ما تتم الكتابة، فيصمت تيليغرام
+       ويظل الموقع يعرض التحذير الخاطئ لكل طالب — حماية نصف.
+       الآن نحصي المتأثرين أولاً: لو تجاوزوا الحد لا نكتب ولا نرسل،
+       والصفوف تبقى في الطابور فتُعاد المحاولة بعد ما تفحصها. */
+    let stormAbort = 0;
+    {
+      let affected = 0;
+      for (const [key, item] of stale) {
+        const d0 = diffs.get(key);
+        if (!d0) continue;
+        const pk = String(item.crn) + '|' +
+          (item.scope ? sessionKey(item.scope.date, item.scope.timing) : '');
+        const prev = pendBy.get(pk);
+        if (!prev || prev.fingerprint !== fingerprint(d0.fields)) continue;
+        const age = Date.now() - new Date(prev.first_seen).getTime();
+        if (age < CONFIRM_AFTER || (prev.seen_count + 1) < CONFIRM_MIN_SIGHTINGS) continue;
+        /* ناضج — كم طالباً يمسّه؟ نعدّ كل الطلاب لا المربوطين بتيليغرام،
+           فالتحذير في الصفحة يصل الجميع والمربوطون أقل من ربعهم. */
+        affected += rows.filter(r =>
+          String(r.crn || '').trim() === String(item.crn).trim() &&
+          (!item.scope ||
+            (same(r.course_date, item.scope.date) &&
+             same(r.course_timing, item.scope.timing)))).length;
+      }
+      if (affected > NOTIFY_CAP) {
+        stormAbort = affected;
+        stat.stormAbort = affected;
+        console.log(`syncSchedules: ${affected} طالباً متأثراً — تجاوز ${NOTIFY_CAP}، أُلغي التأكيد`);
+        alert('notify-storm', '⛔️ عاصفة تغييرات — أوقفنا كل شيء',
+          `دورة واحدة كانت بتغيّر جداول ${affected} طالباً، والحد ${NOTIFY_CAP}.\n\n` +
+          `ما كتبنا شيئاً وما أرسلنا رسالة. الصفوف باقية في طابور التأكيد ` +
+          `وتُعاد المحاولة تلقائياً — افحص اللوحة أولاً.`);
+      } else if (affected) {
+        resolve('notify-storm', 'عاصفة التغييرات');
+      }
+    }
+
     for (const [key, item] of stale) {
       const c = item.course;
       const d0 = diffs.get(key);
@@ -2668,9 +2707,10 @@ async function syncSchedules(term, courses, force) {
         continue;
       }
 
-      /* نفس الفرق — هل نضج؟ */
+      /* نفس الفرق — هل نضج؟ (والعاصفة تُبقيه منتظراً بدل ما نكتب) */
       const age = Date.now() - new Date(prev.first_seen).getTime();
-      if (age < CONFIRM_AFTER || (prev.seen_count + 1) < CONFIRM_MIN_SIGHTINGS) {
+      if (stormAbort ||
+          age < CONFIRM_AFTER || (prev.seen_count + 1) < CONFIRM_MIN_SIGHTINGS) {
         await sb('PATCH', 'pending_changes', {
           query: `?id=eq.${enc(prev.id)}`,
           body: { last_seen: nowIso, seen_count: prev.seen_count + 1 },

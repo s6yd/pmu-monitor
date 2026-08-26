@@ -1463,6 +1463,10 @@ function renderSys(){
       <b>${S.pendingNew} جديد · ${S.pendingWaiting} ينتظر ·
          <span class="${S.confirmed?'warn':''}">${S.confirmed} مؤكَّد</span> ·
          <span class="${S.discarded?'bad':''}">${S.discarded} مرفوض</span></b></div>
+    ${S.stormAbort?`<div class="kv"><span>⛔️ عاصفة — أُلغي التأكيد</span>
+      <b class="bad">${S.stormAbort} طالباً متأثراً (الحد ${S.notifyCap})</b></div>
+    <div class="gauge-sub" style="color:var(--bad)">ما كُتب شي وما أُرسلت رسالة.
+      الصفوف باقية في الطابور وتُعاد المحاولة — افحصها قبل ما ترفع الحد.</div>`:''}
     <div class="kv"><span>إشعارات أُرسلت</span>
       <b class="${S.notifySuppressed?'bad':(S.notified?'warn':'')}">
         ${S.notifySuppressed?`⛔️ كُبتت ${S.notifySuppressed} (الحد ${S.notifyCap})`:S.notified}</b></div>
