@@ -1089,6 +1089,20 @@ async function handleTelegramUpdate(update) {
   if (text.startsWith('/start')) {
     const code = (text.split(' ')[1] || '').trim().toUpperCase();
     if (!code) {
+      /* المربوط أصلاً كان يقرأ «عشان تربط حسابك...» فيظن إنه غير مربوط
+         ويروح يربط مرة ثانية — وهذا مصدر أغلب الربط المكرر. */
+      const me = await sb('GET', 'profiles', {
+        query: `?telegram_chat_id=eq.${encodeURIComponent(String(chatId))}` +
+               `&select=name&limit=1`
+      }).catch(() => []);
+      if (Array.isArray(me) && me.length) {
+        return sendMsg(chatId,
+          `✅ <b>حسابك مربوط</b>\n\n` +
+          `الإشعارات شغّالة، ما تحتاج تسوي شي.\n\n` +
+          `<code>/status</code> — تشوف مواد تراقبها\n` +
+          `<code>/stop</code> — توقف الإشعارات\n\n` +
+          `اختر مواد للمراقبة من jadwalik.com`);
+      }
       return sendMsg(chatId,
         `👋 <b>أهلاً بك في جدولك</b>\n\n` +
         `عشان تربط حسابك، افتح jadwalik.com → الإعدادات → فعّل إشعارات تيليغرام.`);
@@ -1227,14 +1241,25 @@ async function handleTelegramUpdate(update) {
     if (!rows || !rows.length) return sendMsg(chatId, `ما لقيت حسابك مربوط. افتح jadwalik.com للربط.`);
     const p = rows[0];
     const mons = await sb('GET', 'monitored_courses',
-      { query: `?user_id=eq.${p.id}&select=course_code,section` });
+      { query: `?user_id=eq.${p.id}&select=course_code,section,scope,sections_state` });
     const active = p.is_pro ||
       (p.subscription_expires_at && new Date(p.subscription_expires_at) > new Date());
+    /* مراقبة المادة كاملة تترك section فاضياً، فكانت تطبع «§null».
+       اللوحة تعالجها صح — هذي وحدها كانت ناقصة. */
+    const line = m => {
+      const code = m.course_code || '?';
+      if (m.scope === 'course') {
+        const n = m.sections_state && typeof m.sections_state === 'object'
+          ? Object.keys(m.sections_state).length : 0;
+        return `• ${code} — كل الشعب${n ? ` (${n})` : ''}`;
+      }
+      return `• ${code} §${m.section || '?'}`;
+    };
     return sendMsg(chatId,
       `📊 <b>حالتك</b>\n\n` +
       `الاشتراك: ${active ? '✅ فعّال' : '❌ غير فعّال'}\n` +
       `المواد المراقبة: ${mons.length}\n` +
-      (mons.length ? mons.map(m => `• ${m.course_code} §${m.section}`).join('\n') : ''));
+      (mons.length ? '\n' + mons.map(line).join('\n') : ''));
   }
 
   /* ═══ أمر غير معروف ═══
