@@ -315,6 +315,37 @@ cursor:pointer;flex-shrink:0}
 border-radius:9px;padding:5px 7px;font-size:11px;font-family:var(--mono);
 outline:none;flex-shrink:0;max-width:78px}
 .pc-wi.set{border-style:solid;border-color:var(--accent);color:var(--accent2)}
+/* اختيار نسخة الخطة — القديمة/الجديدة */
+.plan-ver{display:none;background:var(--card);border:1px solid var(--border);
+border-radius:13px;padding:12px 14px;margin-bottom:13px}
+.plan-ver.visible{display:block}
+.pv-t{font-size:12.5px;color:var(--text2);line-height:1.8}
+.pv-btns{display:flex;gap:8px;margin-top:10px}
+.pv-b{flex:1;padding:9px;border-radius:10px;font-size:12.5px;font-weight:700;
+cursor:pointer;background:var(--bg);color:var(--text2);border:1px solid var(--border)}
+.pv-b.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.pv-n{font-size:11px;color:var(--text3);margin-top:8px;line-height:1.7}
+
+/* تنبيه تغيّر الجدول — يعيد استخدام رموز lab-warn نفسها */
+.chg-warn{display:none;flex-direction:column;gap:10px;margin-bottom:13px}
+.chg-warn.visible{display:flex}
+.cw-card{background:var(--warn-bg);border:1px solid rgba(245,158,11,.3);
+border-radius:13px;padding:12px 14px}
+.cw-head{display:flex;gap:9px;align-items:flex-start}
+.cw-ic{font-size:18px;flex-shrink:0}
+.cw-t{font-size:13px;font-weight:700;color:var(--warn);flex:1;min-width:0}
+.cw-x{background:none;border:none;color:var(--text3);font-size:15px;
+cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0}
+.cw-x:hover{color:var(--text2)}
+.cw-row{font-size:12.5px;color:var(--text2);margin-top:8px;line-height:1.9}
+.cw-f{color:var(--text3);margin-inline-end:5px}
+.cw-old{text-decoration:line-through;opacity:.65}
+.cw-new{font-weight:700;color:var(--text)}
+.cw-clash{font-size:12px;color:var(--bad);margin-top:8px;font-weight:600;line-height:1.7}
+.cw-n{font-size:11px;color:var(--text3);margin-top:8px;line-height:1.7}
+.cw-tg{display:block;margin-top:9px;font-size:11.5px;color:var(--accent);
+text-decoration:none;font-weight:600}
+
 .lab-warn{display:none;gap:11px;align-items:flex-start;background:var(--warn-bg);
 border:1px solid rgba(245,158,11,.3);border-radius:13px;padding:12px 14px;margin-bottom:13px}
 .lab-warn.visible{display:flex}
@@ -408,6 +439,9 @@ background:transparent;color:var(--text3);font-size:15px;cursor:pointer;
 display:flex;align-items:center;justify-content:center}
 .btn-bell.on{border-color:var(--warn);color:var(--warn);background:var(--warn-bg)}
 .btn-bell.locked{opacity:.45}
+.btn-bell.all{font-size:13px}
+.btn-bell.all.on{border-color:var(--accent);color:var(--accent);
+background:rgba(61,111,255,.12)}
 
 .my-rev{background:var(--bg);border:1px solid var(--border);border-radius:12px;
 padding:12px 14px;margin-bottom:8px}
@@ -499,6 +533,15 @@ textarea:focus{border-color:var(--accent)}
 font-weight:600;font-family:var(--sans);cursor:pointer;padding:6px 0;margin-bottom:10px}
 
 /* ---- Guide ---- */
+.tg-bar[hidden]{display:none!important}   /* لازم تسبق قاعدة العرض */
+.tg-bar:empty{display:none!important}
+.tg-bar{position:sticky;top:0;z-index:60;display:flex;align-items:center;
+justify-content:space-between;gap:10px;flex-wrap:wrap;
+padding:9px 14px;background:var(--warn-bg);
+border-bottom:1px solid rgba(245,158,11,.4);
+font-size:12.5px;line-height:1.7;color:var(--text)}
+.tg-bar button{background:var(--warn);color:#1a1200;border:none;border-radius:9px;
+padding:7px 13px;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer;flex-shrink:0}
 .env-bar{display:none;background:#f59e0b;color:#1a1200;text-align:center;
 padding:6px 12px;font-size:12px;font-weight:700;position:sticky;top:0;z-index:200}
 .env-bar.on{display:block}
@@ -773,6 +816,7 @@ margin:0!important;padding:0!important;min-height:0!important}
 /* اخفِ واجهة الشاشة كاملة */
 .topbar,.tabs,.sched-actions,.slot-remove,.conflict-alert,.sched-summary,.lab-warn,
 .guide-fab,.guide-overlay,.toast,.state-box,.sync-note,.next-check,.reg-card,.crn-panel,
+.slot-bar,#slotBar,
 #schedDays,.modal,.overlay,.finals-card,.cal-card,.legal-foot{display:none!important}
 .page{display:none!important}
 .main{padding:0!important;max-width:none!important;margin:0!important}
@@ -793,7 +837,7 @@ color:#111827;font-family:var(--mono)}
 .ps-stat.bad b{color:#b8442e}
 
 /* شبكة الأسبوع */
-.ps-grid{margin-top:7px;display:grid;gap:0;break-inside:avoid;page-break-inside:avoid}
+.ps-grid{margin-top:7px;padding-top:5px;display:grid;gap:0;break-inside:avoid;page-break-inside:avoid}
 .ps-colhead{font-size:8pt;font-weight:700;text-align:center;padding:4px 0 5px;
 border-bottom:1px solid #111827;color:#111827}
 .ps-colhead small{display:block;font-size:5.5pt;font-weight:500;color:#9aa3b0;
@@ -819,8 +863,43 @@ direction:ltr;text-align:right}
 direction:ltr;text-align:right}
 .ps-time{font-size:5.8pt;color:#9aa3b0;font-family:var(--mono);
 direction:ltr;text-align:right;margin-top:1px}
+/* ثلاث درجات حسب ارتفاع البلوك: كامل · مضغوط (سطر واحد) · كود فقط */
+.ps-mini{display:none;font-size:5pt;color:#5b6472;line-height:1.25;
+margin-top:.5px;direction:ltr;text-align:right;
+white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ps-cls.sm{padding:1px 3px}
 .ps-cls.sm .ps-meta,.ps-cls.sm .ps-time{display:none}
-.ps-cls.sm .ps-code{font-size:6.5pt}
+.ps-cls.sm .ps-mini{display:block}
+.ps-cls.sm .ps-code{font-size:6.4pt;line-height:1.1}
+.ps-cls.xs .ps-mini{display:none}
+.ps-cls.xs .ps-code{font-size:6pt}
+
+/* جدول المواد التفصيلي */
+.ps-list{margin-top:8px;padding-top:6px;border-top:1px solid #dfe3e9;
+break-inside:avoid;page-break-inside:avoid}
+.ps-list table{width:100%;border-collapse:collapse;table-layout:fixed}
+.ps-list th{font-size:6pt;font-weight:700;color:#5b6472;text-align:right;
+padding:0 3px 3px;border-bottom:1px solid #111827;white-space:nowrap}
+.ps-list td{font-size:6.6pt;color:#111827;text-align:right;padding:2.8px 4px;
+border-bottom:1px solid #eef0f3;line-height:1.35;
+white-space:normal;overflow-wrap:anywhere}
+.ps-list tr:last-child td{border-bottom:none}
+.ps-list .w-code{width:12%}
+.ps-list .w-name{width:25%}
+.ps-list .w-sec{width:6%}
+.ps-list .w-days{width:13%}
+.ps-list .w-time{width:12%}
+.ps-list .w-room{width:14%}
+.ps-list .w-inst{width:18%}
+.ps-list .c-mono,.ps-list .c-time{white-space:nowrap}
+.ps-list .c-code{font-weight:700;direction:ltr;text-align:right;color:var(--c);
+position:relative;padding-inline-end:9px}
+.ps-list .c-code i{position:absolute;inset-inline-end:0;top:50%;transform:translateY(-50%);
+width:4px;height:9px;border-radius:2px;background:var(--c)}
+.ps-list tbody tr{background:var(--c2)}
+.ps-list .c-name{color:#5b6472}
+.ps-list .c-mono{font-family:var(--mono);direction:ltr;text-align:right;font-size:6pt}
+.ps-list .c-mono.b{font-weight:700;font-size:6.8pt}
 
 /* المفتاح والحواشي */
 .ps-legend{margin-top:8px;padding-top:6px;border-top:1px solid #dfe3e9;
@@ -834,8 +913,9 @@ display:flex;flex-wrap:wrap;align-items:center;gap:4px 9px;
 break-inside:avoid;page-break-inside:avoid}
 .ps-crn-t{font-size:6.5pt;font-weight:700;color:#111827}
 .ps-crn-i{font-size:6.5pt;color:#5b6472;direction:ltr;
-border:1px solid #dfe3e9;border-radius:3px;padding:1px 5px}
-.ps-crn-i b{font-family:var(--mono);font-size:8pt;color:#111827;margin-inline-end:4px}
+border:1px solid #dfe3e9;border-inline-end:2.5px solid var(--c,#dfe3e9);
+background:var(--c2,transparent);border-radius:3px;padding:1px 5px}
+.ps-crn-i b{font-family:var(--mono);font-size:8pt;color:var(--c,#111827);margin-inline-end:4px}
 .ps-note{margin-top:6px;font-size:6.5pt;color:#5b6472;line-height:1.6;break-inside:avoid}
 .ps-note b{color:#111827;direction:ltr}
 .ps-warn{margin-top:6px;font-size:6.5pt;color:#b8442e;line-height:1.6}
@@ -876,6 +956,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 </noscript>
 
 <div class="env-bar" id="envBar"></div>
+<div class="tg-bar" id="tgBar" hidden></div>
 <div class="topbar">
   <div class="logo">
     <div class="logo-icon">🎓</div>
@@ -1005,6 +1086,8 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
   </div>
   <div class="slot-bar" id="slotBar"></div>
 
+  <div class="chg-warn" id="chgWarn"></div>
+
   <div class="lab-warn" id="labWarn"></div>
 
   <div id="schedDays"></div>
@@ -1114,6 +1197,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
   <div class="plan-fix"><span data-i18n="planFix">📣 شفت مادة أو متطلب غلط في الخطة؟ بلّغنا وبنصلحها.</span><button onclick="reportPlan()" data-i18n="planFixBtn">بلّغ</button></div>
 
   <div class="sc-title" style="margin:20px 0 10px" id="planTitleBar"><span data-i18n="planTitle">الخطة الدراسية</span> — <span id="planMajorName">Mechanical Engineering</span></div>
+  <div class="plan-ver" id="planVerBox"></div>
   <div id="planSemesters"></div>
 
 </div>
@@ -1332,6 +1416,92 @@ const API_BASE='';
 /* ===== STUDY PLAN (Updated Spring 2026) ===== */
 /* ===== خطط 20 تخصص — PMU ===== */
 const PLANS={
+
+/* ═══ الخطة القديمة للميكانيكال (2024/2025) ═══
+   الفرق عن الجديدة ثماني مواد مقابل ثماني، و43 مادة مشتركة:
+     ALIS 1211/1212/2211/2212  ←→  ISLM 1221 + UNIV 1221/2221/2222
+     COMM 1311/1312/2311/2312  ←→  COMM 1321/1322/2321/2322
+   المتطلبات السابقة منقولة من PDF الخطة القديمة كما هي. */
+MEEN_OLD:{name:'Mechanical Engineering',ar:'الهندسة الميكانيكية',total:139,
+tech:{
+'MEEN 4312':['GEEN 3311','MEEN 3322'],
+'MEEN 4315':['MEEN 3322','MEEN 3333'],
+'MEEN 4331':['MEEN 3322','MEEN 3333'],
+'MEEN 4332':['MEEN 3322','MEEN 3333'],
+'MEEN 4341':['MEEN 3322','MEEN 2311','MEEN 3333'],
+'MEEN 4344':['MEEN 3311','MEEN 4393'],
+'MEEN 4351':['MEEN 3395'],
+'MEEN 4394':['MEEN 4392']},
+sems:[
+{id:'F1',label:'Freshman — الترم الأول',hrs:18,courses:[
+{c:'ALIS 1211',n:'Introduction to Islamic Culture',h:2,p:[]},
+{c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]},
+{c:'COMM 1311',n:'Written Communication',h:3,p:[]},
+{c:'UNIV 1211',n:'Professional Development and Competencies',h:2,p:[]},
+{c:'MATH 1422',n:'Calculus I',h:4,p:[]},
+{c:'PHYS 1421',n:'Physics for Engineers I',h:4,p:[]},
+{c:'GEEN 1211',n:'Intro to Engineering',h:2,p:[]}]},
+
+{id:'F2',label:'Freshman — الترم الثاني',hrs:17,courses:[
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']},
+{c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
+{c:'UNIV 1212',n:'Critical Thinking & Problem Solving',h:2,p:['UNIV 1211']},
+{c:'MATH 1423',n:'Calculus II',h:4,p:['MATH 1422']},
+{c:'CHEM 1421',n:'Chemistry for Engineers I',h:4,p:[]},
+{c:'GEEN 2311',n:'Engineering Mechanics I: Statics',h:3,p:['PHYS 1421']}]},
+
+{id:'S1',label:'Sophomore — الترم الأول',hrs:18,courses:[
+{c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[],min:30},
+{c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
+{c:'UNIV 1213',n:'Leadership And Teamwork',h:2,p:['UNIV 1212']},
+{c:'MATH 1324',n:'Calculus III',h:3,p:['MATH 1423']},
+{c:'PHYS 1422',n:'Physics for Engineers II',h:4,p:['PHYS 1421','MATH 1422']},
+{c:'GEEN 2211',n:'Engineering Computing',h:2,p:['MATH 1423','GEEN 1211']},
+{c:'MEEN 2312',n:'Engineering Mechanics II: Dynamics',h:3,p:['GEEN 2311']}]},
+
+{id:'S2',label:'Sophomore — الترم الثاني',hrs:17,courses:[
+{c:'MEEN 2311',n:'Materials Engineering',h:3,p:['GEEN 2311','CHEM 1421']},
+{c:'GEEN 2313',n:'Thermodynamics I',h:3,p:['MATH 1423','CHEM 1421']},
+{c:'MATH 2332',n:'Ordinary Differential Equations',h:3,p:['MATH 1324']},
+{c:'MEEN 2313',n:'Solid Mechanics',h:3,p:['GEEN 2311']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'COMM 2312',n:'Technical & Professional Communication',h:3,p:['COMM 2311']}]},
+
+{id:'J1',label:'Junior — الترم الأول',hrs:18,courses:[
+{c:'MEEN 3394',n:'Computer Aided Design / Manufacturing',h:3,p:['MEEN 2313']},
+{c:'GEEN 3311',n:'Intro to Fluid Mechanics',h:3,p:['GEEN 2313']},
+{c:'MEEN 3311',n:'Manufacturing Processes',h:3,p:['MEEN 2311']},
+{c:'MEEN 3101',n:'Machine Shop Practice and Safety',h:1,p:['MEEN 2313']},
+{c:'MEEN 3322',n:'Thermodynamics II',h:3,p:['GEEN 2313']},
+{c:'MEEN 3391',n:'Design Of Mechanisms',h:3,p:['MEEN 2312']},
+{c:'ALIS 2211',n:'Linguistic Comm. Skills',h:2,p:['ALIS 1212']}]},
+
+{id:'J2',label:'Junior — الترم الثاني',hrs:16,courses:[
+{c:'GEEN 3314',n:'Electric Circuits and Electronics',h:3,p:['PHYS 1422'],min:60},
+{c:'ASSE 3211',n:'Learning Outcome Assessment II',h:2,p:['ASSE 2111'],min:60},
+{c:'MEEN 3432',n:'Computational Methods',h:4,p:['GEEN 2211','MATH 2332']},
+{c:'MEEN 3333',n:'Heat Transfer',h:3,p:['GEEN 3311']},
+{c:'MEEN 3395',n:'Mechanical Vibrations',h:3,p:['MEEN 3391']},
+{c:'MEEN 3111',n:'Thermofluids & Energy Lab',h:1,p:['GEEN 3311']}]},
+
+{id:'SU',label:'Summer — التدريب',hrs:3,courses:[
+{c:'MEEN 3301',n:'Internship',h:3,p:[],min:90}]},
+
+{id:'R1',label:'Senior — الترم الأول',hrs:18,courses:[
+{c:'MEEN 4392',n:'Feedback Control',h:3,p:['MEEN 3395','MEEN 3432','GEEN 3314']},
+{c:'MEEN 4393',n:'Machine Design',h:3,p:['MEEN 3394','MEEN 3311']},
+{c:'MEEN 4396',n:'ME Senior Design I',h:3,p:['MEEN 3395','MEEN 3333']},
+{c:'GEEN 4311',n:'Engineering Economy',h:3,p:['MEEN 3311']},
+{c:'MEEN 4322',n:'Power Generation',h:3,p:['MEEN 3322','MEEN 3333']},
+{c:'ELEC 1',n:'ME Technical Elective 1',h:3,p:[],el:1}]},
+
+{id:'R2',label:'Senior — الترم الثاني',hrs:14,courses:[
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'MEEN 4311',n:'Principles of HVAC',h:3,p:['MEEN 3322','MEEN 3333']},
+{c:'MEEN 4397',n:'ME Senior Design II',h:3,p:['GEEN 4311','MEEN 4396']},
+{c:'ELEC 3',n:'Social Science Elective',h:3,p:[],el:1},
+{c:'ELEC 2',n:'ME Technical Elective 2',h:3,p:[],el:1}]}
+]},
 
 MEEN:{name:'Mechanical Engineering',ar:'الهندسة الميكانيكية',total:139,
 tech:{
@@ -2703,9 +2873,23 @@ LAWB:{name:'Law',ar:'القانون',total:138,tech:{},sems:[
 /* التخصص الحالي */
 let MAJOR=load('pmu_major','MEEN');
 if(!PLANS[MAJOR])MAJOR='MEEN';
-let PLAN=PLANS[MAJOR].sems;
-let TECH_ELECTIVES=PLANS[MAJOR].tech||{};
-let TOTAL_CR=PLANS[MAJOR].total;
+
+/* ═══ نسخة الخطة ═══
+   بعض التخصصات لها خطة قديمة وأخرى جديدة، والفرق في المتطلبات السابقة
+   لا في أسماء المواد فقط — فالمقترح يعطي ترتيباً خاطئاً لو استعملنا
+   النسخة الغلط. المواد المعلّمة تبقى محفوظة بكودها مهما بدّل الطالب،
+   فالتبديل لا يحذف شيئاً أبداً. */
+const PLAN_ALT={MEEN:'MEEN_OLD'};              /* تخصص → مفتاح خطته القديمة */
+let PLAN_VER=load('pmu_plan_ver','new');       /* 'new' أو 'old' */
+if(PLAN_VER!=='old')PLAN_VER='new';
+function hasAltPlan(code){ return !!(PLAN_ALT[code]&&PLANS[PLAN_ALT[code]]) }
+function planKey(code){
+  return (PLAN_VER==='old'&&hasAltPlan(code))?PLAN_ALT[code]:code;
+}
+function planOf(code){ return PLANS[planKey(code)]||PLANS[code] }
+let PLAN=planOf(MAJOR).sems;
+let TECH_ELECTIVES=planOf(MAJOR).tech||{};
+let TOTAL_CR=planOf(MAJOR).total;
 
 /* اسم التخصص المعروض فوق الخطة */
 function setPlanTitle(){
@@ -2719,9 +2903,10 @@ function setPlanTitle(){
 function applyMajor(code,silent,persist){
   if(!PLANS[code])return;
   MAJOR=code;
-  PLAN=prepOn()?prepSems().concat(PLANS[code].sems):PLANS[code].sems;
-  TECH_ELECTIVES=PLANS[code].tech||{};
-  TOTAL_CR=PLANS[code].total;
+  const _p=planOf(code);
+  PLAN=prepOn()?prepSems().concat(_p.sems):_p.sems;
+  TECH_ELECTIVES=_p.tech||{};
+  TOTAL_CR=_p.total;
   if(persist!==false)save('pmu_major',code);
   const el=document.getElementById('majorSelect');
   if(el&&persist!==false&&el.value!==code)el.value=code;
@@ -3119,7 +3304,10 @@ function renderResults(){
           ${genderChip(c)}
           <span class="badge ${c.status==='OPEN'?'open':'close'}">${c.status}</span>
           <button class="btn-add ${inSch?'added':''} ${lock?'locked':clash.length?'blocked':''}" onclick="toggleCourse('${c.crn}')">${inSch?'✓':'+'}</button>
-          ${c.status==='CLOSE'?`<button class="btn-bell ${isMonitored(c.crn)?'on':''} ${isPro()?'':'locked'}" onclick="toggleMonitorCourse('${c.crn}')" title="مراقبة">${isMonitored(c.crn)?'🔔':'🔕'}</button>`:''}
+          ${c.status==='CLOSE'?`<button class="btn-bell ${isMonitored(c.crn)?'on':''} ${isPro()?'':'locked'}" onclick="toggleMonitorCourse('${c.crn}')" title="مراقبة هذي الشعبة">${isMonitored(c.crn)?'🔔':'🔕'}</button>`:''}
+          <button class="btn-bell all ${isCourseMonitored(c.courseCode)?'on':''} ${isPro()?'':'locked'}"
+            onclick="toggleMonitorAll('${escapeHtml(c.courseCode)}')"
+            title="${isCourseMonitored(c.courseCode)?'توقف مراقبة كل شعب المادة':'راقب كل شعب هذي المادة'}">📡</button>
         </div>
       </div>
       <div class="cc-meta">
@@ -3289,6 +3477,126 @@ function isLabSection(c){
 }
 
 /* ينبّه لو المادة لها معمل في نتائج البحث وما أضافه، أو العكس */
+/* ════════ تنبيه تغيّر الجدول ════════
+   السيرفر يكتب change_note بعد ما يتأكد من التغيير (15 دقيقة ورصدتان).
+   نعرضه هنا، ونكتشف التعارض الصامت لو كان التغيير في الوقت أو الأيام.
+   الإخفاء محلي عمداً: يتطلب عموداً وسياسة RLS لو صار سحابياً،
+   وتعديل القاعدة في الموسم لا يستحق مزامنة الإخفاء بين الأجهزة. */
+function chgKey(c,note){
+  const f=(note.fields||[]).map(x=>`${x.field}:${x.from}>${x.to}`).sort().join('|');
+  return c.crn+'|'+(c.courseDate||'')+'|'+f;
+}
+let CHG_KEYS=[];
+function dismissChg(i){
+  const k=CHG_KEYS[i];
+  if(!k)return;
+  const d=load('pmu_chg_seen',[]);
+  if(!d.includes(k)){d.push(k);save('pmu_chg_seen',d.slice(-80))}
+  renderChgWarn();
+}
+
+/* ═══ اختيار نسخة الخطة ═══
+   يظهر فقط للتخصصات التي لها نسختان. التبديل لا يمس المواد المعلّمة
+   إطلاقاً — هي محفوظة بكودها، وما يختفي من العرض يرجع بالتبديل العكسي. */
+function renderPlanVer(){
+  const box=document.getElementById('planVerBox');
+  if(!box)return;
+  if(!majorChosen()||!hasAltPlan(MAJOR)){
+    box.classList.remove('visible');box.innerHTML='';return;
+  }
+  const ar=LANG==='ar';
+  const isOld=PLAN_VER==='old';
+  box.classList.add('visible');
+  box.innerHTML=
+    `<div class="pv-t">${ar
+      ?'الجامعة عدّلت خطة هذا التخصص. لو كنت على الخطة القديمة بدّلها من هنا.'
+      :'The plan for this major was revised. Switch if you follow the older one.'}</div>
+     <div class="pv-btns">
+       <button class="pv-b${isOld?'':' on'}" onclick="setPlanVer('new')">
+         ${ar?'الجديدة':'New'}</button>
+       <button class="pv-b${isOld?' on':''}" onclick="setPlanVer('old')">
+         ${ar?'القديمة':'Old'}</button>
+     </div>
+     <div class="pv-n">${ar
+       ?'موادك المعلّمة ما تنحذف عند التبديل — محفوظة بكودها وترجع لك.'
+       :'Your completed courses are never deleted when switching.'}</div>`;
+}
+
+function setPlanVer(v){
+  const next=(v==='old')?'old':'new';
+  if(next===PLAN_VER)return;
+  PLAN_VER=next;
+  save('pmu_plan_ver',PLAN_VER);
+  applyMajor(MAJOR,true,false);   /* يعيد اشتقاق الخطة بلا تغيير التخصص */
+  renderPlan();renderPlanVer();renderPickHints&&renderPickHints();
+  if(USER&&typeof pushProfile==='function')pushProfile();
+  showToast(LANG==='ar'
+    ?(next==='old'?'تحوّلت للخطة القديمة':'تحوّلت للخطة الجديدة')
+    :(next==='old'?'Switched to the old plan':'Switched to the new plan'),'ok');
+}
+
+function renderChgWarn(){
+  const box=document.getElementById('chgWarn');
+  if(!box)return;
+  const ar=LANG==='ar';
+  const seen=load('pmu_chg_seen',[]);
+
+  /* الحقول الثلاثة فقط — وترتيبها ترتيب أثرها على الطالب */
+  const RANK={course_timing:0,course_date:0,instructor:1,room:2};
+  /* السيرفر يرسل التسمية بالعربي فقط، فنترجمها هنا للواجهة الإنجليزية */
+  const FIELD_EN={course_timing:'Time',course_date:'Days',
+                  instructor:'Instructor',room:'Room'};
+  const hits=[];
+  (schedule||[]).forEach(c=>{
+    const note=c.changeNote;
+    if(!note||!Array.isArray(note.fields)||!note.fields.length)return;
+    const fields=note.fields.filter(f=>f&&RANK[f.field]!==undefined);
+    if(!fields.length)return;
+    const k=chgKey(c,{fields});
+    if(seen.includes(k))return;
+    hits.push({c,fields,k,rank:Math.min(...fields.map(f=>RANK[f.field]))});
+  });
+  if(!hits.length){box.classList.remove('visible');box.innerHTML='';CHG_KEYS=[];return}
+  hits.sort((a,b)=>a.rank-b.rank);
+  CHG_KEYS=hits.map(h=>h.k);
+
+  const linked=typeof tgLinked==='function'&&tgLinked();
+  box.classList.add('visible');
+  box.innerHTML=hits.map(({c,fields,k},i)=>{
+    /* التعارض الصامت: الوقت تغيّر فصار يصادم مادة ثانية وهو ما يدري */
+    const timeMoved=fields.some(f=>f.field==='course_timing'||f.field==='course_date');
+    const clash=timeMoved?findConflicts(c,schedule):[];
+
+    const when=c.changedAt?Math.round((Date.now()-new Date(c.changedAt).getTime())/3600000):null;
+    const whenTxt=when===null?'':(when<1?(ar?'قبل أقل من ساعة':'less than an hour ago')
+      :when<24?(ar?`قبل ${when} ساعة`:`${when}h ago`)
+      :(ar?`قبل ${Math.round(when/24)} يوم`:`${Math.round(when/24)}d ago`));
+
+    return `<div class="cw-card">
+      <div class="cw-head">
+        <span class="cw-ic">📌</span>
+        <span class="cw-t">${ar?'تغيّر في':'Change in'} ${escapeHtml(c.courseCode)} §${escapeHtml(c.section)}</span>
+        <button class="cw-x" title="${ar?'إخفاء':'Dismiss'}"
+          onclick="dismissChg(${i})">✕</button>
+      </div>
+      ${fields.map(f=>`<div class="cw-row">
+        <span class="cw-f">${escapeHtml(ar?(f.ar||f.field):(FIELD_EN[f.field]||f.field))}:</span>
+        <span class="cw-old">${escapeHtml(f.from||'—')}</span>
+        <span> ← </span>
+        <span class="cw-new">${escapeHtml(f.to||'—')}</span>
+      </div>`).join('')}
+      ${clash.length?`<div class="cw-clash">⚠️ ${ar?'صار يتعارض مع':'Now conflicts with'}
+        ${clash.map(x=>escapeHtml(x.courseCode)+' §'+escapeHtml(x.section)).join('، ')}</div>`:''}
+      <div class="cw-n">${ar
+        ?`التغيير من نظام الجامعة${whenTxt?' · '+whenTxt:''} — راجعه قبل ما تعتمد على جدولك.`
+        :`Change from the university system${whenTxt?' · '+whenTxt:''} — verify before relying on your schedule.`}</div>
+      ${linked?'':`<a class="cw-tg" href="javascript:void(0)" onclick="linkTelegram()">🔗 ${ar
+        ?`هذا التغيير وصلك${whenTxt?' '+whenTxt:''} — لو تربط تيليغرام يوصلك لحظة حدوثه`
+        :`You saw this ${whenTxt||'late'} — link Telegram to be notified the moment it happens`}</a>`}
+    </div>`;
+  }).join('');
+}
+
 function renderLabWarn(){
   const box=document.getElementById('labWarn');
   if(!box)return;
@@ -3344,6 +3652,7 @@ function renderSchedule(){
     document.getElementById('conflictList').innerHTML=pairs.map(p=>`${p[0].courseCode} §${p[0].section} ✕ ${p[1].courseCode} §${p[1].section}`).join('<br>');
   }else al.classList.remove('visible');
 
+  renderChgWarn();
   renderLabWarn();
 
   if(!schedule.length){empty.classList.add('visible');wrap.innerHTML='';buildPrintSheet(new Set());return}
@@ -3828,7 +4137,9 @@ function buildPrintSheet(clashSet){
   lo=Math.floor(lo/60)*60;hi=Math.ceil(hi/60)*60;
 
   const rows=Math.max(4,Math.round((hi-lo)/15));
-  const rowH=Math.max(3.0,Math.min(5.4,150/rows));           // مم — نترك مساحة للاختبارات تحت
+  /* الارتفاع الكلي محسوب عشان الشبكة + المفتاح + أرقام التسجيل
+     تطلع في ورقة وحدة. الجداول الطويلة (10ص–10م) تضغط للحد الأدنى. */
+  const rowH=Math.max(2.4,Math.min(5.4,118/rows));           // مم
   const rowCSS=`grid-template-rows:repeat(${rows},${rowH.toFixed(2)}mm)`;
   const rowOf=m=>Math.min(rows+1,Math.max(1,Math.round((m-lo)/15)+1));
 
@@ -3860,13 +4171,19 @@ function buildPrintSheet(clashSet){
     const blocks=items.map(it=>{
       const c=it.o.c,col=colorOf[c.courseCode],
             span=it.r2-it.r1,
-            small=span*rowH<9.5,
+            hmm=span*rowH,                       /* ارتفاع البلوك بالمليمتر */
+            small=hmm<9.5,                       /* سطر واحد مضغوط */
+            tiny=hmm<5.2,                        /* ما يسع إلا الكود */
             clash=clashSet.has(c.crn);
-      return `<div class="ps-cls${small?' sm':''}${clash?' clash':''}"
+      const mini=[fmtTime(it.o.tm.start)+'–'+fmtTime(it.o.tm.end),
+                  c.room||'', shortName(c.instructor)||'']
+                 .filter(Boolean).join(' · ');
+      return `<div class="ps-cls${small?' sm':''}${tiny?' xs':''}${clash?' clash':''}"
         style="grid-row:${it.r1}/${it.r2};grid-column:${it.lane};--c:${col[0]};--c2:${col[1]}">
         <div class="ps-code">${escapeHtml(c.courseCode)} §${escapeHtml(c.section||'')}</div>
         <div class="ps-meta">${escapeHtml(c.room||'—')} · ${escapeHtml(shortName(c.instructor))}</div>
         <div class="ps-time">${fmtTime(it.o.tm.start)}–${fmtTime(it.o.tm.end)}</div>
+        <div class="ps-mini">${escapeHtml(mini)}</div>
       </div>`;
     }).join('');
 
@@ -3908,8 +4225,11 @@ function buildPrintSheet(clashSet){
   /* أرقام التسجيل — أهم شي في الورقة وقت التسجيل */
   const crns=`<div class="ps-crn"><span class="ps-crn-t">${
     LANG==='ar'?'أرقام التسجيل':'Registration numbers (CRN)'}</span>${
-    schedule.map(c=>`<span class="ps-crn-i"><b>${escapeHtml(String(c.crn||''))}</b>${
-      escapeHtml(c.courseCode)} §${escapeHtml(c.section||'')}</span>`).join('')}</div>`;
+    schedule.map(c=>{
+      const col=colorOf[c.courseCode]||['#5b6472','#f2f4f7'];
+      return `<span class="ps-crn-i" style="--c:${col[0]};--c2:${col[1]}"><b>${
+        escapeHtml(String(c.crn||''))}</b>${
+        escapeHtml(c.courseCode)} §${escapeHtml(c.section||'')}</span>`}).join('')}</div>`;
 
   /* مواد بدون وقت محدد */
   const note=untimed.length?`<div class="ps-note">${LANG==='ar'?'بدون وقت محدد:':'No fixed time:'} ${
@@ -3966,10 +4286,51 @@ function buildPrintSheet(clashSet){
     }
   }
 
+  /* جدول المواد بالتفصيل — بين الشبكة وأرقام التسجيل */
+  const dayAr={U:'أحد',M:'اثنين',T:'ثلاثاء',W:'أربعاء',R:'خميس',
+               H:'خميس',F:'جمعة',S:'سبت'};
+  const daysLabel=c=>{
+    const s=String(c.courseDate||'').toUpperCase().replace(/[^A-Z]/g,'');
+    if(!s)return '—';
+    const out=[];
+    for(const ch of s) if(dayAr[ch]&&!out.includes(dayAr[ch])) out.push(dayAr[ch]);
+    return out.length?out.join('·'):escapeHtml(c.courseDate||'—');
+  };
+  const timeLabel=c=>{
+    const t=parseTime(c.courseTiming);
+    return t?fmtTime(t.start)+'–'+fmtTime(t.end):(c.courseTiming||'—');
+  };
+  const listRows=[...schedule].sort((a,b)=>
+    String(a.courseCode).localeCompare(String(b.courseCode)));
+  const table=`<div class="ps-list">
+    <table>
+      <thead><tr>
+        <th class="w-code">${LANG==='ar'?'المادة':'Course'}</th>
+        <th class="w-name">${LANG==='ar'?'الاسم':'Title'}</th>
+        <th class="w-sec">${LANG==='ar'?'شعبة':'Sec'}</th>
+        <th class="w-days">${LANG==='ar'?'الأيام':'Days'}</th>
+        <th class="w-time">${LANG==='ar'?'الوقت':'Time'}</th>
+        <th class="w-room">${LANG==='ar'?'القاعة':'Room'}</th>
+        <th class="w-inst">${LANG==='ar'?'الدكتور':'Instructor'}</th>
+      </tr></thead>
+      <tbody>${listRows.map(c=>{
+        const col=colorOf[c.courseCode]||['#5b6472','#f2f4f7'];
+        return `<tr style="--c:${col[0]};--c2:${col[1]}">
+        <td class="c-code"><i></i>${escapeHtml(c.courseCode||'')}</td>
+        <td class="c-name">${escapeHtml(c.courseTitle||'—')}</td>
+        <td class="c-mono">${escapeHtml(c.section||'—')}</td>
+        <td>${daysLabel(c)}</td>
+        <td class="c-mono c-time">${escapeHtml(timeLabel(c))}</td>
+        <td>${escapeHtml(c.room||'—')}</td>
+        <td>${escapeHtml(c.instructor||'—')}</td>
+      </tr>`}).join('')}</tbody>
+    </table>
+  </div>`;
+
   const foot=`<div class="ps-foot"><span>jadwalik.com</span><span>${
     new Date().toLocaleDateString(LANG==='ar'?'ar-SA':'en-GB')}</span></div>`;
 
-  el.innerHTML=head+grid+legend+crns+note+warn+finals+foot;
+  el.innerHTML=head+grid+legend+table+crns+note+warn+finals+foot;
 }
 
 function printSchedule(){
@@ -4027,6 +4388,7 @@ function goPickMajor(){
 
 function renderPlan(){
   applyGpaHidden();
+  try{ renderPlanVer() }catch(e){}
   /* أول زيارة بدون تخصص — نوجّهه بدل ما نعرض خطة غلط */
   const chosen=majorChosen();
   const pm=document.getElementById('pickMajor');
@@ -4236,6 +4598,7 @@ function openBot(){
   window.open(`https://t.me/${BOT_USERNAME}?start=${code}`,'_blank');
 }
 
+let TG_POLL=null;
 function linkTelegram(){
   if(!USER){showToast(LANG==='ar'?'سجّل دخول أول':'Sign in first','warn');return}
   const code=PROFILE?.telegram_link_code;
@@ -4243,8 +4606,33 @@ function linkTelegram(){
   document.getElementById('tgCode').style.display='block';
   document.getElementById('tgCode').textContent=code;
   window.open(`https://t.me/${BOT_USERNAME}?start=${code}`,'_blank');
-  setTimeout(refreshProfile,6000);
+  /* فحص واحد بعد 6 ثوانٍ ما يكفي: الطالب ينتقل لتلقرام وينتظر تحميله
+     ويضغط START — فيقع الفحص قبل الربط، فتبقى الواجهة تقول «غير مربوط»
+     فيضغط الزر مرة ثانية ويربط مرتين. نستطلع دقيقة كاملة بدلها. */
+  startTgPoll();
 }
+
+function startTgPoll(){
+  if(TG_POLL){clearInterval(TG_POLL);TG_POLL=null}
+  let tries=0;
+  showToast(LANG==='ar'?'بانتظار الربط من تلقرام...':'Waiting for Telegram...','ok');
+  TG_POLL=setInterval(async()=>{
+    tries++;
+    try{ await refreshProfile() }catch(e){}
+    if(tgLinked()){
+      clearInterval(TG_POLL);TG_POLL=null;
+      showToast(LANG==='ar'?'تم ربط تلقرام ✅':'Telegram linked ✅','ok');
+      try{ renderTgBar() }catch(e){}
+    }else if(tries>=20){ clearInterval(TG_POLL);TG_POLL=null }   /* دقيقة */
+  },3000);
+}
+
+/* أقوى إشارة على أن الربط تم: رجوع الطالب من تلقرام للمتصفح.
+   تلتقط الحالة مهما طالت، لا خلال الدقيقة فقط. */
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden||!USER)return;
+  try{ if(!tgLinked()) refreshProfile() }catch(e){}
+});
 
 async function refreshProfile(){
   if(!USER)return;
@@ -4259,9 +4647,142 @@ async function loadMonitored(){
   monitored=data||[];
 }
 
-function isMonitored(crn){return monitored.some(m=>m.crn===crn)}
+/* شريط ثابت أعلى كل الصفحات — حالتان يستحيل اجتماعهما،
+   فنستخدم عنصراً واحداً بدل شريطين يتكدّسان فوق بعض */
+function renderTgBar(){
+  const bar=document.getElementById('tgBar');
+  if(!bar)return;
+  const ar=LANG==='ar';
+  const hide=()=>{bar.hidden=true;bar.innerHTML=''};
+
+  /* ── غير مسجّل دخول: شغله محلي فقط ── */
+  if(!USER){
+    /* ما ننبّه قبل ما نتأكد من الجلسة، وإلا ومض الشريط ثانية عند كل فتح */
+    if(!AUTH_READY)return hide();
+    /* ولا ننبّه إلا لمن عنده شي يخسره — التحذير الفارغ ضجيج يُتجاهل */
+    let n=0;
+    try{
+      if(typeof SCHEDULES!=='undefined'&&SCHEDULES)
+        SCHEDULES.forEach(s=>{ if(s&&s.length)n+=s.length });
+      if(typeof completed!=='undefined'&&completed) n+=completed.length;
+    }catch(e){}
+    if(!n)return hide();
+    bar.hidden=false;
+    bar.innerHTML='<span>⚠️ '+
+      (ar?'<b>ما سجّلت دخولك</b> — شغلك محفوظ على هذا الجهاز فقط، ويروح لو مسحت بيانات المتصفح أو فتحت الموقع من جهاز ثاني'
+         :'<b>Not signed in</b> — your work is saved on this device only, and is lost if you clear browser data or switch devices')+
+      '</span><button onclick="showAuthNote()">'+
+      (ar?'💾 احفظه في حسابك':'💾 Save to my account')+'</button>';
+    return;
+  }
+
+  /* ── مسجّل لكن ما ربط تيليغرام ── */
+  if(tgLinked())return hide();
+  const n=(typeof monitored!=='undefined'&&monitored)?monitored.length:0;
+  bar.hidden=false;
+  bar.innerHTML='<span>⚠️ '+
+    (ar?'<b>تيليغرام غير مربوط</b> — تنبيهات فتح الشعب ما توصلك'
+       :'<b>Telegram not linked</b> — you will not receive section alerts')+
+    (n?(ar?` · عندك ${n} مراقبة معطّلة`:` · ${n} inactive watches`):'')+
+    '</span><button onclick="linkTelegram()">'+(ar?'🔗 اربط الحين':'🔗 Link now')+'</button>';
+}
+
+/* ── التنبيه ما يوصل بلا تيليغرام ──
+   كان الطالب يفعّل المراقبة وهو غير مربوط، فتُنشأ بلا وسيلة إيصال
+   ويظن أنها تشتغل. الآن نوضّح له قبل الإنشاء ونعطيه زر الربط. */
+function tgLinked(){ return !!(PROFILE&&PROFILE.telegram_chat_id) }
+
+function needTelegram(){
+  if(tgLinked())return true;
+  const ar=LANG==='ar';
+  const old=document.getElementById('tgWarn'); if(old)old.remove();
+  const w=document.createElement('div');
+  w.id='tgWarn'; w.setAttribute('dir',ar?'rtl':'ltr');
+  w.style.cssText='position:fixed;inset:0;z-index:9999;display:flex;align-items:center;'+
+    'justify-content:center;padding:18px;background:rgba(0,0,0,.62)';
+  w.onclick=e=>{ if(e.target===w)w.remove() };
+  w.innerHTML='<div style="background:var(--card);border:1px solid var(--border);'+
+    'border-radius:18px;max-width:400px;width:100%;padding:22px">'+
+    '<div style="font-size:16px;font-weight:700;margin-bottom:8px">⚠️ '+
+      (ar?'تيليغرام غير مربوط':'Telegram not linked')+'</div>'+
+    '<div style="font-size:13px;color:var(--text2);line-height:1.9">'+
+      (ar?'المراقبة ترسل التنبيه على تيليغرام فقط. بدون ربط، ما راح يوصلك شي — حتى لو فتحت الشعبة.'
+         :'Alerts are sent via Telegram only. Without linking, you will not receive anything.')+
+    '</div>'+
+    '<div style="display:flex;gap:9px;margin-top:18px">'+
+      '<button id="tgWarnLink" style="flex:1;padding:13px;border-radius:12px;border:none;'+
+        'background:var(--accent);color:#fff;font-weight:700;font-size:14px;font-family:inherit">'+
+        (ar?'🔗 اربط تيليغرام الحين':'🔗 Link Telegram')+'</button>'+
+      '<button id="tgWarnSkip" style="padding:13px 16px;border-radius:12px;'+
+        'border:1px solid var(--border);background:transparent;color:var(--text2);'+
+        'font-size:13px;font-family:inherit">'+(ar?'لاحقاً':'Later')+'</button>'+
+    '</div>'+
+    '<div style="font-size:11px;color:var(--text3);margin-top:11px;line-height:1.7">'+
+      (ar?'الربط ياخذ أقل من دقيقة، ومرة وحدة بس.'
+         :'Linking takes less than a minute, once only.')+'</div>'+
+  '</div>';
+  document.body.appendChild(w);
+  document.getElementById('tgWarnLink').onclick=()=>{ w.remove(); switchTab('set'); linkTelegram() };
+  document.getElementById('tgWarnSkip').onclick=()=>{ w.remove() };   /* ما نفعّل بلا ربط */
+  return false;
+}
+
+setInterval(()=>{try{renderTgBar()}catch(e){}},4000);
+
+function isMonitored(crn){return monitored.some(m=>m.scope!=='course'&&m.crn===crn)}
+
+/* ── مراقبة المادة كاملة ──
+   بدل شعبة بعينها، نراقب كل شعب المادة: أي شعبة تفتح، وأي شعبة
+   جديدة تنزل، يوصل إشعار. مفيدة لما تكون كل الشعب مقفلة. */
+const sameCode=(a,b)=>String(a||'').trim().toUpperCase().replace(/\s+/g,' ')
+                    ===String(b||'').trim().toUpperCase().replace(/\s+/g,' ');
+
+function isCourseMonitored(code){
+  const term=document.getElementById('term').value;
+  return monitored.some(m=>m.scope==='course'&&sameCode(m.course_code,code)&&m.term===term);
+}
+
+async function toggleMonitorAll(code){
+  if(USER&&isPro()&&!isCourseMonitored(code)&&!needTelegram())return;
+  return toggleMonitorAllGo(code);
+}
+async function toggleMonitorAllGo(code){
+  if(!USER){showToast(LANG==='ar'?'سجّل دخول أول':'Sign in first','warn');return}
+  if(!isPro()){
+    showToast(LANG==='ar'?'🔒 المراقبة تحتاج اشتراك':'🔒 Monitoring requires a subscription','warn');
+    switchTab('set');return;
+  }
+  const term=document.getElementById('term').value;
+  const ex=monitored.find(m=>m.scope==='course'&&sameCode(m.course_code,code)&&m.term===term);
+  if(ex){
+    await sb.from('monitored_courses').delete().eq('id',ex.id);
+    monitored=monitored.filter(m=>m.id!==ex.id);
+    showToast(LANG==='ar'?`وقفت مراقبة كل شعب ${code}`:`Stopped watching all ${code}`);
+  }else{
+    const row={user_id:USER.id,scope:'course',course_code:code,term};
+    const {data,error}=await sb.from('monitored_courses').insert(row).select();
+    if(error){
+      if(error.code==='23505'){
+        await loadMonitored();
+        showToast(LANG==='ar'?`✅ ${code} مراقبة أصلاً`:`✅ ${code} already watched`,'ok');
+      }else{
+        showToast(LANG==='ar'?'ما ضبطت — جرّب مرة ثانية':'Failed — try again','err');
+      }
+      renderResults();renderSettings();return;
+    }
+    if(data&&data[0])monitored.push(data[0]);
+    showToast(LANG==='ar'
+      ?`📡 تراقب كل شعب ${code} — أي شعبة تفتح أو تنزل يوصلك إشعار`
+      :`📡 Watching all sections of ${code}`);
+  }
+  renderResults();renderSettings();
+}
 
 async function toggleMonitorCourse(crn){
+  if(!isMonitored(crn)&&!needTelegram())return;      /* بلا ربط ما نفعّل */
+  return toggleMonitorCourseGo(crn);
+}
+async function toggleMonitorCourseGo(crn){
   if(!USER){showToast(LANG==='ar'?'سجّل دخول أول':'Sign in first','warn');return}
   if(!isPro()){
     showToast(LANG==='ar'?'🔒 المراقبة تحتاج اشتراك':'🔒 Monitoring requires a subscription','warn');
@@ -4276,7 +4797,20 @@ async function toggleMonitorCourse(crn){
   }else{
     const row={user_id:USER.id,crn:c.crn,course_code:c.courseCode,section:c.section,
       term:document.getElementById('term').value,last_status:c.status};
-    const {data}=await sb.from('monitored_courses').insert(row).select();
+    const {data,error}=await sb.from('monitored_courses').insert(row).select();
+    /* كان يعرض «تراقب» حتى لو رفضت القاعدة الصف، فيضغط الطالب مرة
+       ومرتين وثلاث. 23505 = الصف موجود أصلاً والقائمة المحلية قديمة،
+       فنعيد تحميلها بدل ما نقول له «فشل» وهو مراقب فعلاً. */
+    if(error){
+      if(error.code==='23505'){
+        await loadMonitored();
+        showToast(LANG==='ar'?`✅ ${c.courseCode} مراقبة أصلاً`
+                             :`✅ ${c.courseCode} already watched`,'ok');
+      }else{
+        showToast(LANG==='ar'?'ما ضبطت — جرّب مرة ثانية':'Failed — try again','err');
+      }
+      renderResults();renderSettings();return;
+    }
     if(data&&data[0])monitored.push(data[0]);
     showToast(LANG==='ar'?`🔔 تراقب ${c.courseCode} — بيوصلك إشعار`:`🔔 Watching ${c.courseCode}`);
   }
@@ -4402,6 +4936,25 @@ function renderTgAndMon(ar){
   tb.className='btn-sm'+(linked?' ghost':'');
   if(linked)document.getElementById('tgCode').style.display='none';
 
+  /* تحذير دائم لمن عنده مراقبات بلا ربط — يشمل اللي أنشأها قبل التعديل */
+  const ml0=document.getElementById('monList');
+  if(ml0){
+    const old=document.getElementById('monNoTg'); if(old)old.remove();
+    if(!linked&&monitored.length){
+      const d=document.createElement('div');
+      d.id='monNoTg';
+      d.style.cssText='margin-bottom:12px;padding:12px 14px;border-radius:12px;'+
+        'background:var(--warn-bg);border:1px solid rgba(245,158,11,.35);'+
+        'font-size:12.5px;line-height:1.85;color:var(--text)';
+      d.innerHTML='⚠️ <b>'+(ar?'مراقباتك ما تشتغل':'Your alerts are not active')+'</b><br>'+
+        (ar?`عندك ${monitored.length} مراقبة، وتيليغرام غير مربوط — فما يوصلك أي تنبيه.`
+           :`You have ${monitored.length} watches but Telegram is not linked.`)+
+        '<br><button class="btn-sm" style="margin-top:9px" onclick="linkTelegram()">'+
+        (ar?'🔗 اربط تيليغرام':'🔗 Link Telegram')+'</button>';
+      ml0.parentNode.insertBefore(d,ml0);
+    }
+  }
+
   /* monitored list */
   const ml=document.getElementById('monList');
   if(!monitored.length){
@@ -4409,14 +4962,17 @@ function renderTgAndMon(ar){
       ar?'ما تراقب أي مادة. روح للبحث واضغط 🔔 على أي مادة مسكّرة.':
           'Not watching any course. Go to Search and tap 🔔 on a closed course.'}</div>`;
   }else{
-    ml.innerHTML=monitored.map(m=>`
-      <div class="set-row">
+    ml.innerHTML=monitored.map(m=>{
+      const all=m.scope==='course';
+      return `<div class="set-row">
         <div class="set-info">
-          <h4>${m.course_code} §${m.section}</h4>
-          <p>CRN ${m.crn} · ${m.last_status==='OPEN'?'🟢 OPEN':'🔴 CLOSE'}</p>
+          <h4>${m.course_code}${all?'':' §'+(m.section||'')}</h4>
+          <p>${all
+            ? (ar?'📡 كل الشعب — أي شعبة تفتح أو تنزل':'📡 All sections')
+            : `CRN ${m.crn} · ${m.last_status==='OPEN'?'🟢 OPEN':'🔴 CLOSE'}`}</p>
         </div>
         <button class="btn-sm ghost" onclick="removeMonitor(${m.id})">${ar?'إيقاف':'Stop'}</button>
-      </div>`).join('');
+      </div>`}).join('');
   }
 
   renderMyReviews();
@@ -5693,6 +6249,8 @@ const sb=window.supabase.createClient(SB_URL,SB_KEY,{
   auth:{flowType:'implicit',detectSessionInUrl:true,persistSession:true,autoRefreshToken:true}
 });
 let USER=null, PROFILE=null, syncing=false;
+/* يصير true بعد أول فحص للجلسة — الشريط ما يظهر قبلها */
+let AUTH_READY=false;
 
 /* ══════════ ما قبل تسجيل الدخول ══════════
    لحظة الدخول هي اللحظة الوحيدة اللي يفكّر فيها الطالب ببياناته،
@@ -5812,8 +6370,14 @@ async function pullCloud(){
     ]);
     PROFILE=prof||null;
 
+    /* نسخة الخطة قبل التخصص: applyMajor تشتق الخطة من PLAN_VER،
+       فلو ضبطناها بعده اشتُقّت الخطة الغلط ثم صُحّحت — ووميض في الواجهة. */
+    if(prof&&(prof.plan_ver==='old'||prof.plan_ver==='new')&&prof.plan_ver!==PLAN_VER){
+      PLAN_VER=prof.plan_ver; save('pmu_plan_ver',PLAN_VER);
+    }
     /* التخصص من السحابة — يجي معك لأي جهاز */
     if(prof&&prof.major&&PLANS[prof.major]&&prof.major!==MAJOR) applyMajor(prof.major,true);
+    else if(prof&&prof.major===MAJOR&&hasAltPlan(MAJOR)) applyMajor(MAJOR,true,false);
     else if(prof&&!prof.major&&MAJOR!=='MEEN') pushProfile();
 
     if(cc&&cc.length){
@@ -5831,7 +6395,10 @@ async function pullCloud(){
         const i=Math.min(2,Math.max(0,(parseInt(r.slot,10)||1)-1));
         box[i].push({crn:r.crn,courseCode:r.course_code,courseTitle:r.course_title,
           section:r.section,courseDate:r.course_date,courseTiming:r.course_timing,
-          instructor:r.instructor,room:r.room});
+          instructor:r.instructor,room:r.room,
+          /* تتبّع التغيير — يجي من السيرفر ولا يُرفع أبداً في writeSchedule،
+             فما يقدر يفسد صفوف الطالب. */
+          changeNote:r.change_note||null, changedAt:r.changed_at||null});
       });
       SCHEDULES=box;
       schedule=SCHEDULES[SLOT];
@@ -5840,7 +6407,9 @@ async function pullCloud(){
 
     save('pmu_completed',completed);
     save('pmu_schedules',SCHEDULES);save('pmu_schedule',schedule);
-    updateBadge();renderSlots();
+    /* السحب يجيب change_note معه — بدون إعادة الرسم ما يظهر التحذير
+       إلا لو بدّل الطالب التبويب أو الجدول بنفسه. */
+    updateBadge();renderSlots();renderSchedule();
     await loadMonitored();
     await loadReviews();
     renderSettings();
@@ -5860,7 +6429,7 @@ async function pullCloud(){
 /* حفظ التخصص في الحساب */
 async function pushProfile(){
   if(!USER)return;
-  try{ await sb.from('profiles').update({major:MAJOR}).eq('id',USER.id); }
+  try{ await sb.from('profiles').update({major:MAJOR,plan_ver:PLAN_VER}).eq('id',USER.id); }
   catch(e){ console.log('major sync',e); }
 }
 
@@ -5899,6 +6468,7 @@ async function pushSchedule(){ return saveQueue('schedule',writeSchedule) }
   if(session&&(location.hash||location.search))
     history.replaceState({},'',location.pathname);
   USER=session?session.user:null;
+  AUTH_READY=true;
   setAuthUI();
   if(USER){await pullCloud();setAuthUI();renderPlan();
     if(document.getElementById('pageSched').classList.contains('active'))renderSchedule();}

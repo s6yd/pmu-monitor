@@ -38,10 +38,67 @@ const ADMIN_TOKEN = (process.env.ADMIN_TOKEN || '').trim();   // كلمة سر �
 /* فترة تجريبية مجانية: كل من ربط تيليغرام يستلم الإشعارات بدون اشتراك.
    لإيقافها لاحقاً: FREE_BETA=false في متغيرات Render. */
 const FREE_BETA = (process.env.FREE_BETA || 'true').trim() !== 'false';
+/* ترم التسجيل النشط — المزامنة والإشعارات تقتصر عليه وحده.
+   من متغيّر بيئة عشان تغيّره من Render بلا نشر كل ترم جديد. */
+const ACTIVE_TERM = (process.env.ACTIVE_TERM || '202710').trim();
 
 /* معرّف محادثتك في تيليغرام — يوصلك عليه كل رأي جديد فوراً.
    تجيبه بإرسال /whoami للبوت، ثم تحطه في Render باسم ADMIN_CHAT_ID */
 const ADMIN_CHAT_ID = (process.env.ADMIN_CHAT_ID || '').trim();
+
+/* ═══ Pushover — قناة تنبيه إضافية لك أنت فقط ═══
+   تحتاج متغيرين في Render: PUSHOVER_TOKEN (من تطبيق تنشئه في
+   pushover.net/apps) و PUSHOVER_USER (مفتاحك في إعدادات التطبيق).
+   بدونهما هذي الدالة ما تسوي شي، والموقع يشتغل كما هو تماماً.
+   ما تُستخدم أبداً لإشعارات الطلاب — لك وحدك. */
+const PUSHOVER_TOKEN = (process.env.PUSHOVER_TOKEN || '').trim();
+const PUSHOVER_USER  = (process.env.PUSHOVER_USER  || '').trim();
+const PUSHOVER_ON = !!(PUSHOVER_TOKEN && PUSHOVER_USER);
+
+function pushover(title, message, opts) {
+  if (!PUSHOVER_ON) {
+    console.log('pushover: معطّل — PUSHOVER_TOKEN أو PUSHOVER_USER ناقص');
+    return Promise.resolve(null);
+  }
+  /* opts رقم = الأولوية فقط (توافق مع الاستدعاءات القديمة)،
+     أو كائن {priority, sound, retry, expire}.
+     الأولوية 2 = طارئ: يعيد التنبيه حتى تضغط «تأكيد» بنفسك،
+     وتيليغرام يشترط معها retry و expire. */
+  const o = (typeof opts === 'object' && opts) ? opts : { priority: opts || 0 };
+  const pr = Number(o.priority || 0);
+  return new Promise(resolve => {
+    try {
+      const fields = {
+        token: PUSHOVER_TOKEN, user: PUSHOVER_USER,
+        title: String(title || 'جدولك').slice(0, 250),
+        message: String(message || '').slice(0, 1024),
+        priority: String(pr)
+      };
+      if (o.sound) fields.sound = String(o.sound);
+      if (pr === 2) {
+        fields.retry  = String(o.retry  || 30);    /* يعيد كل 30 ثانية */
+        fields.expire = String(o.expire || 3600);  /* يوقف بعد ساعة */
+      }
+      const body = new URLSearchParams(fields).toString();
+      const req = https.request({
+        hostname: 'api.pushover.net', path: '/1/messages.json', method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded',
+                   'Content-Length': Buffer.byteLength(body) }
+      }, res => {
+        let out = '';
+        res.on('data', c => { if (out.length < 400) out += c; });
+        res.on('end', () => {
+          if (res.statusCode === 200) console.log(`pushover: تم الإرسال ✓ (أولوية ${pr})`);
+          else console.log(`pushover: فشل ${res.statusCode} — ${out.slice(0, 300)}`);
+          resolve(res.statusCode === 200);
+        });
+      });
+      req.on('error', e => { console.log('pushover: خطأ اتصال —', e.message); resolve(false) });
+      req.setTimeout(8000, () => { req.destroy(); console.log('pushover: انتهت المهلة'); resolve(false) });
+      req.write(body); req.end();
+    } catch (e) { console.log('pushover: استثناء —', e.message); resolve(false) }
+  });
+}
 
 /* وضع الصيانة: MAINTENANCE=on في Render يقفل الموقع للطلاب.
    لوحة التحكم و/api/admin تبقى شغالة عشان تقدر تتابع. */
@@ -114,8 +171,186 @@ function tg(method, payload) {
   });
 }
 
-const sendMsg = (chatId, text) =>
-  tg('sendMessage', { chat_id: chatId, text, parse_mode: 'HTML', disable_web_page_preview: true });
+/* ═══ سجل الرسائل الصادرة ═══
+   نعترض في نقطة واحدة بدل ما نضيف تسجيلاً عند كل موضع إرسال —
+   موضع واحد منسي يعني رسالة راحت لطالب بلا أثر.
+   في الذاكرة فقط: يضيع مع كل إعادة تشغيل أو نشر. */
+const MSG_LOG = [];
+const MSG_LOG_MAX = 300;
+/* من أرقام المحادثات إلى أسماء — تُملأ كسولاً ولا تُستعلم لكل رسالة */
+const CHAT_NAMES = new Map();
+
+function logMsg(chatId, text, kind, ok, err) {
+  const row = {
+    at: Date.now(),
+    chatId: String(chatId),
+    who: CHAT_NAMES.get(String(chatId)) || null,
+    admin: !!(ADMIN_CHAT_ID && String(chatId) === String(ADMIN_CHAT_ID)),
+    kind,
+    /* نخزّن النص كما أُرسل بوسومه — اللوحة تنظّفه عند العرض */
+    text: String(text || '').slice(0, 1200),
+    ok: !!ok,
+    err: err || null
+  };
+  MSG_LOG.unshift(row);
+  if (MSG_LOG.length > MSG_LOG_MAX) MSG_LOG.length = MSG_LOG_MAX;
+  if (EVENTS_READY) logEvent('message', row);
+}
+
+/* نستعلم مرة واحدة عن الأرقام المجهولة فقط، لا عن السجل كله كل مرة */
+async function fillChatNames() {
+  const need = [...new Set(MSG_LOG.map(m => m.chatId))]
+    .filter(id => !CHAT_NAMES.has(id));
+  if (!need.length) return;
+  const safe = numList(need);            /* نفس فئة الحقن — الأرقام فقط */
+  need.forEach(id => { if (!safe.includes(id)) CHAT_NAMES.set(id, null); });
+  if (!safe.length) return;
+  const list = inList(safe);
+  const rows = await sb('GET', 'profiles', {
+    query: `?telegram_chat_id=in.(${list})&select=name,email,telegram_chat_id`
+  }).catch(() => []);
+  (Array.isArray(rows) ? rows : []).forEach(r => {
+    CHAT_NAMES.set(String(r.telegram_chat_id), r.name || r.email || null);
+  });
+  /* الأرقام اللي ما لها حساب نعلّمها عشان ما نعيد السؤال عنها */
+  need.forEach(id => { if (!CHAT_NAMES.has(id)) CHAT_NAMES.set(id, null); });
+}
+
+/* يصنّف الرسالة من محتواها — أرخص من تمرير وسم عند كل نداء */
+function msgKind(text) {
+  const t = String(text || '');
+  if (/فتحت مادة|نزلت شعبة|فتحت شعبة|الشعبة اللي تبيها/.test(t)) return 'شعبة فتحت';
+  if (/تغيّر في جدولك/.test(t)) return 'تغيّر جدول';
+  if (/سجّلت .*؟|أوقف المراقبة عشان/.test(t)) return 'متابعة';
+  if (/تم الربط بنجاح/.test(t)) return 'ربط';
+  if (/رد من فريق جدولك/.test(t)) return 'رد شخصي';
+  if (/^🔴|^✅ <b>رجع طبيعي/.test(t)) return 'إنذار مشرف';
+  if (/أمر غير معروف/.test(t)) return 'أمر غير معروف';
+  if (/وقفت الإشعارات/.test(t)) return 'إيقاف';
+  return 'أخرى';
+}
+
+/* ═══ تنقية قيم فلاتر PostgREST ═══
+   الـCRN ورقم محادثة تيليغرام يصلان من صفوف يكتبها الطالب بنفسه عبر RLS.
+   بناء `in.("a","b")` منها مباشرةً يسمح لطالب واحد بحقن `")&crn=not.is.null&x=in.("`
+   فيتحوّل الفلتر ليطابق جداول كل الطلاب — والاستعلام يعمل بمفتاح الخدمة
+   الذي يتجاوز RLS. نقبل الأرقام فقط، وكلاهما رقمي أصلاً. */
+function numList(values, maxLen) {
+  const out = [];
+  for (const v of values) {
+    const s = String(v == null ? '' : v).trim();
+    if (/^\d{1,20}$/.test(s) && (!maxLen || s.length <= maxLen)) out.push(s);
+  }
+  return [...new Set(out)];
+}
+
+/* نستخدم المصفوفة كما هي في in.(...) — الأرقام ما تحتاج تنصيص */
+const inList = arr => arr.join(',');
+
+/* معرّفات Supabase كلها UUID — أي شيء غيره ما له أن يصل الاستعلام */
+const isUuid = v => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  .test(String(v == null ? '' : v).trim());
+
+/* ═══ استمرارية السجلات ═══
+   كل ما في الذاكرة يضيع مع كل نشر — وأنت تنشر عدة مرات يومياً في الموسم.
+   فنكتب كل حدث في القاعدة فور وقوعه (بلا await: التسجيل ما يؤخّر شيئاً)،
+   ونستعيد الأحدث عند الإقلاع.
+   ما نحفظ الكاش عمداً: صلاحيته دقيقة داخل الذروة، ويُبنى بسحبة واحدة. */
+const EVENT_KEEP = { message: 300, correction: 60, flap: 60 };
+const EVENT_MAX_AGE_DAYS = 30;
+let EVENTS_READY = false;          /* قبل الاستعادة ما نكتب، لئلا نضاعف */
+
+function logEvent(kind, payload) {
+  sb('POST', 'app_events', {
+    body: { kind, at: new Date(payload.at || Date.now()).toISOString(), payload },
+    prefer: 'return=minimal'
+  }).catch(e => console.log('logEvent ' + kind + ': ' + (e && e.message)));
+}
+
+async function restoreEvents() {
+  for (const [kind, limit] of Object.entries(EVENT_KEEP)) {
+    const rows = await sb('GET', 'app_events', {
+      query: `?kind=eq.${kind}&select=payload&order=at.desc&limit=${limit}`
+    }).catch(() => []);
+    const list = (Array.isArray(rows) ? rows : []).map(r => r.payload);
+    const target = kind === 'message' ? MSG_LOG
+                 : kind === 'correction' ? SCHED_LOG : FLAP_LOG;
+    target.length = 0;
+    list.forEach(p => target.push(p));
+  }
+  console.log(`استعادة: ${MSG_LOG.length} رسالة · ${SCHED_LOG.length} تصحيح · ` +
+              `${FLAP_LOG.length} رفّة`);
+}
+
+/* عدّادات وذروة التغذية — الذروة أهمها:
+   بدونها يبدأ قاطع الدائرة أعمى بعد كل نشر ولا يحميه إلا الحد المطلق. */
+async function saveState() {
+  const body = {
+    key: 'runtime',
+    value: {
+      feedPeak: [...FEED_PEAK.entries()],
+      totalUpdated: SCHED_SYNC.totalUpdated,
+      runs: SCHED_SYNC.runs,
+      confirmForces: CONFIRM_STAT.forces,
+      confirmPurged: CONFIRM_STAT.purged,
+      ops: { searches: OPS.searches, feedback: OPS.feedback,
+             pmuFails: OPS.pmuFails, tgFails: OPS.tgFails,
+             searchesCached: OPS.searchesCached, searchStale: OPS.searchStale,
+             cacheFromMonitor: OPS.cacheFromMonitor }
+    },
+    updated_at: new Date().toISOString()
+  };
+  await sb('POST', 'app_state', {
+    body, prefer: 'resolution=merge-duplicates,return=minimal'
+  }).catch(e => console.log('saveState: ' + (e && e.message)));
+}
+
+async function restoreState() {
+  const rows = await sb('GET', 'app_state', {
+    query: '?key=eq.runtime&select=value&limit=1'
+  }).catch(() => []);
+  const v = Array.isArray(rows) && rows[0] ? rows[0].value : null;
+  if (!v) { console.log('استعادة الحالة: ما فيه نسخة محفوظة بعد'); return; }
+  (v.feedPeak || []).forEach(([t, n]) => FEED_PEAK.set(t, n));
+  SCHED_SYNC.totalUpdated = v.totalUpdated || 0;
+  SCHED_SYNC.runs = v.runs || 0;
+  CONFIRM_STAT.forces = v.confirmForces || 0;
+  CONFIRM_STAT.purged = v.confirmPurged || 0;
+  Object.assign(OPS, v.ops || {});
+  console.log('استعادة الحالة: ذروة التغذية ' +
+    ([...FEED_PEAK.values()][0] || '—') + ' · تصحيحات ' + SCHED_SYNC.totalUpdated);
+}
+
+const sendMsg = async (chatId, text, markup) => {
+  const r = await tg('sendMessage', Object.assign(
+    { chat_id: chatId, text, parse_mode: 'HTML', disable_web_page_preview: true },
+    markup ? { reply_markup: markup } : {}));
+  try {
+    logMsg(chatId, text, msgKind(text), r && r.ok,
+           r && !r.ok ? (r.description || 'فشل') : null);
+    /* الحظر رفض صريح للرسائل — نعامله معاملة /stop بدل ما نظل
+       نحاول عند كل إشعار ونستهلك محاولة تفشل دائماً. */
+    if (r && !r.ok && /blocked by the user|user is deactivated|chat not found/i
+        .test(String(r.description || ''))) {
+      unlinkBlocked(chatId, r.description);
+    }
+  } catch (e) { /* التسجيل ما يعطّل الإرسال أبداً */ }
+  return r;
+};
+
+/* بلا await: فكّ الربط تنظيف لا يؤخّر شيئاً، والـcatch إجباري */
+function unlinkBlocked(chatId, why) {
+  sb('PATCH', 'profiles', {
+    query: `?telegram_chat_id=eq.${encodeURIComponent(String(chatId))}`,
+    body: { telegram_chat_id: null, telegram_username: null },
+    prefer: 'return=minimal'
+  }).then(() => console.log(`فُكّ ربط ${chatId} — ${why}`))
+    .catch(e => console.log('فكّ الربط فشل: ' + (e && e.message)));
+}
+
+/* أزرار داخلية أسفل الرسالة */
+const btn = (label, data) => ({ text: label, callback_data: data });
+const kb  = rows => ({ inline_keyboard: rows });
 
 /* ============ PMU fetch ============ */
 function fetchPMUData(termList, collegeList, genderList) {
@@ -201,6 +436,7 @@ const OPS = {
   feedback: 0,         // ملاحظات وصلت
   searchesCached: 0,   // منها المخدومة من الكاش
   searchStale: 0,      // مخدومة من نسخة قديمة (الجامعة واقعة)
+  cacheFromMonitor: 0, // نسخ عبّأتها دورة المراقبة مجاناً للبحث
   lastError: null
 };
 /* ═══ إنذارات تيليغرام ═══
@@ -217,6 +453,8 @@ async function alert(key, title, detail) {
     `🔴 <b>${title}</b>\n\n${detail}\n\n` +
     `🕐 ${new Date(now + 3*3600e3).toISOString().slice(11,16)} بتوقيت الرياض\n` +
     `📊 jadwalik.com/admin`).catch(() => {});
+  /* نسخة على Pushover — أولوية عادية وصوت هادئ، مو زي إشعار الشعب */
+  pushover('🔴 ' + title, detail, { priority: 0, sound: 'pushover' }).catch(() => {});
 }
 
 async function resolve(key, title) {
@@ -232,6 +470,67 @@ async function resolve(key, title) {
 function logCycle(c) {
   OPS.cycles.push(c);
   if (OPS.cycles.length > 40) OPS.cycles.shift();
+}
+
+const FOLLOWUP_AFTER = 10 * 60 * 1000;   /* نسأل الطالب بعد عشر دقائق */
+
+/* ═══ سؤال المتابعة: «سجّلتها؟» ═══
+   يشتغل مع كل دورة مراقبة. الموعد مخزّن في القاعدة، فإعادة نشر
+   السيرفر ما تضيّع السؤال — يُرسل في الدورة التالية لموعده. */
+async function sendFollowups() {
+  if (!SB_URL || !SB_SERVICE_KEY) return 0;
+  const nowIso = new Date().toISOString();
+  const due = await sb('GET', 'monitored_courses', {
+    query: `?followup_done=eq.false&followup_at=not.is.null` +
+           `&followup_at=lte.${encodeURIComponent(nowIso)}&select=*&limit=50`
+  }).catch(() => null);
+  if (!Array.isArray(due) || !due.length) return 0;
+
+  const ids = [...new Set(due.map(m => m.user_id))].map(u => `"${u}"`).join(',');
+  const profs = await sb('GET', 'profiles', {
+    query: `?id=in.(${ids})&select=id,telegram_chat_id`
+  }).catch(() => []);
+  const byUser = {};
+  (Array.isArray(profs) ? profs : []).forEach(p => { byUser[p.id] = p });
+
+  let sent = 0;
+  for (const m of due) {
+    const p = byUser[m.user_id];
+    const label = m.scope === 'course'
+      ? (m.course_code || 'المادة')
+      : `${m.course_code || 'المادة'}${m.crn ? ' · CRN ' + m.crn : ''}`;
+    if (p && p.telegram_chat_id) {
+      const r = await sendMsg(p.telegram_chat_id,
+        `⏳ <b>سجّلت ${label}؟</b>\n\n` +
+        `لو سجّلتها، أوقف المراقبة عشان ما توصلك إشعارات ما تحتاجها.`,
+        kb([[btn('✅ سجّلتها — أوقف المراقبة', 'stop:' + m.id)],
+            [btn('⏳ لا، كمّل المراقبة', 'keep:' + m.id)]]));
+      if (r && r.ok) sent++; else OPS.tgFails++;
+      await new Promise(r2 => setTimeout(r2, 400));
+    }
+    /* نعلّمها منتهية حتى لو فشل الإرسال — ما نكرر السؤال أبداً */
+    await sb('PATCH', 'monitored_courses', {
+      query: `?id=eq.${m.id}`,
+      body: { followup_done: true, followup_at: null },
+      prefer: 'return=minimal'
+    }).catch(() => {});
+  }
+  return sent;
+}
+
+/* حذف صفوف انتهت مهلة تأكيدها ولا أحد أكّدها */
+async function dropExpired() {
+  if (!SB_URL || !SB_SERVICE_KEY) return 0;
+  const nowIso = new Date().toISOString();
+  const due = await sb('GET', 'monitored_courses', {
+    query: `?expires_at=not.is.null&expires_at=lte.${encodeURIComponent(nowIso)}&select=id&limit=200`
+  }).catch(() => null);
+  if (!Array.isArray(due) || !due.length) return 0;
+  const ids = due.map(r => r.id);
+  await sb('DELETE', 'monitored_courses',
+    { query: `?id=in.(${ids.join(',')})`, prefer: 'return=minimal' }).catch(() => {});
+  console.log(`expired: أوقفنا ${ids.length} مراقبة بلا تأكيد`);
+  return ids.length;
 }
 
 async function runMonitorCycle() {
@@ -254,6 +553,10 @@ async function runMonitorCycle() {
                  notified: 0, terms: 0, snapshot: 0, sec: 0, error: null };
 
   try {
+    /* أسئلة المتابعة المستحقة — مستقلة عن وجود صفوف مراقبة متغيّرة */
+    stat.followups = await sendFollowups().catch(() => 0);
+    stat.expired = await dropExpired().catch(() => 0);
+
     const monitors = await sb('GET', 'monitored_courses', { query: '?select=*' });
     if (!Array.isArray(monitors) || !monitors.length) return;
 
@@ -263,7 +566,31 @@ async function runMonitorCycle() {
     for (const term of terms) {
       try {
         const html = await fetchPMUData(term, 'ALL', 'ALL');
-        parseHTML(html).forEach(c => { snapshot[term + ':' + c.crn] = c; });
+        /* نوسم الجنس هنا أيضاً — الكاش يخدم البحث مباشرة */
+        const parsed = tagGender(parseHTML(html), 'ALL');
+        /* parseHTML ما تضع الترم في المادة، و byCourse يبني مفتاحه من
+           c.term — فكان يطلع '|PHYS 1422' بدل '202710|PHYS 1422' ولا
+           يتطابق أبداً، فتتعطّل مراقبة المادة كاملة بصمت. نوسمه هنا. */
+        parsed.forEach(c => { c.term = term; snapshot[term + ':' + c.crn] = c; });
+
+        /* نفس البيانات اللي سحبناها للمراقبة هي اللي يحتاجها البحث،
+           فنغذّي بها كاش البحث بدل ما نسحبها مرة ثانية.
+           يقلّل الطلبات على موقع الجامعة، ويخلي الطالب يلقى النتيجة جاهزة. */
+        const ck = `${term}|ALL|ALL`;
+        const prev = coursesCache.get(ck);
+        coursesCache.set(ck, {
+          at: Date.now(),
+          lastHit: (prev && prev.lastHit) || 0,   /* ما نوهم التسخين إنها مطلوبة */
+          courses: parsed
+        });
+        while (coursesCache.size > 40)
+          coursesCache.delete(coursesCache.keys().next().value);
+        OPS.cacheFromMonitor = (OPS.cacheFromMonitor || 0) + 1;
+
+        /* المزامنة كانت مربوطة بسحبة getCourses. وبما إن المراقبة صارت
+           تعبّي الكاش، ما عادت تنطلق من هناك — فنطلقها من هنا.
+           الحارس الزمني داخل syncSchedules يمنع الكتابة المتكررة. */
+        syncSchedules(term, parsed).catch(() => {});
       } catch (e) {
         OPS.pmuFails++;
         console.log('fetch fail', term, e.message);
@@ -282,9 +609,21 @@ async function runMonitorCycle() {
     stat.snapshot = Object.keys(snapshot).length;
     if (stat.snapshot > 0) resolve('pmu', 'موقع الجامعة ما يستجيب');
 
+    /* فهرس المواد: ترم|كود → كل شعبها. نحتاجه لمراقبة المادة كاملة. */
+    const normCode = s => String(s || '').trim().toUpperCase().replace(/\s+/g, ' ');
+    const byCourse = {};
+    Object.values(snapshot).forEach(c => {
+      const k = (c.term || '') + '|' + normCode(c.courseCode);
+      (byCourse[k] = byCourse[k] || []).push(c);
+    });
+
+    const sectionMons = monitors.filter(m => m.scope !== 'course');
+    const courseMons  = monitors.filter(m => m.scope === 'course');
+    stat.courseRows = courseMons.length;
+
     const changed = [];      // {m, live}
     const toNotify = [];     // {m, live}
-    for (const m of monitors) {
+    for (const m of sectionMons) {
       const live = snapshot[(m.term || '202630') + ':' + m.crn];
       if (!live) continue;
       if (live.status !== m.last_status) {
@@ -292,9 +631,61 @@ async function runMonitorCycle() {
         if (live.status === 'OPEN' && m.last_status !== 'OPEN') toNotify.push({ m, live });
       }
     }
+
+    /* ── 2ب. مراقبة المادة كاملة ──
+       نخزّن حالة كل شعبها في sections_state، ونقارن بها كل دورة:
+       • شعبة فتحت بعد ما كانت مغلقة  → إشعار
+       • شعبة جديدة ما كانت موجودة    → إشعار «نزلت شعبة»
+       أول دورة لأي صف جديد نسجّل الحالة فقط بلا إشعار، عشان ما ننهال
+       على الطالب بكل الشعب المفتوحة أصلاً وقت ما فعّل المراقبة. */
+    const courseStateUpdates = [];   // {id, state}
+    for (const m of courseMons) {
+      const term = m.term || '202630';
+      const list = byCourse[term + '|' + normCode(m.course_code)] || [];
+      if (!list.length) continue;
+
+      const cur = {};
+      list.forEach(c => { cur[String(c.crn)] = c.status; });
+      const prev = (m.sections_state && typeof m.sections_state === 'object')
+        ? m.sections_state : null;
+
+      /* كانت تُكتب كل دورة حتى بلا تغيير — كتابة لكل مادة مراقَبة كل
+         خمس دقائق بلا داعٍ، وهي مصدر رئيسي لتضخّم WAL في القاعدة.
+         المقارنة ببصمة مرتّبة لا بـJSON خام: ترتيب شعب الجامعة قد
+         يتغيّر بين الدورات فتبدو الحالة مختلفة وهي نفسها. */
+      const fp = o => Object.keys(o || {}).sort()
+        .map(k => k + ':' + o[k]).join('|');
+      if (!prev || fp(prev) !== fp(cur))
+        courseStateUpdates.push({ id: m.id, state: cur });
+      if (!prev) continue;                       /* أول دورة — تسجيل فقط */
+
+      const hits = [];
+      for (const c of list) {
+        const crn = String(c.crn);
+        const was = prev[crn];
+        const isNew = !(crn in prev);
+        if (c.status === 'OPEN' && was !== 'OPEN') hits.push({ c, isNew });
+        else if (isNew) hits.push({ c, isNew, closedNew: true });
+      }
+      /* سقف ثلاث شعب في الدورة الواحدة — الباقي يُذكر بالعدد */
+      hits.slice(0, 3).forEach(h => toNotify.push({
+        m, live: h.c, courseScope: true, isNew: h.isNew, closedNew: h.closedNew,
+        more: hits.length > 3 ? hits.length - 3 : 0
+      }));
+    }
+
+    /* حفظ حالة صفوف المادة — كل صف بحالته */
+    for (const u of courseStateUpdates) {
+      await sb('PATCH', 'monitored_courses', {
+        query: `?id=eq.${u.id}`,
+        body: { sections_state: u.state },
+        prefer: 'return=minimal'
+      }).catch(() => {});
+    }
+
     stat.changed = changed.length;
     stat.toNotify = toNotify.length;
-    if (!changed.length) return;
+    if (!changed.length && !toNotify.length) return;
 
     /* ── 3. تحديث الحالة بالجملة ──
        بدل PATCH لكل صف، نجمع الصفوف حسب الحالة الجديدة ونرسل طلباً واحداً
@@ -344,18 +735,52 @@ async function runMonitorCycle() {
        تيليغرام يسمح بحوالي 30 رسالة/ثانية، فدفعات من 20 مع فاصل بسيط آمنة. */
     stat.eligible = sendList.length;
     const notified = [];
-    await inBatches(sendList, 20, async ({ m, live }) => {
+    const followups = [];      /* نسأل صاحبها بعد عشر دقائق: سجّلتها؟ */
+    await inBatches(sendList, 20, async ({ m, live, courseScope, isNew, closedNew, more }) => {
       const p = profiles[m.user_id];
+      /* أربع حالات، والعنوان هو الوحيد الظاهر في إشعار القفل —
+         فالتمييز لازم يكون فيه لا في سطر داخلي.
+         الطالب قد يراقب المادة كاملة وشعبة بعينها منها، فيستلم
+         رسالتين عن نفس الحدث: وحدة تقول «شعبتك» ووحدة «شعبة في مادتك».
+         التكرار مقصود — النيّتان مختلفتان — لكن لازم يُفهم. */
+      const head = closedNew ? '🆕 <b>نزلت شعبة جديدة</b>'
+                 : isNew     ? '🆕 <b>نزلت شعبة جديدة ومفتوحة!</b>'
+                 : courseScope ? '🟢 <b>فتحت شعبة في مادة تراقبها</b>'
+                 :               '⭐️ <b>الشعبة اللي تبيها فتحت!</b>';
+      const tail = closedNew ? '📌 مقفلة حالياً — بنراقبها لك.'
+                             : '⚡️ سجّل الحين قبل ما تنسكر!';
+      const scopeLine = courseScope
+        ? `\n<i>وصلتك لأنك تراقب ${live.courseCode} كاملة</i>`
+        : `\n<i>وصلتك لأنك مراقب هذي الشعبة بالذات</i>`;
+      const moreLine = more ? `\n<i>+ ${more} شعبة ثانية تغيّرت</i>` : '';
       const r = await sendMsg(p.telegram_chat_id,
-        `🟢 <b>فتحت مادة!</b>\n\n` +
+        `${head}\n\n` +
         `<b>${live.courseCode}</b> — شعبة ${live.section}\n` +
         `${live.courseTitle}\n\n` +
         `🔢 CRN: <code>${live.crn}</code>\n` +
         `📅 ${live.courseDate}  ⏰ ${live.courseTiming}\n` +
         `👤 ${live.instructor || '—'}\n` +
-        `🏛️ ${live.room || '—'}\n\n` +
-        `⚡️ سجّل الحين قبل ما تنسكر!`);
-      if (r && r.ok) notified.push(m.id); else OPS.tgFails++;
+        `🏛️ ${live.room || '—'}${scopeLine}${moreLine}\n\n` +
+        tail,
+        /* زر يوقف المراقبة من داخل تيليغرام — الطالب يسجّل وينسى
+           يرجع للموقع، فيظل يستقبل إشعارات ما عاد يحتاجها. */
+        kb([[btn(courseScope ? '🔕 أوقف مراقبة هذي المادة'
+                             : '🔕 أوقف مراقبة هذي الشعبة', 'stop:' + m.id)]]));
+      if (r && r.ok) { notified.push(m.id); followups.push(m.id); }
+      else OPS.tgFails++;
+
+      /* لو المستلم أنت، نرسل نسخة على Pushover كمان — إشعار أقوى
+         ما يفوتك. الطلاب ما يتأثرون: الشرط عليك وحدك. */
+      if (PUSHOVER_ON && ADMIN_CHAT_ID &&
+          String(p.telegram_chat_id) === String(ADMIN_CHAT_ID)) {
+        pushover(`${closedNew || isNew ? '🆕' : '🟢'} ${live.courseCode} §${live.section}`,
+          `${live.courseTitle}\nCRN ${live.crn}\n` +
+          `${live.courseDate} · ${live.courseTiming}\n` +
+          `${live.instructor || '—'} · ${live.room || '—'}`,
+          /* الشعبة المغلقة الجديدة خبر لا طارئ */
+          closedNew ? { priority: 0, sound: 'pushover' }
+                    : { priority: 2, sound: 'siren', retry: 30, expire: 1800 }).catch(() => {});
+      }
       await new Promise(r2 => setTimeout(r2, 700));   // تهدئة بين الدفعات
     });
 
@@ -367,6 +792,20 @@ async function runMonitorCycle() {
         body: { notified_at: now },
         prefer: 'return=minimal'
       });
+    }
+
+    /* ── 7ب. جدولة سؤال المتابعة في القاعدة ──
+       بالقاعدة لا بمؤقت في الذاكرة، عشان إعادة نشر السيرفر ما تضيّعها. */
+    if (followups.length) {
+      const at = new Date(Date.now() + FOLLOWUP_AFTER).toISOString();
+      const ids = [...new Set(followups)];
+      for (let i = 0; i < ids.length; i += 200) {
+        await sb('PATCH', 'monitored_courses', {
+          query: `?id=in.(${ids.slice(i, i + 200).join(',')})`,
+          body: { followup_at: at, followup_done: false },
+          prefer: 'return=minimal'
+        }).catch(() => {});
+      }
     }
 
     stat.notified = notified.length;
@@ -389,7 +828,88 @@ async function runMonitorCycle() {
 }
 
 /* ============ Telegram webhook ============ */
+/* ═══ ضغطات الأزرار الداخلية ═══
+   نتحقق أن الصف يخص صاحب المحادثة فعلاً قبل أي حذف — البيانات
+   في الزر تجي من العميل ولا يُوثق بها وحدها. */
+async function handleCallback(cq) {
+  const data = String(cq.data || '');
+  const chatId = cq.message && cq.message.chat && cq.message.chat.id;
+  const ack = (text) => tg('answerCallbackQuery',
+    { callback_query_id: cq.id, text: text || '', show_alert: false }).catch(() => {});
+
+  const mm = data.match(/^(stop|keep):(\d+)$/);
+  if (!mm || !chatId) return ack();
+  const action = mm[1], rowId = mm[2];
+
+  const profs = await sb('GET', 'profiles', {
+    query: `?telegram_chat_id=eq.${encodeURIComponent(String(chatId))}&select=id&limit=1`
+  }).catch(() => []);
+  const me = Array.isArray(profs) && profs[0] ? profs[0].id : null;
+  if (!me) return ack('ما لقيت حسابك');
+
+  const rows = await sb('GET', 'monitored_courses', {
+    query: `?id=eq.${rowId}&select=*&limit=1`
+  }).catch(() => []);
+  const row = Array.isArray(rows) && rows[0] ? rows[0] : null;
+  if (!row) {
+    await ack('المراقبة موقوفة أصلاً');
+    return editMsg(cq, '🔕 المراقبة على هذي المادة موقوفة.');
+  }
+  if (String(row.user_id) !== String(me)) return ack('هذا مو صفك');
+
+  const label = (row.course_code || 'المادة') +
+                (row.scope === 'course' ? '' : (row.crn ? ' · CRN ' + row.crn : ''));
+
+  if (action === 'keep') {
+    await sb('PATCH', 'monitored_courses', {
+      query: `?id=eq.${rowId}`,
+      body: { followup_done: true, followup_at: null, expires_at: null },
+      prefer: 'return=minimal'
+    }).catch(() => {});
+    await ack('تمام، المراقبة مستمرة');
+    return editMsg(cq, `⏳ <b>المراقبة مستمرة</b>\n\n${label} — بنبلغك أول ما تفتح.`);
+  }
+
+  await sb('DELETE', 'monitored_courses', {
+    query: `?id=eq.${rowId}`, prefer: 'return=minimal'
+  }).catch(() => {});
+  await ack('أوقفت المراقبة');
+  return editMsg(cq, `🔕 <b>أوقفت المراقبة</b>\n\n${label}\n\n` +
+    `ترجّعها أي وقت من الجرس في الموقع.`);
+}
+
+function editMsg(cq, text) {
+  if (!cq.message) return Promise.resolve();
+  return tg('editMessageText', {
+    chat_id: cq.message.chat.id, message_id: cq.message.message_id,
+    text, parse_mode: 'HTML'
+  }).catch(() => {});
+}
+
+/* ═══ تحديث معرّف تيليغرام ═══
+   الحقل كان يُكتب مرة واحدة عند /start ثم يتجمّد، فيصير
+   قديماً لو غيّر الطالب معرّفه — والمعرّفات المهجورة تُعاد للتداول.
+   نصحّحه ذاتياً كل ما راسلنا الطالب. الكتابة تحصل فقط عند الاختلاف. */
+async function refreshTgUsername(chatId, from) {
+  if (!chatId || !from) return;
+  const fresh = from.username || null;
+  const rows = await sb('GET', 'profiles', {
+    query: `?telegram_chat_id=eq.${encodeURIComponent(String(chatId))}` +
+           `&select=id,telegram_username&limit=1`
+  });
+  const row = Array.isArray(rows) && rows[0] ? rows[0] : null;
+  if (!row) return;                       /* غير مرتبط بعد — لا شيء نحدّثه */
+  const stored = row.telegram_username || null;
+  if (stored === fresh) return;           /* الحالة الغالبة: لا كتابة */
+  await sb('PATCH', 'profiles', {
+    query: `?id=eq.${row.id}`,
+    body: { telegram_username: fresh }
+  });
+  console.log(`تيليغرام: تحديث معرّف ${chatId} — ${stored || '(فارغ)'} ← ${fresh || '(فارغ)'}`);
+}
+
 async function handleTelegramUpdate(update) {
+  if (update.callback_query) return handleCallback(update.callback_query);
   const msg = update.message;
   if (!msg) return;
   /* نقبل النص والصور — الصورة تجي مع caption أحياناً */
@@ -397,6 +917,11 @@ async function handleTelegramUpdate(update) {
   if (!msg.text && !photo) return;
   const chatId = msg.chat.id;
   const text = (msg.text || msg.caption || '').trim();
+
+  /* بلا await — ما نأخّر رد البوت على شيء تجميلي.
+     الـcatch إجباري وإلا صار رفضاً غير معالج يسقط العملية. */
+  refreshTgUsername(chatId, msg.from).catch(e =>
+    console.log('تحديث معرّف تيليغرام فشل: ' + (e && e.message ? e.message : e)));
 
   /* صور من المشرف — سواء أُرسلت كألبوم أو صوراً منفصلة متتالية.
      تيليغرام ما يجمّعها إلا لو اختار خيار الألبوم، فنجمّعها نحن. */
@@ -413,21 +938,20 @@ async function handleTelegramUpdate(update) {
             ? `📢 بدأ البث لـ <b>${r.total}</b> طالب مع <b>${photos.length}</b> صور.`
             : `❌ ${r.error}`);
         } else if (cmd.startsWith('/reply')) {
-          const rest = cmd.slice(6).trim(), sp = rest.indexOf(' ');
+          const rest = cmd.slice(6).trim(), sp = rest.search(/\s/);
           const who = sp > 0 ? rest.slice(0, sp).trim() : rest;
           let body = sp > 0 ? rest.slice(sp + 1).trim() : '';
           if (body.startsWith('!')) body = body.slice(1).trim();
-          let target = /^\d+$/.test(who) ? who : null;
+          const whoN = String(who || '').replace(/[\u0660-\u0669\u06F0-\u06F9]/g,
+            d => String(d.charCodeAt(0) & 0xf)).trim();
+          let target = /^\d+$/.test(whoN) ? whoN : null;
           if (!target) {
-            for (const col of ['email', 'user_email']) {
-              try {
-                const rows = await sb('GET', 'profiles', {
-                  query: `?${col}=eq.${encodeURIComponent(who)}&select=telegram_chat_id` });
-                if (Array.isArray(rows) && rows[0] && rows[0].telegram_chat_id) {
-                  target = rows[0].telegram_chat_id; break;
-                }
-              } catch (e) { /* العمود غير موجود */ }
-            }
+            try {
+              const rows = await sb('GET', 'profiles', {
+                query: `?email=ilike.${encodeURIComponent(whoN)}&select=telegram_chat_id` });
+              if (Array.isArray(rows) && rows[0] && rows[0].telegram_chat_id)
+                target = rows[0].telegram_chat_id;
+            } catch (e) { /* تجاهل */ }
           }
           if (!target) return sendMsg(chatId, '❌ ما لقيت أحداً بهذا البريد.');
           const r = await sendMedia(target, photos, body);
@@ -526,7 +1050,10 @@ async function handleTelegramUpdate(update) {
   /* ═══ /reply <إيميل أو معرّف> <النص> ═══ */
   if (isAdmin && text.startsWith('/reply')) {
     const rest = text.slice(6).trim();
-    const sp = rest.indexOf(' ');
+    /* الفاصل أي مسافة بيضاء لا المسافة وحدها: كتابة البريد ثم Enter
+       ثم النص هو الأسلوب الطبيعي في تيليغرام للرسائل الطويلة، وكان
+       يجعل who = "البريد\nأول كلمة" فلا يطابق أحداً. */
+    const sp = rest.search(/\s/);
     if (sp < 1) return sendMsg(chatId,
       `<b>رد على طالب:</b>\n<code>/reply البريد النص</code>\n` +
       `<i>يضيف ترويسة "رد من فريق جدولك"</i>\n\n` +
@@ -541,20 +1068,26 @@ async function handleTelegramUpdate(update) {
     let bare = false;
     if (body.startsWith('!')) { bare = true; body = body.slice(1).trim(); }
 
-    let target = /^\d+$/.test(who) ? who : null;
+    /* لوحة الجوال تكبّر أول حرف تلقائياً، وقد تكتب الأرقام عربية.
+       نطبّع الاثنين قبل البحث بدل ما نرمي رسالة "ما لقيت أحداً". */
+    const arabicDigits = s => String(s || '').replace(/[\u0660-\u0669\u06F0-\u06F9]/g,
+      d => String(d.charCodeAt(0) & 0xf));
+    const whoNorm = arabicDigits(who).trim();
+
+    let target = /^\d+$/.test(whoNorm) ? whoNorm : null;
     if (!target) {
-      for (const col of ['email', 'user_email']) {
-        try {
-          const rows = await sb('GET', 'profiles', {
-            query: `?${col}=eq.${encodeURIComponent(who)}&select=telegram_chat_id`
-          });
-          if (Array.isArray(rows) && rows[0] && rows[0].telegram_chat_id) {
-            target = rows[0].telegram_chat_id; break;
-          }
-        } catch (e) { /* العمود غير موجود */ }
-      }
+      try {
+        const rows = await sb('GET', 'profiles', {
+          query: `?email=ilike.${encodeURIComponent(whoNorm)}&select=telegram_chat_id`
+        });
+        if (Array.isArray(rows) && rows[0] && rows[0].telegram_chat_id)
+          target = rows[0].telegram_chat_id;
+      } catch (e) { /* تجاهل */ }
     }
-    if (!target) return sendMsg(chatId, `❌ ما لقيت أحداً بهذا البريد، أو ما ربط تيليغرام.`);
+    if (!target) return sendMsg(chatId,
+      `❌ ما لقيت أحداً بهذا البريد، أو ما ربط تيليغرام.\n\n` +
+      `<i>البحث غير حساس لحالة الأحرف. جرّب رقم المحادثة بدل البريد:</i>\n` +
+      `<code>/reply 123456789 !النص</code>`);
 
     if (photo) {
       const rp = await tg('sendPhoto', { chat_id: target, photo,
@@ -575,21 +1108,66 @@ async function handleTelegramUpdate(update) {
   if (text.startsWith('/start')) {
     const code = (text.split(' ')[1] || '').trim().toUpperCase();
     if (!code) {
+      /* المربوط أصلاً كان يقرأ «عشان تربط حسابك...» فيظن إنه غير مربوط
+         ويروح يربط مرة ثانية — وهذا مصدر أغلب الربط المكرر. */
+      const me = await sb('GET', 'profiles', {
+        query: `?telegram_chat_id=eq.${encodeURIComponent(String(chatId))}` +
+               `&select=name&limit=1`
+      }).catch(() => []);
+      if (Array.isArray(me) && me.length) {
+        return sendMsg(chatId,
+          `✅ <b>حسابك مربوط</b>\n\n` +
+          `الإشعارات شغّالة، ما تحتاج تسوي شي.\n\n` +
+          `<code>/status</code> — تشوف مواد تراقبها\n` +
+          `<code>/stop</code> — توقف الإشعارات\n\n` +
+          `اختر مواد للمراقبة من jadwalik.com`);
+      }
       return sendMsg(chatId,
         `👋 <b>أهلاً بك في جدولك</b>\n\n` +
         `عشان تربط حسابك، افتح jadwalik.com → الإعدادات → فعّل إشعارات تيليغرام.`);
     }
     const rows = await sb('GET', 'profiles',
-      { query: `?telegram_link_code=eq.${encodeURIComponent(code)}&select=id,name` });
+      { query: `?telegram_link_code=eq.${encodeURIComponent(code)}&select=id,name,telegram_chat_id` });
     if (!rows || !rows.length) {
       return sendMsg(chatId, `❌ الكود غير صحيح أو منتهي.\nجرّب تولّد كود جديد من الموقع.`);
     }
+
+    /* ضغط الزر مرتين شائع — الواجهة كانت تتأخر في إظهار الربط.
+       نقول له إنه مربوط أصلاً بدل «تم الربط» التي توحي بشيء جديد. */
+    if (String(rows[0].telegram_chat_id || '') === String(chatId)) {
+      return sendMsg(chatId,
+        `✅ <b>حسابك مربوط أصلاً</b>\n\n` +
+        `ما تحتاج تربط مرة ثانية — الإشعارات شغّالة.\n\n` +
+        `اختر المواد اللي تبي تراقبها من jadwalik.com`);
+    }
+    /* رقم تيليغرام واحد ما يخدم حسابين: الإشعارات تُجمَّع بـuser_id
+       ثم تُترجم لـchat_id، فيستلم الشخص رسالتين متطابقتين على نفس
+       المحادثة — ولا يرى حسابين، بل بوتاً يكرّر نفسه. ننقل الربط
+       بدل ما نرفضه: الرفض يترك الطالب حائراً بلا سبب مفهوم. */
+    const moved = await sb('GET', 'profiles', {
+      query: `?telegram_chat_id=eq.${encodeURIComponent(String(chatId))}` +
+             `&id=neq.${encodeURIComponent(rows[0].id)}&select=id,name,email`
+    }).catch(() => []);
+    if (Array.isArray(moved) && moved.length) {
+      await sb('PATCH', 'profiles', {
+        query: `?telegram_chat_id=eq.${encodeURIComponent(String(chatId))}` +
+               `&id=neq.${encodeURIComponent(rows[0].id)}`,
+        body: { telegram_chat_id: null, telegram_username: null },
+        prefer: 'return=minimal'
+      }).catch(() => {});
+      console.log(`ربط: نُقل ${chatId} من ${moved.length} حساب سابق`);
+    }
+
     await sb('PATCH', 'profiles', {
       query: `?id=eq.${rows[0].id}`,
       body: { telegram_chat_id: String(chatId), telegram_username: msg.from.username || null }
     });
     return sendMsg(chatId,
       `✅ <b>تم الربط بنجاح!</b>\n\n` +
+      (moved.length
+        ? `⚠️ كان تيليغرامك مربوطاً بحساب ثاني (${esc(moved[0].email || moved[0].name || '—')}) ` +
+          `وفصلناه — الإشعارات بتوصلك لهذا الحساب وحده.\n\n`
+        : '') +
       `بتوصلك إشعارات فورية أول ما تنفتح أي مادة تراقبها.\n\n` +
       `روح للموقع واختر المواد اللي تبي تراقبها 👇\njadwalik.com\n\n` +
       `💬 <b>وأي ملاحظة أو اقتراح؟</b> اكتبها هنا مباشرة وبتوصلني.`);
@@ -682,14 +1260,39 @@ async function handleTelegramUpdate(update) {
     if (!rows || !rows.length) return sendMsg(chatId, `ما لقيت حسابك مربوط. افتح jadwalik.com للربط.`);
     const p = rows[0];
     const mons = await sb('GET', 'monitored_courses',
-      { query: `?user_id=eq.${p.id}&select=course_code,section` });
+      { query: `?user_id=eq.${p.id}&select=course_code,section,scope,sections_state` });
     const active = p.is_pro ||
       (p.subscription_expires_at && new Date(p.subscription_expires_at) > new Date());
+    /* مراقبة المادة كاملة تترك section فاضياً، فكانت تطبع «§null».
+       اللوحة تعالجها صح — هذي وحدها كانت ناقصة. */
+    const line = m => {
+      const code = m.course_code || '?';
+      if (m.scope === 'course') {
+        const n = m.sections_state && typeof m.sections_state === 'object'
+          ? Object.keys(m.sections_state).length : 0;
+        return `• ${code} — كل الشعب${n ? ` (${n})` : ''}`;
+      }
+      return `• ${code} §${m.section || '?'}`;
+    };
     return sendMsg(chatId,
       `📊 <b>حالتك</b>\n\n` +
       `الاشتراك: ${active ? '✅ فعّال' : '❌ غير فعّال'}\n` +
       `المواد المراقبة: ${mons.length}\n` +
-      (mons.length ? mons.map(m => `• ${m.course_code} §${m.section}`).join('\n') : ''));
+      (mons.length ? '\n' + mons.map(line).join('\n') : ''));
+  }
+
+  /* ═══ أمر غير معروف ═══
+     السكوت هنا كلّفنا تشخيصاً خاطئاً من قبل — نرد بوضوح.
+     نشرط على '/' فقط، فالكلام الحر تكفّل به الفرع أعلاه،
+     ورد المشرف على صورة (بلا نص) ما يتأثر. */
+  if (text.startsWith('/')) {
+    return sendMsg(chatId,
+      `❓ <b>أمر غير معروف</b>\n\n` +
+      `الأوامر المتاحة:\n` +
+      `<code>/start</code> — ربط حسابك\n` +
+      `<code>/status</code> — حالتك ومراقباتك\n` +
+      `<code>/stop</code> — إيقاف الإشعارات\n\n` +
+      `💬 وأي ملاحظة؟ اكتبها هنا مباشرة بدون أمر.`);
   }
 }
 
@@ -914,11 +1517,38 @@ async function adminReviews() {
 /* --- المواد المراقبة، مجمّعة --- */
 async function adminMonitors() {
   const M = await sb('GET', 'monitored_courses', { query: '?select=*' });
+  const list = Array.isArray(M) ? M : [];
+  /* أسماء المراقِبين عشان تشوف مين يراقب وش */
+  const uids = [...new Set(list.map(m => m.user_id).filter(Boolean))];
+  const who = {};
+  if (uids.length) {
+    const ps = await sb('GET', 'profiles', {
+      query: `?id=in.(${uids.map(u => `"${u}"`).join(',')})&select=id,name,email,telegram_chat_id`
+    }).catch(() => []);
+    (Array.isArray(ps) ? ps : []).forEach(p => { who[p.id] = p });
+  }
   const g = {};
-  (Array.isArray(M) ? M : []).forEach(m => {
-    const k = (m.course_code || '?') + ' §' + (m.section || '?');
-    if (!g[k]) g[k] = { key: k, crn: m.crn, term: m.term, status: m.last_status || '—', watchers: 0 };
+  list.forEach(m => {
+    /* صفوف المادة ما لها شعبة ولا CRN — نميّزها بدل ما تطلع "؟" */
+    const isCourse = m.scope === 'course';
+    const k = isCourse
+      ? (m.course_code || '?') + ' · كل الشعب'
+      : (m.course_code || '?') + ' §' + (m.section || '?');
+    if (!g[k]) g[k] = { key: k, crn: m.crn, term: m.term, scope: m.scope || 'section',
+                        sections: isCourse && m.sections_state
+                          ? Object.keys(m.sections_state).length : null,
+                        status: isCourse ? null : (m.last_status || '—'),
+                        watchers: 0, rows: [] };
     g[k].watchers++;
+    const p = who[m.user_id] || {};
+    g[k].rows.push({
+      id: m.id,
+      name: p.name || '—',
+      email: p.email || '—',
+      linked: !!p.telegram_chat_id,
+      askedAt: m.expires_at || null,
+      since: m.created_at || null
+    });
   });
   return Object.values(g).sort((a, b) => b.watchers - a.watchers);
 }
@@ -1065,6 +1695,10 @@ async function reviewReact(reviewId, userId, kind, reason) {
   if (!['agree', 'disagree', 'report'].includes(kind))
     return { ok: false, error: 'نوع غير معروف' };
   if (!reviewId || !userId) return { ok: false, error: 'بيانات ناقصة' };
+  /* المسار مفتوح للإنترنت بلا توثيق، والمعرّف يدخل الفلتر —
+     نفرض شكل UUID قبل أي استعلام. */
+  if (!isUuid(reviewId) || !isUuid(userId))
+    return { ok: false, error: 'معرّف غير صالح' };
 
   try {
     /* موجود من قبل؟ نتراجع عنه (عدا التبليغ) */
@@ -1233,16 +1867,14 @@ async function adminReply(chatId, email, text) {
 
   let target = chatId ? String(chatId) : null;
   if (!target && email) {
-    for (const col of ['email', 'user_email']) {
-      try {
-        const rows = await sb('GET', 'profiles', {
-          query: `?${col}=eq.${encodeURIComponent(email)}&select=telegram_chat_id`
-        });
-        if (Array.isArray(rows) && rows[0] && rows[0].telegram_chat_id) {
-          target = rows[0].telegram_chat_id; break;
-        }
-      } catch (e) { /* العمود غير موجود */ }
-    }
+    /* عمود user_email غير موجود في profiles — كان يرمي خطأ في كل نداء */
+    try {
+      const rows = await sb('GET', 'profiles', {
+        query: `?email=ilike.${encodeURIComponent(email)}&select=telegram_chat_id`
+      });
+      if (Array.isArray(rows) && rows[0] && rows[0].telegram_chat_id)
+        target = rows[0].telegram_chat_id;
+    } catch (e) { /* تجاهل */ }
   }
   if (!target) return { ok: false, error: 'ما ربط تيليغرام — رد بالإيميل' };
 
@@ -1365,7 +1997,10 @@ async function adminHealth() {
     add('warn', 'كلمة سر اللوحة قصيرة', 'Admin password is short',
         'استخدم 16 حرف فأكثر.');
 
-  if (last && (now - last.at) > 12 * 60 * 1000)
+  /* الإنذار لا يسري إلا لو المراقبة يفترض أنها شغّالة —
+     الاشتكاء من غياب دورة أوقفتها بنفسك خارج ساعات العمل
+     يضيء نقطة حمراء كل ليلة، فتتعوّد تجاهلها يوم يتعطل شيء حقيقي. */
+  if (last && (now - last.at) > 12 * 60 * 1000 && monitorState().active)
     add('bad', 'ما فيه دورة مراقبة منذ فترة', 'No monitor cycle recently',
         'المفروض كل 5 دقائق. تحقق من سجل Render.');
 
@@ -1417,6 +2052,7 @@ async function adminHealth() {
     feedbackCount: OPS.feedback,
     cacheHitPct: cacheHitRate === null ? null : Math.round(cacheHitRate * 100),
     searchStale: OPS.searchStale,
+    cacheFromMonitor: OPS.cacheFromMonitor,
 
     /* الحمل */
     monitorRows: monitors,
@@ -1436,9 +2072,12 @@ async function adminHealth() {
       state: ms,
       paused: MONITOR_PAUSED,
       enabled: MONITOR_ENABLED,
-      hoursFrom: ACTIVE_FROM_HOUR,
-      hoursTo: ACTIVE_TO_HOUR,
+      hoursFrom: activeFrom(),
+      hoursTo: activeTo(),
+      hoursCustom: !!HOURS_OVERRIDE,
+      windowCustom: !!WINDOW_OVERRIDE,
       riyadhHour: riyadhHour(),
+      riyadhTime: riyadhTime(),
       riyadhDate: riyadhDate(),
       intervalMin: INTERVAL_PEAK / 60000,
       jitterPct: Math.round(JITTER * 100),
@@ -1455,7 +2094,13 @@ async function adminHealth() {
     prewarmOn: PREWARM_ON,
     prewarm: {
       runs: PREWARM.runs, refreshed: PREWARM.refreshed,
-      lastAt: PREWARM.lastAt, lastKeys: PREWARM.lastKeys, err: PREWARM.err
+      lastAt: PREWARM.lastAt, lastKeys: PREWARM.lastKeys, err: PREWARM.err,
+      on: PREWARM.on, skipped: PREWARM.skipped, lastSkip: PREWARM.lastSkip,
+      demand: demandNow(),
+      minRate: DEMAND_MIN_RATE, slowRate: DEMAND_SLOW_RATE,
+      busyRate: DEMAND_BUSY_RATE,
+      windowMin: Math.round(DEMAND_WINDOW / 60000),
+      slowMs: SLOW_FETCH_MS
     },
     cacheSize: coursesCache.size,
     ttlOverride: TTL_OVERRIDE,
@@ -1467,9 +2112,39 @@ async function adminHealth() {
       lastChange: SCHED_SYNC.lastChange,
       runs: SCHED_SYNC.runs,
       totalUpdated: SCHED_SYNC.totalUpdated,
+      markedMissing: (SCHED_SYNC.last && SCHED_SYNC.last.markedMissing) || 0,
       log: SCHED_LOG.slice(0, 15),
       missingList: (SCHED_SYNC.last && SCHED_SYNC.last.missingList) || [],
-      gapMin: Math.round(SCHED_SYNC_GAP / 60000)
+      gapMin: Math.round(SCHED_SYNC_GAP / 60000),
+      /* ── طابور التأكيد ── */
+      confirmAfterMin: Math.round(CONFIRM_AFTER / 60000),
+      minSightings: CONFIRM_MIN_SIGHTINGS,
+      feedN: (SCHED_SYNC.last && SCHED_SYNC.last.feedN) || null,
+      feedPeak: (SCHED_SYNC.last && SCHED_SYNC.last.feedPeak) || null,
+      feedFloor: FEED_FLOOR,
+      activeTerm: ACTIVE_TERM,
+      skippedTerms: SCHED_SYNC.skippedTerms || 0,
+      feedRejected: (SCHED_SYNC.last && SCHED_SYNC.last.feedRejected) || null,
+      crnRejected: (SCHED_SYNC.last && SCHED_SYNC.last.crnRejected) || 0,
+      pendingNew: (SCHED_SYNC.last && SCHED_SYNC.last.pendingNew) || 0,
+      pendingWaiting: (SCHED_SYNC.last && SCHED_SYNC.last.pendingWaiting) || 0,
+      confirmed: (SCHED_SYNC.last && SCHED_SYNC.last.confirmed) || 0,
+      discarded: (SCHED_SYNC.last && SCHED_SYNC.last.discarded) || 0,
+      notified: (SCHED_SYNC.last && SCHED_SYNC.last.notified) || 0,
+      notifySuppressed: (SCHED_SYNC.last && SCHED_SYNC.last.notifySuppressed) || 0,
+      notifyCap: LAST_CAP,
+      notifyRatio: NOTIFY_RATIO,
+      notifyFloor: NOTIFY_FLOOR,
+      activeStudents: (SCHED_SYNC.last && SCHED_SYNC.last.activeStudents) || 0,
+      stormApproved: (SCHED_SYNC.last && SCHED_SYNC.last.stormApproved) || 0,
+      stormAbort: (SCHED_SYNC.last && SCHED_SYNC.last.stormAbort) || 0,
+      pending: await pendingSnapshot(),
+      tick: { everyMin: Math.round(CONFIRM_TICK / 60000),
+              maxAgeHr: Math.round(PENDING_MAX_AGE / 3600000),
+              lastTick: CONFIRM_STAT.lastTick || null,
+              lastForce: CONFIRM_STAT.lastForce || null,
+              forces: CONFIRM_STAT.forces, purged: CONFIRM_STAT.purged },
+      flaps: FLAP_LOG.slice(0, 15)
     },
     alerts: Object.entries(ALERTS).filter(([,v])=>v.active)
               .map(([k,v])=>({key:k,title:v.title,since:v.at})),
@@ -1695,7 +2370,44 @@ let MONITOR_PAUSED = false;
    فما ينتظر أي طالب سحبة كاملة من موقع الجامعة.
    يبدأ مطفأً — تشغّله من اللوحة وقت الحاجة فقط. */
 let PREWARM_ON = false;
-const PREWARM = { runs: 0, refreshed: 0, lastAt: 0, lastKeys: [], err: null };
+const PREWARM = { runs: 0, refreshed: 0, lastAt: 0, lastKeys: [], err: null,
+                  skipped: 0, lastSkip: null, on: false };
+
+/* ═══ قياس الطلب والبطء ═══
+   التسخين يكلّف سحبة من الجامعة. في الهدوء هذي تكلفة بلا مقابل —
+   ولا أحد ينتظر النتيجة أصلاً. وفي الذروة هي أنفع شيء: الطالب يبحث
+   فيجد نسخة جاهزة بدل ما ينتظر عشر ثوانٍ.
+   فنقيس الاثنين بنافذة متحركة ونشغّله عند الحاجة فقط. */
+const DEMAND = { hits: [], fetchMs: [] };
+const DEMAND_WINDOW = 10 * 60000;      /* نافذة القياس: عشر دقائق */
+const DEMAND_MIN_RATE = 6;             /* أقل من 6 بحثات = هدوء، نطفيه */
+const DEMAND_SLOW_RATE = 3;            /* الجامعة بطيئة: نكتفي بـ3 بحثات */
+const DEMAND_BUSY_RATE = 25;           /* فوقها ذروة، نوسّع التسخين */
+/* الطبيعي عند PMU من 13 إلى 18 ثانية — سحبة ثقيلة أصلاً.
+   فالعتبة لازم تكون فوق الطبيعي بوضوح، وإلا صُنِّف كل شيء «بطيئاً»
+   وسرت العتبة المنخفضة دائماً وفقد التمييز معناه. */
+const SLOW_FETCH_MS = 25000;           /* أبطأ من 25 ثانية = تدهور فعلي */
+
+function recordSearch() {
+  const now = Date.now();
+  DEMAND.hits.push(now);
+  const cut = now - DEMAND_WINDOW;
+  while (DEMAND.hits.length && DEMAND.hits[0] < cut) DEMAND.hits.shift();
+}
+function recordFetch(ms) {
+  DEMAND.fetchMs.push({ at: Date.now(), ms });
+  const cut = Date.now() - DEMAND_WINDOW;
+  while (DEMAND.fetchMs.length && DEMAND.fetchMs[0].at < cut) DEMAND.fetchMs.shift();
+}
+function demandNow() {
+  const cut = Date.now() - DEMAND_WINDOW;
+  const rate = DEMAND.hits.filter(t => t >= cut).length;
+  const lat = DEMAND.fetchMs.filter(x => x.at >= cut);
+  const avgMs = lat.length
+    ? Math.round(lat.reduce((a, b) => a + b.ms, 0) / lat.length) : 0;
+  return { rate, avgMs, slow: avgMs >= SLOW_FETCH_MS,
+           busy: rate >= DEMAND_BUSY_RATE, quiet: rate < DEMAND_MIN_RATE };
+}
 
 /* موعد الدورة القادمة — يُحدَّث مع كل جدولة، ويُعرض في اللوحة */
 let NEXT_CYCLE_AT = 0;
@@ -1757,6 +2469,178 @@ const SCHED_SYNC_GAP = 10 * 60 * 1000;   /* لا نكتب في القاعدة أ
 
 /* سجل التغييرات: آخر 40 تصحيحاً بتفاصيلها (من → إلى).
    في الذاكرة فقط — يُصفَّر مع كل إعادة نشر على Render. */
+/* ═══ عتبات قاطع الدائرة ═══
+   الذروة تُبنى من أول دورة سليمة وتضيع عند إعادة التشغيل — وهذا مقصود:
+   بعد إعادة التشغيل يحمينا الحد المطلق وحده حتى تُبنى ذروة جديدة. */
+const FEED_PEAK = new Map();          /* ترم → أكبر عدد مواد شفناه */
+/* الحد كان 900 رقماً عالمياً بينما الذروة لكل ترم — فأي بحث في ترم
+   أصغر (الافتراضي 202630 مثلاً) كان يُرفض بإنذار كاذب، لأن حجمه
+   الطبيعي أقل من حد مبنيّ على ترم آخر. الأرضية الآن منخفضة عمداً:
+   وظيفتها منع الصفر والقائمة المهترئة فقط، والحماية الحقيقية من
+   نسبة ذروة نفس الترم. */
+const FEED_FLOOR = 100;
+const FEED_MIN_RATIO = 0.6;           /* أقل من 60% من ذروة نفس الترم = مشبوه */
+
+/* ═══ تأكيد التغييرات ═══
+   المزامنة كل 10 دقائق، فنافذة 15 تضمن رصدتين على الأقل.
+   الشرطان معاً: مضى الوقت، وشفناه مرتين — الوقت وحده ما يكفي
+   لو تأخّرت دورة، والعدّ وحده ما يكفي لو تسارعت. */
+const CONFIRM_AFTER = 15 * 60 * 1000;
+const CONFIRM_TICK = 5 * 60 * 1000;            /* كل كم نفحص الطابور */
+const PENDING_MAX_AGE = 24 * 60 * 60 * 1000;   /* صفّ ما نضج خلال يوم = عالق */
+const CONFIRM_MIN_SIGHTINGS = 2;
+
+/* بصمة مستقرة للفروق — الترتيب مثبّت عشان نفس التغيير يعطي نفس البصمة */
+function fingerprint(fields) {
+  return (fields || [])
+    .map(f => `${f.field}:${String(f.from || '')}>${String(f.to || '')}`)
+    .sort()
+    .join('|');
+}
+
+/* الرفّات المرفوضة — دليلك على أن الانتظار كان يستحق */
+const FLAP_LOG = [];
+const FLAP_LOG_MAX = 60;
+
+/* ما ينتظر التأكيد الآن، مع كم بقي له */
+async function pendingSnapshot() {
+  const rows = await sb('GET', 'pending_changes', {
+    query: '?select=*&order=first_seen.asc&limit=40'
+  }).catch(() => []);
+  return (Array.isArray(rows) ? rows : []).map(p => {
+    const age = Date.now() - new Date(p.first_seen).getTime();
+    return {
+      crn: p.crn, code: p.course_code, fields: p.fields,
+      seen: p.seen_count, ageMin: Math.round(age / 60000),
+      leftMin: Math.max(0, Math.ceil((CONFIRM_AFTER - age) / 60000)),
+      ready: age >= CONFIRM_AFTER && p.seen_count >= CONFIRM_MIN_SIGHTINGS
+    };
+  });
+}
+
+/* تهريب لوسوم تيليغرام — أسماء الدكاترة والقاعات تجي من الجامعة،
+   و'&' وحدها في اسم كافية لتفشل الرسالة كلها بخطأ parse_mode. */
+function esc(v) {
+  return String(v == null ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/* ═══ كشف التعارض في السيرفر ═══
+   نسخة مطابقة لمنطق الصفحة. تغيّر الوقت قد يخلق تصادماً مع مادة
+   ثانية في جدول الطالب وهو لا يدري — وهذا أخطر من تغيّر الدكتور. */
+function schedDays(s) {
+  return String(s || '').toUpperCase().split('').filter(c => 'UMTWRFS'.includes(c));
+}
+function schedTime(s) {
+  const m = String(s || '').match(/(\d+):(\d+)\s*-\s*(\d+):(\d+)/);
+  return m ? { start: +m[1] * 60 + +m[2], end: +m[3] * 60 + +m[4] } : null;
+}
+function schedClash(a, b) {
+  const da = schedDays(a.courseDate || a.course_date);
+  const db = schedDays(b.courseDate || b.course_date);
+  if (!da.some(d => db.includes(d))) return false;
+  const ta = schedTime(a.courseTiming || a.course_timing);
+  const tb = schedTime(b.courseTiming || b.course_timing);
+  if (!ta || !tb) return false;
+  return ta.start < tb.end && tb.start < ta.end;
+}
+
+/* ═══ إشعار تغيّر الجدول ═══
+   يُرسل بعد التأكيد فقط. التغيير يمسّ كل من في جدوله تلك الشعبة،
+   فنجمّع لكل طالب رسالة واحدة مهما تعددت مواده المتغيّرة في الدورة. */
+/* ═══ حد العاصفة ═══
+   نسبة لا رقم ثابت: الرقم الثابت يشيخ مع نمو المستخدمين — 100 اليوم
+   ثلثا طلابك، وبعد سنة قد تكون خُمسهم فيصير الحد بلا معنى.
+   القاعدة: عدد الطلاب أصحاب الجداول في هذا الترم × النسبة.
+   والأرضية تمنع التوتر الزائد وقت قلة المستخدمين (60% من 10 = 6). */
+const NOTIFY_RATIO = 0.6;
+const NOTIFY_FLOOR = 25;
+function notifyCap(activeStudents) {
+  return Math.max(NOTIFY_FLOOR, Math.round((activeStudents || 0) * NOTIFY_RATIO));
+}
+let LAST_CAP = NOTIFY_FLOOR;        /* آخر حد محسوب — للعرض في اللوحة */
+
+/* موافقة يدوية لمرة واحدة: تراجع العاصفة في اللوحة، وإن طلعت
+   صحيحة تضغط «وافق وأرسل» فتمر الدورة التالية بلا حد.
+   النافذة قصيرة عمداً — الموافقة تخص ما رأيته لا ما يجي بعد ساعات. */
+const STORM_OK = { until: 0, affected: 0 };
+const STORM_OK_WINDOW = 30 * 60 * 1000;
+
+async function notifyChanges(list, stat) {
+  if (!list.length) return;
+
+  /* الصمّام صار يقرر قبل الكتابة داخل syncSchedules، فما نصل هنا
+     أصلاً في العاصفة. نتركه هنا كشبكة أخيرة لا أكثر. */
+  if (list.length > LAST_CAP * 2) {
+    stat.notifySuppressed = list.length;
+    console.log(`notifyChanges: ${list.length} إشعاراً — كُبت احتياطياً`);
+    return;
+  }
+
+  /* من user_id إلى محادثة تيليغرام — استعلام واحد */
+  const ids = [...new Set(list.map(x => x.userId))].filter(isUuid);
+  if (!ids.length) return;
+  const profs = await sb('GET', 'profiles', {
+    query: `?id=in.(${ids.join(',')})&select=id,name,telegram_chat_id`
+  }).catch(() => []);
+  const chat = new Map();
+  (Array.isArray(profs) ? profs : []).forEach(p => {
+    /* من كتب /stop انمسح رقمه، فالاحترام تلقائي */
+    if (p.telegram_chat_id) chat.set(p.id, String(p.telegram_chat_id));
+  });
+
+  /* رسالة واحدة لكل طالب */
+  /* نجمّع بـchat_id لا بـuser_id: لو ارتبط رقم واحد بحسابين — وقد
+     حصل فعلاً — فالتجميع بالحساب يرسل رسالتين متطابقتين لنفس الشخص.
+     والبصمة تمنع تكرار نفس المادة داخل الرسالة الواحدة. */
+  const byChat = new Map();
+  const seen = new Set();
+  list.forEach(x => {
+    const cid = chat.get(x.userId);
+    if (!cid) return;
+    const sig = cid + '|' + x.code + '|' + x.section + '|' +
+      (x.fields || []).map(f => `${f.field}:${f.from}>${f.to}`).sort().join(',');
+    if (seen.has(sig)) return;
+    seen.add(sig);
+    if (!byChat.has(cid)) byChat.set(cid, []);
+    byChat.get(cid).push(x);
+  });
+  stat.notified = 0;
+
+  for (const [cid, items] of byChat) {
+    const body = items.map(it => {
+      /* بلا سهم: القيم لاتينية والوصف عربي، فاتجاه القراءة ينقلب
+         بصرياً ولا يعرف الطالب أيهما القديم. سطران وكلام صريح
+         يزيلان اللبس، وما فيه شطب يعتمد عليه الفهم. */
+      const lines = it.fields.map(f => {
+        const from = esc(f.from || '—'), to = esc(f.to || '—');
+        /* الدكتور مذكّر والقاعة والمادة مؤنثة — الصياغة الموحّدة تطلع ركيكة */
+        const m = f.field === 'instructor';
+        /* خانة كانت فاضية ثم تحدّدت — خبر لا تحذير */
+        if (!f.from || f.from === '—')
+          return `${f.ar || f.field}: ${m ? 'تحدّد' : 'تحدّدت'} — <b>${to}</b>`;
+        /* والعكس: الجامعة شالت القيمة ولا حطّت بديلاً.
+           «صار: —» ما تفهم، فنقولها بوضوح. */
+        if (!f.to || f.to === '—')
+          return `${f.ar || f.field}: <s>${from}</s>\n` +
+                 `   ⚠️ ${m ? 'انشال ولا فيه بديل معلَن بعد' : 'انشالت ولا فيه بديل معلَن بعد'}`;
+        return `${f.ar || f.field}\n` +
+               `   ${m ? 'كان' : 'كانت'}: <s>${from}</s>\n` +
+               `   ${m ? 'صار' : 'صارت'}: <b>${to}</b>`;
+      });
+      const cl = it.clashes && it.clashes.length
+        ? `\n⚠️ <b>صار يتعارض مع ${it.clashes.map(esc).join('، ')}</b>` : '';
+      return `📌 <b>${esc(it.code)} §${esc(it.section)}</b>\n` + lines.join('\n') + cl;
+    }).join('\n\n');
+
+    const r = await sendMsg(cid,
+      `🔔 <b>تغيّر في جدولك</b>\n\n${body}\n\n` +
+      `التغيير من نظام الجامعة · راجع جدولك في jadwalik.com`);
+    if (r && r.ok) stat.notified++;
+    await new Promise(x => setTimeout(x, 700));   /* تهدئة مثل إشعارات الشعب */
+  }
+}
+
 const SCHED_LOG = [];
 const SCHED_LOG_MAX = 40;
 const FIELD_AR = {
@@ -1764,7 +2648,30 @@ const FIELD_AR = {
   course_timing: 'الوقت', instructor: 'الدكتور', room: 'القاعة'
 };
 
+/* توزيع الجنس من رقم الشعبة: 1xx طلاب · 2xx طالبات — قاعدة الجامعة الثابتة.
+   لازم تُطبَّق على أي قائمة تدخل كاش البحث، سواء جت من بحث الطالب
+   أو من دورة المراقبة، وإلا اختفت علامة طلاب/طالبات عشوائياً. */
+function tagGender(courses, gender) {
+  const forced = gender === 'F1' ? 'F' : gender === 'M1' ? 'M' : null;
+  (courses || []).forEach(c => {
+    if (forced) { c.gender = forced; return; }
+    const sec = String(c.section || '').trim();
+    c.gender = /^2/.test(sec) ? 'F' : /^1/.test(sec) ? 'M' : null;
+  });
+  return courses;
+}
+
 async function syncSchedules(term, courses, force) {
+  /* ═══ ترم واحد فقط ═══
+     الجامعة تعيد استخدام أرقام CRN بين الترمات، فصفّ طالب من ترم قديم
+     بـCRN 10655 قد يطابق شعبة مختلفة تماماً بنفس الرقم في الترم الجديد.
+     المزامنة تربط بالـCRN، فلو انطلقت لترم غير النشط كتبت دكتور مادة
+     على مادة أخرى وأرسلت «تغيّر في جدولك» عن شيء ما تغيّر.
+     البحث يبقى حراً في كل الترمات — التصحيح والإشعارات وحدها محصورة. */
+  if (String(term).trim() !== ACTIVE_TERM) {
+    SCHED_SYNC.skippedTerms = (SCHED_SYNC.skippedTerms || 0) + 1;
+    return null;
+  }
   if (SCHED_SYNC.running) return null;
   if (!force && Date.now() - SCHED_SYNC.at < SCHED_SYNC_GAP) return null;
   SCHED_SYNC.running = true;
@@ -1774,6 +2681,43 @@ async function syncSchedules(term, courses, force) {
                  missing: 0, error: null, ms: 0 };
   const t0 = Date.now();
   try {
+    /* ═══ قاطع الدائرة ═══
+       أخطر حالة ليست فشل الاتصال — الفشل يرمي استثناءً فلا نصل هنا أصلاً.
+       الخطر أن يرجع الطلب "بنجاح" بصفحة صيانة أو جلسة منتهية أو تحليل ناقص،
+       فتطلع القائمة فارغة أو نصفها، ونعلّم جداول الطلاب كلها كمفقودة.
+       القاعدة تشفى ذاتياً في الدورة التالية — لكن رسالة تيليغرام لا تُسحب.
+       فنرفض العمل بالكامل بدل ما نكتب شيئاً مشكوكاً فيه. */
+    const feedN = Array.isArray(courses) ? courses.length : 0;
+    const peak = FEED_PEAK.get(term) || 0;
+
+    /* ترم ما شفناه من قبل: لا نملك مرجعاً نحكم به. الرفض إنذار كاذب،
+       والقبول ثقة عمياء. فنسجّل الذروة ونمتنع عن الكتابة هذي المرة —
+       الدورة الجاية تملك مرجعاً وتقرر. تكلفتها تأخير واحد لكل ترم جديد. */
+    if (!peak && feedN >= FEED_FLOOR) {
+      FEED_PEAK.set(term, feedN);
+      stat.feedN = feedN; stat.feedPeak = feedN; stat.feedFirstSeen = true;
+      console.log(`syncSchedules: ترم جديد ${term} — سجّلنا ${feedN} مادة كمرجع، ` +
+                  `والمزامنة تبدأ الدورة الجاية`);
+      return stat;
+    }
+
+    const tooSmall = feedN < FEED_FLOOR || (peak > 0 && feedN < peak * FEED_MIN_RATIO);
+    if (tooSmall) {
+      stat.error = `تغذية مشبوهة: ${feedN} مادة` +
+                   (peak ? ` مقابل ذروة ${peak}` : ' (لا ذروة مسجّلة بعد)') +
+                   ' — أُلغيت المزامنة';
+      stat.feedRejected = feedN;
+      console.log('syncSchedules: ' + stat.error);
+      alert('feed', 'تغذية الجامعة ناقصة — أوقفنا المزامنة',
+        `وصلتنا ${feedN} مادة فقط للترم ${term}` +
+        (peak ? `، والذروة المسجّلة ${peak}.` : '، ولا ذروة مسجّلة بعد.') +
+        `\n\nما كتبنا شيئاً على جداول الطلاب. المزامنة بتحاول تلقائياً في الدورة الجاية.`);
+      return stat;                       /* الـfinally يفكّ القفل */
+    }
+    if (feedN > peak) FEED_PEAK.set(term, feedN);
+    stat.feedN = feedN; stat.feedPeak = FEED_PEAK.get(term);
+    if (peak && feedN >= peak * FEED_MIN_RATIO) resolve('feed', 'تغذية الجامعة');
+
     /* المادة قد تجي بجلستين بنفس الـCRN (محاضرة + معمل) وأيام مختلفة.
        لو للـCRN جلسة وحدة نطابق بالـCRN وحده — فنمسك حتى تغيّر اليوم.
        ولو له أكثر من جلسة نطابق بالـCRN + الأيام + الوقت، وما نخمّن أبداً:
@@ -1802,14 +2746,28 @@ async function syncSchedules(term, courses, force) {
 
     const rows = await sb('GET', 'user_schedule', {
       query: `?term=eq.${encodeURIComponent(term)}` +
-             `&select=crn,course_code,course_title,course_date,course_timing,instructor,room`
+             `&select=user_id,crn,section,course_code,course_title,` +
+             `course_date,course_timing,instructor,room`
     });
     if (!Array.isArray(rows) || !rows.length) return stat;
     stat.rows = rows.length;
 
+    /* جدول كل طالب كاملاً — نحتاجه لكشف التعارض الصامت عند تغيّر الوقت.
+       مبني من نفس الصفوف المسحوبة، فلا استعلام إضافي. */
+    const byUser = new Map();
+    for (const r of rows) {
+      if (!r.user_id) continue;
+      if (!byUser.has(r.user_id)) byUser.set(r.user_id, []);
+      byUser.get(r.user_id).push(r);
+    }
+
     /* CRN → البيانات الحية، فقط للصفوف اللي فعلاً مختلفة */
     const stale = new Map();
-    const diffs = new Map();                       /* CRN → تفاصيل الفروق */
+    const diffs = new Map();
+    /* تتبّع صامت: نعلّم الصفوف المتغيّرة والشعب المفقودة في القاعدة.
+       ما يظهر للطالب شي في هذي المرحلة — نجمع بيانات موثوقة أولاً. */
+    const missingCrns = new Set();
+    const presentCrns = new Set();                       /* CRN → تفاصيل الفروق */
     const same = (a, b) => String(a || '').trim() === String(b || '').trim();
     const missingList = [];
     for (const r of rows) {
@@ -1820,8 +2778,10 @@ async function syncSchedules(term, courses, force) {
         stat.missing++;
         if (!missingList.some(m => m.crn === crn))
           missingList.push({ crn, code: r.course_code || '', title: r.course_title || '' });
+        missingCrns.add(crn);
         continue;
       }
+      presentCrns.add(crn);
       const pairs = [
         ['course_title', r.course_title, c.courseTitle],
         ['course_date', r.course_date, c.courseDate],
@@ -1847,27 +2807,207 @@ async function syncSchedules(term, courses, force) {
     stat.changed = stale.size;
     stat.missingList = missingList.slice(0, 20);
 
+    /* نعلّم الشعبة المفقودة أول مرة فقط (missing_since فاضي)،
+       ونمسح العلامة عن أي شعبة رجعت — كتابتان محدودتان لا أكثر. */
+    const enc = encodeURIComponent;
+    /* أرقام فقط — الصفوف يكتبها الطالب، فقيمة مصنوعة تكسر الفلتر */
+    const missingSafe = numList(missingCrns);
+    const presentSafe = numList(presentCrns);
+    stat.crnRejected = (missingCrns.size + presentCrns.size)
+                     - (missingSafe.length + presentSafe.length);
+    if (missingSafe.length) {
+      const list = inList(missingSafe);
+      await sb('PATCH', 'user_schedule', {
+        query: `?term=eq.${enc(term)}&crn=in.(${list})&missing_since=is.null`,
+        body: { missing_since: new Date().toISOString() },
+        prefer: 'return=minimal'
+      }).catch(() => {});
+      stat.markedMissing = missingSafe.length;
+    }
+    if (presentSafe.length) {
+      const list = inList(presentSafe);
+      await sb('PATCH', 'user_schedule', {
+        query: `?term=eq.${enc(term)}&crn=in.(${list})&missing_since=not.is.null`,
+        body: { missing_since: null },
+        prefer: 'return=minimal'
+      }).catch(() => {});
+    }
+
+    /* ═══ طابور التأكيد ═══
+       التغيير ما يُطبَّق أول ما نشوفه. نسجّله وننتظر رصدة ثانية
+       بعد CONFIRM_AFTER. الفرق الذي يختفي بينهما كان رفّة في بيانات
+       الجامعة، ونرميه بلا أثر. قاطع الدائرة يمسك الانهيار الكامل،
+       وهذا يمسك الرفّة الصغيرة التي تعبره. */
+    const pend = await sb('GET', 'pending_changes', {
+      query: `?term=eq.${enc(term)}&select=*`
+    }).catch(() => []);
+    const pendBy = new Map();
+    (Array.isArray(pend) ? pend : []).forEach(p =>
+      pendBy.set(String(p.crn) + '|' + String(p.session_key || ''), p));
+
+    const nowIso = new Date().toISOString();
+    const seenKeys = new Set();
+    stat.pendingNew = 0; stat.pendingWaiting = 0; stat.confirmed = 0; stat.discarded = 0;
+    const notifyList = [];
+
+    /* ═══ صمّام العاصفة — يقرر قبل أي كتابة ═══
+       كان يكبت الرسائل بعد ما تتم الكتابة، فيصمت تيليغرام
+       ويظل الموقع يعرض التحذير الخاطئ لكل طالب — حماية نصف.
+       الآن نحصي المتأثرين أولاً: لو تجاوزوا الحد لا نكتب ولا نرسل،
+       والصفوف تبقى في الطابور فتُعاد المحاولة بعد ما تفحصها. */
+    let stormAbort = 0;
+    {
+      let affected = 0;
+      for (const [key, item] of stale) {
+        const d0 = diffs.get(key);
+        if (!d0) continue;
+        const pk = String(item.crn) + '|' +
+          (item.scope ? sessionKey(item.scope.date, item.scope.timing) : '');
+        const prev = pendBy.get(pk);
+        if (!prev || prev.fingerprint !== fingerprint(d0.fields)) continue;
+        const age = Date.now() - new Date(prev.first_seen).getTime();
+        if (age < CONFIRM_AFTER || (prev.seen_count + 1) < CONFIRM_MIN_SIGHTINGS) continue;
+        /* ناضج — كم طالباً يمسّه؟ نعدّ كل الطلاب لا المربوطين بتيليغرام،
+           فالتحذير في الصفحة يصل الجميع والمربوطون أقل من ربعهم. */
+        affected += rows.filter(r =>
+          String(r.crn || '').trim() === String(item.crn).trim() &&
+          (!item.scope ||
+            (same(r.course_date, item.scope.date) &&
+             same(r.course_timing, item.scope.timing)))).length;
+      }
+      const cap = notifyCap(byUser.size);
+      LAST_CAP = cap;
+      stat.notifyCap = cap; stat.activeStudents = byUser.size;
+      const approved = Date.now() < STORM_OK.until;
+      if (affected > cap && !approved) {
+        stormAbort = affected;
+        stat.stormAbort = affected;
+        console.log(`syncSchedules: ${affected} طالباً متأثراً — تجاوز ${cap}، أُلغي التأكيد`);
+        alert('notify-storm', '⛔️ عاصفة تغييرات — أوقفنا كل شيء',
+          `دورة واحدة كانت بتغيّر جداول ${affected} طالباً من ${byUser.size}، ` +
+          `والحد ${cap}.\n\n` +
+          `ما كتبنا شيئاً وما أرسلنا رسالة. الصفوف باقية في طابور التأكيد.\n\n` +
+          `افتح اللوحة › النظام › طابور التأكيد. لو راجعتها وطلعت صحيحة ` +
+          `اضغط «وافق وأرسل» وتمر الدورة الجاية.`);
+      } else {
+        if (affected > cap && approved) {
+          stat.stormApproved = affected;
+          STORM_OK.until = 0;                  /* الموافقة تُستهلك مرة واحدة */
+          console.log(`syncSchedules: عاصفة ${affected} مرّت بموافقتك`);
+        }
+        if (affected) resolve('notify-storm', 'عاصفة التغييرات');
+      }
+    }
+
     for (const [key, item] of stale) {
       const c = item.course;
-      let q = `?term=eq.${encodeURIComponent(term)}` +
-              `&crn=eq.${encodeURIComponent(item.crn)}`;
+      const d0 = diffs.get(key);
+      if (!d0) continue;
+      const sessKey = item.scope
+        ? sessionKey(item.scope.date, item.scope.timing) : '';
+      const pk = String(item.crn) + '|' + sessKey;
+      seenKeys.add(pk);
+      const fp = fingerprint(d0.fields);
+      const prev = pendBy.get(pk);
+
+      /* أول رصدة، أو تغيّر التغيير نفسه → نبدأ العدّ من جديد */
+      if (!prev || prev.fingerprint !== fp) {
+        await sb(prev ? 'PATCH' : 'POST', 'pending_changes', {
+          query: prev ? `?id=eq.${enc(prev.id)}` : '',
+          body: prev
+            ? { fields: d0.fields, fingerprint: fp, first_seen: nowIso,
+                last_seen: nowIso, seen_count: 1, course_code: d0.code }
+            : { term, crn: String(item.crn), session_key: sessKey,
+                course_code: d0.code, fields: d0.fields, fingerprint: fp },
+          prefer: 'return=minimal'
+        }).catch(() => {});
+        stat.pendingNew++;
+        continue;
+      }
+
+      /* نفس الفرق — هل نضج؟ (والعاصفة تُبقيه منتظراً بدل ما نكتب) */
+      const age = Date.now() - new Date(prev.first_seen).getTime();
+      if (stormAbort ||
+          age < CONFIRM_AFTER || (prev.seen_count + 1) < CONFIRM_MIN_SIGHTINGS) {
+        await sb('PATCH', 'pending_changes', {
+          query: `?id=eq.${enc(prev.id)}`,
+          body: { last_seen: nowIso, seen_count: prev.seen_count + 1 },
+          prefer: 'return=minimal'
+        }).catch(() => {});
+        stat.pendingWaiting++;
+        continue;
+      }
+
+      /* مؤكَّد — الآن فقط نكتب على جدول الطالب */
+      let q = `?term=eq.${enc(term)}&crn=eq.${enc(item.crn)}`;
       if (item.scope) {                            /* جلسة بعينها لا كل جلسات الـCRN */
-        q += `&course_date=eq.${encodeURIComponent(item.scope.date || '')}` +
-             `&course_timing=eq.${encodeURIComponent(item.scope.timing || '')}`;
+        q += `&course_date=eq.${enc(item.scope.date || '')}` +
+             `&course_timing=eq.${enc(item.scope.timing || '')}`;
       }
       await sb('PATCH', 'user_schedule', {
         query: q,
         body: {
           course_title: c.courseTitle, course_date: c.courseDate,
-          course_timing: c.courseTiming, instructor: c.instructor, room: c.room
+          course_timing: c.courseTiming, instructor: c.instructor, room: c.room,
+          changed_at: nowIso,
+          change_note: { at: Date.now(), fields: d0.fields,
+                         confirmedAfterMin: Math.round(age / 60000) }
         },
         prefer: 'return=minimal'
       });
-      stat.updated++;
-      const d = diffs.get(key);
-      if (d) SCHED_LOG.unshift({ at: Date.now(), term, ...d });
+      await sb('DELETE', 'pending_changes', {
+        query: `?id=eq.${enc(prev.id)}`, prefer: 'return=minimal'
+      }).catch(() => {});
+      stat.updated++; stat.confirmed++;
+
+      /* من يملك هذي الشعبة؟ من الصفوف المسحوبة أصلاً — بلا استعلام إضافي */
+      const owners = rows.filter(r =>
+        String(r.crn || '').trim() === String(item.crn).trim() &&
+        (!item.scope ||
+          (same(r.course_date, item.scope.date) && same(r.course_timing, item.scope.timing))));
+      const moved = d0.fields.some(f =>
+        f.field === 'course_timing' || f.field === 'course_date');
+      for (const o of owners) {
+        if (!o.user_id) continue;
+        /* التعارض يُحسب بالوقت الجديد ضد بقية جدوله */
+        const others = (byUser.get(o.user_id) || []).filter(x =>
+          !(String(x.crn).trim() === String(o.crn).trim() &&
+            same(x.course_date, o.course_date) && same(x.course_timing, o.course_timing)));
+        const clashes = moved
+          ? others.filter(x => schedClash(c, x))
+                  .map(x => `${x.course_code} §${x.section}`)
+          : [];
+        notifyList.push({ userId: o.user_id, code: o.course_code || d0.code,
+                          section: o.section || '—', fields: d0.fields, clashes });
+      }
+      const corr = { at: Date.now(), term, confirmed: true,
+                     waitedMin: Math.round(age / 60000), ...d0 };
+      SCHED_LOG.unshift(corr);
+      if (EVENTS_READY) logEvent('correction', corr);
       await new Promise(r => setTimeout(r, 150));   /* ما نضغط على Supabase */
     }
+
+    /* الفرق الذي اختفى قبل أن ينضج = رفّة. نرميه ونسجّلها لك.
+       شرط: الشعبة موجودة في التغذية — وإلا فغيابها سبب آخر لا نحكم عليه. */
+    for (const [pk, p] of pendBy) {
+      if (seenKeys.has(pk)) continue;
+      if (!presentCrns.has(String(p.crn))) continue;
+      await sb('DELETE', 'pending_changes', {
+        query: `?id=eq.${enc(p.id)}`, prefer: 'return=minimal'
+      }).catch(() => {});
+      stat.discarded++;
+      const flap = { at: Date.now(), term, crn: p.crn,
+        code: p.course_code, fields: p.fields,
+        livedMin: Math.round((Date.now() - new Date(p.first_seen).getTime()) / 60000) };
+      FLAP_LOG.unshift(flap);
+      if (EVENTS_READY) logEvent('flap', flap);
+      if (FLAP_LOG.length > FLAP_LOG_MAX) FLAP_LOG.length = FLAP_LOG_MAX;
+    }
+
+    /* الإرسال بعد اكتمال الكتابة كلها — لو انكسر شيء في المنتصف
+       ما نكون أرسلنا نصف الطلاب خبراً وتركنا القاعدة ناقصة. */
+    await notifyChanges(notifyList, stat).catch(e =>
+      console.log('notifyChanges: ' + (e && e.message)));
     if (SCHED_LOG.length > SCHED_LOG_MAX) SCHED_LOG.length = SCHED_LOG_MAX;
   } catch (e) {
     stat.error = e.message;
@@ -1885,18 +3025,20 @@ async function syncSchedules(term, courses, force) {
   return stat;
 }
 
+const RESP_CACHE = new Map();   /* مفتاح → {at, raw, gz} — البايتات الجاهزة للإرسال */
 const coursesCache = new Map();     // key → {at, courses}
 const inFlight     = new Map();     // key → Promise (يمنع سحبتين متزامنتين لنفس التركيبة)
 
 async function getCourses(term, college, gender, force) {
   const key = `${term}|${college}|${gender}`;
   OPS.searches++;
+  if (!force) recordSearch();       /* التسخين نفسه ما يُحسب طلباً */
   const TTL = coursesTTL();
   const hit = coursesCache.get(key);
   if (hit && !force && Date.now() - hit.at < TTL) {
     hit.lastHit = Date.now();          /* لمعرفة أي التركيبات تستحق التسخين */
     OPS.searchesCached++;
-    return { courses: hit.courses, cached: true, age: Date.now() - hit.at };
+    return { courses: hit.courses, cached: true, age: Date.now() - hit.at, at: hit.at };
   }
 
   /* لو فيه سحبة جارية لنفس التركيبة، ننتظرها بدل ما نبدأ وحدة جديدة.
@@ -1904,20 +3046,15 @@ async function getCourses(term, college, gender, force) {
   if (inFlight.has(key)) {
     OPS.searchesCached++;
     const courses = await inFlight.get(key);
-    return { courses, cached: true, age: 0 };
+    const h2 = coursesCache.get(key);
+    return { courses, cached: true, age: 0, at: (h2 && h2.at) || Date.now() };
   }
 
   const p = (async () => {
     /* سحبة واحدة بـ ALL، ونوزّع الجنس من رقم الشعبة:
        1xx = طلاب · 2xx = طالبات — قاعدة الجامعة الثابتة.
        أوفر من سحبتين منفصلتين، وأدق من التخمين من القاعة. */
-    const courses = parseHTML(await fetchPMUData(term, college, gender));
-    const forced = gender === 'F1' ? 'F' : gender === 'M1' ? 'M' : null;
-    courses.forEach(c => {
-      if (forced) { c.gender = forced; return; }
-      const sec = String(c.section || '').trim();
-      c.gender = /^2/.test(sec) ? 'F' : /^1/.test(sec) ? 'M' : null;
-    });
+    const courses = tagGender(parseHTML(await fetchPMUData(term, college, gender)), gender);
     coursesCache.set(key, { at: Date.now(), lastHit: (hit && hit.lastHit) || Date.now(), courses });
     resolve('search', 'البحث ما يشتغل');
     /* قائمة ALL/ALL هي الأشمل — نصحّح بها جداول الطلاب المحفوظة */
@@ -1931,7 +3068,13 @@ async function getCourses(term, college, gender, force) {
   })();
 
   inFlight.set(key, p);
-  try { return { courses: await p, cached: false, age: 0 }; }
+  try {
+    const t0 = Date.now();
+    const courses = await p;
+    recordFetch(Date.now() - t0);
+    const h3 = coursesCache.get(key);
+    return { courses, cached: false, age: 0, at: (h3 && h3.at) || Date.now() };
+  }
   finally { inFlight.delete(key); }
 }
 
@@ -1950,8 +3093,16 @@ const MONITOR_WINDOWS = [
   { from: '2027-06-13', to: '2027-06-22', ar: 'تسجيل الصيفي' }
 ];
 
-const ACTIVE_FROM_HOUR = 7;    // 7 صباحاً بتوقيت الرياض
-const ACTIVE_TO_HOUR   = 23;   // حتى 11 مساءً
+const ACTIVE_FROM_DEFAULT = 7;    // 7 صباحاً بتوقيت الرياض
+const ACTIVE_TO_DEFAULT   = 24;   // حتى منتصف الليل
+
+/* تُعدَّل من اللوحة بدون إعادة تشغيل. null = القيمة الافتراضية.
+   تُصفَّر مع كل إعادة نشر على Render. */
+let HOURS_OVERRIDE = null;        // {from, to}
+let WINDOW_OVERRIDE = null;       // {from:'YYYY-MM-DD', to:'YYYY-MM-DD', ar}
+
+const activeFrom = () => HOURS_OVERRIDE ? HOURS_OVERRIDE.from : ACTIVE_FROM_DEFAULT;
+const activeTo   = () => HOURS_OVERRIDE ? HOURS_OVERRIDE.to   : ACTIVE_TO_DEFAULT;
 
 const INTERVAL_PEAK = 5 * 60 * 1000;    // داخل نافذة التسجيل
 const JITTER        = 0.25;             // ±25% تفادياً لنمط منتظم تماماً
@@ -1968,15 +3119,24 @@ function riyadhNow() {
   return new Date(Date.now() + 3 * 3600 * 1000);
 }
 function riyadhHour() { return riyadhNow().getUTCHours(); }
+/* الساعة بالدقائق «6:30» — اللوحة كانت تعرض 6 فقط */
+function riyadhTime() {
+  const d = riyadhNow();
+  return d.getUTCHours() + ':' + String(d.getUTCMinutes()).padStart(2, '0');
+}
 function riyadhDate() { return riyadhNow().toISOString().slice(0, 10); }
 
+function windowList() {
+  /* نافذة يدوية من اللوحة تتقدّم على قائمة التقويم */
+  return WINDOW_OVERRIDE ? [WINDOW_OVERRIDE] : MONITOR_WINDOWS;
+}
 function currentWindow() {
   const d = riyadhDate();
-  return MONITOR_WINDOWS.find(w => d >= w.from && d <= w.to) || null;
+  return windowList().find(w => d >= w.from && d <= w.to) || null;
 }
 function nextWindow() {
   const d = riyadhDate();
-  return MONITOR_WINDOWS.find(w => d < w.from) || null;
+  return windowList().find(w => d < w.from) || null;
 }
 const dayShift = (iso, n) =>
   new Date(Date.parse(iso + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
@@ -1998,6 +3158,29 @@ const PREWARM_RECENT   = 30 * 60000; /* تركيبة ما طُلبت منذ نص
 async function prewarmTick() {
   if (!PREWARM_ON) return;
   if (!MONITOR_ENABLED) return;
+
+  /* ═══ القرار: نشتغل أو نطفي ═══
+     في الهدوء التسخين سحبة من الجامعة لا ينتظرها أحد — نطفيه.
+     وفي الذروة، أو لما تصير الجامعة بطيئة، هو أنفع شيء: الطالب
+     يلقى نسخة جاهزة بدل ما ينتظر السحبة كاملة. */
+  const d = demandNow();
+  PREWARM.demand = d;
+  /* البطء يخفّض العتبة ولا يلغيها. الصيغة الأولى كانت «بطيئة ← شغّله
+     دائماً»، فلو بقيت الجامعة ثقيلة يومين وما فيه إلا طالب واحد يظل
+     يسحب بلا مبرر — ويزيد الحمل على جامعة متعبة أصلاً.
+     بحثة أو بحثتان لا تستحقان تسخيناً مهما كان البطء. */
+  const need = d.slow ? DEMAND_SLOW_RATE : DEMAND_MIN_RATE;
+  if (d.rate < need) {
+    PREWARM.on = false;
+    PREWARM.skipped++;
+    PREWARM.lastSkip = { at: Date.now(), rate: d.rate, need,
+                         why: d.slow ? 'طلب قليل رغم البطء' : 'هدوء' };
+    return;
+  }
+  PREWARM.on = true;
+  /* الذروة أو البطء يوسّعان التغطية، والعادي يبقى على ثلاث */
+  const maxKeys = (d.busy || d.slow) ? PREWARM_MAX_KEYS + 2 : PREWARM_MAX_KEYS;
+
   const now = Date.now();
   const TTL = coursesTTL();
   /* عتبة عشوائية في كل دورة (70%–95% من الصلاحية) — نفس فلسفة التشويش
@@ -2008,7 +3191,7 @@ async function prewarmTick() {
     .filter(([, v]) => now - (v.lastHit || v.at) < PREWARM_RECENT)
     .filter(([, v]) => now - v.at >= TTL * at)      /* قاربت تنتهي */
     .sort((a, b) => (b[1].lastHit || b[1].at) - (a[1].lastHit || a[1].at))
-    .slice(0, PREWARM_MAX_KEYS);
+    .slice(0, maxKeys);
 
   if (!due.length) return;
   PREWARM.runs++;
@@ -2042,11 +3225,14 @@ function monitorState() {
   }
   const hour = riyadhHour();
   const win = currentWindow();
-  const inHours = hour >= ACTIVE_FROM_HOUR && hour < ACTIVE_TO_HOUR;
+  const hFrom = activeFrom(), hTo = activeTo();
+  const inHours = hour >= hFrom && hour < hTo;
 
   if (!inHours) {
-    return { active: false, reason: 'hours', ar: 'خارج ساعات العمل (7 ص – 11 م)',
-             en: 'Outside active hours (7am–11pm)', window: win, intervalMin: null };
+    return { active: false, reason: 'hours',
+             ar: `خارج ساعات العمل (${hFrom}:00 – ${hTo}:00)`,
+             en: `Outside active hours (${hFrom}:00–${hTo}:00)`,
+             window: win, intervalMin: null };
   }
   if (win) {
     return { active: true, reason: 'peak', ar: 'مراقبة مكثفة — ' + win.ar,
@@ -2078,7 +3264,7 @@ function nextDelay() {
     /* ننام حتى 7 صباحاً بالضبط */
     const now = riyadhNow();
     const target = new Date(now);
-    target.setUTCHours(ACTIVE_FROM_HOUR, 0, 0, 0);
+    target.setUTCHours(activeFrom(), 0, 0, 0);
     if (target <= now) target.setUTCDate(target.getUTCDate() + 1);
     return Math.max(60000, target - now) + Math.random() * 120000;
   }
@@ -2160,6 +3346,16 @@ const server = http.createServer(async (req, res) => {
     res.end(); return;
   }
 
+  /* ═══ http → https ═══
+     قوقل فهرس نسخة http كصفحة منفصلة (١٢ ظهوراً في أسبوع).
+     Render ينهي TLS ويمرّر البروتوكول الأصلي في هذي الترويسة،
+     فنحوّل فقط لو صرّحت بـ http — وغيابها يعني تشغيلاً محلياً فلا نلمسه. */
+  const proto = (req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
+  if (proto === 'http' && host && !req.url.startsWith('/tg-webhook')) {
+    res.writeHead(308, { Location: 'https://' + host + req.url });
+    res.end(); return;
+  }
+
   const parsed = url.parse(req.url, true);
 
   /* وضع الصيانة — نقفل على الطلاب فقط، واللوحة تبقى شغالة */
@@ -2196,8 +3392,49 @@ const server = http.createServer(async (req, res) => {
   if (parsed.pathname === '/api/courses') {
     touchVisitor(req);
     res.setHeader('Content-Type', 'application/json');
-    /* قائمة المواد كبيرة (مئات الكيلوبايتات لقائمة ALL) — الضغط يقصّها
-       لعُشر حجمها تقريباً، وهذا أكبر فرق يحسّه الطالب على بيانات الجوال. */
+    /* ═══ ردّ مضغوط مخزَّن ═══
+       كل طلب كان يعيد بناء الرد: JSON.stringify لـ1800 مادة (430 كيلوبايت)
+       ثم ضغطها — حتى الطلبات المخدومة من الكاش. على نصف معالج هذا هو
+       السقف الحقيقي، لا الذاكرة. نخزّن البايتات المضغوطة مرة ونرسلها
+       جاهزة، فيقفز السقف من عشرات الطلبات في الثانية إلى آلاف.
+       ageMs و cached و ttlMin كانت تجعل الجسم يتغيّر كل ميلي ثانية
+       فيستحيل تخزينه — والواجهة لا تقرأها أصلاً، فنقلناها لترويسات. */
+    const sendCourses = (r, key) => {
+      res.setHeader('X-Cached', r.cached ? '1' : '0');
+      res.setHeader('X-Age-Ms', String(r.age || 0));
+      res.setHeader('X-TTL-Min', String(Math.round(coursesTTL() / 60000)));
+      const wantsGzip = /\bgzip\b/.test(req.headers['accept-encoding'] || '');
+      const hit = key ? RESP_CACHE.get(key) : null;
+
+      if (hit && hit.at === r.at) {                /* نفس النسخة بالضبط */
+        OPS.respCacheHits = (OPS.respCacheHits || 0) + 1;
+        if (wantsGzip && hit.gz) {
+          res.setHeader('Content-Encoding', 'gzip');
+          res.setHeader('Vary', 'Accept-Encoding');
+          res.writeHead(200); return res.end(hit.gz);
+        }
+        res.writeHead(200); return res.end(hit.raw);
+      }
+
+      const raw = Buffer.from(JSON.stringify({
+        success: true, count: r.courses.length, courses: r.courses
+      }), 'utf8');
+      if (!wantsGzip) {
+        if (key) RESP_CACHE.set(key, { at: r.at, raw, gz: null });
+        res.writeHead(200); return res.end(raw);
+      }
+      zlib.gzip(raw, (err, gz) => {
+        if (err) { res.writeHead(200); return res.end(raw); }
+        if (key) {
+          RESP_CACHE.set(key, { at: r.at, raw, gz });
+          while (RESP_CACHE.size > 12)             /* سقف: لا نُراكم ترمات وكليات */
+            RESP_CACHE.delete(RESP_CACHE.keys().next().value);
+        }
+        res.setHeader('Content-Encoding', 'gzip');
+        res.setHeader('Vary', 'Accept-Encoding');
+        res.writeHead(200); res.end(gz);
+      });
+    };
     const sendJSON = obj => {
       const buf = Buffer.from(JSON.stringify(obj), 'utf8');
       if (/\bgzip\b/.test(req.headers['accept-encoding'] || '')) {
@@ -2212,12 +3449,7 @@ const server = http.createServer(async (req, res) => {
     const { term = '202630', college = 'ALL', gender = 'M1' } = parsed.query;
     try {
       const r = await getCourses(term, college, gender);
-      sendJSON({
-        success: true, count: r.courses.length,
-        cached: r.cached, ageMs: r.age,
-        ttlMin: Math.round(coursesTTL() / 60000),
-        courses: r.courses
-      });
+      sendCourses(r, `${term}|${college}|${gender}`);
     } catch (err) {
       /* لو الجامعة تعطلت، نخدم آخر نسخة محفوظة بدل ما نفشل */
       OPS.lastError = { at: Date.now(), where: 'search', msg: err.message };
@@ -2227,11 +3459,10 @@ const server = http.createServer(async (req, res) => {
       const stale = coursesCache.get(`${term}|${college}|${gender}`);
       if (stale) {
         OPS.searchStale++;
-        sendJSON({
-          success: true, count: stale.courses.length,
-          cached: true, stale: true, ageMs: Date.now() - stale.at,
-          courses: stale.courses
-        });
+        /* نادر جداً فلا نخزّنه (بلا مفتاح) — لكن نوحّد الشكل والترويسات */
+        res.setHeader('X-Stale', '1');
+        sendCourses({ courses: stale.courses, cached: true,
+                      age: Date.now() - stale.at, at: stale.at }, null);
       } else {
         res.writeHead(500);
         res.end(JSON.stringify({ success: false, error: err.message }));
@@ -2287,6 +3518,31 @@ const server = http.createServer(async (req, res) => {
       if (act === 'user')     return send(200, await adminUserDetail(parsed.query.id || ''));
       if (act === 'tickets')  return send(200, { tickets: await adminTickets(parsed.query.status) });
       if (act === 'broadcast-status') return send(200, BROADCAST);
+      if (act === 'messages') {
+        await fillChatNames().catch(() => {});
+        const kind = (parsed.query.kind || '').trim();
+        const list = kind ? MSG_LOG.filter(m => m.kind === kind) : MSG_LOG;
+        return send(200, {
+          messages: list.slice(0, 150).map(m =>
+            Object.assign({}, m, { who: CHAT_NAMES.get(m.chatId) || m.who })),
+          total: MSG_LOG.length,
+          kinds: [...new Set(MSG_LOG.map(m => m.kind))],
+          sinceBoot: OPS.bootedAt
+        });
+      }
+
+      /* موافقة يدوية على عاصفة راجعتها بنفسك */
+      if (act === 'approve-storm' && req.method === 'POST') {
+        STORM_OK.until = Date.now() + STORM_OK_WINDOW;
+        STORM_OK.affected = (SCHED_SYNC.last && SCHED_SYNC.last.stormAbort) || 0;
+        console.log(`approve-storm: وافق المشرف على ${STORM_OK.affected} — ` +
+                    `صالحة ${Math.round(STORM_OK_WINDOW / 60000)} دقيقة`);
+        /* نشغّلها فوراً بدل ما ننتظر الدورة — الموافقة تعني «الآن» */
+        const term = String((SCHED_SYNC.last && SCHED_SYNC.last.term) || '202710');
+        const r = await getCourses(term, 'ALL', 'ALL', true).catch(() => null);
+        const stat = r ? await syncSchedules(term, r.courses, true) : null;
+        return send(200, { ok: true, stat, windowMin: Math.round(STORM_OK_WINDOW / 60000) });
+      }
 
       if (act === 'sync-schedules') {
         if (req.method === 'POST') {
@@ -2297,6 +3553,100 @@ const server = http.createServer(async (req, res) => {
           return send(200, { ok: true, stat });
         }
         return send(200, { last: SCHED_SYNC.last });
+      }
+
+      if (act === 'monitor-row') {
+        if (req.method !== 'POST') return send(405, { error: 'POST فقط' });
+        const b = await readBody(req);
+        const ids = (Array.isArray(b.ids) ? b.ids : [b.id])
+          .map(x => parseInt(x, 10)).filter(Number.isFinite);
+        if (!ids.length) return send(400, { error: 'ما فيه صفوف' });
+
+        const rows = await sb('GET', 'monitored_courses', {
+          query: `?id=in.(${ids.join(',')})&select=*`
+        }).catch(() => []);
+        if (!Array.isArray(rows) || !rows.length) return send(404, { error: 'ما لقيت الصفوف' });
+
+        const uids = [...new Set(rows.map(r => r.user_id))].map(u => `"${u}"`).join(',');
+        const ps = await sb('GET', 'profiles', {
+          query: `?id=in.(${uids})&select=id,telegram_chat_id`
+        }).catch(() => []);
+        const chat = {};
+        (Array.isArray(ps) ? ps : []).forEach(p => { chat[p.id] = p.telegram_chat_id });
+
+        const label = r => (r.course_code || 'المادة') +
+          (r.scope === 'course' ? ' · كل الشعب' : (r.crn ? ' · CRN ' + r.crn : ''));
+
+        if (b.action === 'stop') {
+          await sb('DELETE', 'monitored_courses',
+            { query: `?id=in.(${ids.join(',')})`, prefer: 'return=minimal' });
+          if (b.notify) for (const r of rows) {
+            if (chat[r.user_id]) await sendMsg(chat[r.user_id],
+              `🔕 <b>أوقفنا مراقبة ${label(r)}</b>\n\n` +
+              `${b.reason ? b.reason + '\n\n' : ''}ترجّعها أي وقت من الجرس في الموقع.`)
+              .catch(() => {});
+          }
+          return send(200, { ok: true, stopped: ids.length });
+        }
+
+        if (b.action === 'ask') {
+          /* سؤال تأكيد مع مهلة — الصف يُحذف تلقائياً لو ما أكّد */
+          const hours = Math.max(1, Math.min(168, parseInt(b.hours, 10) || 24));
+          const deadline = new Date(Date.now() + hours * 3600e3).toISOString();
+          let sent = 0;
+          for (const r of rows) {
+            if (!chat[r.user_id]) continue;
+            const ok = await sendMsg(chat[r.user_id],
+              `⏳ <b>هل ما زلت تحتاج مراقبة ${label(r)}؟</b>\n\n` +
+              `لو ما أكّدت خلال <b>${hours} ساعة</b>، بنوقف المراقبة تلقائياً.`,
+              kb([[btn('✅ نعم، كمّل المراقبة', 'keep:' + r.id)],
+                  [btn('🔕 لا، أوقفها', 'stop:' + r.id)]])).catch(() => null);
+            if (ok && ok.ok) sent++;
+            await new Promise(x => setTimeout(x, 300));
+          }
+          await sb('PATCH', 'monitored_courses', {
+            query: `?id=in.(${ids.join(',')})`,
+            body: { expires_at: deadline }, prefer: 'return=minimal'
+          });
+          return send(200, { ok: true, asked: ids.length, sent, hours, deadline });
+        }
+
+        return send(400, { error: 'action لازم تكون stop أو ask' });
+      }
+
+      if (act === 'monitor-hours') {
+        if (req.method === 'POST') {
+          const b = await readBody(req);
+          if (b.reset) HOURS_OVERRIDE = null;
+          else if ('from' in b && 'to' in b) {
+            const f = Math.max(0, Math.min(23, parseInt(b.from, 10)));
+            const t = Math.max(1, Math.min(24, parseInt(b.to, 10)));
+            if (Number.isFinite(f) && Number.isFinite(t) && t > f)
+              HOURS_OVERRIDE = { from: f, to: t };
+            else return send(400, { error: 'ساعات غير صالحة — لازم "من" أصغر من "إلى"' });
+          }
+        }
+        return send(200, { from: activeFrom(), to: activeTo(),
+                           custom: !!HOURS_OVERRIDE, state: monitorState() });
+      }
+
+      if (act === 'monitor-window') {
+        if (req.method === 'POST') {
+          const b = await readBody(req);
+          if (b.reset) WINDOW_OVERRIDE = null;
+          else if (b.from && b.to) {
+            const ok = d => /^\d{4}-\d{2}-\d{2}$/.test(String(d));
+            if (!ok(b.from) || !ok(b.to))
+              return send(400, { error: 'التاريخ لازم يكون بصيغة YYYY-MM-DD' });
+            if (String(b.to) < String(b.from))
+              return send(400, { error: 'تاريخ النهاية قبل البداية' });
+            WINDOW_OVERRIDE = { from: String(b.from), to: String(b.to),
+                                ar: String(b.ar || 'نافذة يدوية من اللوحة') };
+          }
+        }
+        return send(200, { window: WINDOW_OVERRIDE, custom: !!WINDOW_OVERRIDE,
+                           current: currentWindow(), next: nextWindow(),
+                           state: monitorState() });
       }
 
       if (act === 'monitor-toggle') {
@@ -2545,7 +3895,7 @@ const server = http.createServer(async (req, res) => {
       dataTtlMin: Math.round(coursesTTL() / 60000),
       ar: st.ar, en: st.en,
       intervalMin: st.intervalMin,
-      activeHours: [ACTIVE_FROM_HOUR, ACTIVE_TO_HOUR],
+      activeHours: [activeFrom(), activeTo()],
       windows: MONITOR_WINDOWS
     }));
     return;
@@ -2696,23 +4046,122 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  /* تسجيل مؤقت لمصدر الـ404 — يظهر في سجل Render.
-     احذف هذا السطر بعد ما نعرف المسار المسبّب. */
-  console.log('404 ' + req.method + ' ' + parsed.pathname +
-    ' | ref: ' + (req.headers.referer || '-'));
-
   res.setHeader('Content-Type', 'application/json');
   res.writeHead(404);
   res.end(JSON.stringify({ error: 'Not found' }));
 });
 
+/* ═══ ساعة التأكيد المستقلة ═══
+   المزامنة ما تملك ساعة خاصة — تنطلق فقط لما تسحب دورة المراقبة.
+   فتتوقف لو أُوقفت المراقبة، أو خرجنا من ساعات العمل، أو ما فيه
+   مراقبات أصلاً. وفي مسار البحث الكاش يعيش ساعة أو ست ساعات.
+   والأهم: إعادة الفحص على نفس النسخة المخزّنة ليست رصدة ثانية —
+   هي قراءة ثانية لنفس البيانات، تؤكد نفسها بلا معنى.
+   فهنا نجبر سحبة طازجة، ولا نفعل ذلك إلا لو فيه شيء نضج فعلاً. */
+let CONFIRM_BUSY = false;
+const CONFIRM_STAT = { lastTick: 0, lastForce: 0, forces: 0, ripe: 0, purged: 0 };
+
+async function confirmTick() {
+  if (CONFIRM_BUSY) return;
+  CONFIRM_BUSY = true;
+  try {
+    CONFIRM_STAT.lastTick = Date.now();
+
+    /* ── تنظيف أولاً ──
+       الشعبة الملغاة تُتجاوَز قبل رصد الفروق، فصفّها لا يتأكد ولا يُرمى.
+       بدون هذا كان يظل «ناضجاً» فيجبر سحبة كل خمس دقائق إلى الأبد. */
+    const dead = new Date(Date.now() - PENDING_MAX_AGE).toISOString();
+    const purged = await sb('DELETE', 'pending_changes', {
+      query: `?first_seen=lt.${encodeURIComponent(dead)}`,
+      prefer: 'return=representation'
+    }).catch(() => []);
+    if (Array.isArray(purged) && purged.length) {
+      CONFIRM_STAT.purged += purged.length;
+      console.log(`confirmTick: نظّفت ${purged.length} صفّاً عالقاً أقدم من ` +
+                  `${Math.round(PENDING_MAX_AGE / 3600000)} ساعة`);
+    }
+
+    /* تنظيف السجل: بلا هذا يكبر الجدول بلا سقف.
+       مرة كل ساعة تكفي — لا حاجة لها كل خمس دقائق. */
+    if (Date.now() - (CONFIRM_STAT.lastPurgeEvents || 0) > 60 * 60 * 1000) {
+      CONFIRM_STAT.lastPurgeEvents = Date.now();
+      const old = new Date(Date.now() - EVENT_MAX_AGE_DAYS * 864e5).toISOString();
+      await sb('DELETE', 'app_events', {
+        query: `?at=lt.${encodeURIComponent(old)}`, prefer: 'return=minimal'
+      }).catch(() => {});
+    }
+
+    /* استعلام خفيف: هل نضج شيء؟ الطابور فاضي في الغالب فالتكلفة صفر عملياً */
+    const cutoff = new Date(Date.now() - CONFIRM_AFTER).toISOString();
+    const ripe = await sb('GET', 'pending_changes', {
+      query: `?first_seen=lte.${encodeURIComponent(cutoff)}` +
+             `&first_seen=gte.${encodeURIComponent(dead)}` +
+             `&seen_count=gte.${CONFIRM_MIN_SIGHTINGS - 1}` +
+             `&select=term&limit=20`
+    }).catch(() => []);
+    CONFIRM_STAT.ripe = Array.isArray(ripe) ? ripe.length : 0;
+    if (!CONFIRM_STAT.ripe) return;
+
+    /* سحبة طازجة حقيقية لكل ترم فيه صفّ ناضج — هذي هي المشاهدة الثانية */
+    for (const term of [...new Set(ripe.map(r => r.term))]) {
+      try {
+        /* أثر صريح في السجل: العدّاد وحده يقول إن سحبة حصلت، ولا يقول
+           إنها هي التي أكّدت هذا الصف. هذان السطران يربطان الاثنين
+           بالوقت، فتقدر تطابقهما مع لحظة وصول الرسالة. */
+        const ripeHere = ripe.filter(r => r.term === term).length;
+        const t0 = Date.now();
+        console.log(`تأكيد: ${ripeHere} صفّاً ناضجاً في ${term} — أجبر سحبة طازجة`);
+        const r = await getCourses(term, 'ALL', 'ALL', true);   /* force = تجاوز الكاش */
+        const n = (r && Array.isArray(r.courses)) ? r.courses.length : 0;
+        /* cached=true مع force يعني حالة واحدة: انضممنا لسحبة جارية
+           بدأها طالب قبل لحظات. القائمة طازجة فعلاً، لكنها ليست
+           مشاهدة مستقلة — نسجّلها بوضوح بدل ما نخلطها بالسحبة الخاصة. */
+        console.log(`تأكيد: وصلت ${n} مادة في ${Date.now() - t0}ms` +
+                    (r && r.cached ? ' (انضممنا لسحبة جارية)' : ' (سحبة خاصة)'));
+        const st = await syncSchedules(term, r.courses, true);  /* force = تجاوز الفجوة */
+        console.log(`تأكيد: النتيجة — مؤكَّد ${st && st.confirmed || 0} · ` +
+                    `ينتظر ${st && st.pendingWaiting || 0} · ` +
+                    `مرفوض ${st && st.discarded || 0} · ` +
+                    `أُرسل ${st && st.notified || 0}`);
+        CONFIRM_STAT.forces++; CONFIRM_STAT.lastForce = Date.now();
+      } catch (e) {
+        console.log('confirmTick: ' + term + ' — ' + e.message);
+      }
+    }
+  } finally { CONFIRM_BUSY = false; }
+}
+
 server.listen(PORT, () => {
   console.log('Jadwalik running on ' + PORT);
+  console.log('pushover: ' + (PUSHOVER_ON
+    ? `مفعّل (token ${PUSHOVER_TOKEN.length} حرف · user ${PUSHOVER_USER.length} حرف)`
+    : 'معطّل — المتغيران ناقصان'));
+  if (PUSHOVER_ON)
+    pushover('✅ جدولك شغّال', 'السيرفر اشتغل و Pushover موصول.', 0).catch(() => {});
   /* التسخين المسبق: فحص كل 20 ثانية، وما يسحب إلا لو فيه تركيبة
      مطلوبة قاربت صلاحيتها تنتهي — والمفتاح مطفأ افتراضياً. */
   setInterval(() => { prewarmTick().catch(() => {}) }, 20000);
+  /* ساعة التأكيد: تفحص الطابور كل 5 دقائق، وما تسحب إلا لو نضج صفّ */
+  setInterval(() => { confirmTick().catch(() => {}) }, CONFIRM_TICK);
+
+  /* الاستعادة أولاً، ثم نسمح بالكتابة — وإلا ضاعفنا ما استعدناه */
+  (async () => {
+    try {
+      await restoreState();
+      await restoreEvents();
+    } catch (e) {
+      console.log('الاستعادة فشلت (نكمل بذاكرة فاضية): ' + e.message);
+    } finally {
+      EVENTS_READY = true;
+    }
+  })();
+  /* حفظ العدّادات كل 5 دقائق، وعند الإغلاق النظيف */
+  setInterval(() => { saveState().catch(() => {}) }, 5 * 60 * 1000);
+  for (const sig of ['SIGTERM', 'SIGINT'])
+    process.on(sig, () => { saveState().catch(() => {}).finally(() => process.exit(0)); });
   const st = monitorState();
-  console.log(`env=${SITE_ENV} | freeBeta=${FREE_BETA} | monitor: ${st.reason} — ${st.ar}`);
+  console.log(`env=${SITE_ENV} | freeBeta=${FREE_BETA} | ترم المزامنة=${ACTIVE_TERM}` +
+              ` | monitor: ${st.reason} — ${st.ar}`);
   /* أول دورة بعد 20-60 ثانية عشوائياً، ثم جدولة ذكية */
   setTimeout(async () => {
     if (monitorState().active) {

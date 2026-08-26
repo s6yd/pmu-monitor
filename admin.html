@@ -6,6 +6,21 @@
 <meta name="robots" content="noindex, nofollow">
 <title>لوحة التحكم — جدولك</title>
 <style>
+.ttl-pick{margin-top:12px;padding-top:11px;border-top:1px solid var(--line)}
+.ttl-lbl{font-size:11px;color:var(--dim);margin-bottom:8px}
+.ttl-btns{display:flex;flex-wrap:wrap;gap:6px}
+.ttl-b{background:var(--bg);border:1px solid var(--line);color:var(--dim);
+font-family:inherit;font-size:11.5px;font-weight:700;padding:7px 12px;
+border-radius:9px;cursor:pointer}
+.ttl-b.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.ttl-warn{margin-top:9px;font-size:11px;color:var(--warn);line-height:1.6}
+.ttl-form{display:flex;gap:6px;margin-top:8px}
+.ttl-form input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--line);
+color:var(--fg);border-radius:9px;padding:7px 10px;font-size:12px;font-family:inherit}
+.ttl-form select{background:var(--bg);border:1px solid var(--line);color:var(--fg);
+border-radius:9px;padding:7px 8px;font-size:12px;font-family:inherit}
+.ttl-b.go{background:var(--ok,#10b981);border-color:transparent;color:#fff}
+.ttl-hint{margin-top:8px;font-size:10.5px;color:var(--dim);line-height:1.7}
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 :root{
 --bg:#080b12;--card:#131928;--border:#1e2740;--border2:#253050;
@@ -45,6 +60,7 @@ height:52px;display:flex;align-items:center;justify-content:space-between}
 display:flex;align-items:center;justify-content:center;font-size:15px}
 .brand-sub{font-size:9.5px;font-family:var(--mono);color:var(--text3);letter-spacing:.5px;margin-top:2px}
 .tb-actions{display:flex;gap:7px;align-items:center}
+.icon-btn.on{border-color:var(--ok,#10b981);color:var(--ok,#10b981)}
 .icon-btn{background:transparent;border:1px solid var(--border2);color:var(--text2);
 border-radius:20px;padding:6px 12px;font-size:12px;font-weight:600;
 font-family:var(--sans);cursor:pointer}
@@ -101,8 +117,43 @@ padding:14px;margin-bottom:12px}
 .maint-t{font-size:14px;font-weight:700}
 .maint.on .maint-t{color:var(--warn)}
 .maint-s{font-size:11.5px;color:var(--text2);margin-top:5px;line-height:1.6}
-.maint-msg{margin-top:11px;padding:9px 11px;background:var(--bg);border-radius:9px;
-font-size:12px;color:var(--text2);line-height:1.7}
+.maint-msg{margin-top:11px;padding:9px 11px;background:var(--bg);border-radius:9px;font-size:12px;color:var(--text2);line-height:1.7}
+.mon-grid{margin-top:12px;padding-top:11px;border-top:1px solid var(--border)}
+.mon-row{display:flex;justify-content:space-between;gap:12px;padding:6px 0;
+font-size:12px;line-height:1.7;align-items:flex-start}
+.mon-row+.mon-row{border-top:1px solid rgba(255,255,255,.04)}
+.mon-k{color:var(--text3);flex-shrink:0}
+.mon-v{color:var(--text);text-align:left;direction:rtl}
+.mon-edit{margin-top:12px;padding-top:11px;border-top:1px solid var(--border)}
+.mon-elabel{font-size:12px;font-weight:700;margin-bottom:7px}
+.mon-elabel .warn{color:var(--warn);font-weight:600}
+.mon-erow{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:6px;
+font-size:12px;color:var(--text3)}
+.mon-erow input{background:var(--bg);border:1px solid var(--border);border-radius:9px;
+color:var(--text);font-family:inherit;font-size:12.5px;padding:7px 9px;width:82px}
+.mon-erow input[type=date]{width:132px}
+.mon-ehint{font-size:10.5px;color:var(--text3);line-height:1.6;margin-top:3px}
+.watchers{margin-top:9px;padding-top:8px;border-top:1px solid var(--border)}
+.w-row{display:flex;justify-content:space-between;align-items:center;gap:10px;
+padding:7px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.w-row:last-child{border-bottom:none}
+.w-who{display:flex;flex-direction:column;gap:2px;font-size:11.5px;min-width:0}
+.w-who b{font-size:12.5px}
+.w-who span{color:var(--text3);font-size:10.5px;word-break:break-all}
+.w-who .warn{color:var(--warn)}
+.w-acts{display:flex;gap:6px;flex-shrink:0}
+.w-acts .mini[disabled]{opacity:.4;pointer-events:none}
+.chg{padding:9px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+.chg:last-of-type{border-bottom:none}
+.chg-top{display:flex;justify-content:space-between;gap:10px;margin-bottom:5px}
+.chg-code{font-size:12px;font-weight:700;font-family:var(--mono)}
+.chg-ago{font-size:10.5px;color:var(--text3)}
+.chg-row{display:flex;justify-content:space-between;gap:10px;
+font-size:11.5px;line-height:1.9;padding:1px 0}
+.chg-f{color:var(--text3);flex-shrink:0}
+.chg-v{color:var(--text2);text-align:left;min-width:0;word-break:break-word}
+.chg-v s{color:var(--close,#f43f5e);opacity:.75}
+.chg-v b{color:var(--ok,#10b981);font-weight:600}
 .alert{border-radius:12px;padding:12px 14px;margin-bottom:9px;
 display:flex;gap:11px;align-items:flex-start}
 .alert.bad{background:var(--close-bg);border:1px solid rgba(244,63,94,.32)}
@@ -236,13 +287,22 @@ padding:16px;margin:14px 0;display:flex;align-items:center;justify-content:space
 .dw-day{margin-bottom:8px}
 .dw-daylabel{font-size:11px;font-weight:600;color:var(--text3);
 letter-spacing:.5px;margin-bottom:5px}
-.dw-slot{background:var(--card);border:1px solid var(--border);border-radius:10px;
-padding:9px 11px;display:flex;align-items:center;gap:10px;margin-bottom:5px;
+.dw-slot{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:9px 11px;display:flex;align-items:center;gap:10px;margin-bottom:5px;
 border-right:3px solid var(--accent)}
 .dw-time{font-family:var(--mono);font-size:10.5px;color:var(--text2);
 min-width:78px;direction:ltr;text-align:center}
 .dw-slot-name{font-size:12.5px;font-weight:600}
 .dw-slot-sub{font-size:10.5px;color:var(--text3);margin-top:2px}
+
+.sched-box{border:1px solid var(--border);border-radius:12px;padding:11px;margin-bottom:10px;background:rgba(255,255,255,.015)}
+.sched-head{display:flex;justify-content:space-between;align-items:center;
+margin-bottom:9px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.sched-name{font-size:12.5px;font-weight:700}
+.sched-meta{font-size:11px;color:var(--text3)}
+.prep-line{font-size:12px;color:var(--text2);line-height:1.8;padding:10px 12px;
+border-radius:10px;background:var(--card);border:1px solid var(--border);margin-bottom:14px}
+.prep-line.yes{background:var(--open-bg);border-color:rgba(16,185,129,.28)}
+.prep-note{display:block;font-size:10.5px;color:var(--text3);margin-top:5px}
 
 .grades{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:6px}
 .grade{background:var(--card);border:1px solid var(--border);border-radius:9px;
@@ -282,6 +342,7 @@ padding:1px 6px;border-radius:5px;color:var(--accent2)}
   </div>
   <div class="tb-actions">
     <button class="icon-btn" onclick="loadAll()">🔄 تحديث</button>
+    <button class="icon-btn" id="autoBtn" onclick="toggleAuto()">⏱️ تلقائي</button>
     <button class="icon-btn danger" onclick="logout()">خروج</button>
   </div>
 </div>
@@ -292,6 +353,7 @@ padding:1px 6px;border-radius:5px;color:var(--accent2)}
   <button class="tab"        data-p="revs"  onclick="go('revs')">التقييمات</button>
   <button class="tab"        data-p="mons"  onclick="go('mons')">المراقبة</button>
   <button class="tab"        data-p="fb"    onclick="go('fb')">تذاكر<span class="tab-badge" id="fbBadge"></span></button>
+  <button class="tab"        data-p="msgs"  onclick="go('msgs')">الرسائل</button>
   <button class="tab"        data-p="sys"   onclick="go('sys')">النظام<span class="tab-dot" id="sysDot"></span></button>
 </div>
 
@@ -348,6 +410,15 @@ padding:1px 6px;border-radius:5px;color:var(--accent2)}
     <div id="fbBody"><div class="spinner"></div></div>
   </div>
 
+  <div class="page" id="pageMsgs">
+    <div class="bar">
+      <select id="msgKind" onchange="renderMsgs()">
+        <option value="">كل الأنواع</option>
+      </select>
+    </div>
+    <div id="msgsBody"><div class="spinner"></div></div>
+  </div>
+
   <div class="page" id="pageSys">
     <div id="sysBody"><div class="spinner"></div></div>
   </div>
@@ -368,6 +439,7 @@ padding:1px 6px;border-radius:5px;color:var(--accent2)}
 /* ══════════ الحالة ══════════ */
 let TOKEN = sessionStorage.getItem('jdw_admin') || '';
 let USERS = [], REVS = [], MONS = [], STATS = null, HEALTH = null, FB = [], TICKETS = [];
+let MSGS = { messages:[], kinds:[] };
 
 /* كلمات تستدعي المراجعة — مؤشر فقط، القرار لك */
 const FLAGS = ['حمار','غبي','كلب','حقير','خرا','قذر','تافه','زبالة','حيوان','لعن',
@@ -417,7 +489,8 @@ function logout(){
 /* ══════════ تنقل ══════════ */
 function go(p){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.p===p));
-  const ids={over:'pageOver',users:'pageUsers',revs:'pageRevs',mons:'pageMons',fb:'pageFb',sys:'pageSys'};
+  const ids={over:'pageOver',users:'pageUsers',revs:'pageRevs',mons:'pageMons',
+             fb:'pageFb',msgs:'pageMsgs',sys:'pageSys'};
   document.querySelectorAll('.page').forEach(el=>el.classList.remove('active'));
   document.getElementById(ids[p]).classList.add('active');
 }
@@ -445,17 +518,46 @@ function flagged(txt){
 }
 
 /* ══════════ تحميل ══════════ */
-async function loadAll(){
+/* ══════════ تحديث تلقائي ══════════
+   اللوحة تجلب البيانات عند الطلب، فنجدّدها كل نصف دقيقة.
+   نوقفه لما تكون الصفحة في الخلفية عشان ما نستهلك بلا فائدة،
+   ونتخطى الدورة لو فيه جلب شغّال أصلاً. */
+let AUTO=false, autoTimer=null, loading=false;
+
+function toggleAuto(){
+  AUTO=!AUTO;
+  try{ localStorage.setItem('adminAuto',AUTO?'1':'0') }catch(e){}
+  paintAuto();
+  if(AUTO){ autoTimer=setInterval(autoTick,30000); toast('التحديث التلقائي شغّال · كل 30 ثانية','ok') }
+  else { clearInterval(autoTimer); autoTimer=null; toast('أوقفت التحديث التلقائي','ok') }
+}
+function paintAuto(){
+  const b=document.getElementById('autoBtn');
+  if(b){ b.textContent=AUTO?'⏱️ تلقائي ✓':'⏱️ تلقائي'; b.classList.toggle('on',AUTO) }
+}
+function autoTick(){
+  if(!AUTO||document.hidden||loading)return;
+  loadAll(true);
+}
+document.addEventListener('visibilitychange',()=>{ if(AUTO&&!document.hidden)autoTick() });
+
+async function loadAll(silent){
+  if(loading)return; loading=true;
+  try{ return await loadAllInner(silent) } finally{ loading=false }
+}
+async function loadAllInner(silent){
   if(!TOKEN) return;
   try{
-    const [s,u,r,m,h,f,tk] = await Promise.all([
+    const [s,u,r,m,h,f,tk,mg] = await Promise.all([
       api('stats'), api('users'), api('reviews'), api('monitors'),
       api('health').catch(()=>null), api('feedback').catch(()=>({feedback:[]})),
-      api('tickets?status=all').catch(()=>({tickets:[]}))
+      api('tickets?status=all').catch(()=>({tickets:[]})),
+      api('messages').catch(()=>({messages:[],kinds:[]}))
     ]);
     STATS=s; USERS=u.users||[]; REVS=r.reviews||[]; MONS=m.monitors||[]; HEALTH=h;
-    FB=(f&&f.feedback)||[]; TICKETS=(tk&&tk.tickets)||[];
-    renderOver(); renderUsers(); renderRevs(); renderMons(); renderFb(); renderSys();
+    FB=(f&&f.feedback)||[]; TICKETS=(tk&&tk.tickets)||[]; MSGS=mg||{messages:[],kinds:[]};
+    renderOver(); renderUsers(); renderRevs(); renderMons(); renderFb();
+    renderMsgs(); renderSys();
   }catch(e){ toast(e.message,'err') }
 }
 
@@ -645,22 +747,46 @@ function renderUserDetail(d){
     </div>
   </div>`;
 
-  /* الجدول مرتب بالأيام */
-  let sched='';
-  if(d.schedule.length){
+  /* الجداول الثلاثة، كل واحد على حدة */
+  const slotOf=s=>Number(s.slot)||1;
+  const credits=list=>list.reduce((t,s)=>{
+    const m=String(s.code||'').match(/(\d{4})/);
+    const n=m?+m[1][2]:3;                     /* نفس منطق السيرفر تقريباً */
+    return t+(n>=0&&n<=6?n||3:3);
+  },0);
+
+  const buildDays=list=>{
+    let out='';
     DAY_ORDER.forEach(day=>{
-      const items=d.schedule
+      const items=list
         .filter(s=>String(s.days||'').toUpperCase().includes(day))
         .map(s=>({s,t:tmin(s.time)}))
         .sort((a,b)=>(a.t?a.t.sort:0)-(b.t?b.t.sort:0));
       if(!items.length) return;
-      sched+=`<div class="dw-day"><div class="dw-daylabel">${DAY_AR[day]}</div>`+
+      out+=`<div class="dw-day"><div class="dw-daylabel">${DAY_AR[day]}</div>`+
         items.map(({s,t})=>`<div class="dw-slot">
           <div class="dw-time">${t?t.a+'–'+t.b:'—'}</div>
           <div style="flex:1;min-width:0">
-            <div class="dw-slot-name">${esc(s.code)} §${esc(s.section||'')}</div>
+            <div class="dw-slot-name">${esc(s.code)} §${esc(s.section||'')} <span style="color:var(--text3);font-weight:400">· ${esc(s.crn||'')}</span></div>
             <div class="dw-slot-sub">${esc(s.room||'—')} · ${esc(s.instructor||'—')}</div>
           </div></div>`).join('')+`</div>`;
+    });
+    return out;
+  };
+
+  let sched='';
+  const used=[1,2,3].filter(n=>d.schedule.some(s=>slotOf(s)===n));
+  if(used.length){
+    used.forEach(n=>{
+      const list=d.schedule.filter(s=>slotOf(s)===n);
+      const body=buildDays(list);
+      sched+=`<div class="sched-box">
+        <div class="sched-head">
+          <span class="sched-name">جدول ${n}</span>
+          <span class="sched-meta">${list.length} مادة · ${credits(list)} ساعة</span>
+        </div>
+        ${body||`<div class="dw-empty">مواد بدون أوقات</div>`}
+      </div>`;
     });
   }
   if(!sched) sched=`<div class="dw-empty">ما بنى جدول بعد</div>`;
@@ -691,7 +817,15 @@ function renderUserDetail(d){
 
     ${gpaBox}
 
-    <div class="sec-title">جدوله الحالي · ${d.scheduleCredits} ساعة</div>
+    ${(()=>{const ph=d.prepHint||{};
+      return `<div class="prep-line ${ph.likely?'yes':''}">
+        ${ph.likely
+          ?`🎓 <b>على الأرجح في البرنامج التحضيري</b> — عنده ${ph.done} مادة تحضيري مكتملة و${ph.sched} في جدوله.`
+          :`ما فيه أي مادة تحضيري عنده — على الأرجح مو في التحضيري.`}
+        <span class="prep-note">استدلال من مواده. خانة التحضيري نفسها محفوظة في متصفح الطالب وما توصل القاعدة.</span>
+      </div>`})()}
+
+    <div class="sec-title">جداوله المحفوظة · ${used.length} من ٣</div>
     ${sched}
 
     <div class="sec-title">المواد المكتملة ودرجاتها</div>
@@ -815,6 +949,64 @@ async function delRev(key,instructor){
 const FB_ICON={idea:'💡',bug:'🐞',other:'💬'};
 const FB_NAME={idea:'اقتراح',bug:'مشكلة',other:'ملاحظة'};
 
+/* ══════════ الرسائل الصادرة ══════════ */
+function msgWhen(ms){
+  const d=new Date(ms); if(isNaN(d))return '—';
+  const diff=(Date.now()-ms)/1000;
+  const t=new Date(ms+3*3600e3).toISOString().slice(11,16);   /* توقيت الرياض */
+  if(diff<60) return 'الحين';
+  if(diff<3600) return Math.round(diff/60)+' د · '+t;
+  if(diff<86400) return Math.round(diff/3600)+' س · '+t;
+  return fdate(d)+' · '+t;
+}
+
+function renderMsgs(){
+  const box=document.getElementById('msgsBody');
+  const sel=document.getElementById('msgKind');
+  const all=(MSGS&&MSGS.messages)||[];
+
+  /* نبني قائمة الأنواع مرة، ونحافظ على اختيارك عند التحديث التلقائي */
+  const kinds=(MSGS&&MSGS.kinds)||[];
+  const cur=sel.value;
+  const want='<option value="">كل الأنواع</option>'+
+    kinds.map(k=>`<option value="${esc(k)}">${esc(k)}</option>`).join('');
+  if(sel.innerHTML!==want){ sel.innerHTML=want; sel.value=cur; }
+
+  const list=cur?all.filter(m=>m.kind===cur):all;
+
+  if(!list.length){
+    box.innerHTML=`<div class="empty"><div class="empty-icon">📨</div>
+      <div class="empty-t">ما أُرسلت رسائل بعد</div>
+      <div class="empty-s">السجل في الذاكرة — يبدأ من جديد بعد كل نشر</div></div>`;
+    return;
+  }
+
+  box.innerHTML=
+    `<div class="tk-meta" style="margin:0 2px 10px">
+       ${list.length} من ${MSGS.total||list.length} رسالة · منذ آخر تشغيل للسيرفر
+     </div>`+
+    list.map(m=>{
+      /* النص أُرسل بوسوم HTML لتيليغرام — نحوّلها لنص صافٍ قبل الهروب */
+      const plain=String(m.text||'')
+        .replace(/<br\s*\/?>/gi,'\n').replace(/<[^>]+>/g,'');
+      const who=m.admin ? 'أنت (المشرف)'
+                        : (m.who || 'غير معروف');
+      return `<div class="tk ${m.ok?'':'closed'}">
+        <div class="tk-top">
+          <div style="min-width:0">
+            <div class="tk-id">${esc(m.kind)}${m.ok?'':' · ✗ فشلت'}</div>
+            <div class="tk-who">${esc(who)}</div>
+            <div class="tk-meta">${esc(m.chatId)}${m.err?' · '+esc(m.err):''}</div>
+          </div>
+          <div class="tk-meta" style="flex-shrink:0">${esc(msgWhen(m.at))}</div>
+        </div>
+        <div class="tk-msgs">
+          <div class="tk-m admin" style="white-space:pre-wrap">${esc(plain)}</div>
+        </div>
+      </div>`;
+    }).join('');
+}
+
 function renderFb(){
   const box=document.getElementById('fbBody');
   const badge=document.getElementById('fbBadge');
@@ -903,7 +1095,37 @@ function renderFb(){
   </div>`).join('');
 }
 
+/* ══════════ مدة صلاحية الكاش ══════════ */
+/* إدخال حر: قيمة + وحدة */
+function applyTtl(){
+  const v=Number(document.getElementById('ttlVal').value);
+  const u=Number(document.getElementById('ttlUnit').value);
+  if(!v||v<=0){ toast('اكتب قيمة صحيحة','err'); return }
+  setTtl(Math.round(v*u));
+}
+
+async function setTtl(min){
+  if(min===1 && !confirm('دقيقة واحدة تعني سحبة من موقع الجامعة كل دقيقة لكل تركيبة بحث مستخدمة. تأكيد؟'))return;
+  try{
+    const r=await api('cache-ttl',{body:{min}});
+    toast(r.override?`الصلاحية: ${r.override} دقيقة (يدوي)`:'رجعت للتلقائي','ok');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
 /* ══════════ تحديث جداول الطلاب ══════════ */
+async function approveStorm(){
+  if(!confirm('راجعت التغييرات المعلّقة وتأكدت إنها صحيحة؟\n\nبتنكتب على جداول الطلاب وبتنرسل رسائل تيليغرام فوراً — والرسالة ما تنسحب.'))return;
+  try{
+    toast('جاري التأكيد والإرسال...','ok');
+    const r=await api('approve-storm',{body:{}});
+    const s=r.stat||{};
+    toast(s.error?('خطأ: '+s.error)
+      :`تم · أُكّد ${s.confirmed||0} · أُرسل ${s.notified||0} إشعاراً`, s.error?'err':'ok');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
 async function runSchedSync(){
   if(!confirm('تشغيل تحديث جداول الطلاب الآن؟ بيسحب قائمة الترم القادم ويصحّح الجداول المحفوظة.'))return;
   try{
@@ -926,6 +1148,85 @@ async function toggleFinals(on){
   try{
     await api('finals-toggle',{body:{on:!!on}});
     toast(on?'جدول النهائيات شغّال':'جدول النهائيات موقوف','ok');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
+/* ══════════ التحكم في صفوف المراقبة ══════════ */
+function toggleWatchers(btn){
+  const box=btn.closest('.row').querySelector('.watchers');
+  box.hidden=!box.hidden;
+}
+
+async function stopWatcher(id){
+  if(!confirm('إيقاف مراقبة هذا الطالب؟ بيوصله إشعار إنها أُوقفت.'))return;
+  try{
+    await api('monitor-row',{body:{ids:[id],action:'stop',notify:true}});
+    toast('أوقفت المراقبة','ok'); await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
+async function askWatcher(id){
+  const h=prompt('كم ساعة مهلة قبل الإيقاف التلقائي؟',24);
+  if(h===null)return;
+  try{
+    const r=await api('monitor-row',{body:{ids:[id],action:'ask',hours:+h}});
+    toast(r.sent?`أُرسل السؤال · مهلة ${r.hours} ساعة`:'ما وصل — تيليغرام غير مربوط',
+          r.sent?'ok':'err');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
+/* ══════════ ساعات المراقبة ونافذتها ══════════ */
+async function saveHours(reset){
+  try{
+    const body=reset?{reset:true}:{
+      from:+document.getElementById('hFrom').value,
+      to:+document.getElementById('hTo').value};
+    const r=await api('monitor-hours',{body});
+    toast(reset?`رجعت للتلقائي (${r.from}:00–${r.to}:00)`:`الساعات ${r.from}:00–${r.to}:00`,'ok');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
+async function saveWindow(reset){
+  try{
+    const body=reset?{reset:true}:{
+      from:document.getElementById('wFrom').value,
+      to:document.getElementById('wTo').value};
+    if(!reset&&(!body.from||!body.to))return toast('حدد التاريخين','err');
+    const r=await api('monitor-window',{body});
+    toast(reset?'رجعت لتقويم الكود':`النافذة ${r.window.from} → ${r.window.to}`,'ok');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
+/* ══════════ إيقاف/تشغيل المراقبة فوراً ══════════ */
+async function toggleMonitor(on){
+  if(!on&&!confirm('إيقاف المراقبة؟ ما راح يستلم أي طالب إشعار فتح شعبة حتى تشغّلها مرة ثانية.'))return;
+  try{
+    await api('monitor-toggle',{body:{on:!!on}});
+    toast(on?'المراقبة رجعت تشتغل':'المراقبة موقوفة','ok');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
+/* ══════════ مسح الكاش الآن ══════════ */
+async function clearCache(){
+  if(!confirm('مسح الكاش؟ أول بحث بعدها بيسحب نسخة جديدة من موقع الجامعة — استخدمها لو شفت بيانات قديمة أو غلط.'))return;
+  try{
+    const r=await api('cache-clear',{body:{}});
+    toast(`مُسحت ${r.cleared||0} نسخة`,'ok');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
+/* ══════════ التسخين المسبق ══════════ */
+async function togglePrewarm(on){
+  if(on&&!confirm('تشغيل التسخين المسبق؟ السيرفر بيجدّد أكثر ٣ تركيبات بحث طلباً قبل انتهاء صلاحيتها، فما ينتظر أي طالب سحبة كاملة.\n\nهذا يزيد الطلبات على موقع الجامعة — أوقفه لو لاحظت بطئاً منهم.'))return;
+  try{
+    const r=await api('prewarm-toggle',{body:{on:!!on}});
+    toast(on?`التسخين شغّال — يتبع صلاحية ${r.ttlMin} دقيقة`:'التسخين موقوف','ok');
     await loadAll();
   }catch(e){ toast(e.message,'err') }
 }
@@ -1107,10 +1408,34 @@ function renderSys(){
     <div class="kv"><span>مخدومة من الكاش</span>
       <b class="${h.cacheHitPct===null?'':h.cacheHitPct>=60?'good':'warn'}">${h.cacheHitPct===null?'—':h.cacheHitPct+'%'}</b></div>
     <div class="kv"><span>من نسخة قديمة</span><b class="${h.searchStale?'warn':'good'}">${h.searchStale}</b></div>
+    <div class="kv"><span>نسخ من دورة المراقبة</span><b class="good">${h.cacheFromMonitor||0}</b></div>
     ${h.ttl?`<div class="kv"><span>مدة الصلاحية الحالية</span>
       <b class="${h.ttl.tier==='peak'?'bad':h.ttl.tier==='near'?'warn':'good'}">${
         h.ttl.ttlMin<60?h.ttl.ttlMin+' دقيقة':(h.ttl.ttlMin/60)+' ساعات'}</b></div>
     <div class="gauge-sub">${esc(h.ttl.ar)}${h.riyadhDate?` · اليوم ${h.riyadhDate}`:''}</div>`:''}
+    ${h.ttlChoices?`<div class="ttl-pick">
+      <div class="ttl-lbl">${h.ttlOverride
+        ?`مضبوطة يدوياً على <b style="color:var(--warn)">${h.ttlOverride} دقيقة</b>`
+        :'الوضع الحالي: <b>تلقائي حسب الموسم</b>'}</div>
+      <div class="ttl-btns">
+        <button class="ttl-b ${h.ttlOverride?'':'on'}" onclick="setTtl(0)">🔄 تلقائي</button>
+        ${h.ttlChoices.map(m=>`<button class="ttl-b ${h.ttlOverride===m?'on':''}"
+          onclick="setTtl(${m})">${m<60?m+' د':(m/60)+' س'}</button>`).join('')}
+      </div>
+      <div class="ttl-form">
+        <input type="number" id="ttlVal" min="1" placeholder="القيمة"
+          value="${h.ttlOverride&&!h.ttlChoices.includes(h.ttlOverride)?h.ttlOverride:''}">
+        <select id="ttlUnit">
+          <option value="1">دقيقة</option>
+          <option value="60">ساعة</option>
+        </select>
+        <button class="ttl-b go" onclick="applyTtl()">طبّق</button>
+      </div>
+      <div class="ttl-hint">من ${h.ttlLimits?h.ttlLimits.min:1} دقيقة إلى ${
+        h.ttlLimits?h.ttlLimits.max/60:24} ساعة${
+        h.monitorJitterPct?` · دورة المراقبة تتباعد عشوائياً ±${h.monitorJitterPct}% تفادياً لنمط ثابت`:''}</div>
+      ${h.ttlOverride?`<div class="ttl-warn">⚠️ يدوي — يرجع تلقائياً بضغطة «🔄 تلقائي» أو عند إعادة تشغيل السيرفر</div>`:''}
+    </div>`:''}
   </div>
 
   ${h.schedSync?(()=>{
@@ -1127,6 +1452,16 @@ function renderSys(){
     <div class="kv"><span>شعب مو موجودة في الجامعة</span>
       <b class="${L.missing?'warn':'good'}">${L.missing}</b></div>
     ${L.error?`<div class="kv"><span>خطأ</span><b class="bad">${esc(L.error)}</b></div>`:''}`:''}
+    ${S.feedN!=null?`<div class="kv"><span>مواد وصلتنا من الجامعة</span>
+      <b class="${S.feedRejected?'bad':'good'}">${S.feedN}${S.feedPeak?` · الذروة ${S.feedPeak}`:''}</b></div>
+    <div class="kv"><span>حد الرفض</span>
+      <b>${S.feedFloor} أو أقل من 60% من الذروة</b></div>`:''}
+    ${S.feedRejected!=null?`<div class="kv"><span>⛔️ رُفضت التغذية</span>
+      <b class="bad">${S.feedRejected} مادة فقط — ما كتبنا شي</b></div>`:''}
+    ${S.crnRejected?`<div class="kv"><span>CRN مرفوض (شكل غير رقمي)</span>
+      <b class="warn">${S.crnRejected}</b></div>`:''}
+    <div class="kv"><span>ترم المزامنة</span>
+      <b>${esc(S.activeTerm||'—')}${S.skippedTerms?` · تُجوهل ${S.skippedTerms} نداء لترم آخر`:''}</b></div>
     <div class="kv"><span>إجمالي التصحيحات</span><b>${S.totalUpdated}</b></div>
     ${C?`<div class="kv"><span>آخر تصحيح فعلي</span>
       <b class="warn">${C.updated} مادة · ${ago(C.at)}</b></div>`:''}
@@ -1134,7 +1469,85 @@ function renderSys(){
       بحد أدنى ${S.gapMin} دقيقة بين الجولتين. تصحّح الدكتور والقاعة والوقت
       في جداول الطلاب المحفوظة بمطابقة الـ CRN.</div>
     <button class="mini" style="margin-top:10px" onclick="runSchedSync()">🔄 شغّلها الآن</button>
-  </div>`;})():''}
+  </div>
+
+  <div class="sec-title">طابور التأكيد${S.pending&&S.pending.length?` · ${S.pending.length}`:''}</div>
+  <div class="gauge">
+    <div class="kv"><span>هذي الجولة</span>
+      <b>${S.pendingNew} جديد · ${S.pendingWaiting} ينتظر ·
+         <span class="${S.confirmed?'warn':''}">${S.confirmed} مؤكَّد</span> ·
+         <span class="${S.discarded?'bad':''}">${S.discarded} مرفوض</span></b></div>
+    ${S.stormAbort?`<div class="kv"><span>⛔️ عاصفة — أُلغي التأكيد</span>
+      <b class="bad">${S.stormAbort} من ${S.activeStudents||'?'} طالباً (الحد ${S.notifyCap})</b></div>
+    <div class="gauge-sub" style="color:var(--bad)">ما كُتب شي وما أُرسلت رسالة.
+      راجع التغييرات المعلّقة تحت — لو طلعت صحيحة اضغط الزر وبتنطلق فوراً.</div>
+    <button class="mini" style="margin-top:10px" onclick="approveStorm()">
+      ✅ راجعتها — وافق وأرسل</button>`:''}
+    ${S.stormApproved?`<div class="kv"><span>✅ مرّت بموافقتك</span>
+      <b class="warn">${S.stormApproved} طالباً</b></div>`:''}
+    <div class="kv"><span>إشعارات أُرسلت</span>
+      <b class="${S.notifySuppressed?'bad':(S.notified?'warn':'')}">
+        ${S.notifySuppressed?`⛔️ كُبتت ${S.notifySuppressed}`:S.notified}</b></div>
+    <div class="kv"><span>حد العاصفة</span>
+      <b>${S.notifyCap||'—'} · ${Math.round((S.notifyRatio||0)*100)}% من ${S.activeStudents||0} طالباً
+      (أرضية ${S.notifyFloor||0})</b></div>
+    ${(S.pending&&S.pending.length)?S.pending.map(p=>`<div class="chg">
+      <div class="chg-top">
+        <span class="chg-code">${esc(p.code||'—')} · CRN ${esc(p.crn)}</span>
+        <span class="chg-ago ${p.ready?'warn':''}">${p.ready?'جاهز':`باقي ${p.leftMin} د`} · شوهد ${p.seen}×</span>
+      </div>
+      ${(p.fields||[]).map(f=>`<div class="chg-row">
+        <span class="chg-f">${esc(f.ar)}</span>
+        <span class="chg-v"><s>${esc(f.from)}</s> ← <b>${esc(f.to)}</b></span>
+      </div>`).join('')}
+    </div>`).join(''):'<div class="gauge-sub">ما فيه شي ينتظر التأكيد.</div>'}
+    <div class="gauge-sub">التغيير ما يُطبَّق ولا يُرسل إلا بعد ${S.confirmAfterMin} دقيقة
+      و${S.minSightings} رصدات على الأقل. الفرق الذي يختفي قبلها كان رفّة في بيانات الجامعة.
+      ${S.tick?`<br><br>الطابور يُفحص كل ${S.tick.everyMin} دقائق بساعة مستقلة عن الكاش
+      ودورة المراقبة. لما ينضج صفّ نجبر <b>سحبة طازجة</b> من الجامعة — المشاهدة
+      الثانية لازم تكون حقيقية لا قراءة ثانية من الكاش.
+      سحبات مُجبَرة: ${S.tick.forces}${S.tick.purged?` · صفوف عالقة نُظِّفت: ${S.tick.purged}`:''}
+      · يُرمى الصفّ لو ما نضج خلال ${S.tick.maxAgeHr} ساعة.`:''}</div>
+  </div>
+
+  ${(S.flaps&&S.flaps.length)?`<div class="sec-title">رفّات مرفوضة · آخر ${S.flaps.length}</div>
+  <div class="gauge">
+    ${S.flaps.map(f=>`<div class="chg">
+      <div class="chg-top">
+        <span class="chg-code">${esc(f.code||'—')} · CRN ${esc(f.crn)}</span>
+        <span class="chg-ago">عاشت ${f.livedMin} د · ${ago(f.at)}</span>
+      </div>
+      ${(f.fields||[]).map(x=>`<div class="chg-row">
+        <span class="chg-f">${esc(x.ar)}</span>
+        <span class="chg-v"><s>${esc(x.from)}</s> ← <b>${esc(x.to)}</b></span>
+      </div>`).join('')}
+    </div>`).join('')}
+    <div class="gauge-sub">هذي تغييرات ظهرت ثم اختفت قبل أن تنضج — لو ما كان فيه تأكيد
+      لوصلت لطلابك كرسائل. كل صفّ هنا رسالة خاطئة مُنعت.</div>
+  </div>`:''}
+
+  ${(S.missingList&&S.missingList.length)?`<div class="sec-title">شعب في جداول الطلاب ومو موجودة في الجامعة</div>
+  <div class="gauge">
+    ${S.missingList.map(m=>`<div class="kv"><span>${esc(m.code||'—')} · ${esc(m.title||'')}</span>
+      <b class="warn">CRN ${esc(m.crn)}</b></div>`).join('')}
+    <div class="gauge-sub">ما نلمس هذي الصفوف — يحتمل إن الجامعة حذفت الشعبة.
+      ابحث عن الـ CRN في <code>user_schedule</code> عشان تعرف أصحابها وتنبّههم.</div>
+  </div>`:''}
+
+  ${(S.log&&S.log.length)?`<div class="sec-title">سجل التصحيحات · آخر ${S.log.length}</div>
+  <div class="gauge">
+    ${S.log.map(e=>`<div class="chg">
+      <div class="chg-top">
+        <span class="chg-code">${esc(e.code||'—')} · CRN ${esc(e.crn)}</span>
+        <span class="chg-ago">${ago(e.at)}</span>
+      </div>
+      ${e.fields.map(f=>`<div class="chg-row">
+        <span class="chg-f">${esc(f.ar)}</span>
+        <span class="chg-v"><s>${esc(f.from)}</s> ← <b>${esc(f.to)}</b></span>
+      </div>`).join('')}
+    </div>`).join('')}
+    <div class="gauge-sub">السجل في الذاكرة فقط — يُصفَّر مع كل إعادة نشر.</div>
+  </div>`:''}`;})():''}
 
   ${h.caches&&h.caches.finals?`<div class="sec-title">جدول الاختبارات</div>
   <div class="gauge">
@@ -1178,7 +1591,127 @@ function renderSys(){
     العدّادات تُصفّر مع كل إعادة نشر على Render. الدورة تشتغل كل 5 دقائق (300 ثانية).
   </div>`;
 
-  box.innerHTML=maint+finals+alerts+liveBox+gauge+spark+detail;
+  /* ── تحكم سريع + تفاصيل جدولة المراقبة ── */
+  const mi=h.monitorInfo||{};
+  const mst=mi.state||{};
+  const monOn=!h.monitorPaused;
+  const running=!!mst.active;
+
+  const fmtIn=s=>{
+    if(s===null||s===undefined)return '—';
+    if(s<60)return `بعد ${s} ثانية`;
+    const m=Math.floor(s/60);
+    if(m<60)return `بعد ${m} دقيقة`;
+    const hh=Math.floor(m/60);
+    return `بعد ${hh} ساعة و${m%60} دقيقة`;
+  };
+  const arDate=iso=>{
+    if(!iso)return '—';
+    const M=['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+    const p=iso.split('-');
+    return `${+p[2]} ${M[+p[1]-1]}`;
+  };
+
+  /* لماذا هي متوقفة الآن؟ سبب واحد واضح بدل التخمين */
+  let why='';
+  if(!monOn) why='أنت أوقفتها من هذا الزر.';
+  else if(mst.reason==='disabled') why='معطّلة في متغيرات Render (MONITOR_ENABLED).';
+  else if(mst.reason==='hours') why=`خارج ساعات العمل — الساعة الآن ${mi.riyadhTime||mi.riyadhHour+':00'} بتوقيت الرياض، وتبدأ ${mi.hoursFrom}:00.`;
+  else if(mst.reason==='offseason') why=mi.nextWindow
+      ? `خارج نوافذ التسجيل — تستأنف تلقائياً في «${esc(mi.nextWindow.ar)}» يوم ${arDate(mi.nextWindow.from)}.`
+      : 'خارج نوافذ التسجيل، وما فيه نافذة قادمة في التقويم.';
+
+  const rows=[
+    ['الحالة الآن', running
+      ? `<b style="color:var(--ok)">تفحص الشعب</b>`
+      : `<b style="color:var(--warn)">متوقفة</b>`],
+    !running&&why ? ['السبب', why] : null,
+    ['الفاصل بين الدورات', `كل ${mi.intervalMin} دقائق · مع تشويش ±${mi.jitterPct}% (${mi.intervalMinLow}–${mi.intervalMinHigh} دقيقة)`],
+    ['الدورة القادمة', running?fmtIn(mi.nextCycleInSec):'—'],
+    ['آخر دورة', h.lastCycleAgoSec!==null&&h.lastCycleAgoSec!==undefined
+      ? `قبل ${h.lastCycleAgoSec<60?h.lastCycleAgoSec+' ثانية':Math.round(h.lastCycleAgoSec/60)+' دقيقة'}`
+      : 'ما صارت ولا دورة بعد إعادة التشغيل'],
+    ['ساعات العمل', `${mi.hoursFrom}:00 – ${mi.hoursTo}:00 بتوقيت الرياض · الساعة الآن ${mi.riyadhTime||mi.riyadhHour+':00'}`],
+    ['النافذة الحالية', mi.window
+      ? `${esc(mi.window.ar)} — من ${arDate(mi.window.from)} إلى ${arDate(mi.window.to)}`
+      : 'ما فيه — خارج فترات التسجيل'],
+    mi.window?null:['النافذة القادمة', mi.nextWindow
+      ? `${esc(mi.nextWindow.ar)} — تبدأ ${arDate(mi.nextWindow.from)}`
+      : 'ما فيه نافذة قادمة'],
+    ['خارج النوافذ', mi.idleOff?'المراقبة تتوقف تماماً':'مراقبة مخفّفة']
+  ].filter(Boolean);
+
+  const monCard=`<div class="maint ${running?'':'on'}">
+    <div class="maint-top">
+      <div>
+        <div class="maint-t">${monOn?(running?'🔔 المراقبة تشتغل الآن':'🔕 المراقبة مفعّلة بس غير نشطة'):'⏸️ المراقبة موقوفة يدوياً'}</div>
+        <div class="maint-s">${monOn
+          ?'أوقفها فوراً لو ضغط موقع الجامعة زاد أو شفت إشعارات غلط — بدون إعادة تشغيل الخدمة.'
+          :'ما يستلم أحد إشعارات فتح شعب الآن. شغّلها لما يستقر الوضع.'}</div>
+      </div>
+      <button class="mini ${monOn?'no':'go'}" onclick="toggleMonitor(${monOn?'false':'true'})">
+        ${monOn?'⏸️ أوقف المراقبة':'▶️ شغّل المراقبة'}</button>
+    </div>
+    <div class="mon-grid">
+      ${rows.map(([k,v])=>`<div class="mon-row"><span class="mon-k">${k}</span><span class="mon-v">${v}</span></div>`).join('')}
+    </div>
+    <div class="mon-edit">
+      <div class="mon-elabel">⏰ ساعات العمل ${mi.hoursCustom?'<b class="warn">· يدوية</b>':''}</div>
+      <div class="mon-erow">
+        <span>من</span><input type="number" id="hFrom" min="0" max="23" value="${mi.hoursFrom}">
+        <span>إلى</span><input type="number" id="hTo" min="1" max="24" value="${mi.hoursTo}">
+        <button class="mini go" onclick="saveHours()">حفظ</button>
+        ${mi.hoursCustom?'<button class="mini" onclick="saveHours(true)">تلقائي</button>':''}
+      </div>
+      <div class="mon-ehint">٢٤ = منتصف الليل. المراقبة تشتغل داخل هذا المدى فقط.</div>
+
+      <div class="mon-elabel" style="margin-top:12px">📅 نافذة المراقبة ${mi.windowCustom?'<b class="warn">· يدوية</b>':''}</div>
+      <div class="mon-erow">
+        <span>من</span><input type="date" id="wFrom" value="${(mi.window&&mi.window.from)||(mi.nextWindow&&mi.nextWindow.from)||''}">
+        <span>إلى</span><input type="date" id="wTo" value="${(mi.window&&mi.window.to)||(mi.nextWindow&&mi.nextWindow.to)||''}">
+      </div>
+      <div class="mon-erow">
+        <button class="mini go" onclick="saveWindow()">حفظ</button>
+        ${mi.windowCustom?'<button class="mini" onclick="saveWindow(true)">رجوع للتقويم</button>':''}
+      </div>
+      <div class="mon-ehint">النافذة اليدوية تتجاهل تواريخ التقويم المكتوبة في الكود.</div>
+    </div>
+  </div>`;
+
+  const pOn=!!h.prewarmOn;
+  const pw=h.prewarm||{};
+  const pwCard=`<div class="maint ${pOn?'':''}">
+    <div class="maint-top">
+      <div>
+        <div class="maint-t">${!pOn?'💤 التسخين المسبق موقوف'
+          :(pw.on?'🔥 التسخين شغّال — فيه طلب':'😴 التسخين مفعّل لكن نايم — هدوء')}</div>
+        <div class="maint-s">${!pOn
+          ?'شغّله وقت الذروة عشان ما ينتظر أي طالب سحبة كاملة من موقع الجامعة.'
+          :`ذكي: يشتغل لما يكثر الطلب أو تبطئ الجامعة، وينام في الهدوء.<br>
+             آخر ${pw.windowMin||10} دقائق: <b>${(pw.demand&&pw.demand.rate)||0}</b> بحثة
+             · متوسط السحبة <b>${(pw.demand&&pw.demand.avgMs)||0}ms</b>
+             ${(pw.demand&&pw.demand.slow)?'· ⚠️ الجامعة بطيئة':''}
+             ${(pw.demand&&pw.demand.busy)?'· 🔥 ذروة':''}<br>
+             عتبة التشغيل ${(pw.demand&&pw.demand.slow)?(pw.slowRate||0)+' (خُفِّضت للبطء)':(pw.minRate||0)} بحثة
+             · جُدّد ${pw.refreshed||0} مرة
+             · نام ${pw.skipped||0} مرة${pw.err?' · آخر خطأ: '+esc(pw.err.msg):''}`}</div>
+      </div>
+      <button class="mini ${pOn?'no':'go'}" onclick="togglePrewarm(${pOn?'false':'true'})">
+        ${pOn?'⏸️ أوقفه':'▶️ شغّله'}</button>
+    </div>
+  </div>`;
+
+  const cacheCard=`<div class="maint">
+    <div class="maint-top">
+      <div>
+        <div class="maint-t">🗂️ الكاش: ${h.cacheSize||0} نسخة</div>
+        <div class="maint-s">امسحه لو شفت بيانات قديمة أو غلط — أول بحث بعدها يسحب نسخة جديدة.</div>
+      </div>
+      <button class="mini no" onclick="clearCache()">🗑️ امسح الكاش</button>
+    </div>
+  </div>`;
+
+  box.innerHTML=maint+monCard+pwCard+cacheCard+finals+alerts+liveBox+gauge+spark+detail;
 }
 
 /* ══════════ المراقبة ══════════ */
@@ -1194,12 +1727,32 @@ function renderMons(){
     <div class="row">
       <div class="row-top">
         <div>
-          <div class="row-name">${esc(m.key)}</div>
-          <div class="row-sub">CRN ${esc(m.crn)} · ترم ${esc(m.term||'—')}</div>
+          <div class="row-name">${m.scope==='course'?'📡 ':''}${esc(m.key)}</div>
+          <div class="row-sub">${m.scope==='course'
+            ? `${m.sections!==null?m.sections+' شعبة متتبَّعة':'أول دورة لسه'} · ترم ${esc(m.term||'—')}`
+            : `CRN ${esc(m.crn)} · ترم ${esc(m.term||'—')}`}</div>
         </div>
-        <span class="pill ${m.status==='OPEN'?'on':'off'}">${esc(m.status)}</span>
+        ${m.scope==='course'
+          ? '<span class="pill on">كل الشعب</span>'
+          : `<span class="pill ${m.status==='OPEN'?'on':'off'}">${esc(m.status)}</span>`}
       </div>
-      <div class="row-meta"><span>يراقبها <b>${m.watchers}</b> طالب</span></div>
+      <div class="row-meta">
+        <span>يراقبها <b>${m.watchers}</b> طالب</span>
+        <button class="mini" onclick="toggleWatchers(this)">👥 المراقِبون</button>
+      </div>
+      <div class="watchers" hidden>
+        ${(m.rows||[]).map(r=>`<div class="w-row">
+          <div class="w-who">
+            <b>${esc(r.name)}</b>
+            <span>${esc(r.email)}${r.linked?'':' · <span class="warn">تيليغرام غير مربوط</span>'}</span>
+            ${r.askedAt?`<span class="warn">⏳ مهلة تأكيد حتى ${new Date(r.askedAt).toLocaleString('ar-SA')}</span>`:''}
+          </div>
+          <div class="w-acts">
+            <button class="mini" onclick="askWatcher(${r.id})" ${r.linked?'':'disabled'}>⏳ اسأله</button>
+            <button class="mini no" onclick="stopWatcher(${r.id})">🔕 أوقف</button>
+          </div>
+        </div>`).join('')||'<div class="dw-empty">ما فيه تفاصيل</div>'}
+      </div>
     </div>`).join('');
 }
 
@@ -1209,6 +1762,9 @@ function renderMons(){
     api('ping').then(()=>{
       document.getElementById('gate').classList.add('hide');
       loadAll();
+      /* نستعيد حالة التحديث التلقائي من آخر جلسة */
+      try{ if(localStorage.getItem('adminAuto')==='1'){ AUTO=false; toggleAuto() } }catch(e){}
+      paintAuto();
     }).catch(()=>logout());
   }
 })();
