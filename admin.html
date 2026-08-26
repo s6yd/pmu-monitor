@@ -1683,10 +1683,17 @@ function renderSys(){
   const pwCard=`<div class="maint ${pOn?'':''}">
     <div class="maint-top">
       <div>
-        <div class="maint-t">${pOn?'🔥 التسخين المسبق شغّال':'💤 التسخين المسبق موقوف'}</div>
-        <div class="maint-s">${pOn
-          ?`يجدّد أكثر ٣ تركيبات طلباً قبل انتهاء صلاحيتها · جُدّد ${pw.refreshed||0} مرة${pw.err?' · آخر خطأ: '+esc(pw.err.msg):''}`
-          :'شغّله وقت الذروة عشان ما ينتظر أي طالب سحبة كاملة من موقع الجامعة.'}</div>
+        <div class="maint-t">${!pOn?'💤 التسخين المسبق موقوف'
+          :(pw.on?'🔥 التسخين شغّال — فيه طلب':'😴 التسخين مفعّل لكن نايم — هدوء')}</div>
+        <div class="maint-s">${!pOn
+          ?'شغّله وقت الذروة عشان ما ينتظر أي طالب سحبة كاملة من موقع الجامعة.'
+          :`ذكي: يشتغل لما يكثر الطلب أو تبطئ الجامعة، وينام في الهدوء.<br>
+             آخر ${pw.windowMin||10} دقائق: <b>${(pw.demand&&pw.demand.rate)||0}</b> بحثة
+             · متوسط السحبة <b>${(pw.demand&&pw.demand.avgMs)||0}ms</b>
+             ${(pw.demand&&pw.demand.slow)?'· ⚠️ الجامعة بطيئة':''}
+             ${(pw.demand&&pw.demand.busy)?'· 🔥 ذروة':''}<br>
+             عتبة التشغيل ${pw.minRate||0} بحثة · جُدّد ${pw.refreshed||0} مرة
+             · نام ${pw.skipped||0} مرة${pw.err?' · آخر خطأ: '+esc(pw.err.msg):''}`}</div>
       </div>
       <button class="mini ${pOn?'no':'go'}" onclick="togglePrewarm(${pOn?'false':'true'})">
         ${pOn?'⏸️ أوقفه':'▶️ شغّله'}</button>

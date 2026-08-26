@@ -2094,7 +2094,12 @@ async function adminHealth() {
     prewarmOn: PREWARM_ON,
     prewarm: {
       runs: PREWARM.runs, refreshed: PREWARM.refreshed,
-      lastAt: PREWARM.lastAt, lastKeys: PREWARM.lastKeys, err: PREWARM.err
+      lastAt: PREWARM.lastAt, lastKeys: PREWARM.lastKeys, err: PREWARM.err,
+      on: PREWARM.on, skipped: PREWARM.skipped, lastSkip: PREWARM.lastSkip,
+      demand: demandNow(),
+      minRate: DEMAND_MIN_RATE, busyRate: DEMAND_BUSY_RATE,
+      windowMin: Math.round(DEMAND_WINDOW / 60000),
+      slowMs: SLOW_FETCH_MS
     },
     cacheSize: coursesCache.size,
     ttlOverride: TTL_OVERRIDE,
@@ -2364,7 +2369,40 @@ let MONITOR_PAUSED = false;
    فما ينتظر أي طالب سحبة كاملة من موقع الجامعة.
    يبدأ مطفأً — تشغّله من اللوحة وقت الحاجة فقط. */
 let PREWARM_ON = false;
-const PREWARM = { runs: 0, refreshed: 0, lastAt: 0, lastKeys: [], err: null };
+const PREWARM = { runs: 0, refreshed: 0, lastAt: 0, lastKeys: [], err: null,
+                  skipped: 0, lastSkip: null, on: false };
+
+/* ═══ قياس الطلب والبطء ═══
+   التسخين يكلّف سحبة من الجامعة. في الهدوء هذي تكلفة بلا مقابل —
+   ولا أحد ينتظر النتيجة أصلاً. وفي الذروة هي أنفع شيء: الطالب يبحث
+   فيجد نسخة جاهزة بدل ما ينتظر عشر ثوانٍ.
+   فنقيس الاثنين بنافذة متحركة ونشغّله عند الحاجة فقط. */
+const DEMAND = { hits: [], fetchMs: [] };
+const DEMAND_WINDOW = 10 * 60000;      /* نافذة القياس: عشر دقائق */
+const DEMAND_MIN_RATE = 6;             /* أقل من 6 بحثات = هدوء، نطفيه */
+const DEMAND_BUSY_RATE = 25;           /* فوقها ذروة، نوسّع التسخين */
+const SLOW_FETCH_MS = 6000;            /* سحبة أبطأ من كذا = الجامعة ثقيلة */
+
+function recordSearch() {
+  const now = Date.now();
+  DEMAND.hits.push(now);
+  const cut = now - DEMAND_WINDOW;
+  while (DEMAND.hits.length && DEMAND.hits[0] < cut) DEMAND.hits.shift();
+}
+function recordFetch(ms) {
+  DEMAND.fetchMs.push({ at: Date.now(), ms });
+  const cut = Date.now() - DEMAND_WINDOW;
+  while (DEMAND.fetchMs.length && DEMAND.fetchMs[0].at < cut) DEMAND.fetchMs.shift();
+}
+function demandNow() {
+  const cut = Date.now() - DEMAND_WINDOW;
+  const rate = DEMAND.hits.filter(t => t >= cut).length;
+  const lat = DEMAND.fetchMs.filter(x => x.at >= cut);
+  const avgMs = lat.length
+    ? Math.round(lat.reduce((a, b) => a + b.ms, 0) / lat.length) : 0;
+  return { rate, avgMs, slow: avgMs >= SLOW_FETCH_MS,
+           busy: rate >= DEMAND_BUSY_RATE, quiet: rate < DEMAND_MIN_RATE };
+}
 
 /* موعد الدورة القادمة — يُحدَّث مع كل جدولة، ويُعرض في اللوحة */
 let NEXT_CYCLE_AT = 0;
@@ -2989,6 +3027,7 @@ const inFlight     = new Map();     // key → Promise (يمنع سحبتين م
 async function getCourses(term, college, gender, force) {
   const key = `${term}|${college}|${gender}`;
   OPS.searches++;
+  if (!force) recordSearch();       /* التسخين نفسه ما يُحسب طلباً */
   const TTL = coursesTTL();
   const hit = coursesCache.get(key);
   if (hit && !force && Date.now() - hit.at < TTL) {
@@ -3025,7 +3064,9 @@ async function getCourses(term, college, gender, force) {
 
   inFlight.set(key, p);
   try {
+    const t0 = Date.now();
     const courses = await p;
+    recordFetch(Date.now() - t0);
     const h3 = coursesCache.get(key);
     return { courses, cached: false, age: 0, at: (h3 && h3.at) || Date.now() };
   }
@@ -3112,6 +3153,23 @@ const PREWARM_RECENT   = 30 * 60000; /* تركيبة ما طُلبت منذ نص
 async function prewarmTick() {
   if (!PREWARM_ON) return;
   if (!MONITOR_ENABLED) return;
+
+  /* ═══ القرار: نشتغل أو نطفي ═══
+     في الهدوء التسخين سحبة من الجامعة لا ينتظرها أحد — نطفيه.
+     وفي الذروة، أو لما تصير الجامعة بطيئة، هو أنفع شيء: الطالب
+     يلقى نسخة جاهزة بدل ما ينتظر السحبة كاملة. */
+  const d = demandNow();
+  PREWARM.demand = d;
+  if (d.quiet && !d.slow) {
+    PREWARM.on = false;
+    PREWARM.skipped++;
+    PREWARM.lastSkip = { at: Date.now(), rate: d.rate, why: 'هدوء' };
+    return;
+  }
+  PREWARM.on = true;
+  /* الذروة أو البطء يوسّعان التغطية، والعادي يبقى على ثلاث */
+  const maxKeys = (d.busy || d.slow) ? PREWARM_MAX_KEYS + 2 : PREWARM_MAX_KEYS;
+
   const now = Date.now();
   const TTL = coursesTTL();
   /* عتبة عشوائية في كل دورة (70%–95% من الصلاحية) — نفس فلسفة التشويش
@@ -3122,7 +3180,7 @@ async function prewarmTick() {
     .filter(([, v]) => now - (v.lastHit || v.at) < PREWARM_RECENT)
     .filter(([, v]) => now - v.at >= TTL * at)      /* قاربت تنتهي */
     .sort((a, b) => (b[1].lastHit || b[1].at) - (a[1].lastHit || a[1].at))
-    .slice(0, PREWARM_MAX_KEYS);
+    .slice(0, maxKeys);
 
   if (!due.length) return;
   PREWARM.runs++;
