@@ -4607,7 +4607,15 @@ async function toggleMonitorAllGo(code){
   }else{
     const row={user_id:USER.id,scope:'course',course_code:code,term};
     const {data,error}=await sb.from('monitored_courses').insert(row).select();
-    if(error){showToast(LANG==='ar'?'ما ضبطت — جرّب مرة ثانية':'Failed — try again','err');return}
+    if(error){
+      if(error.code==='23505'){
+        await loadMonitored();
+        showToast(LANG==='ar'?`✅ ${code} مراقبة أصلاً`:`✅ ${code} already watched`,'ok');
+      }else{
+        showToast(LANG==='ar'?'ما ضبطت — جرّب مرة ثانية':'Failed — try again','err');
+      }
+      renderResults();renderSettings();return;
+    }
     if(data&&data[0])monitored.push(data[0]);
     showToast(LANG==='ar'
       ?`📡 تراقب كل شعب ${code} — أي شعبة تفتح أو تنزل يوصلك إشعار`
@@ -4635,7 +4643,20 @@ async function toggleMonitorCourseGo(crn){
   }else{
     const row={user_id:USER.id,crn:c.crn,course_code:c.courseCode,section:c.section,
       term:document.getElementById('term').value,last_status:c.status};
-    const {data}=await sb.from('monitored_courses').insert(row).select();
+    const {data,error}=await sb.from('monitored_courses').insert(row).select();
+    /* كان يعرض «تراقب» حتى لو رفضت القاعدة الصف، فيضغط الطالب مرة
+       ومرتين وثلاث. 23505 = الصف موجود أصلاً والقائمة المحلية قديمة،
+       فنعيد تحميلها بدل ما نقول له «فشل» وهو مراقب فعلاً. */
+    if(error){
+      if(error.code==='23505'){
+        await loadMonitored();
+        showToast(LANG==='ar'?`✅ ${c.courseCode} مراقبة أصلاً`
+                             :`✅ ${c.courseCode} already watched`,'ok');
+      }else{
+        showToast(LANG==='ar'?'ما ضبطت — جرّب مرة ثانية':'Failed — try again','err');
+      }
+      renderResults();renderSettings();return;
+    }
     if(data&&data[0])monitored.push(data[0]);
     showToast(LANG==='ar'?`🔔 تراقب ${c.courseCode} — بيوصلك إشعار`:`🔔 Watching ${c.courseCode}`);
   }

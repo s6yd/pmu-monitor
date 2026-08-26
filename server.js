@@ -216,7 +216,7 @@ async function fillChatNames() {
 /* يصنّف الرسالة من محتواها — أرخص من تمرير وسم عند كل نداء */
 function msgKind(text) {
   const t = String(text || '');
-  if (/فتحت مادة|نزلت شعبة|فتحت شعبة/.test(t)) return 'شعبة فتحت';
+  if (/فتحت مادة|نزلت شعبة|فتحت شعبة|الشعبة اللي تبيها/.test(t)) return 'شعبة فتحت';
   if (/تغيّر في جدولك/.test(t)) return 'تغيّر جدول';
   if (/سجّلت .*؟|أوقف المراقبة عشان/.test(t)) return 'متابعة';
   if (/تم الربط بنجاح/.test(t)) return 'ربط';
@@ -643,7 +643,14 @@ async function runMonitorCycle() {
       const prev = (m.sections_state && typeof m.sections_state === 'object')
         ? m.sections_state : null;
 
-      courseStateUpdates.push({ id: m.id, state: cur });
+      /* كانت تُكتب كل دورة حتى بلا تغيير — كتابة لكل مادة مراقَبة كل
+         خمس دقائق بلا داعٍ، وهي مصدر رئيسي لتضخّم WAL في القاعدة.
+         المقارنة ببصمة مرتّبة لا بـJSON خام: ترتيب شعب الجامعة قد
+         يتغيّر بين الدورات فتبدو الحالة مختلفة وهي نفسها. */
+      const fp = o => Object.keys(o || {}).sort()
+        .map(k => k + ':' + o[k]).join('|');
+      if (!prev || fp(prev) !== fp(cur))
+        courseStateUpdates.push({ id: m.id, state: cur });
       if (!prev) continue;                       /* أول دورة — تسجيل فقط */
 
       const hits = [];
@@ -725,14 +732,20 @@ async function runMonitorCycle() {
     const followups = [];      /* نسأل صاحبها بعد عشر دقائق: سجّلتها؟ */
     await inBatches(sendList, 20, async ({ m, live, courseScope, isNew, closedNew, more }) => {
       const p = profiles[m.user_id];
-      /* ثلاث حالات: شعبة مراقَبة فتحت · شعبة جديدة نزلت · شعبة من مادة مراقَبة فتحت */
+      /* أربع حالات، والعنوان هو الوحيد الظاهر في إشعار القفل —
+         فالتمييز لازم يكون فيه لا في سطر داخلي.
+         الطالب قد يراقب المادة كاملة وشعبة بعينها منها، فيستلم
+         رسالتين عن نفس الحدث: وحدة تقول «شعبتك» ووحدة «شعبة في مادتك».
+         التكرار مقصود — النيّتان مختلفتان — لكن لازم يُفهم. */
       const head = closedNew ? '🆕 <b>نزلت شعبة جديدة</b>'
                  : isNew     ? '🆕 <b>نزلت شعبة جديدة ومفتوحة!</b>'
-                 :             '🟢 <b>فتحت مادة!</b>';
+                 : courseScope ? '🟢 <b>فتحت شعبة في مادة تراقبها</b>'
+                 :               '⭐️ <b>الشعبة اللي تبيها فتحت!</b>';
       const tail = closedNew ? '📌 مقفلة حالياً — بنراقبها لك.'
                              : '⚡️ سجّل الحين قبل ما تنسكر!';
       const scopeLine = courseScope
-        ? `\n<i>مراقبة على مستوى المادة — كل شعب ${live.courseCode}</i>` : '';
+        ? `\n<i>وصلتك لأنك تراقب ${live.courseCode} كاملة</i>`
+        : `\n<i>وصلتك لأنك مراقب هذي الشعبة بالذات</i>`;
       const moreLine = more ? `\n<i>+ ${more} شعبة ثانية تغيّرت</i>` : '';
       const r = await sendMsg(p.telegram_chat_id,
         `${head}\n\n` +
