@@ -4444,6 +4444,7 @@ function openBot(){
   window.open(`https://t.me/${BOT_USERNAME}?start=${code}`,'_blank');
 }
 
+let TG_POLL=null;
 function linkTelegram(){
   if(!USER){showToast(LANG==='ar'?'سجّل دخول أول':'Sign in first','warn');return}
   const code=PROFILE?.telegram_link_code;
@@ -4451,8 +4452,33 @@ function linkTelegram(){
   document.getElementById('tgCode').style.display='block';
   document.getElementById('tgCode').textContent=code;
   window.open(`https://t.me/${BOT_USERNAME}?start=${code}`,'_blank');
-  setTimeout(refreshProfile,6000);
+  /* فحص واحد بعد 6 ثوانٍ ما يكفي: الطالب ينتقل لتلقرام وينتظر تحميله
+     ويضغط START — فيقع الفحص قبل الربط، فتبقى الواجهة تقول «غير مربوط»
+     فيضغط الزر مرة ثانية ويربط مرتين. نستطلع دقيقة كاملة بدلها. */
+  startTgPoll();
 }
+
+function startTgPoll(){
+  if(TG_POLL){clearInterval(TG_POLL);TG_POLL=null}
+  let tries=0;
+  showToast(LANG==='ar'?'بانتظار الربط من تلقرام...':'Waiting for Telegram...','ok');
+  TG_POLL=setInterval(async()=>{
+    tries++;
+    try{ await refreshProfile() }catch(e){}
+    if(tgLinked()){
+      clearInterval(TG_POLL);TG_POLL=null;
+      showToast(LANG==='ar'?'تم ربط تلقرام ✅':'Telegram linked ✅','ok');
+      try{ renderTgBar() }catch(e){}
+    }else if(tries>=20){ clearInterval(TG_POLL);TG_POLL=null }   /* دقيقة */
+  },3000);
+}
+
+/* أقوى إشارة على أن الربط تم: رجوع الطالب من تلقرام للمتصفح.
+   تلتقط الحالة مهما طالت، لا خلال الدقيقة فقط. */
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden||!USER)return;
+  try{ if(!tgLinked()) refreshProfile() }catch(e){}
+});
 
 async function refreshProfile(){
   if(!USER)return;

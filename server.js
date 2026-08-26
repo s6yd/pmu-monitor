@@ -325,9 +325,25 @@ const sendMsg = async (chatId, text, markup) => {
   try {
     logMsg(chatId, text, msgKind(text), r && r.ok,
            r && !r.ok ? (r.description || 'فشل') : null);
+    /* الحظر رفض صريح للرسائل — نعامله معاملة /stop بدل ما نظل
+       نحاول عند كل إشعار ونستهلك محاولة تفشل دائماً. */
+    if (r && !r.ok && /blocked by the user|user is deactivated|chat not found/i
+        .test(String(r.description || ''))) {
+      unlinkBlocked(chatId, r.description);
+    }
   } catch (e) { /* التسجيل ما يعطّل الإرسال أبداً */ }
   return r;
 };
+
+/* بلا await: فكّ الربط تنظيف لا يؤخّر شيئاً، والـcatch إجباري */
+function unlinkBlocked(chatId, why) {
+  sb('PATCH', 'profiles', {
+    query: `?telegram_chat_id=eq.${encodeURIComponent(String(chatId))}`,
+    body: { telegram_chat_id: null, telegram_username: null },
+    prefer: 'return=minimal'
+  }).then(() => console.log(`فُكّ ربط ${chatId} — ${why}`))
+    .catch(e => console.log('فكّ الربط فشل: ' + (e && e.message)));
+}
 
 /* أزرار داخلية أسفل الرسالة */
 const btn = (label, data) => ({ text: label, callback_data: data });
@@ -1078,9 +1094,18 @@ async function handleTelegramUpdate(update) {
         `عشان تربط حسابك، افتح jadwalik.com → الإعدادات → فعّل إشعارات تيليغرام.`);
     }
     const rows = await sb('GET', 'profiles',
-      { query: `?telegram_link_code=eq.${encodeURIComponent(code)}&select=id,name` });
+      { query: `?telegram_link_code=eq.${encodeURIComponent(code)}&select=id,name,telegram_chat_id` });
     if (!rows || !rows.length) {
       return sendMsg(chatId, `❌ الكود غير صحيح أو منتهي.\nجرّب تولّد كود جديد من الموقع.`);
+    }
+
+    /* ضغط الزر مرتين شائع — الواجهة كانت تتأخر في إظهار الربط.
+       نقول له إنه مربوط أصلاً بدل «تم الربط» التي توحي بشيء جديد. */
+    if (String(rows[0].telegram_chat_id || '') === String(chatId)) {
+      return sendMsg(chatId,
+        `✅ <b>حسابك مربوط أصلاً</b>\n\n` +
+        `ما تحتاج تربط مرة ثانية — الإشعارات شغّالة.\n\n` +
+        `اختر المواد اللي تبي تراقبها من jadwalik.com`);
     }
     /* رقم تيليغرام واحد ما يخدم حسابين: الإشعارات تُجمَّع بـuser_id
        ثم تُترجم لـchat_id، فيستلم الشخص رسالتين متطابقتين على نفس
@@ -2497,8 +2522,14 @@ async function notifyChanges(list, stat) {
         const from = esc(f.from || '—'), to = esc(f.to || '—');
         /* الدكتور مذكّر والقاعة والمادة مؤنثة — الصياغة الموحّدة تطلع ركيكة */
         const m = f.field === 'instructor';
+        /* خانة كانت فاضية ثم تحدّدت — خبر لا تحذير */
         if (!f.from || f.from === '—')
           return `${f.ar || f.field}: ${m ? 'تحدّد' : 'تحدّدت'} — <b>${to}</b>`;
+        /* والعكس: الجامعة شالت القيمة ولا حطّت بديلاً.
+           «صار: —» ما تفهم، فنقولها بوضوح. */
+        if (!f.to || f.to === '—')
+          return `${f.ar || f.field}: <s>${from}</s>\n` +
+                 `   ⚠️ ${m ? 'انشال ولا فيه بديل معلَن بعد' : 'انشالت ولا فيه بديل معلَن بعد'}`;
         return `${f.ar || f.field}\n` +
                `   ${m ? 'كان' : 'كانت'}: <s>${from}</s>\n` +
                `   ${m ? 'صار' : 'صارت'}: <b>${to}</b>`;
