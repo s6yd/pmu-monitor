@@ -6302,22 +6302,31 @@ async function writeCompleted(){
     completed.map(c=>({user_id:USER.id,course_code:c,grade:grades[c]||null})),
     r=>r.course_code);
 
-  /* نفس علّة writeSchedule، وأثرها هنا أسوأ: المواد المنجزة تراكم
-     سنوات لا ترماً واحداً، وضياعها يضيّع معدّل الطالب كله.
-     نكتب أولاً (upsert يحوّل الاصطدام لتحديث) ثم نحذف ما لم يعد
-     في القائمة — فلا تمرّ لحظة يكون فيها سجله فارغاً. */
-  if(rows.length){
-    const {error}=await sb.from('completed_courses')
-      .upsert(rows,{onConflict:'user_id,course_code'});
-    if(error){ console.log('completed upsert',error); return; }  /* ما نحذف لو فشلت الكتابة */
-  }
+  /* نفس منطق writeSchedule. والدرجة قد تتغيّر لمادة موجودة أصلاً،
+     فنحدّثها صراحةً بدل ما نعتمد على upsert. */
+  const {data:existing,error:readErr}=await sb.from('completed_courses')
+    .select('id,course_code,grade').eq('user_id',USER.id);
+  if(readErr){ console.log('completed read',readErr); return; }
 
-  const keep=new Set(rows.map(r=>r.course_code));
-  const {data:existing}=await sb.from('completed_courses')
-    .select('id,course_code').eq('user_id',USER.id);
-  const stale=(existing||[]).filter(r=>!keep.has(r.course_code));
-  if(stale.length)
-    await sb.from('completed_courses').delete().in('id',stale.map(r=>r.id));
+  const have=new Map((existing||[]).map(r=>[r.course_code,r]));
+  const want=new Set(rows.map(r=>r.course_code));
+
+  const toAdd=rows.filter(r=>!have.has(r.course_code));
+  const toDel=[...have.values()].filter(r=>!want.has(r.course_code)).map(r=>r.id);
+  const toFix=rows.filter(r=>{
+    const e=have.get(r.course_code);
+    return e && (e.grade||null)!==(r.grade||null);
+  });
+
+  if(toAdd.length){
+    const {error}=await sb.from('completed_courses').insert(toAdd);
+    if(error){ console.log('completed insert',error); return; }
+  }
+  for(const r of toFix)
+    await sb.from('completed_courses').update({grade:r.grade})
+      .eq('user_id',USER.id).eq('course_code',r.course_code);
+  if(toDel.length)
+    await sb.from('completed_courses').delete().in('id',toDel);
 }
 
 async function pushGrades(){ return saveQueue('completed',writeCompleted) }
@@ -6526,29 +6535,31 @@ async function writeSchedule(){
   /* الجلستان بنفس الـCRN صفّان مستقلان — نميّزهما بالأيام والوقت */
   const clean=dedupeBy(rows,r=>r.slot+'|'+r.crn+'|'+(r.course_date||'')+'|'+(r.course_timing||''));
 
-  /* ═══ نكتب أولاً ثم ننظّف ═══
-     كانت delete ثم insert، وفيها عيبان:
-     • بينهما لحظة يكون جدول الطالب فيها فارغاً في السحابة — لو انقطعت
-       شبكته هناك ضاع جدوله.
-     • تبويبان أو جهازان يحذفان ثم يُدخلان بالتناوب، فيصطدم الثاني
-       بصفوف الأول ويفشل الإدراج كله (duplicate key في السجل).
-     upsert يجعل الاصطدام تحديثاً لا خطأً، والحذف بعده يزيل ما لم يعد
-     في الجدول — فلا تمرّ لحظة فراغ أبداً. */
-  const KEY='user_id,slot,crn,course_date,course_timing';
-  if(clean.length){
-    const {error}=await sb.from('user_schedule').upsert(clean,{onConflict:KEY});
-    if(error){ console.log('schedule upsert',error); return; }   /* ما نحذف لو فشلت الكتابة */
-  }
+  /* ═══ مزامنة بالفرق لا بالمسح ═══
+     كانت delete ثم insert: بينهما لحظة يكون جدول الطالب فيها فارغاً
+     في السحابة، وتبويبان يحذفان ويُدخلان بالتناوب فيتصادمان.
+     وupsert لم يصلح: onConflict على خمسة أعمدة بعضها فارغ لا يطابق
+     دائماً — وPostgres يعتبر NULL مختلفاً عن NULL.
+     فنحسب الفرق: ندخل الجديد ونحذف الزائد. لا تصادم ولا لحظة فراغ. */
+  const sig=r=>r.slot+'|'+r.crn+'|'+(r.course_date||'')+'|'+(r.course_timing||'');
 
-  /* نحذف الصفوف اللي ما عادت في الجدول — صفاً صفاً بمفتاحه المركّب */
-  const keep=new Set(clean.map(r=>
-    r.slot+'|'+r.crn+'|'+(r.course_date||'')+'|'+(r.course_timing||'')));
-  const {data:existing}=await sb.from('user_schedule')
+  const {data:existing,error:readErr}=await sb.from('user_schedule')
     .select('id,slot,crn,course_date,course_timing').eq('user_id',USER.id);
-  const stale=(existing||[]).filter(r=>
-    !keep.has(r.slot+'|'+r.crn+'|'+(r.course_date||'')+'|'+(r.course_timing||'')));
-  if(stale.length)
-    await sb.from('user_schedule').delete().in('id',stale.map(r=>r.id));
+  if(readErr){ console.log('schedule read',readErr); return; }
+
+  const have=new Map((existing||[]).map(r=>[sig(r),r.id]));
+  const want=new Set(clean.map(sig));
+
+  const toAdd=clean.filter(r=>!have.has(sig(r)));
+  const toDel=[...have.entries()].filter(([k])=>!want.has(k)).map(([,id])=>id);
+
+  /* الإدراج أولاً: لو فشل ما نحذف شيئاً ويبقى جدوله كما هو */
+  if(toAdd.length){
+    const {error}=await sb.from('user_schedule').insert(toAdd);
+    if(error){ console.log('schedule insert',error); return; }
+  }
+  if(toDel.length)
+    await sb.from('user_schedule').delete().in('id',toDel);
 }
 
 async function pushSchedule(){ return saveQueue('schedule',writeSchedule) }
