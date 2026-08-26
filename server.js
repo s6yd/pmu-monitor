@@ -1079,12 +1079,34 @@ async function handleTelegramUpdate(update) {
     if (!rows || !rows.length) {
       return sendMsg(chatId, `❌ الكود غير صحيح أو منتهي.\nجرّب تولّد كود جديد من الموقع.`);
     }
+    /* رقم تيليغرام واحد ما يخدم حسابين: الإشعارات تُجمَّع بـuser_id
+       ثم تُترجم لـchat_id، فيستلم الشخص رسالتين متطابقتين على نفس
+       المحادثة — ولا يرى حسابين، بل بوتاً يكرّر نفسه. ننقل الربط
+       بدل ما نرفضه: الرفض يترك الطالب حائراً بلا سبب مفهوم. */
+    const moved = await sb('GET', 'profiles', {
+      query: `?telegram_chat_id=eq.${encodeURIComponent(String(chatId))}` +
+             `&id=neq.${encodeURIComponent(rows[0].id)}&select=id,name,email`
+    }).catch(() => []);
+    if (Array.isArray(moved) && moved.length) {
+      await sb('PATCH', 'profiles', {
+        query: `?telegram_chat_id=eq.${encodeURIComponent(String(chatId))}` +
+               `&id=neq.${encodeURIComponent(rows[0].id)}`,
+        body: { telegram_chat_id: null, telegram_username: null },
+        prefer: 'return=minimal'
+      }).catch(() => {});
+      console.log(`ربط: نُقل ${chatId} من ${moved.length} حساب سابق`);
+    }
+
     await sb('PATCH', 'profiles', {
       query: `?id=eq.${rows[0].id}`,
       body: { telegram_chat_id: String(chatId), telegram_username: msg.from.username || null }
     });
     return sendMsg(chatId,
       `✅ <b>تم الربط بنجاح!</b>\n\n` +
+      (moved.length
+        ? `⚠️ كان تيليغرامك مربوطاً بحساب ثاني (${esc(moved[0].email || moved[0].name || '—')}) ` +
+          `وفصلناه — الإشعارات بتوصلك لهذا الحساب وحده.\n\n`
+        : '') +
       `بتوصلك إشعارات فورية أول ما تنفتح أي مادة تراقبها.\n\n` +
       `روح للموقع واختر المواد اللي تبي تراقبها 👇\njadwalik.com\n\n` +
       `💬 <b>وأي ملاحظة أو اقتراح؟</b> اكتبها هنا مباشرة وبتوصلني.`);
@@ -2446,15 +2468,24 @@ async function notifyChanges(list, stat) {
   });
 
   /* رسالة واحدة لكل طالب */
-  const byStudent = new Map();
+  /* نجمّع بـchat_id لا بـuser_id: لو ارتبط رقم واحد بحسابين — وقد
+     حصل فعلاً — فالتجميع بالحساب يرسل رسالتين متطابقتين لنفس الشخص.
+     والبصمة تمنع تكرار نفس المادة داخل الرسالة الواحدة. */
+  const byChat = new Map();
+  const seen = new Set();
   list.forEach(x => {
-    if (!chat.has(x.userId)) return;
-    if (!byStudent.has(x.userId)) byStudent.set(x.userId, []);
-    byStudent.get(x.userId).push(x);
+    const cid = chat.get(x.userId);
+    if (!cid) return;
+    const sig = cid + '|' + x.code + '|' + x.section + '|' +
+      (x.fields || []).map(f => `${f.field}:${f.from}>${f.to}`).sort().join(',');
+    if (seen.has(sig)) return;
+    seen.add(sig);
+    if (!byChat.has(cid)) byChat.set(cid, []);
+    byChat.get(cid).push(x);
   });
   stat.notified = 0;
 
-  for (const [uid, items] of byStudent) {
+  for (const [cid, items] of byChat) {
     const body = items.map(it => {
       /* بلا سهم: القيم لاتينية والوصف عربي، فاتجاه القراءة ينقلب
          بصرياً ولا يعرف الطالب أيهما القديم. سطران وكلام صريح
@@ -2474,7 +2505,7 @@ async function notifyChanges(list, stat) {
       return `📌 <b>${esc(it.code)} §${esc(it.section)}</b>\n` + lines.join('\n') + cl;
     }).join('\n\n');
 
-    const r = await sendMsg(chat.get(uid),
+    const r = await sendMsg(cid,
       `🔔 <b>تغيّر في جدولك</b>\n\n${body}\n\n` +
       `التغيير من نظام الجامعة · راجع جدولك في jadwalik.com`);
     if (r && r.ok) stat.notified++;
@@ -3857,8 +3888,24 @@ async function confirmTick() {
     /* سحبة طازجة حقيقية لكل ترم فيه صفّ ناضج — هذي هي المشاهدة الثانية */
     for (const term of [...new Set(ripe.map(r => r.term))]) {
       try {
+        /* أثر صريح في السجل: العدّاد وحده يقول إن سحبة حصلت، ولا يقول
+           إنها هي التي أكّدت هذا الصف. هذان السطران يربطان الاثنين
+           بالوقت، فتقدر تطابقهما مع لحظة وصول الرسالة. */
+        const ripeHere = ripe.filter(r => r.term === term).length;
+        const t0 = Date.now();
+        console.log(`تأكيد: ${ripeHere} صفّاً ناضجاً في ${term} — أجبر سحبة طازجة`);
         const r = await getCourses(term, 'ALL', 'ALL', true);   /* force = تجاوز الكاش */
-        await syncSchedules(term, r.courses, true);             /* force = تجاوز الفجوة */
+        const n = (r && Array.isArray(r.courses)) ? r.courses.length : 0;
+        /* cached=true مع force يعني حالة واحدة: انضممنا لسحبة جارية
+           بدأها طالب قبل لحظات. القائمة طازجة فعلاً، لكنها ليست
+           مشاهدة مستقلة — نسجّلها بوضوح بدل ما نخلطها بالسحبة الخاصة. */
+        console.log(`تأكيد: وصلت ${n} مادة في ${Date.now() - t0}ms` +
+                    (r && r.cached ? ' (انضممنا لسحبة جارية)' : ' (سحبة خاصة)'));
+        const st = await syncSchedules(term, r.courses, true);  /* force = تجاوز الفجوة */
+        console.log(`تأكيد: النتيجة — مؤكَّد ${st && st.confirmed || 0} · ` +
+                    `ينتظر ${st && st.pendingWaiting || 0} · ` +
+                    `مرفوض ${st && st.discarded || 0} · ` +
+                    `أُرسل ${st && st.notified || 0}`);
         CONFIRM_STAT.forces++; CONFIRM_STAT.lastForce = Date.now();
       } catch (e) {
         console.log('confirmTick: ' + term + ' — ' + e.message);
