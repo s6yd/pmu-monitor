@@ -2097,7 +2097,8 @@ async function adminHealth() {
       lastAt: PREWARM.lastAt, lastKeys: PREWARM.lastKeys, err: PREWARM.err,
       on: PREWARM.on, skipped: PREWARM.skipped, lastSkip: PREWARM.lastSkip,
       demand: demandNow(),
-      minRate: DEMAND_MIN_RATE, busyRate: DEMAND_BUSY_RATE,
+      minRate: DEMAND_MIN_RATE, slowRate: DEMAND_SLOW_RATE,
+      busyRate: DEMAND_BUSY_RATE,
       windowMin: Math.round(DEMAND_WINDOW / 60000),
       slowMs: SLOW_FETCH_MS
     },
@@ -2380,8 +2381,12 @@ const PREWARM = { runs: 0, refreshed: 0, lastAt: 0, lastKeys: [], err: null,
 const DEMAND = { hits: [], fetchMs: [] };
 const DEMAND_WINDOW = 10 * 60000;      /* نافذة القياس: عشر دقائق */
 const DEMAND_MIN_RATE = 6;             /* أقل من 6 بحثات = هدوء، نطفيه */
+const DEMAND_SLOW_RATE = 3;            /* الجامعة بطيئة: نكتفي بـ3 بحثات */
 const DEMAND_BUSY_RATE = 25;           /* فوقها ذروة، نوسّع التسخين */
-const SLOW_FETCH_MS = 6000;            /* سحبة أبطأ من كذا = الجامعة ثقيلة */
+/* الطبيعي عند PMU من 13 إلى 18 ثانية — سحبة ثقيلة أصلاً.
+   فالعتبة لازم تكون فوق الطبيعي بوضوح، وإلا صُنِّف كل شيء «بطيئاً»
+   وسرت العتبة المنخفضة دائماً وفقد التمييز معناه. */
+const SLOW_FETCH_MS = 25000;           /* أبطأ من 25 ثانية = تدهور فعلي */
 
 function recordSearch() {
   const now = Date.now();
@@ -3160,10 +3165,16 @@ async function prewarmTick() {
      يلقى نسخة جاهزة بدل ما ينتظر السحبة كاملة. */
   const d = demandNow();
   PREWARM.demand = d;
-  if (d.quiet && !d.slow) {
+  /* البطء يخفّض العتبة ولا يلغيها. الصيغة الأولى كانت «بطيئة ← شغّله
+     دائماً»، فلو بقيت الجامعة ثقيلة يومين وما فيه إلا طالب واحد يظل
+     يسحب بلا مبرر — ويزيد الحمل على جامعة متعبة أصلاً.
+     بحثة أو بحثتان لا تستحقان تسخيناً مهما كان البطء. */
+  const need = d.slow ? DEMAND_SLOW_RATE : DEMAND_MIN_RATE;
+  if (d.rate < need) {
     PREWARM.on = false;
     PREWARM.skipped++;
-    PREWARM.lastSkip = { at: Date.now(), rate: d.rate, why: 'هدوء' };
+    PREWARM.lastSkip = { at: Date.now(), rate: d.rate, need,
+                         why: d.slow ? 'طلب قليل رغم البطء' : 'هدوء' };
     return;
   }
   PREWARM.on = true;

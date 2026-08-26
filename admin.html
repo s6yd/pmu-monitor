@@ -1692,7 +1692,8 @@ function renderSys(){
              · متوسط السحبة <b>${(pw.demand&&pw.demand.avgMs)||0}ms</b>
              ${(pw.demand&&pw.demand.slow)?'· ⚠️ الجامعة بطيئة':''}
              ${(pw.demand&&pw.demand.busy)?'· 🔥 ذروة':''}<br>
-             عتبة التشغيل ${pw.minRate||0} بحثة · جُدّد ${pw.refreshed||0} مرة
+             عتبة التشغيل ${(pw.demand&&pw.demand.slow)?(pw.slowRate||0)+' (خُفِّضت للبطء)':(pw.minRate||0)} بحثة
+             · جُدّد ${pw.refreshed||0} مرة
              · نام ${pw.skipped||0} مرة${pw.err?' · آخر خطأ: '+esc(pw.err.msg):''}`}</div>
       </div>
       <button class="mini ${pOn?'no':'go'}" onclick="togglePrewarm(${pOn?'false':'true'})">
