@@ -618,6 +618,16 @@ function renderOver(){
 }
 
 /* ══════════ المستخدمين ══════════ */
+/* نسخة الخطة — تُعرض فقط للتخصصات اللي لها نسختان، وإلا صارت ضجيجاً
+   في كل بطاقة. القديمة ملوّنة عشان تلفت النظر عند قراءة شكوى طالب. */
+const PLAN_ALT_MAJORS=['MEEN'];
+function planVerTag(u){
+  if(!u||!PLAN_ALT_MAJORS.includes(u.major))return '';
+  return u.planVer==='old'
+    ? '<span>الخطة <b style="color:var(--warn)">القديمة</b></span>'
+    : '<span>الخطة <b>الجديدة</b></span>';
+}
+
 function renderUsers(){
   const q=(document.getElementById('userSearch').value||'').trim().toLowerCase();
   const f=document.getElementById('userFilter').value;
@@ -656,6 +666,7 @@ function renderUsers(){
       </div>
       <div class="row-meta">
         <span>التخصص <b>${esc(u.major)}</b></span>
+        ${planVerTag(u)}
         <span>ينتهي <b>${fdate(u.expires)}</b></span>
         <span>مراقبة <b>${u.monitors}</b></span>
         ${u.telegram?`<span>تيليغرام <b>${esc(u.telegram)}</b></span>`:''}
@@ -810,6 +821,7 @@ function renderUserDetail(d){
     </div>
     <div class="row-meta" style="margin-bottom:2px">
       <span>التخصص <b>${esc(u.major)}</b></span>
+      ${planVerTag(u)}
       <span>${u.active?'<b style="color:var(--open)">مشترك فعّال</b>':'<b style="color:var(--close)">منتهي</b>'}</span>
       ${u.expires?`<span>ينتهي <b>${fdate(u.expires)}</b></span>`:''}
       ${u.telegram?`<span>تيليغرام <b>${esc(u.telegram)}</b></span>`:''}

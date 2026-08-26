@@ -319,7 +319,11 @@ outline:none;flex-shrink:0;max-width:78px}
 .plan-ver{display:none;background:var(--card);border:1px solid var(--border);
 border-radius:13px;padding:12px 14px;margin-bottom:13px}
 .plan-ver.visible{display:block}
-.pv-t{font-size:12.5px;color:var(--text2);line-height:1.8}
+.pv-head{display:flex;gap:9px;align-items:flex-start}
+.pv-t{font-size:12.5px;color:var(--text2);line-height:1.8;flex:1;min-width:0}
+.pv-x{background:none;border:none;color:var(--text3);font-size:15px;
+cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0}
+.pv-x:hover{color:var(--text2)}
 .pv-btns{display:flex;gap:8px;margin-top:10px}
 .pv-b{flex:1;padding:9px;border-radius:10px;font-size:12.5px;font-weight:700;
 cursor:pointer;background:var(--bg);color:var(--text2);border:1px solid var(--border)}
@@ -1315,6 +1319,9 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
           </optgroup>
         </select>
       </div>
+    </div>
+    <div class="plan-ver" id="planVerBoxSet"></div>
+    <div class="uni-row" style="grid-template-columns:1fr">
       <label class="prep-toggle" id="prepToggle">
         <input type="checkbox" id="prepChk" onchange="onPrepToggle()">
         <span>
@@ -1490,7 +1497,7 @@ sems:[
 {id:'R1',label:'Senior — الترم الأول',hrs:18,courses:[
 {c:'MEEN 4392',n:'Feedback Control',h:3,p:['MEEN 3395','MEEN 3432','GEEN 3314']},
 {c:'MEEN 4393',n:'Machine Design',h:3,p:['MEEN 3394','MEEN 3311']},
-{c:'MEEN 4396',n:'ME Senior Design I',h:3,p:['MEEN 3395','MEEN 3333']},
+{c:'MEEN 4396',n:'ME Senior Design I',h:3,p:['MEEN 3395','MEEN 3333'],min:90},
 {c:'GEEN 4311',n:'Engineering Economy',h:3,p:['MEEN 3311']},
 {c:'MEEN 4322',n:'Power Generation',h:3,p:['MEEN 3322','MEEN 3333']},
 {c:'ELEC 1',n:'ME Technical Elective 1',h:3,p:[],el:1}]},
@@ -1573,7 +1580,7 @@ sems:[
 {c:'MEEN 4392',n:'Feedback Control',h:3,p:['MEEN 3395','MEEN 3432','GEEN 3314']},
 {c:'GEEN 4311',n:'Engineering Economy',h:3,p:['MEEN 3311']},
 {c:'MEEN 4322',n:'Power Generation',h:3,p:['MEEN 3322','MEEN 3333']},
-{c:'MEEN 4396',n:'ME Senior Design I',h:3,p:['MEEN 3395','MEEN 3333']},
+{c:'MEEN 4396',n:'ME Senior Design I',h:3,p:['MEEN 3395','MEEN 3333'],min:90},
 {c:'ELEC 1',n:'ME Technical Elective 1',h:3,p:[],el:1}]},
 
 {id:'R2',label:'Senior — الترم الثاني',hrs:14,courses:[
@@ -3498,38 +3505,93 @@ function dismissChg(i){
 /* ═══ اختيار نسخة الخطة ═══
    يظهر فقط للتخصصات التي لها نسختان. التبديل لا يمس المواد المعلّمة
    إطلاقاً — هي محفوظة بكودها، وما يختفي من العرض يرجع بالتبديل العكسي. */
-function renderPlanVer(){
-  const box=document.getElementById('planVerBox');
-  if(!box)return;
-  if(!majorChosen()||!hasAltPlan(MAJOR)){
-    box.classList.remove('visible');box.innerHTML='';return;
-  }
+/* البطاقة تُختار مرة واحدة في العمر، فتصدّرها لتبويب خطتي دائماً
+   يشغل مساحة بلا مقابل. الطالب يخفيها فتنتقل للإعدادات تحت اختيار
+   التخصص — مكانها الطبيعي — ويبقى تبديلها متاحاً متى شاء. */
+function planVerHidden(){ return !!load('pmu_planver_hidden',false) }
+function hidePlanVer(){
+  save('pmu_planver_hidden',true);
+  renderPlanVer();
+  showToast(LANG==='ar'
+    ?'نقلناها للإعدادات — تلقاها تحت اختيار التخصص'
+    :'Moved to Settings — under your major','ok');
+}
+
+function planVerHTML(inSettings){
   const ar=LANG==='ar';
   const isOld=PLAN_VER==='old';
-  box.classList.add('visible');
-  box.innerHTML=
-    `<div class="pv-t">${ar
-      ?'الجامعة عدّلت خطة هذا التخصص. لو كنت على الخطة القديمة بدّلها من هنا.'
-      :'The plan for this major was revised. Switch if you follow the older one.'}</div>
-     <div class="pv-btns">
-       <button class="pv-b${isOld?'':' on'}" onclick="setPlanVer('new')">
-         ${ar?'الجديدة':'New'}</button>
-       <button class="pv-b${isOld?' on':''}" onclick="setPlanVer('old')">
-         ${ar?'القديمة':'Old'}</button>
-     </div>
-     <div class="pv-n">${ar
-       ?'موادك المعلّمة ما تنحذف عند التبديل — محفوظة بكودها وترجع لك.'
-       :'Your completed courses are never deleted when switching.'}</div>`;
+  return `<div class="pv-head">
+      <span class="pv-t">${ar
+        ?'الجامعة عدّلت خطة هذا التخصص. لو كنت على الخطة القديمة بدّلها من هنا.'
+        :'The plan for this major was revised. Switch if you follow the older one.'}</span>
+      ${inSettings?'':`<button class="pv-x" title="${ar?'انقلها للإعدادات':'Move to Settings'}"
+        onclick="hidePlanVer()">✕</button>`}
+    </div>
+    <div class="pv-btns">
+      <button class="pv-b${isOld?'':' on'}" onclick="setPlanVer('new')">
+        ${ar?'الجديدة':'New'}</button>
+      <button class="pv-b${isOld?' on':''}" onclick="setPlanVer('old')">
+        ${ar?'القديمة':'Old'}</button>
+    </div>
+    <div class="pv-n">${ar
+      ?'كل خطة تحتفظ بعلاماتها ودرجاتها لحالها — ترجع لك كما تركتها لما تبدّل.'
+      :'Each plan keeps its own checkmarks and grades — restored when you switch back.'}
+      <br>${ar
+      ?'🎓 مو متأكد من خطتك؟ قارن موادك بـ<b>Degree Audit</b> في بانر الجامعة — هو المرجع.'
+      :'🎓 Not sure? Compare with <b>Degree Audit</b> in the university Banner — it is the reference.'}
+    </div>`;
+}
+
+function renderPlanVer(){
+  const plan=document.getElementById('planVerBox');
+  const setg=document.getElementById('planVerBoxSet');
+  const show=majorChosen()&&hasAltPlan(MAJOR);
+  const inSettings=planVerHidden();
+  [[plan,show&&!inSettings,false],[setg,show&&inSettings,true]].forEach(([el,vis,st])=>{
+    if(!el)return;
+    if(!vis){el.classList.remove('visible');el.innerHTML='';return}
+    el.classList.add('visible');
+    el.innerHTML=planVerHTML(st);
+  });
+}
+
+/* ═══ بيانات مستقلة لكل نسخة خطة ═══
+   المشكلة: مواد النسخة الأخرى تبقى في completed فيصير المعدل محسوباً
+   من مواد لا تظهر علاماتها في الخطة — رقمان لا يتفقان أمام الطالب.
+   الحل: كل نسخة تحتفظ بعلاماتها ودرجاتها في صندوق خاص. التبديل
+   يودع الحالي ويستدعي المحفوظ، فلا شيء يضيع ولا شيء يتناقض. */
+function planBoxKey(v){ return 'pmu_planbox_'+MAJOR+'_'+v }
+
+function stashPlanData(v){
+  save(planBoxKey(v),{completed:completed.slice(),grades:Object.assign({},grades)});
+}
+function restorePlanData(v){
+  const box=load(planBoxKey(v),null);
+  if(box&&Array.isArray(box.completed)){
+    completed=box.completed.slice();
+    grades=Object.assign({},box.grades||{});
+  }else{
+    /* أول مرة على هذي النسخة: نبدأ بما يشترك مع النسخة الحالية فقط،
+       فلا تظهر مواد لا وجود لها في خطته. */
+    const keep=completed.filter(c=>findPlanCourse(c)||TECH_ELECTIVES[c]);
+    const g={}; keep.forEach(c=>{ if(grades[c])g[c]=grades[c] });
+    completed=keep; grades=g;
+  }
+  save('pmu_completed',completed);
+  save('pmu_grades',grades);
 }
 
 function setPlanVer(v){
   const next=(v==='old')?'old':'new';
   if(next===PLAN_VER)return;
+  stashPlanData(PLAN_VER);          /* نودع بيانات النسخة الحالية */
   PLAN_VER=next;
   save('pmu_plan_ver',PLAN_VER);
-  applyMajor(MAJOR,true,false);   /* يعيد اشتقاق الخطة بلا تغيير التخصص */
-  renderPlan();renderPlanVer();renderPickHints&&renderPickHints();
-  if(USER&&typeof pushProfile==='function')pushProfile();
+  applyMajor(MAJOR,true,false);     /* الخطة الجديدة لازم تُشتق أولاً */
+  restorePlanData(next);            /* ثم نستدعي بيانات النسخة الجديدة */
+  if(USER){ pushCompleted&&pushCompleted(); pushProfile&&pushProfile(); }
+  renderPlan();renderPlanVer();renderGPA&&renderGPA();
+  renderPickHints&&renderPickHints();
   showToast(LANG==='ar'
     ?(next==='old'?'تحوّلت للخطة القديمة':'تحوّلت للخطة الجديدة')
     :(next==='old'?'Switched to the old plan':'Switched to the new plan'),'ok');
@@ -4826,6 +4888,7 @@ async function removeMonitor(id){
 /* ---- settings render ---- */
 function renderSettings(){
   const ar=LANG==='ar';
+  try{ renderPlanVer() }catch(e){}
   /* نرجّع حالة خانة التحضيري من التخزين */
   const pchk=document.getElementById('prepChk');
   if(pchk)pchk.checked=prepOn();
@@ -6098,6 +6161,8 @@ function calcGPA(){
     /* درجات مواد مو في خطتك الحالية ما تُحسب — أكواد المواد تختلف
        بين التخصصات، فلو غيّرت تخصصك تبقى درجة قديمة تؤثر على معدلك
        وأنت ما تشوفها ولا تقدر تعدّلها. */
+    /* لكل نسخة خطة علاماتها ودرجاتها المنفصلة (انظر swapPlanData)،
+       فما يصل هنا إلا مواد النسخة الحالية — والمعدل يطابق ما يُعرض. */
     if(!findPlanCourse(code) && !TECH_ELECTIVES[code])return;
     const h=creditsOf(code);
     pts+=GRADE_POINTS[g]*h;hrs+=h;n++;

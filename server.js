@@ -1475,6 +1475,9 @@ async function adminUsers() {
     name: p.name || '—',
     email: p.email || '—',
     major: p.major || '—',
+    /* نسخة الخطة — نعرضها فقط للتخصصات اللي لها نسختان، والافتراضي
+       الجديدة لمن ما بدّل. مهمة عشان تفهم شكوى الطالب من خطته. */
+    planVer: (p.plan_ver === 'old') ? 'old' : 'new',
     isPro: !!p.is_pro,
     active: isActive(p),
     expires: p.subscription_expires_at || null,
@@ -2217,6 +2220,7 @@ async function adminUserDetail(userId) {
     ok: true,
     user: {
       id: p.id, name: p.name || '—', email: p.email || '—', major: p.major || '—',
+      planVer: (p.plan_ver === 'old') ? 'old' : 'new',
       isPro: !!p.is_pro, active: isActive(p),
       expires: p.subscription_expires_at || null,
       telegram: p.telegram_username ? '@' + p.telegram_username : (p.telegram_chat_id ? '✓' : null)
