@@ -38,6 +38,9 @@ const ADMIN_TOKEN = (process.env.ADMIN_TOKEN || '').trim();   // كلمة سر �
 /* فترة تجريبية مجانية: كل من ربط تيليغرام يستلم الإشعارات بدون اشتراك.
    لإيقافها لاحقاً: FREE_BETA=false في متغيرات Render. */
 const FREE_BETA = (process.env.FREE_BETA || 'true').trim() !== 'false';
+/* ترم التسجيل النشط — المزامنة والإشعارات تقتصر عليه وحده.
+   من متغيّر بيئة عشان تغيّره من Render بلا نشر كل ترم جديد. */
+const ACTIVE_TERM = (process.env.ACTIVE_TERM || '202710').trim();
 
 /* معرّف محادثتك في تيليغرام — يوصلك عليه كل رأي جديد فوراً.
    تجيبه بإرسال /whoami للبوت، ثم تحطه في Render باسم ADMIN_CHAT_ID */
@@ -2110,6 +2113,8 @@ async function adminHealth() {
       feedN: (SCHED_SYNC.last && SCHED_SYNC.last.feedN) || null,
       feedPeak: (SCHED_SYNC.last && SCHED_SYNC.last.feedPeak) || null,
       feedFloor: FEED_FLOOR,
+      activeTerm: ACTIVE_TERM,
+      skippedTerms: SCHED_SYNC.skippedTerms || 0,
       feedRejected: (SCHED_SYNC.last && SCHED_SYNC.last.feedRejected) || null,
       crnRejected: (SCHED_SYNC.last && SCHED_SYNC.last.crnRejected) || 0,
       pendingNew: (SCHED_SYNC.last && SCHED_SYNC.last.pendingNew) || 0,
@@ -2422,8 +2427,13 @@ const SCHED_SYNC_GAP = 10 * 60 * 1000;   /* لا نكتب في القاعدة أ
    الذروة تُبنى من أول دورة سليمة وتضيع عند إعادة التشغيل — وهذا مقصود:
    بعد إعادة التشغيل يحمينا الحد المطلق وحده حتى تُبنى ذروة جديدة. */
 const FEED_PEAK = new Map();          /* ترم → أكبر عدد مواد شفناه */
-const FEED_FLOOR = 900;               /* الحقيقي ~1798 مادة — النصف تقريباً */
-const FEED_MIN_RATIO = 0.6;           /* أقل من ٦٠٪ من الذروة = مشبوه */
+/* الحد كان 900 رقماً عالمياً بينما الذروة لكل ترم — فأي بحث في ترم
+   أصغر (الافتراضي 202630 مثلاً) كان يُرفض بإنذار كاذب، لأن حجمه
+   الطبيعي أقل من حد مبنيّ على ترم آخر. الأرضية الآن منخفضة عمداً:
+   وظيفتها منع الصفر والقائمة المهترئة فقط، والحماية الحقيقية من
+   نسبة ذروة نفس الترم. */
+const FEED_FLOOR = 100;
+const FEED_MIN_RATIO = 0.6;           /* أقل من 60% من ذروة نفس الترم = مشبوه */
 
 /* ═══ تأكيد التغييرات ═══
    المزامنة كل 10 دقائق، فنافذة 15 تضمن رصدتين على الأقل.
@@ -2606,6 +2616,16 @@ function tagGender(courses, gender) {
 }
 
 async function syncSchedules(term, courses, force) {
+  /* ═══ ترم واحد فقط ═══
+     الجامعة تعيد استخدام أرقام CRN بين الترمات، فصفّ طالب من ترم قديم
+     بـCRN 10655 قد يطابق شعبة مختلفة تماماً بنفس الرقم في الترم الجديد.
+     المزامنة تربط بالـCRN، فلو انطلقت لترم غير النشط كتبت دكتور مادة
+     على مادة أخرى وأرسلت «تغيّر في جدولك» عن شيء ما تغيّر.
+     البحث يبقى حراً في كل الترمات — التصحيح والإشعارات وحدها محصورة. */
+  if (String(term).trim() !== ACTIVE_TERM) {
+    SCHED_SYNC.skippedTerms = (SCHED_SYNC.skippedTerms || 0) + 1;
+    return null;
+  }
   if (SCHED_SYNC.running) return null;
   if (!force && Date.now() - SCHED_SYNC.at < SCHED_SYNC_GAP) return null;
   SCHED_SYNC.running = true;
@@ -2623,6 +2643,18 @@ async function syncSchedules(term, courses, force) {
        فنرفض العمل بالكامل بدل ما نكتب شيئاً مشكوكاً فيه. */
     const feedN = Array.isArray(courses) ? courses.length : 0;
     const peak = FEED_PEAK.get(term) || 0;
+
+    /* ترم ما شفناه من قبل: لا نملك مرجعاً نحكم به. الرفض إنذار كاذب،
+       والقبول ثقة عمياء. فنسجّل الذروة ونمتنع عن الكتابة هذي المرة —
+       الدورة الجاية تملك مرجعاً وتقرر. تكلفتها تأخير واحد لكل ترم جديد. */
+    if (!peak && feedN >= FEED_FLOOR) {
+      FEED_PEAK.set(term, feedN);
+      stat.feedN = feedN; stat.feedPeak = feedN; stat.feedFirstSeen = true;
+      console.log(`syncSchedules: ترم جديد ${term} — سجّلنا ${feedN} مادة كمرجع، ` +
+                  `والمزامنة تبدأ الدورة الجاية`);
+      return stat;
+    }
+
     const tooSmall = feedN < FEED_FLOOR || (peak > 0 && feedN < peak * FEED_MIN_RATIO);
     if (tooSmall) {
       stat.error = `تغذية مشبوهة: ${feedN} مادة` +
@@ -2947,6 +2979,7 @@ async function syncSchedules(term, courses, force) {
   return stat;
 }
 
+const RESP_CACHE = new Map();   /* مفتاح → {at, raw, gz} — البايتات الجاهزة للإرسال */
 const coursesCache = new Map();     // key → {at, courses}
 const inFlight     = new Map();     // key → Promise (يمنع سحبتين متزامنتين لنفس التركيبة)
 
@@ -2958,7 +2991,7 @@ async function getCourses(term, college, gender, force) {
   if (hit && !force && Date.now() - hit.at < TTL) {
     hit.lastHit = Date.now();          /* لمعرفة أي التركيبات تستحق التسخين */
     OPS.searchesCached++;
-    return { courses: hit.courses, cached: true, age: Date.now() - hit.at };
+    return { courses: hit.courses, cached: true, age: Date.now() - hit.at, at: hit.at };
   }
 
   /* لو فيه سحبة جارية لنفس التركيبة، ننتظرها بدل ما نبدأ وحدة جديدة.
@@ -2966,7 +2999,8 @@ async function getCourses(term, college, gender, force) {
   if (inFlight.has(key)) {
     OPS.searchesCached++;
     const courses = await inFlight.get(key);
-    return { courses, cached: true, age: 0 };
+    const h2 = coursesCache.get(key);
+    return { courses, cached: true, age: 0, at: (h2 && h2.at) || Date.now() };
   }
 
   const p = (async () => {
@@ -2987,7 +3021,11 @@ async function getCourses(term, college, gender, force) {
   })();
 
   inFlight.set(key, p);
-  try { return { courses: await p, cached: false, age: 0 }; }
+  try {
+    const courses = await p;
+    const h3 = coursesCache.get(key);
+    return { courses, cached: false, age: 0, at: (h3 && h3.at) || Date.now() };
+  }
   finally { inFlight.delete(key); }
 }
 
@@ -3282,8 +3320,49 @@ const server = http.createServer(async (req, res) => {
   if (parsed.pathname === '/api/courses') {
     touchVisitor(req);
     res.setHeader('Content-Type', 'application/json');
-    /* قائمة المواد كبيرة (مئات الكيلوبايتات لقائمة ALL) — الضغط يقصّها
-       لعُشر حجمها تقريباً، وهذا أكبر فرق يحسّه الطالب على بيانات الجوال. */
+    /* ═══ ردّ مضغوط مخزَّن ═══
+       كل طلب كان يعيد بناء الرد: JSON.stringify لـ1800 مادة (430 كيلوبايت)
+       ثم ضغطها — حتى الطلبات المخدومة من الكاش. على نصف معالج هذا هو
+       السقف الحقيقي، لا الذاكرة. نخزّن البايتات المضغوطة مرة ونرسلها
+       جاهزة، فيقفز السقف من عشرات الطلبات في الثانية إلى آلاف.
+       ageMs و cached و ttlMin كانت تجعل الجسم يتغيّر كل ميلي ثانية
+       فيستحيل تخزينه — والواجهة لا تقرأها أصلاً، فنقلناها لترويسات. */
+    const sendCourses = (r, key) => {
+      res.setHeader('X-Cached', r.cached ? '1' : '0');
+      res.setHeader('X-Age-Ms', String(r.age || 0));
+      res.setHeader('X-TTL-Min', String(Math.round(coursesTTL() / 60000)));
+      const wantsGzip = /\bgzip\b/.test(req.headers['accept-encoding'] || '');
+      const hit = key ? RESP_CACHE.get(key) : null;
+
+      if (hit && hit.at === r.at) {                /* نفس النسخة بالضبط */
+        OPS.respCacheHits = (OPS.respCacheHits || 0) + 1;
+        if (wantsGzip && hit.gz) {
+          res.setHeader('Content-Encoding', 'gzip');
+          res.setHeader('Vary', 'Accept-Encoding');
+          res.writeHead(200); return res.end(hit.gz);
+        }
+        res.writeHead(200); return res.end(hit.raw);
+      }
+
+      const raw = Buffer.from(JSON.stringify({
+        success: true, count: r.courses.length, courses: r.courses
+      }), 'utf8');
+      if (!wantsGzip) {
+        if (key) RESP_CACHE.set(key, { at: r.at, raw, gz: null });
+        res.writeHead(200); return res.end(raw);
+      }
+      zlib.gzip(raw, (err, gz) => {
+        if (err) { res.writeHead(200); return res.end(raw); }
+        if (key) {
+          RESP_CACHE.set(key, { at: r.at, raw, gz });
+          while (RESP_CACHE.size > 12)             /* سقف: لا نُراكم ترمات وكليات */
+            RESP_CACHE.delete(RESP_CACHE.keys().next().value);
+        }
+        res.setHeader('Content-Encoding', 'gzip');
+        res.setHeader('Vary', 'Accept-Encoding');
+        res.writeHead(200); res.end(gz);
+      });
+    };
     const sendJSON = obj => {
       const buf = Buffer.from(JSON.stringify(obj), 'utf8');
       if (/\bgzip\b/.test(req.headers['accept-encoding'] || '')) {
@@ -3298,12 +3377,7 @@ const server = http.createServer(async (req, res) => {
     const { term = '202630', college = 'ALL', gender = 'M1' } = parsed.query;
     try {
       const r = await getCourses(term, college, gender);
-      sendJSON({
-        success: true, count: r.courses.length,
-        cached: r.cached, ageMs: r.age,
-        ttlMin: Math.round(coursesTTL() / 60000),
-        courses: r.courses
-      });
+      sendCourses(r, `${term}|${college}|${gender}`);
     } catch (err) {
       /* لو الجامعة تعطلت، نخدم آخر نسخة محفوظة بدل ما نفشل */
       OPS.lastError = { at: Date.now(), where: 'search', msg: err.message };
@@ -3313,11 +3387,10 @@ const server = http.createServer(async (req, res) => {
       const stale = coursesCache.get(`${term}|${college}|${gender}`);
       if (stale) {
         OPS.searchStale++;
-        sendJSON({
-          success: true, count: stale.courses.length,
-          cached: true, stale: true, ageMs: Date.now() - stale.at,
-          courses: stale.courses
-        });
+        /* نادر جداً فلا نخزّنه (بلا مفتاح) — لكن نوحّد الشكل والترويسات */
+        res.setHeader('X-Stale', '1');
+        sendCourses({ courses: stale.courses, cached: true,
+                      age: Date.now() - stale.at, at: stale.at }, null);
       } else {
         res.writeHead(500);
         res.end(JSON.stringify({ success: false, error: err.message }));
@@ -4015,7 +4088,8 @@ server.listen(PORT, () => {
   for (const sig of ['SIGTERM', 'SIGINT'])
     process.on(sig, () => { saveState().catch(() => {}).finally(() => process.exit(0)); });
   const st = monitorState();
-  console.log(`env=${SITE_ENV} | freeBeta=${FREE_BETA} | monitor: ${st.reason} — ${st.ar}`);
+  console.log(`env=${SITE_ENV} | freeBeta=${FREE_BETA} | ترم المزامنة=${ACTIVE_TERM}` +
+              ` | monitor: ${st.reason} — ${st.ar}`);
   /* أول دورة بعد 20-60 ثانية عشوائياً، ثم جدولة ذكية */
   setTimeout(async () => {
     if (monitorState().active) {

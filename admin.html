@@ -1460,6 +1460,8 @@ function renderSys(){
       <b class="bad">${S.feedRejected} مادة فقط — ما كتبنا شي</b></div>`:''}
     ${S.crnRejected?`<div class="kv"><span>CRN مرفوض (شكل غير رقمي)</span>
       <b class="warn">${S.crnRejected}</b></div>`:''}
+    <div class="kv"><span>ترم المزامنة</span>
+      <b>${esc(S.activeTerm||'—')}${S.skippedTerms?` · تُجوهل ${S.skippedTerms} نداء لترم آخر`:''}</b></div>
     <div class="kv"><span>إجمالي التصحيحات</span><b>${S.totalUpdated}</b></div>
     ${C?`<div class="kv"><span>آخر تصحيح فعلي</span>
       <b class="warn">${C.updated} مادة · ${ago(C.at)}</b></div>`:''}
