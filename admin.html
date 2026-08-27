@@ -1417,8 +1417,15 @@ function renderSys(){
   <div class="sec-title">البحث والكاش</div>
   <div class="gauge">
     <div class="kv"><span>عمليات بحث</span><b>${h.searches}</b></div>
-    <div class="kv"><span>مخدومة من الكاش</span>
+    <div class="kv"><span>مخدومة من الكاش · تراكمي</span>
       <b class="${h.cacheHitPct===null?'':h.cacheHitPct>=60?'good':'warn'}">${h.cacheHitPct===null?'—':h.cacheHitPct+'%'}</b></div>
+    ${(()=>{const d=(h.prewarm&&h.prewarm.demand)||null;
+      if(!d)return '';
+      const w=h.prewarm.windowMin||10;
+      return `<div class="kv"><span>مخدومة من الكاش · آخر ${w} دقائق</span>
+        <b class="${d.hitPct===null?'':d.hitPct>=60?'good':'warn'}">${
+          d.hitPct===null?'— لا بحث':d.hitPct+'%'} <span style="color:var(--text3);font-weight:400">(${d.cached}/${d.rate})</span></b></div>`;
+    })()}
     <div class="kv"><span>من نسخة قديمة</span><b class="${h.searchStale?'warn':'good'}">${h.searchStale}</b></div>
     <div class="kv"><span>نسخ من دورة المراقبة</span><b class="good">${h.cacheFromMonitor||0}</b></div>
     ${h.ttl?`<div class="kv"><span>مدة الصلاحية الحالية</span>

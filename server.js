@@ -623,13 +623,28 @@ async function runMonitorCycle() {
 
     const changed = [];      // {m, live}
     const toNotify = [];     // {m, live}
+    /* ═══ تصحيح الأساس عند التفعيل ═══
+       last_status يجي من القائمة المعروضة عند الطالب، وقد تكون قديمة
+       بدقائق. فتنشأ حالتان خاطئتان:
+       • عنده CLOSED وعندنا OPEN → إشعار فوري عن شعبة كانت مفتوحة أصلاً.
+       • عنده OPEN وعندنا CLOSED → يُسجَّل OPEN، فحين تفتح فعلاً ما يُرسل
+         شيء — يفوته الإشعار الذي فعّل المراقبة لأجله.
+       فأول دورة بعد التفعيل نصحّح الحالة بلا إشعار. النافذة قصيرة
+       (دقيقتان) فلا تبتلع فتحة حقيقية وقعت بعد التفعيل بوقت. */
+    const BASELINE_GRACE = 2 * 60 * 1000;
     for (const m of sectionMons) {
       const live = snapshot[(m.term || '202630') + ':' + m.crn];
       if (!live) continue;
-      if (live.status !== m.last_status) {
-        changed.push({ m, live });
-        if (live.status === 'OPEN' && m.last_status !== 'OPEN') toNotify.push({ m, live });
+      if (live.status === m.last_status) continue;
+
+      const age = m.created_at ? (Date.now() - new Date(m.created_at).getTime()) : Infinity;
+      if (age < BASELINE_GRACE) {
+        changed.push({ m, live });          /* نكتب الحالة الصحيحة */
+        stat.baselineFixed = (stat.baselineFixed || 0) + 1;
+        continue;                            /* بلا إشعار */
       }
+      changed.push({ m, live });
+      if (live.status === 'OPEN' && m.last_status !== 'OPEN') toNotify.push({ m, live });
     }
 
     /* ── 2ب. مراقبة المادة كاملة ──
@@ -2382,7 +2397,7 @@ const PREWARM = { runs: 0, refreshed: 0, lastAt: 0, lastKeys: [], err: null,
    ولا أحد ينتظر النتيجة أصلاً. وفي الذروة هي أنفع شيء: الطالب يبحث
    فيجد نسخة جاهزة بدل ما ينتظر عشر ثوانٍ.
    فنقيس الاثنين بنافذة متحركة ونشغّله عند الحاجة فقط. */
-const DEMAND = { hits: [], fetchMs: [] };
+const DEMAND = { hits: [], fetchMs: [], cached: [] };
 const DEMAND_WINDOW = 10 * 60000;      /* نافذة القياس: عشر دقائق */
 const DEMAND_MIN_RATE = 6;             /* أقل من 6 بحثات = هدوء، نطفيه */
 const DEMAND_SLOW_RATE = 3;            /* الجامعة بطيئة: نكتفي بـ3 بحثات */
@@ -2392,11 +2407,13 @@ const DEMAND_BUSY_RATE = 25;           /* فوقها ذروة، نوسّع ال�
    وسرت العتبة المنخفضة دائماً وفقد التمييز معناه. */
 const SLOW_FETCH_MS = 25000;           /* أبطأ من 25 ثانية = تدهور فعلي */
 
-function recordSearch() {
+function recordSearch(fromCache) {
   const now = Date.now();
   DEMAND.hits.push(now);
+  if (fromCache) DEMAND.cached.push(now);
   const cut = now - DEMAND_WINDOW;
   while (DEMAND.hits.length && DEMAND.hits[0] < cut) DEMAND.hits.shift();
+  while (DEMAND.cached.length && DEMAND.cached[0] < cut) DEMAND.cached.shift();
 }
 function recordFetch(ms) {
   DEMAND.fetchMs.push({ at: Date.now(), ms });
@@ -2409,7 +2426,10 @@ function demandNow() {
   const lat = DEMAND.fetchMs.filter(x => x.at >= cut);
   const avgMs = lat.length
     ? Math.round(lat.reduce((a, b) => a + b.ms, 0) / lat.length) : 0;
+  const hitN = DEMAND.cached.filter(t => t >= cut).length;
   return { rate, avgMs, slow: avgMs >= SLOW_FETCH_MS,
+           cached: hitN,
+           hitPct: rate ? Math.round(hitN / rate * 100) : null,
            busy: rate >= DEMAND_BUSY_RATE, quiet: rate < DEMAND_MIN_RATE };
 }
 
@@ -3035,13 +3055,16 @@ const inFlight     = new Map();     // key → Promise (يمنع سحبتين م
 
 async function getCourses(term, college, gender, force) {
   const key = `${term}|${college}|${gender}`;
-  OPS.searches++;
-  if (!force) recordSearch();       /* التسخين نفسه ما يُحسب طلباً */
+  /* التسخين وساعة التأكيد ينادياها بـforce — وهي ليست بحث طالب.
+     كانت تُحسب في المقام بلا أن تدخل البسط (force يتجاوز فرع الكاش)،
+     فيبدو التسخين وكأنه يُنقص نسبة الخدمة من الكاش لا يرفعها. */
+  if (!force) OPS.searches++;
   const TTL = coursesTTL();
   const hit = coursesCache.get(key);
   if (hit && !force && Date.now() - hit.at < TTL) {
     hit.lastHit = Date.now();          /* لمعرفة أي التركيبات تستحق التسخين */
     OPS.searchesCached++;
+    if (!force) recordSearch(true);
     return { courses: hit.courses, cached: true, age: Date.now() - hit.at, at: hit.at };
   }
 
@@ -3049,6 +3072,7 @@ async function getCourses(term, college, gender, force) {
      هذي تمنع 50 طالب يضغطون "ابحث" بنفس اللحظة من إطلاق 50 سحبة. */
   if (inFlight.has(key)) {
     OPS.searchesCached++;
+    if (!force) recordSearch(true);
     const courses = await inFlight.get(key);
     const h2 = coursesCache.get(key);
     return { courses, cached: true, age: 0, at: (h2 && h2.at) || Date.now() };
@@ -3072,6 +3096,7 @@ async function getCourses(term, college, gender, force) {
   })();
 
   inFlight.set(key, p);
+  if (!force) recordSearch(false);
   try {
     const t0 = Date.now();
     const courses = await p;

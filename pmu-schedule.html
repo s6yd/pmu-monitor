@@ -242,7 +242,11 @@ border-radius:16px;padding:17px;margin-bottom:15px}
 .suggest-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .suggest-head h3{font-size:14px;font-weight:600}
 .suggest-hrs{font-family:var(--mono);font-size:12px;color:var(--accent2);background:rgba(61,111,255,.15);padding:3px 10px;border-radius:20px}
-.sug-item{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)}
+/* الصف يلتف: مع شارتين («يفتح مواد» + «آخر فرصة») ما تكفي المساحة
+   على شاشة الجوال فتفيض الشارة خارج البطاقة. */
+.sug-item{display:flex;align-items:flex-start;gap:10px;padding:9px 0;
+border-bottom:1px solid var(--border);flex-wrap:wrap}
+.sug-item>.sug-cr{margin-inline-start:auto}
 .sug-badge.retake{background:var(--close-bg);color:var(--close);
 border:1px solid rgba(244,63,94,.3)}
 .sug-note{font-size:11.5px;color:var(--warn);background:var(--warn-bg);
@@ -255,6 +259,10 @@ padding:9px 11px;margin:9px 0;line-height:1.7}
 .sug-code{font-family:var(--mono);font-size:12px;color:var(--accent2);
 min-width:74px;flex-shrink:0;padding-top:1px;white-space:nowrap}
 .sug-name{font-size:12.5px;flex:1;min-width:0;line-height:1.45}
+/* الاسم يحمل شارتين أحياناً («يفتح مواد» + «آخر فرصة») وكلتاهما
+   nowrap فتفيضان خارج البطاقة. نجعلهما تنزلان لسطر جديد بدل
+   ما تخرجا — بلا كسر كلمات الاسم نفسه. */
+.sug-name .sug-badge{display:inline-block;margin-top:3px;max-width:100%}
 .sug-cr{font-family:var(--mono);font-size:11px;color:var(--text3);
 min-width:26px;text-align:end;flex-shrink:0;padding-top:2px}
 .sug-group{font-size:11.5px;font-weight:600;color:var(--text2);margin:12px 0 4px;padding-top:8px;border-top:1px solid var(--border)}
@@ -315,6 +323,18 @@ cursor:pointer;flex-shrink:0}
 border-radius:9px;padding:5px 7px;font-size:11px;font-family:var(--mono);
 outline:none;flex-shrink:0;max-width:78px}
 .pc-wi.set{border-style:solid;border-color:var(--accent);color:var(--accent2)}
+/* تحذير جدول الطرح — المادة ما تُطرح كل ترم */
+/* وميض خفيف على البطاقة التي تغيّرت حالتها بلا إعادة رسم */
+.course-card.just-changed{animation:flash 1.2s ease-out 2}
+@keyframes flash{0%{box-shadow:0 0 0 0 rgba(245,158,11,.55)}
+100%{box-shadow:0 0 0 10px rgba(245,158,11,0)}}
+.pc-pre{font-size:11px;margin-top:4px;line-height:1.6;color:var(--text3)}
+.pc-off{font-size:11px;margin-top:5px;line-height:1.6;font-weight:600}
+.pc-off.last{color:var(--warn)}
+.pc-off.none{color:var(--text3)}
+/* شارة الطرح تتميّز بحدّها عن شارة «يفتح مواد» — نفس اللون يربك */
+.sug-badge.offer{border:1px solid rgba(245,158,11,.45);font-weight:700}
+
 /* اختيار نسخة الخطة — القديمة/الجديدة */
 .plan-ver{display:none;background:var(--card);border:1px solid var(--border);
 border-radius:13px;padding:12px 14px;margin-bottom:13px}
@@ -3101,6 +3121,118 @@ function currentPrepSem(){
   return PLAN.find(sem=>sem.prep && !sem.courses.every(c=>isPassed(c.c))) || null;
 }
 
+/* ═══ جدول الطرح المعلن — الميكانيكال ═══
+   الجامعة نشرت «semester-aligned offering plan» يحدد المواد التي
+   **لن تُطرح** في كل ترم حتى 2028/2029. المهم فيه ليس المنع بل
+   العكس: مادة لا تُطرح في الربيع تعني أن الخريف فرصتها الوحيدة،
+   وتفويتها يؤخّر الطالب سنة كاملة لا ترماً.
+
+   ملاحظة على الوثيقة: كُتب «MEEN 2313 Materials Engineering»
+   و«MEEN 2313 Solid Mechanics» بنفس الرقم — خطأ مطبعي واضح،
+   والصحيح 2311 للمواد و2313 للصلبة. صُحّح هنا.
+
+   الترميز: آخر رقمين من كود الترم — 10 خريف · 20 ربيع · 30 صيف. */
+const OFFER_MAJORS=['MEEN','MEEN_OLD'];   /* الجدول يخص الميكانيكال وحده */
+
+/* ترم → المواد التي لا تُطرح فيه */
+const NOT_OFFERED={
+  '202620':['MEEN 2312'],
+  '202710':['MEEN 2311','MEEN 2313'],
+  '202720':['MEEN 2312','MEEN 3394','MEEN 3311','MEEN 3391','MEEN 3101'],
+  '202810':['MEEN 2311','MEEN 2313','MEEN 3432','MEEN 3333','MEEN 3395','MEEN 3111'],
+  '202820':['MEEN 2312','MEEN 3394','MEEN 3311','MEEN 3391','MEEN 3101',
+            'MEEN 4393','MEEN 4392','MEEN 4322','ELEC 1'],
+  '202910':['MEEN 2311','MEEN 2313','MEEN 3432','MEEN 3333','MEEN 3395','MEEN 3111']
+};
+
+/* الترم الذي يليه مباشرة — للسؤال: هل تُطرح المرة القادمة؟ */
+function nextTermCode(code){
+  const y=String(code).slice(0,4), k=String(code).slice(4);
+  if(k==='10')return y+'20';                    /* خريف ← ربيع نفس السنة */
+  if(k==='20')return y+'30';                    /* ربيع ← صيف */
+  return (parseInt(y,10)+1)+'10';               /* صيف ← خريف السنة الجاية */
+}
+function offerKnown(code){ return Object.prototype.hasOwnProperty.call(NOT_OFFERED,String(code)) }
+function notOfferedIn(code,c){ return (NOT_OFFERED[String(code)]||[]).includes(c) }
+
+/* متى تُطرح المادة مرة أخرى؟
+   نتخطى الصيف في العدّ: الجامعة ما تطرح مواد التخصص فيه عملياً،
+   وما ذُكر في الوثيقة أصلاً — فعدّه «ترماً متاحاً» يعطي الطالب
+   انطباعاً كاذباً بأن الفرصة قريبة. */
+function skipAhead(courseCode){
+  if(!OFFER_MAJORS.includes(MAJOR))return 0;
+  let code=nextTermCode(activeTermCode()), n=0;
+  while(n<6){
+    if(String(code).slice(4)==='30'){ code=nextTermCode(code); continue; }  /* نتجاوز الصيف */
+    if(!offerKnown(code) || !notOfferedIn(code,courseCode))break;
+    n++; code=nextTermCode(code);
+  }
+  return n;
+}
+/* الترم المعروض حالياً في البحث — هو مرجع الطالب للتخطيط */
+function activeTermCode(){
+  const el=document.getElementById('term');
+  return (el&&el.value)||'202710';
+}
+/* اسم الترم بالعربي — «تغيب ترماً» ما تقول شيئاً، «ترجع خريف 2027» تقول */
+function termLabel(code){
+  const c=String(code), y=parseInt(c.slice(0,4),10), k=c.slice(4);
+  const name=k==='10'?'خريف':k==='20'?'ربيع':'صيف';
+  const en =k==='10'?'Fall':k==='20'?'Spring':'Summer';
+  /* 202710 = خريف 2026/2027. نعرض السنتين مثل ما تكتبهما الجامعة
+     في البانر — «2027» وحدها ملتبسة على الطالب. */
+  const start=(k==='10')?(y-1):(y-1);
+  return (LANG==='ar'?name:en)+' '+start+'/'+(start+1);
+}
+/* أول ترم قادم تُطرح فيه المادة */
+function nextOffered(courseCode){
+  let code=nextTermCode(activeTermCode());
+  for(let i=0;i<8;i++){
+    if(String(code).slice(4)!=='30' &&
+       (!offerKnown(code) || !notOfferedIn(code,courseCode))) return code;
+    code=nextTermCode(code);
+  }
+  return null;
+}
+/* تحذير جاهز للعرض، أو فراغ */
+function offerWarn(courseCode){
+  if(!OFFER_MAJORS.includes(MAJOR))return null;
+  /* المادة المنتهية ما يهمّ متى تُطرح — والخطة مليانة منتهيات،
+     فالتحذير عليها ضجيج يغطّي التحذير الذي يهم فعلاً. */
+  if(isPassed(courseCode))return null;
+  const now=activeTermCode();
+  if(notOfferedIn(now,courseCode)){
+    return {kind:'none',next:nextOffered(courseCode)};
+  }
+  const n=skipAhead(courseCode);
+  return n?{kind:'last',n,next:nextOffered(courseCode)}:null;
+}
+
+/* شارة صغيرة داخل صف المقترح */
+function offerBadge(code){
+  const w=offerWarn(code);
+  if(!w||w.kind!=='last')return '';
+  /* «آخر فرصة» تصف الحالة ولا تفسّرها — الطالب ما يعرف ليش.
+     السبب نفسه أوضح، ويقنعه بلا شرح إضافي. */
+  return `<span class="sug-badge offer">⚠️ ${LANG==='ar'
+    ?'ما تُطرح الترم الجاي'
+    :'not offered next term'}</span>`;
+}
+
+/* سطر كامل في بطاقة الخطة */
+function offerLine(code){
+  const w=offerWarn(code);
+  if(!w)return '';
+  const nx=w.next?termLabel(w.next):null;
+  if(w.kind==='none')
+    return `<div class="pc-off none">${LANG==='ar'
+      ?`🚫 ما تُطرح هذا الترم${nx?` — ترجع ${nx}`:''}`
+      :`🚫 Not offered this term${nx?` — returns ${nx}`:''}`}</div>`;
+  return `<div class="pc-off last">${LANG==='ar'
+    ?`⚠️ آخر فرصة — ما تُطرح الترم الجاي${nx?`، وترجع ${nx}`:''}`
+    :`⚠️ Last chance — not offered next term${nx?`, returns ${nx}`:''}`}</div>`;
+}
+
 function suggestNext(){
   const cands=[]; let intern=null;
   /* طالب التحضيري يشوف مستواه الحالي فقط.
@@ -3131,11 +3263,16 @@ function suggestNext(){
   if(intern && !cands.length)
     return {crit:[intern],opt:[],hours:intern.h,internOnly:true};
 
-  cands.sort((a,b)=>(b.prep?1:0)-(a.prep?1:0)||(b.retake?1:0)-(a.retake?1:0)||(b.unlocks-a.unlocks)||(a.order-b.order));
+  /* «آخر فرصة» تسبق «يفتح مواد»: تأخير مادة يفتح غيرها يكلّف ترماً،
+     وتأخير مادة لا تُطرح الترم الجاي يكلّف سنة. الأثقل أولاً. */
+  const lastChance=c=>{const w=offerWarn(c.c);return (w&&w.kind==='last')?1:0};
+  cands.forEach(c=>{c.lastChance=lastChance(c)});
+  cands.sort((a,b)=>(b.prep?1:0)-(a.prep?1:0)||(b.retake?1:0)-(a.retake?1:0)
+    ||(b.lastChance-a.lastChance)||(b.unlocks-a.unlocks)||(a.order-b.order));
   const crit=[],opt=[];let hrs=0;
   /* مواد التحضيري أساسية دائماً وما يحدّها سقف الساعات */
   cands.filter(c=>c.prep).forEach(c=>{crit.push(c);hrs+=c.h});
-  cands.filter(c=>!c.prep&&(c.retake||c.unlocks>0)).forEach(c=>{if(hrs+c.h<=20){crit.push(c);hrs+=c.h}});
+  cands.filter(c=>!c.prep&&(c.retake||c.lastChance||c.unlocks>0)).forEach(c=>{if(hrs+c.h<=20){crit.push(c);hrs+=c.h}});
   cands.filter(c=>!c.prep&&!c.retake&&c.unlocks===0).forEach(c=>{if(hrs+c.h<=20){opt.push(c);hrs+=c.h}});
   return {crit,opt,hours:hrs,internAvailable:!!intern,admOnly,
           prepLevel:pSem?(t('sem')[pSem.id]||pSem.label):null};
@@ -3257,7 +3394,81 @@ function genderChip(c){
     g==='M' ? (ar?'👨‍🎓 طلاب':'👨‍🎓 Male') : (ar?'👩‍🎓 طالبات':'👩‍🎓 Female')}</span>`;
 }
 
+/* ═══ تحديث صامت في المكان ═══
+   الطالب يبحث ثم يقرأ النتائج دقائق، والقائمة عنده تشيخ — قد يحط
+   جرساً على شعبة انفتحت أصلاً، أو يفوته أنها انفتحت وهو ينظر إليها.
+   وإعادة الرسم الكاملة ترجعه لأعلى الصفحة وتفقده مكانه.
+   فنسحب بهدوء ونبدّل الحالات في عناصرها فقط. */
+let QUIET_ON=false, QUIET_TIMER=null;
+const QUIET_EVERY=90*1000;
+
+function statusOf(c){ return String(c&&c.status||'').toUpperCase() }
+
+async function quietRefresh(){
+  if(!allCourses.length)return;
+  if(document.hidden)return;                 /* التبويب مخفي — ما نزعج الجامعة */
+  const term=document.getElementById('term').value;
+  const col=document.getElementById('college').value;
+  const gen=document.getElementById('gender').value;
+  let fresh;
+  try{
+    const r=await fetch(`${API}?term=${term}&college=${col}&gender=${gen}`);
+    const d=await r.json();
+    if(!d||!d.success||!Array.isArray(d.courses))return;
+    fresh=d.courses;
+  }catch(e){ return }
+
+  /* نبدّل الحالة فقط — الترتيب والفلاتر ما تتغيّر فما يقفز المكان */
+  const byCrn=new Map(fresh.map(c=>[String(c.crn),c]));
+  let flips=0;
+  allCourses.forEach(c=>{
+    const n=byCrn.get(String(c.crn));
+    if(!n)return;
+    if(statusOf(n)!==statusOf(c)){
+      c.status=n.status; c.seats=n.seats; flips++;
+    }
+    /* بيانات قد تتغيّر بلا أن تُعدّ «تبديل حالة» */
+    c.instructor=n.instructor; c.room=n.room;
+    c.courseDate=n.courseDate; c.courseTiming=n.courseTiming;
+  });
+  if(!flips)return;
+
+  /* نحدّث البطاقات في مكانها. البطاقة ما تحمل crn في سمة، فنستخرجه
+     من زر الإضافة — toggleCourse('CRN'). */
+  let shown=0;
+  document.querySelectorAll('.course-card').forEach(el=>{
+    const btn=el.querySelector('.btn-add');
+    const mm=btn&&/toggleCourse\('([^']+)'\)/.exec(btn.getAttribute('onclick')||'');
+    if(!mm)return;
+    const c=byCrn.get(mm[1]);
+    if(!c)return;
+    const badge=el.querySelector('.badge');
+    if(!badge)return;
+    const open=statusOf(c)==='OPEN';
+    if(el.classList.contains('is-open')===open)return;
+    el.classList.toggle('is-open',open);
+    el.classList.toggle('is-close',!open);
+    badge.classList.toggle('open',open);
+    badge.classList.toggle('close',!open);
+    badge.textContent=c.status;
+    el.classList.add('just-changed');
+    setTimeout(()=>el.classList.remove('just-changed'),4000);
+    shown++;
+  });
+
+  if(shown)showToast(LANG==='ar'
+    ?`🔄 تحدّثت ${shown} شعبة في القائمة`
+    :`🔄 ${shown} section(s) updated`,'ok');
+}
+
+function startQuietRefresh(){
+  if(QUIET_TIMER)clearInterval(QUIET_TIMER);
+  QUIET_TIMER=setInterval(()=>{ quietRefresh().catch(()=>{}) },QUIET_EVERY);
+  QUIET_ON=true;
+}
+
 function renderResults(){
+  if(allCourses.length&&!QUIET_ON)startQuietRefresh();
   const raw=document.getElementById('courseFilter').value.trim();
   const f=norm(raw);
   let cs=allCourses;
@@ -4490,7 +4701,8 @@ function renderPlan(){
     <span class="sug-code">${c.c}</span>
     <span class="sug-name">${c.n}${
       c.retake?`<span class="sug-badge retake">${t('retakeBadge')}</span>`
-      :(crit&&c.unlocks>0)?`<span class="sug-badge">${unlockLabel(c.unlocks)}</span>`:''}</span>
+      :(crit&&c.unlocks>0)?`<span class="sug-badge">${unlockLabel(c.unlocks)}</span>`:''}${
+      offerBadge(c.c)}</span>
     <span class="sug-cr">${c.h?c.h+'H':'—'}</span></div>`;
   let html='';
   if(sug.admOnly)
@@ -4540,6 +4752,17 @@ function renderPlan(){
           if(chk.needCr)parts.push(`${chk.needCr} ${t('hrsUnit')}`);
           req=`<div class="pc-req">🔒 ${t('needs')}: ${parts.join(' + ')}</div>`;
         }
+        const off=offerLine(c.c);
+        /* المادة المؤجّلة لترم قادم: متطلبها معلومة يحتاجها الآن حتى
+           لو كان مستوفى — يخطّط لترم لا يزال بعيداً، والسطر المعتاد
+           ما يظهر إلا للمقفلة. */
+        let pre='';
+        if(off && !d && !locked){
+          const pc0=findPlanCourse(c.c);
+          const ps=(pc0&&pc0.p)?pc0.p:[];
+          if(ps.length)
+            pre=`<div class="pc-pre">✅ ${t('needs')}: ${ps.join('، ')}</div>`;
+        }
         const adm=c.adm?`<div class="pc-adm">${LANG==='ar'
           ?'🏛️ تنزّلها الإدارة — ما تلقاها في البحث'
           :'🏛️ Registered by the administration'}</div>`:'';
@@ -4567,7 +4790,7 @@ function renderPlan(){
           <button class="pc-check" onclick="toggleDone('${c.c}')">✓</button>
           <div class="pc-info${tap?' tappable':''}"${tap?` onclick="searchSuggested('${c.c}')"`:''}>
           <div class="pc-code">${c.c}${hrs}</div>
-          <div class="pc-name">${c.n}</div>${adm}${req}</div>
+          <div class="pc-name">${c.n}</div>${adm}${off}${pre}${req}</div>
           ${gradeSel}</div>`;
       }).join('')}</div></div>`;
   }).join('');
@@ -4692,7 +4915,10 @@ function startTgPoll(){
 /* أقوى إشارة على أن الربط تم: رجوع الطالب من تلقرام للمتصفح.
    تلتقط الحالة مهما طالت، لا خلال الدقيقة فقط. */
 document.addEventListener('visibilitychange',()=>{
-  if(document.hidden||!USER)return;
+  if(document.hidden)return;
+  /* رجوعه للتبويب أقوى إشارة على أنه بيقرأ القائمة الآن */
+  if(QUIET_ON)quietRefresh().catch(()=>{});
+  if(!USER)return;
   try{ if(!tgLinked()) refreshProfile() }catch(e){}
 });
 
@@ -6301,8 +6527,32 @@ async function writeCompleted(){
   const rows=dedupeBy(
     completed.map(c=>({user_id:USER.id,course_code:c,grade:grades[c]||null})),
     r=>r.course_code);
-  await sb.from('completed_courses').delete().eq('user_id',USER.id);
-  if(rows.length)await sb.from('completed_courses').insert(rows);
+
+  /* نفس منطق writeSchedule. والدرجة قد تتغيّر لمادة موجودة أصلاً،
+     فنحدّثها صراحةً بدل ما نعتمد على upsert. */
+  const {data:existing,error:readErr}=await sb.from('completed_courses')
+    .select('id,course_code,grade').eq('user_id',USER.id);
+  if(readErr){ console.log('completed read',readErr); return; }
+
+  const have=new Map((existing||[]).map(r=>[r.course_code,r]));
+  const want=new Set(rows.map(r=>r.course_code));
+
+  const toAdd=rows.filter(r=>!have.has(r.course_code));
+  const toDel=[...have.values()].filter(r=>!want.has(r.course_code)).map(r=>r.id);
+  const toFix=rows.filter(r=>{
+    const e=have.get(r.course_code);
+    return e && (e.grade||null)!==(r.grade||null);
+  });
+
+  if(toAdd.length){
+    const {error}=await sb.from('completed_courses').insert(toAdd);
+    if(error){ console.log('completed insert',error); return; }
+  }
+  for(const r of toFix)
+    await sb.from('completed_courses').update({grade:r.grade})
+      .eq('user_id',USER.id).eq('course_code',r.course_code);
+  if(toDel.length)
+    await sb.from('completed_courses').delete().in('id',toDel);
 }
 
 async function pushGrades(){ return saveQueue('completed',writeCompleted) }
@@ -6510,8 +6760,32 @@ async function writeSchedule(){
     instructor:c.instructor,room:c.room,term:document.getElementById('term').value})));
   /* الجلستان بنفس الـCRN صفّان مستقلان — نميّزهما بالأيام والوقت */
   const clean=dedupeBy(rows,r=>r.slot+'|'+r.crn+'|'+(r.course_date||'')+'|'+(r.course_timing||''));
-  await sb.from('user_schedule').delete().eq('user_id',USER.id);
-  if(clean.length) await sb.from('user_schedule').insert(clean);
+
+  /* ═══ مزامنة بالفرق لا بالمسح ═══
+     كانت delete ثم insert: بينهما لحظة يكون جدول الطالب فيها فارغاً
+     في السحابة، وتبويبان يحذفان ويُدخلان بالتناوب فيتصادمان.
+     وupsert لم يصلح: onConflict على خمسة أعمدة بعضها فارغ لا يطابق
+     دائماً — وPostgres يعتبر NULL مختلفاً عن NULL.
+     فنحسب الفرق: ندخل الجديد ونحذف الزائد. لا تصادم ولا لحظة فراغ. */
+  const sig=r=>r.slot+'|'+r.crn+'|'+(r.course_date||'')+'|'+(r.course_timing||'');
+
+  const {data:existing,error:readErr}=await sb.from('user_schedule')
+    .select('id,slot,crn,course_date,course_timing').eq('user_id',USER.id);
+  if(readErr){ console.log('schedule read',readErr); return; }
+
+  const have=new Map((existing||[]).map(r=>[sig(r),r.id]));
+  const want=new Set(clean.map(sig));
+
+  const toAdd=clean.filter(r=>!have.has(sig(r)));
+  const toDel=[...have.entries()].filter(([k])=>!want.has(k)).map(([,id])=>id);
+
+  /* الإدراج أولاً: لو فشل ما نحذف شيئاً ويبقى جدوله كما هو */
+  if(toAdd.length){
+    const {error}=await sb.from('user_schedule').insert(toAdd);
+    if(error){ console.log('schedule insert',error); return; }
+  }
+  if(toDel.length)
+    await sb.from('user_schedule').delete().in('id',toDel);
 }
 
 async function pushSchedule(){ return saveQueue('schedule',writeSchedule) }
