@@ -324,6 +324,10 @@ border-radius:9px;padding:5px 7px;font-size:11px;font-family:var(--mono);
 outline:none;flex-shrink:0;max-width:78px}
 .pc-wi.set{border-style:solid;border-color:var(--accent);color:var(--accent2)}
 /* تحذير جدول الطرح — المادة ما تُطرح كل ترم */
+/* وميض خفيف على البطاقة التي تغيّرت حالتها بلا إعادة رسم */
+.course-card.just-changed{animation:flash 1.2s ease-out 2}
+@keyframes flash{0%{box-shadow:0 0 0 0 rgba(245,158,11,.55)}
+100%{box-shadow:0 0 0 10px rgba(245,158,11,0)}}
 .pc-pre{font-size:11px;margin-top:4px;line-height:1.6;color:var(--text3)}
 .pc-off{font-size:11px;margin-top:5px;line-height:1.6;font-weight:600}
 .pc-off.last{color:var(--warn)}
@@ -3390,7 +3394,80 @@ function genderChip(c){
     g==='M' ? (ar?'👨‍🎓 طلاب':'👨‍🎓 Male') : (ar?'👩‍🎓 طالبات':'👩‍🎓 Female')}</span>`;
 }
 
+/* ═══ تحديث صامت في المكان ═══
+   الطالب يبحث ثم يقرأ النتائج دقائق، والقائمة عنده تشيخ — قد يحط
+   جرساً على شعبة انفتحت أصلاً، أو يفوته أنها انفتحت وهو ينظر إليها.
+   وإعادة الرسم الكاملة ترجعه لأعلى الصفحة وتفقده مكانه.
+   فنسحب بهدوء ونبدّل الحالات في عناصرها فقط. */
+let QUIET_ON=false, QUIET_TIMER=null;
+const QUIET_EVERY=90*1000;
+
+function statusOf(c){ return String(c&&c.status||'').toUpperCase() }
+
+async function quietRefresh(){
+  if(!allCourses.length)return;
+  if(document.hidden)return;                 /* التبويب مخفي — ما نزعج الجامعة */
+  const term=document.getElementById('term').value;
+  const col=document.getElementById('college').value;
+  const gen=document.getElementById('gender').value;
+  let fresh;
+  try{
+    const r=await fetch(`${API}?term=${term}&college=${col}&gender=${gen}`);
+    const d=await r.json();
+    if(!d||!d.success||!Array.isArray(d.courses))return;
+    fresh=d.courses;
+  }catch(e){ return }
+
+  /* نبدّل الحالة فقط — الترتيب والفلاتر ما تتغيّر فما يقفز المكان */
+  const byCrn=new Map(fresh.map(c=>[String(c.crn),c]));
+  let flips=0;
+  allCourses.forEach(c=>{
+    const n=byCrn.get(String(c.crn));
+    if(!n)return;
+    if(statusOf(n)!==statusOf(c)){
+      c.status=n.status; c.seats=n.seats; flips++;
+    }
+    /* بيانات قد تتغيّر بلا أن تُعدّ «تبديل حالة» */
+    c.instructor=n.instructor; c.room=n.room;
+    c.courseDate=n.courseDate; c.courseTiming=n.courseTiming;
+  });
+  if(!flips)return;
+
+  /* نحدّث البطاقات في مكانها. البطاقة ما تحمل crn في سمة، فنستخرجه
+     من زر الإضافة — toggleCourse('CRN'). */
+  document.querySelectorAll('.course-card').forEach(el=>{
+    const btn=el.querySelector('.btn-add');
+    const mm=btn&&/toggleCourse\('([^']+)'\)/.exec(btn.getAttribute('onclick')||'');
+    if(!mm)return;
+    const c=byCrn.get(mm[1]);
+    if(!c)return;
+    const badge=el.querySelector('.badge');
+    if(!badge)return;
+    const open=statusOf(c)==='OPEN';
+    if(el.classList.contains('is-open')===open)return;
+    el.classList.toggle('is-open',open);
+    el.classList.toggle('is-close',!open);
+    badge.classList.toggle('open',open);
+    badge.classList.toggle('close',!open);
+    badge.textContent=c.status;
+    el.classList.add('just-changed');
+    setTimeout(()=>el.classList.remove('just-changed'),4000);
+  });
+
+  /* بلا تنبيه إطلاقاً: أي صياغة توحي بأن شيئاً تغيّر أمام الطالب،
+     فيبحث عمّا لم يتغيّر — والتغيير قد يكون خارج فلتره أصلاً.
+     الوميض يقع على البطاقة نفسها، فهو صادق بطبيعته: يظهر لو كانت
+     في نتيجته، ولا يظهر لو ما كانت. ولا يحتاج شرحاً. */
+}
+
+function startQuietRefresh(){
+  if(QUIET_TIMER)clearInterval(QUIET_TIMER);
+  QUIET_TIMER=setInterval(()=>{ quietRefresh().catch(()=>{}) },QUIET_EVERY);
+  QUIET_ON=true;
+}
+
 function renderResults(){
+  if(allCourses.length&&!QUIET_ON)startQuietRefresh();
   const raw=document.getElementById('courseFilter').value.trim();
   const f=norm(raw);
   let cs=allCourses;
@@ -4837,7 +4914,10 @@ function startTgPoll(){
 /* أقوى إشارة على أن الربط تم: رجوع الطالب من تلقرام للمتصفح.
    تلتقط الحالة مهما طالت، لا خلال الدقيقة فقط. */
 document.addEventListener('visibilitychange',()=>{
-  if(document.hidden||!USER)return;
+  if(document.hidden)return;
+  /* رجوعه للتبويب أقوى إشارة على أنه بيقرأ القائمة الآن */
+  if(QUIET_ON)quietRefresh().catch(()=>{});
+  if(!USER)return;
   try{ if(!tgLinked()) refreshProfile() }catch(e){}
 });
 
