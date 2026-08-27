@@ -1529,6 +1529,27 @@ function renderSys(){
       · يُرمى الصفّ لو ما نضج خلال ${S.tick.maxAgeHr} ساعة.`:''}</div>
   </div>
 
+  ${(S.unwatch&&S.unwatch.total)?`<div class="sec-title">إلغاء المراقبة · ${S.unwatch.total}</div>
+  <div class="gauge">
+    <div class="kv"><span>من أين أُلغيت</span><b>${
+      Object.entries(S.unwatch.byVia||{}).map(([k,v])=>{
+        const ar={web:'الموقع',telegram:'تلقرام',admin:'اللوحة',expired:'انتهت الصلاحية'}[k]||k;
+        return ar+' '+v;
+      }).join(' · ')||'—'}</b></div>
+    ${(S.unwatch.recent||[]).map(e=>{
+      const via={web:'الموقع',telegram:'تلقرام',admin:'اللوحة',expired:'منتهية'}[e.via]||e.via;
+      const life=e.livedMin==null?'':(e.livedMin<60?e.livedMin+' د'
+        :e.livedMin<1440?Math.round(e.livedMin/60)+' س':Math.round(e.livedMin/1440)+' ي');
+      return `<div class="chg"><div class="chg-top">
+        <span class="chg-code">${esc(e.code||'—')}${e.scope==='course'?' · كل الشعب':(e.crn?' · '+esc(e.crn):'')}</span>
+        <span class="chg-ago">${esc(via)}${life?' · عاشت '+life:''} · ${ago(e.at)}</span>
+      </div>${e.lastStatus?`<div class="chg-row"><span class="chg-f">آخر حالة</span>
+        <span class="chg-v">${esc(e.lastStatus)}</span></div>`:''}</div>`;
+    }).join('')}
+    <div class="gauge-sub">المصدر أهم من العدد: من ألغى من تلقرام كان الزر أمامه،
+      ومن ألغى من الموقع بحث عنه — والفرق يقول أين يحتاج الطلاب توجيهاً.</div>
+  </div>`:''}
+
   ${(S.flaps&&S.flaps.length)?`<div class="sec-title">رفّات مرفوضة · آخر ${S.flaps.length}</div>
   <div class="gauge">
     ${S.flaps.map(f=>`<div class="chg">

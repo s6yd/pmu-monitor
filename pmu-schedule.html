@@ -5042,6 +5042,7 @@ async function toggleMonitorAllGo(code){
   const term=document.getElementById('term').value;
   const ex=monitored.find(m=>m.scope==='course'&&sameCode(m.course_code,code)&&m.term===term);
   if(ex){
+    logUnwatch(ex);
     await sb.from('monitored_courses').delete().eq('id',ex.id);
     monitored=monitored.filter(m=>m.id!==ex.id);
     showToast(LANG==='ar'?`وقفت مراقبة كل شعب ${code}`:`Stopped watching all ${code}`);
@@ -5078,6 +5079,7 @@ async function toggleMonitorCourseGo(crn){
   const c=allCourses.find(x=>x.crn===crn);if(!c)return;
   const ex=monitored.find(m=>m.crn===crn);
   if(ex){
+    logUnwatch(ex);
     await sb.from('monitored_courses').delete().eq('id',ex.id);
     monitored=monitored.filter(m=>m.crn!==crn);
     showToast(LANG==='ar'?`وقفت مراقبة ${c.courseCode}`:`Stopped watching ${c.courseCode}`);
@@ -5104,7 +5106,21 @@ async function toggleMonitorCourseGo(crn){
   renderResults();renderSettings();
 }
 
+/* نبلّغ السيرفر بالإلغاء للتسجيل فقط — بلا await ومع catch،
+   فلا يؤخّر الإلغاء ولا يفشله لو تعطّل المسار. */
+function logUnwatch(row){
+  if(!USER||!row)return;
+  try{
+    fetch(API.replace('/courses','/unwatch-log'),{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({userId:USER.id,code:row.course_code,crn:row.crn,
+        scope:row.scope,lastStatus:row.last_status,createdAt:row.created_at})
+    }).catch(()=>{});
+  }catch(e){}
+}
+
 async function removeMonitor(id){
+  logUnwatch(monitored.find(m=>m.id===id));
   await sb.from('monitored_courses').delete().eq('id',id);
   monitored=monitored.filter(m=>m.id!==id);
   renderSettings();renderResults();
