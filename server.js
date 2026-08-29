@@ -148,6 +148,25 @@ function sb(method, table, { query = '', body = null, prefer = '' } = {}) {
   });
 }
 
+/* ============ سحبة على صفحات ============
+   Supabase يقصّ أي رد عند سقف الصفوف (1000 افتراضياً) ويرجع 200 بلا تحذير.
+   فالجدول اللي تجاوز الألف يُفحص جزئياً والباقي يُهمل بصمت.
+   نطلب صفحة صفحة بترتيب ثابت على id، ونقف عند أول صفحة ناقصة. */
+const SB_PAGE = 1000;
+const SB_PAGE_MAX = 100;                 /* حارس: 100 ألف صف كحد أقصى */
+async function sbAll(table, { query = '', order = 'id', pageSize = SB_PAGE } = {}) {
+  const out = [];
+  for (let page = 0; page < SB_PAGE_MAX; page++) {
+    const q = `${query}&order=${order}.asc&limit=${pageSize}&offset=${page * pageSize}`;
+    const rows = await sb('GET', table, { query: q });
+    if (!Array.isArray(rows)) break;
+    for (const r of rows) out.push(r);
+    if (rows.length < pageSize) return out;   /* صفحة ناقصة = النهاية */
+  }
+  console.log(`sbAll: ${table} تجاوز حارس الصفحات — الرد مقصوص`);
+  return out;
+}
+
 /* ============ Telegram ============ */
 function tg(method, payload) {
   return new Promise(resolve => {
@@ -1442,7 +1461,7 @@ async function adminStats() {
     sb('GET', 'profiles', { query: '?select=*' }),
     sb('GET', 'instructor_reviews', { query: '?select=*' }),
     sb('GET', 'monitored_courses', { query: '?select=*' }),
-    sb('GET', 'user_schedule', { query: '?select=user_id' })
+    sbAll('user_schedule', { query: '?select=user_id' })
   ]);
   const P = Array.isArray(profiles) ? profiles : [];
   const R = Array.isArray(reviews) ? reviews : [];
@@ -2804,7 +2823,7 @@ async function syncSchedules(term, courses, force) {
       return live.get(crn + '#' + sessionKey(r.course_date, r.course_timing)) || 'skip';
     };
 
-    const rows = await sb('GET', 'user_schedule', {
+    const rows = await sbAll('user_schedule', {
       query: `?term=eq.${encodeURIComponent(term)}` +
              `&select=user_id,crn,section,course_code,course_title,` +
              `course_date,course_timing,instructor,room`
