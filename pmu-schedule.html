@@ -4922,7 +4922,25 @@ document.addEventListener('visibilitychange',()=>{
   if(QUIET_ON)quietRefresh().catch(()=>{});
   if(!USER)return;
   try{ if(!tgLinked()) refreshProfile() }catch(e){}
+  resumeSync();
 });
+
+/* الطالب يلغي مراقبة من تلقرام ويرجع للموقع فيلقاها كما هي — لأن الصفحة
+   ما تعرف بالتغيير. والمثبَّت على الشاشة الرئيسية لا يُعاد تحميله عند الفتح
+   إطلاقاً، فالحالة القديمة تعيش أياماً. رجوعه للصفحة هو إشارتنا الوحيدة. */
+let RESUME_AT=0;
+async function resumeSync(){
+  if(!USER)return;
+  if(Date.now()-RESUME_AT<10000)return;   /* تبديل سريع بين التطبيقات ما يستاهل سحبة */
+  RESUME_AT=Date.now();
+  try{
+    await loadMonitored();
+    renderResults();renderSettings();
+  }catch(e){ /* الشبكة قد تكون منقطعة لحظة الفتح — نبقي المعروض */ }
+}
+
+/* iOS يرجّع الصفحة من الذاكرة عند الرجوع للخلف بلا visibilitychange */
+window.addEventListener('pageshow',e=>{ if(e.persisted)resumeSync() });
 
 async function refreshProfile(){
   if(!USER)return;
