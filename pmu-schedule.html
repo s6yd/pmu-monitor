@@ -4921,13 +4921,46 @@ document.addEventListener('visibilitychange',()=>{
   /* رجوعه للتبويب أقوى إشارة على أنه بيقرأ القائمة الآن */
   if(QUIET_ON)quietRefresh().catch(()=>{});
   if(!USER)return;
-  try{ if(!tgLinked()) refreshProfile() }catch(e){}
+  resumeSync();
 });
 
-async function refreshProfile(){
+/* الطالب يربط تلقرام أو يلغي مراقبة من خارج الصفحة، ويرجع فيلقى الحالة القديمة.
+   المثبَّت على الشاشة الرئيسية لا يُعاد تحميله عند الفتح إطلاقاً، فالحالة القديمة
+   تعيش أياماً. رجوعه للصفحة هو إشارتنا الوحيدة.
+   نسحب ما يتغيّر من خارج الصفحة فقط: الملف الشخصي (حالة ربط تلقرام والاشتراك)
+   وقائمة المراقبة. الجدول والخطة لا نلمسهما هنا — يعدّلهما الطالب من جهازه،
+   وسحبهما يعني احتمال كتابة نسخة السحابة فوق تعديل محلي لسه ما رُفع. */
+let RESUME_AT=0, RESUMING=false;
+async function resumeSync(){
   if(!USER)return;
-  const {data}=await sb.from('profiles').select('*').eq('id',USER.id).single();
-  if(data){PROFILE=data;renderSettings();renderResults()}
+  if(RESUMING)return;
+  if(Date.now()-RESUME_AT<10000)return;   /* تبديل سريع بين التطبيقات ما يستاهل سحبة */
+  RESUMING=true; RESUME_AT=Date.now();
+  try{
+    /* محاولة ثانية بعد ثانيتين: أول سحبة بعد الرجوع قد تسبق تجديد التوكن */
+    if(!await refreshProfile()){
+      await new Promise(r=>setTimeout(r,2000));
+      await refreshProfile();
+    }
+    await loadMonitored();
+    renderResults();renderSettings();
+  }catch(e){ /* الشبكة قد تكون منقطعة لحظة الفتح — نبقي المعروض */ }
+  finally{ RESUMING=false }
+}
+
+/* iOS يرجّع الصفحة من الذاكرة عند الرجوع للخلف بلا visibilitychange */
+window.addEventListener('pageshow',e=>{ if(e.persisted)resumeSync() });
+
+async function refreshProfile(){
+  if(!USER)return false;
+  /* كانت تتجاهل الخطأ: السحبة تفشل (توكن منتهٍ بعد تخزين طويل، شبكة متعثّرة)
+     فتبقى PROFILE القديمة ويظل الشريط يقول «غير مربوط» وهو مربوط أصلاً.
+     نرجّع نجاحاً/فشلاً عشان النداء يقدر يعيد المحاولة. */
+  const {data,error}=await sb.from('profiles').select('*').eq('id',USER.id).single();
+  if(error||!data)return false;
+  PROFILE=data;renderSettings();renderResults();
+  try{ renderTgBar() }catch(e){}
+  return true;
 }
 
 /* ---- monitored courses ---- */
