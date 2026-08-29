@@ -4928,15 +4928,25 @@ document.addEventListener('visibilitychange',()=>{
 /* الطالب يلغي مراقبة من تلقرام ويرجع للموقع فيلقاها كما هي — لأن الصفحة
    ما تعرف بالتغيير. والمثبَّت على الشاشة الرئيسية لا يُعاد تحميله عند الفتح
    إطلاقاً، فالحالة القديمة تعيش أياماً. رجوعه للصفحة هو إشارتنا الوحيدة. */
-let RESUME_AT=0;
+let RESUME_AT=0, RESUMING=false;
 async function resumeSync(){
   if(!USER)return;
+  if(RESUMING)return;                     /* سحبة شغّالة — ما نطلق ثانية فوقها */
   if(Date.now()-RESUME_AT<10000)return;   /* تبديل سريع بين التطبيقات ما يستاهل سحبة */
-  RESUME_AT=Date.now();
+  RESUMING=true; RESUME_AT=Date.now();
   try{
+    /* الأهم: ننتظر أي رفع معلّق يخلص قبل السحب. بدونه نسحب نسخة
+       قديمة من السحابة فوق تعديل الطالب اللي لسه ما وصل. */
+    for(const k in _saveQ){
+      const s=_saveQ[k];
+      try{ await (s.pending||s.running) }catch(e){}
+    }
+    await pullCloud(true);                /* الجدول والمواد المنجزة والخطة والتخصص */
     await loadMonitored();
     renderResults();renderSettings();
+    try{ renderPlan() }catch(e){}         /* الخطة تعتمد على المواد المنجزة */
   }catch(e){ /* الشبكة قد تكون منقطعة لحظة الفتح — نبقي المعروض */ }
+  finally{ RESUMING=false }
 }
 
 /* iOS يرجّع الصفحة من الذاكرة عند الرجوع للخلف بلا visibilitychange */
@@ -6711,7 +6721,10 @@ function setAuthUI(){
 }
 
 /* تحميل بيانات المستخدم من السحابة */
-async function pullCloud(){
+/* resume=true: سحب فقط، بلا أي كتابة على السحابة.
+   عند العودة للصفحة قد يكون المحلي أقدم من السحابة (عدّل من جهاز ثاني)،
+   فأي فرع «ارفع المحلي» هنا يعيد بيانات ميتة فوق الحيّة. */
+async function pullCloud(resume){
   if(!USER)return;
   try{
     const [{data:prof},{data:cc},{data:us}]=await Promise.all([
@@ -6729,14 +6742,14 @@ async function pullCloud(){
     /* التخصص من السحابة — يجي معك لأي جهاز */
     if(prof&&prof.major&&PLANS[prof.major]&&prof.major!==MAJOR) applyMajor(prof.major,true);
     else if(prof&&prof.major===MAJOR&&hasAltPlan(MAJOR)) applyMajor(MAJOR,true,false);
-    else if(prof&&!prof.major&&MAJOR!=='MEEN') pushProfile();
+    else if(prof&&!prof.major&&MAJOR!=='MEEN'&&!resume) pushProfile();
 
     if(cc&&cc.length){
       completed=cc.map(r=>r.course_code);
       grades={};cc.forEach(r=>{if(r.grade)grades[r.course_code]=r.grade});
       save('pmu_grades',grades);
     }
-    else if(completed.length) await pushCompleted();   /* أول مرة: ارفع المحلي */
+    else if(completed.length&&!resume) await pushCompleted();   /* أول مرة: ارفع المحلي */
 
     if(us&&us.length){
       /* نوزّع الصفوف على الجداول الثلاثة حسب عمود slot.
@@ -6754,7 +6767,7 @@ async function pullCloud(){
       SCHEDULES=box;
       schedule=SCHEDULES[SLOT];
     }
-    else if(SCHEDULES.some(x=>x.length)) await pushSchedule();
+    else if(SCHEDULES.some(x=>x.length)&&!resume) await pushSchedule();
 
     save('pmu_completed',completed);
     save('pmu_schedules',SCHEDULES);save('pmu_schedule',schedule);
@@ -6762,9 +6775,9 @@ async function pullCloud(){
        إلا لو بدّل الطالب التبويب أو الجدول بنفسه. */
     updateBadge();renderSlots();renderSchedule();
     await loadMonitored();
-    await loadReviews();
+    if(!resume) await loadReviews();
     renderSettings();
-    if(!load('pmu_seen_welcome',false)){
+    if(!resume&&!load('pmu_seen_welcome',false)){
       save('pmu_seen_welcome',true);
       const nm=(PROFILE&&PROFILE.name?PROFILE.name:'').split(' ')[0];
       setTimeout(()=>showToast(LANG==='ar'?
