@@ -273,6 +273,7 @@ min-width:26px;text-align:end;flex-shrink:0;padding-top:2px}
 .sug-group{font-size:11.5px;font-weight:600;color:var(--text2);margin:12px 0 4px;padding-top:8px;border-top:1px solid var(--border)}
 .sug-group:first-child{margin-top:0;padding-top:0;border-top:none}
 .sug-group.crit{color:var(--warn)}
+.pc-now,.sug-badge.now{font-size:10px;color:var(--accent2);background:rgba(59,130,246,.12);padding:1px 7px;border-radius:20px;margin-inline-start:6px;white-space:nowrap;vertical-align:middle}
 .sug-badge{font-size:10px;color:var(--warn);background:var(--warn-bg);padding:1px 7px;border-radius:20px;margin-inline-start:6px;white-space:nowrap;vertical-align:middle}
 
 .sem-block{background:var(--card);border:1px solid var(--border);border-radius:14px;margin-bottom:9px;overflow:hidden}
@@ -3183,6 +3184,22 @@ function activeTermCode(){
   const el=document.getElementById('term');
   return (el&&el.value)||'202710';
 }
+/* هل المادة في الجدول المفتوح الآن؟ نستخدمها لوسم الخطة.
+   قيدان مقصودان:
+   1) الترم المعروض لازم يكون ترم التسجيل الحالي — الطالب قد يتصفّح ترماً
+      آخر، ووسم «في جدولك» وقتها كذب.
+   2) صفوف الجدول المحلية ما تحمل حقل term (سبق أن كسر هذا مراقبة المادة
+      كاملة)، فنعتمد على الترم المعروض لا على حقل غير موجود. */
+function inSchedule(code){
+  if(activeTermCode()!==UPCOMING_TERM)return false;
+  if(!Array.isArray(schedule))return false;
+  return schedule.some(c=>c.courseCode===code);
+}
+function nowBadge(code){
+  return inSchedule(code)
+    ?`<span class="pc-now">📘 ${LANG==='ar'?'في جدولك':'In your schedule'}</span>`:'';
+}
+
 /* اسم الترم بالعربي — «تغيب ترماً» ما تقول شيئاً، «ترجع خريف 2027» تقول */
 function termLabel(code){
   const c=String(code), y=parseInt(c.slice(0,4),10), k=c.slice(4);
@@ -4901,7 +4918,7 @@ function renderPlan(){
     <span class="sug-name">${c.n}${
       c.retake?`<span class="sug-badge retake">${t('retakeBadge')}</span>`
       :(crit&&c.unlocks>0)?`<span class="sug-badge">${unlockLabel(c.unlocks)}</span>`:''}${
-      offerBadge(c.c)}</span>
+      offerBadge(c.c)}${nowBadge(c.c)}</span>
     <span class="sug-cr">${c.h?c.h+'H':'—'}</span></div>`;
   let html='';
   if(sug.admOnly)
@@ -4988,7 +5005,7 @@ function renderPlan(){
         return `<div class="pc ${d?'done':''} ${locked?'locked':''}">
           <button class="pc-check" onclick="toggleDone('${c.c}')">✓</button>
           <div class="pc-info${tap?' tappable':''}"${tap?` onclick="searchSuggested('${c.c}')"`:''}>
-          <div class="pc-code">${c.c}${hrs}</div>
+          <div class="pc-code">${c.c}${hrs}${nowBadge(c.c)}</div>
           <div class="pc-name">${c.n}</div>${adm}${off}${pre}${req}</div>
           ${gradeSel}</div>`;
       }).join('')}</div></div>`;
