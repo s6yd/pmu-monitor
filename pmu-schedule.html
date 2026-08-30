@@ -218,6 +218,10 @@ display:flex;align-items:center;justify-content:space-between}
 .day-body{padding:10px 12px;display:flex;flex-direction:column;gap:7px}
 .slot{background:var(--bg);border-radius:10px;padding:10px 12px;display:flex;align-items:center;gap:11px;border-right:3px solid var(--accent)}
 .slot.clash{border-right-color:var(--warn);background:rgba(245,158,11,.06)}
+/* حالات تبويب اليوم: الماضي باهت لكنه يبقى قابلاً للضغط */
+.slot.past{opacity:.45}
+.slot.now{border-right-color:var(--open);background:rgba(34,197,94,.07)}
+.slot.next{border-right-color:var(--accent2)}
 .slot-time{font-family:var(--mono);font-size:11px;color:var(--text2);min-width:80px;direction:ltr;text-align:center}
 .slot-info{flex:1;min-width:0}
 .slot-info.tap{cursor:pointer;-webkit-tap-highlight-color:transparent}
@@ -1007,7 +1011,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 <div class="main">
 
 <!-- SEARCH -->
-<div class="page" id="pageToday"></div>
+<div class="page" id="pageToday"><div id="todayBody"></div></div>
 
 <div class="page active" id="pageSearch">
   <div class="search-card">
@@ -1139,6 +1143,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
         <div class="fin-title" data-i18n="calTitle">🗓️ مواعيد تهمك</div>
         <div class="fin-sub" data-i18n="calSub">من التقويم الأكاديمي المعتمد</div>
       </div>
+      <button class="mini" id="calFold" onclick="toggleCal()" style="display:none">▾</button>
     </div>
     <div id="calBody"></div>
   </div>
@@ -3296,7 +3301,7 @@ function switchTab(n){
     document.getElementById('page'+t[0].toUpperCase()+t.slice(1)).classList.toggle('active',t===n);
     document.getElementById('tab'+t[0].toUpperCase()+t.slice(1)).classList.toggle('active',t===n);
   });
-  if(n==='today'){renderToday();startTodayTick()}else stopTodayTick();
+  if(n==='today'){TODAY_SCROLLED=false;renderToday();startTodayTick()}else stopTodayTick();
   if(n==='sched'){renderSlots();renderSchedule();}
   if(n==='plan')renderPlan();
   if(n==='sched'){renderCalendar();renderRegCal();}
@@ -4037,78 +4042,97 @@ function todayHoliday(today){
   return null;
 }
 
-function slotCard(c,t,extra){
-  return `<div class="slot">
+function slotCard(c,t,cls,badge){
+  return `<div class="slot ${cls||''}" ${cls==='now'?'id="todayNow"':''}
+       ${cls==='next'?'id="todayNext"':''}>
     <div class="slot-time">${fmtTime(t.start)}–${fmtTime(t.end)}</div>
     <div class="slot-info tap" data-code="${escapeHtml(c.courseCode)}"
          onclick="searchIn(this.dataset.code)">
       <div class="slot-name">${c.courseCode} §${c.section}</div>
       ${c.courseTitle?`<div class="slot-title">${escapeHtml(c.courseTitle)}</div>`:''}
       <div class="slot-sub">${escapeHtml(c.room||'—')} · ${escapeHtml(c.instructor||'—')}</div>
-      ${extra||''}
+      ${badge?`<div class="slot-sub" style="color:var(--accent2);font-weight:700">${badge}</div>`:''}
     </div></div>`;
 }
 
+/* بطاقة المواعيد الأكاديمية تعيش في «جدولي» للطلاب. لمن عنده تبويب اليوم
+   ننقل العنصر نفسه هنا وقت التشغيل — نقلها في الـHTML يحرم بقية الطلاب منها. */
+let CAL_MOVED=false, CAL_OPEN=false;
+function toggleCal(){
+  CAL_OPEN=!CAL_OPEN;
+  const b=document.getElementById('calBody'),f=document.getElementById('calFold');
+  if(b)b.style.display=CAL_OPEN?'':'none';
+  if(f)f.textContent=CAL_OPEN?'▴':'▾';
+}
+function mountCal(){
+  if(CAL_MOVED||!isBeta())return;
+  const card=document.getElementById('calCard'),page=document.getElementById('pageToday');
+  if(!card||!page)return;
+  page.appendChild(card);
+  const f=document.getElementById('calFold');
+  if(f)f.style.display='';
+  const b=document.getElementById('calBody');
+  if(b)b.style.display='none';            /* مطويّة افتراضياً — ما تزحم الشاشة */
+  CAL_OPEN=false; CAL_MOVED=true;
+  try{ renderCalendar() }catch(e){}
+}
+
+let TODAY_HTML='', TODAY_SCROLLED=false;
 function renderToday(){
-  const box=document.getElementById('pageToday');
+  const box=document.getElementById('todayBody');
   if(!box)return;
   const n=ksaNow();
   const mine=lessonsOn(n.day);
   const running=mine.find(x=>x.t.start<=n.min&&n.min<x.t.end);
   const next=mine.find(x=>x.t.start>n.min);
   const hol=todayHoliday(n.date);
-  let hero='';
+  let html='';
 
-  if(running){
-    const left=running.t.end-n.min;
-    hero=`<div class="day-block"><div class="day-head">
-        <span>محاضرتك الآن</span><span class="cnt">تنتهي بعد ${fmtLeft(left,n.sec)}</span></div>
-      <div class="day-body">${slotCard(running.c,running.t)}</div></div>`;
-  }else if(next){
-    const left=next.t.start-n.min;
-    hero=`<div class="day-block"><div class="day-head">
-        <span>محاضرتك القادمة</span><span class="cnt">بعد ${fmtLeft(left,n.sec)}</span></div>
-      <div class="day-body">${slotCard(next.c,next.t)}</div></div>`;
+  if(mine.length){
+    /* اليوم كامل: الماضي باهت لكنه يبقى قابلاً للضغط، عشان يقدر يضيف
+       شيئاً على مادة خلصت من الصباح. */
+    const rows=mine.map(x=>{
+      const past=x.t.end<=n.min;
+      const isNow=running&&x===running;
+      const isNext=!running&&next&&x===next;
+      const badge=isNow?`⏳ تنتهي بعد ${fmtLeft(x.t.end-n.min,n.sec)}`
+                :isNext?`⏰ بعد ${fmtLeft(x.t.start-n.min,n.sec)}`
+                :past?'✓ خلصت':'';
+      return slotCard(x.c,x.t,isNow?'now':isNext?'next':past?'past':'',badge);
+    }).join('');
+    const head=hol?`🏖️ ${escapeHtml(hol.ar)}`:`${DAY_AR[n.day]}`;
+    const done=mine.filter(x=>x.t.end<=n.min).length;
+    html=`<div class="day-block"><div class="day-head"><span>${head}</span>
+      <span class="cnt">${done} من ${mine.length} خلصت</span></div>
+      <div class="day-body">${rows}</div></div>`;
   }else{
-    /* ما بقي شيء اليوم — نوجّهه لأقرب يوم فيه محاضرة بدل صندوق فاضٍ */
+    /* ما عنده محاضرات اليوم — نوجّهه لأقرب يوم فيه، لا صندوق فاضٍ */
     let found=null;
     for(let i=1;i<=7&&!found;i++){
       const d=WEEK_ORDER[(WEEK_ORDER.indexOf(n.day)+i)%7];
       const l=lessonsOn(d);
       if(l.length)found={d,i,first:l[0]};
     }
-    const head=hol?`🏖️ ${escapeHtml(hol.ar)}`
-              :mine.length?'✅ خلصت محاضراتك اليوم':'☕ ما عندك محاضرات اليوم';
-    hero=`<div class="day-block"><div class="day-head"><span>${head}</span></div>
+    const head=hol?`🏖️ ${escapeHtml(hol.ar)}`:'☕ ما عندك محاضرات اليوم';
+    html=`<div class="day-block"><div class="day-head"><span>${head}</span></div>
       <div class="day-body">${found
-        ?slotCard(found.first.c,found.first.t,
-           `<div class="slot-sub" style="opacity:.75">${fmtDays(found.i)} · ${DAY_AR[found.d]}</div>`)
+        ?slotCard(found.first.c,found.first.t,'',
+           `${fmtDays(found.i)} · ${DAY_AR[found.d]}`)
         :`<div class="empty-day">ما في محاضرات في جدولك</div>`}</div></div>`;
   }
 
-  /* بقية اليوم */
-  /* المعروض في الأعلى هو next فقط. أما لو فيه محاضرة جارية فما استهلكنا
-     أي محاضرة قادمة، وكل ما بعد الآن يدخل «بقية اليوم». */
-  const after=next&&!running?next.t.start:n.min;
-  const rest=mine.filter(x=>x.t.start>after);
-  const restHtml=rest.length?`<div class="day-block">
-      <div class="day-head"><span>بقية اليوم</span>
-        <span class="cnt">${rest.length} محاضرة</span></div>
-      <div class="day-body">${rest.map(x=>slotCard(x.c,x.t)).join('')}</div></div>`:'';
-
-  /* أقرب موعد أكاديمي */
-  const ac=nextAcad(n.date,2);
-  const acad=ac.length?`<div class="day-block"><div class="day-head">
-      <span>مواعيد مهمة</span>
-      <span class="cnt">${ac[0].running?'جارٍ الآن':fmtDays(ac[0].days)}</span></div>
-    <div class="day-body">${ac.map(a=>`<div class="slot">
-      <div class="slot-time">${a.e.s.slice(5).replace('-','/')}</div>
-      <div class="slot-info"><div class="slot-name">${escapeHtml(a.e.ar)}</div>
-      <div class="slot-sub">${a.running?'جارٍ الآن':fmtDays(a.days)}${
-        a.e.e?` · حتى ${a.e.e.slice(5).replace('-','/')}`:''}</div>
-      </div></div>`).join('')}</div></div>`:'';
-
-  box.innerHTML=hero+restHtml+acad;
+  /* ما نلمس الـDOM إلا لو تغيّر فعلاً: إعادة الرسم كل ثانية تقطع الضغط
+     وتقفز بالصفحة، والنص ما يتغيّر إلا مرة كل دقيقة في الغالب. */
+  if(html!==TODAY_HTML){ box.innerHTML=html; TODAY_HTML=html }
+  mountCal();
+  if(!TODAY_SCROLLED){
+    TODAY_SCROLLED=true;
+    /* نفتح على الجارية، أو على القادمة لو كان في استراحة */
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      const el=document.getElementById('todayNow')||document.getElementById('todayNext');
+      if(el)el.scrollIntoView({block:'center'});
+    }));
+  }
 }
 
 /* المؤقّت يشتغل فقط والتبويب مفتوح والصفحة ظاهرة — بطارية الجوال أهم
