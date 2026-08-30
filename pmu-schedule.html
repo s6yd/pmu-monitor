@@ -653,6 +653,21 @@ overflow-y:auto;padding:20px 18px 34px;animation:slideUp .28s ease}
 .cs-row{display:flex;justify-content:space-between;align-items:center;gap:12px;background:var(--card);padding:11px 13px;font-size:13px}
 .cs-row span{color:var(--text3);font-size:12px}
 .cs-row b{font-weight:700;text-align:end;min-width:0;word-break:break-word}
+/* الوقت والـCRN أرقام لاتينية: بلا هذا يقلبهما اتجاه الصفحة
+   فيظهر «18:50–18:00» بدل «18:00–18:50» */
+.cs-row b.ltr{direction:ltr;unicode-bidi:isolate;text-align:end;font-family:var(--mono);font-size:12.5px}
+.cs-abs{margin-top:14px;background:var(--card);border:1px solid var(--border);
+border-radius:14px;padding:13px 14px}
+.cs-abs-head{display:flex;justify-content:space-between;align-items:center;font-size:13px}
+.cs-abs-head span{color:var(--text3);font-size:12px}
+.cs-abs-head b{font-size:15px;font-family:var(--mono);direction:ltr;unicode-bidi:isolate}
+.cs-abs-bar{height:7px;background:var(--bg);border-radius:20px;overflow:hidden;margin:9px 0}
+.cs-abs-bar div{height:100%;border-radius:20px;transition:width .3s}
+.cs-abs-meta{font-size:11.5px;color:var(--text3);line-height:1.7;margin-bottom:10px}
+.cs-abs-list{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.cs-abs-row{display:flex;justify-content:space-between;align-items:center;
+background:var(--bg);border-radius:9px;padding:7px 11px;font-size:12px;
+font-family:var(--mono)}
 .cs-sib{margin-top:12px;font-size:12px;color:var(--text2);line-height:1.7;background:rgba(77,124,254,.08);border-radius:12px;padding:10px 12px}
 .guide-grip{width:38px;height:4px;background:var(--border2);border-radius:20px;margin:0 auto 16px}
 .guide-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
@@ -4103,6 +4118,124 @@ function mountCal(){
   try{ renderCalendar() }catch(e){}
 }
 
+/* ═══ عدّاد الغياب ═══
+   لائحة PMU: تجاوز 15% من محاضرات الجلسة = حرمان. المحاضرة والمعمل يُحسب
+   كل واحد لحاله، لكن الحرمان في أحدهما يجرّ الآخر — فنحذّر على الاثنين.
+   الحساب من بياناتك لا بالتخمين: أيام الجلسة من courseDate، معدودة بين
+   بداية الدراسة وآخر يوم قبل النهائيات، ناقص إجازات التقويم. */
+const ABS_LIMIT=0.15;
+
+function termBounds(){
+  const cal=(typeof ACAD_CAL!=='undefined'?ACAD_CAL:[]);
+  const today=ksaNow().date;
+  /* الترم الحالي: آخر «بداية دراسة» ما زالت قبل اليوم، وأول نهائيات بعدها */
+  let start=null;
+  for(const e of cal)
+    if(e.t==='start'&&e.s<=today&&(!start||e.s>start))start=e.s;
+  if(!start)for(const e of cal){ if(e.t==='start'){start=e.s;break} }
+  let end=null;
+  for(const e of cal)
+    if(e.t==='exam'&&e.s>start&&(!end||e.s<end))end=e.s;
+  return start&&end?{start,end}:null;
+}
+
+/* أيام الإجازات ضمن الترم — ما تُحسب محاضرات */
+function offDays(){
+  const out=new Set();
+  for(const e of (typeof ACAD_CAL!=='undefined'?ACAD_CAL:[])){
+    if(e.t!=='off')continue;
+    let d=new Date(e.s+'T00:00:00Z');
+    const last=new Date((e.e||e.s)+'T00:00:00Z');
+    let guard=0;
+    while(d<=last&&guard++<400){ out.add(d.toISOString().slice(0,10));
+      d=new Date(d.getTime()+864e5) }
+  }
+  return out;
+}
+
+const WD_LETTER=['U','M','T','W','R','F','S'];   /* getUTCDay: 0=الأحد */
+function meetingsInTerm(courseDate){
+  const b=termBounds();
+  if(!b)return 0;
+  const days=parseDays(courseDate);
+  if(!days.length)return 0;
+  const off=offDays();
+  let n=0,guard=0;
+  let d=new Date(b.start+'T00:00:00Z');
+  const last=new Date(b.end+'T00:00:00Z');
+  while(d<last&&guard++<400){
+    const iso=d.toISOString().slice(0,10);
+    if(days.includes(WD_LETTER[d.getUTCDay()])&&!off.has(iso))n++;
+    d=new Date(d.getTime()+864e5);
+  }
+  return n;
+}
+function allowedAbs(courseDate){
+  return Math.floor(meetingsInTerm(courseDate)*ABS_LIMIT);
+}
+
+/* ═══ التخزين ═══ */
+let ABS=[], ABS_LOADED=false;
+async function loadAbs(){
+  if(!USER)return;
+  try{
+    const {data,error}=await sb.from('absences').select('id,crn,term,on_date')
+      .eq('term',activeTermCode());
+    if(error)return;                       /* الجدول قد لا يكون منشأً بعد */
+    ABS=data||[]; ABS_LOADED=true;
+  }catch(e){}
+}
+function absOf(crn){ return ABS.filter(a=>String(a.crn)===String(crn)) }
+
+async function markAbsent(crn){
+  if(!USER)return;
+  const today=ksaNow().date;
+  if(absOf(crn).some(a=>a.on_date===today)){ showToast('مسجّل غياب اليوم أصلاً'); return }
+  const row={user_id:USER.id,term:activeTermCode(),crn:String(crn),on_date:today};
+  const {data,error}=await sb.from('absences').insert(row).select().single();
+  if(error){ showToast('ما انحفظ — جرّب مرة ثانية'); return }
+  ABS.push(data);
+  redrawCourse();
+}
+async function unmarkAbsent(id){
+  const {error}=await sb.from('absences').delete().eq('id',id);
+  if(error){ showToast('ما انحذف — جرّب مرة ثانية'); return }
+  ABS=ABS.filter(a=>String(a.id)!==String(id));
+  redrawCourse();
+}
+
+/* ═══ العرض ═══ */
+function absBlock(c){
+  const used=absOf(c.crn).length;
+  const total=meetingsInTerm(c.courseDate);
+  const max=allowedAbs(c.courseDate);
+  if(!total)return '';                     /* خارج الترم الدراسي — ما نعرض رقماً مضلّلاً */
+  const pct=Math.min(100,Math.round(used/Math.max(1,max)*100));
+  const over=used>max;
+  const near=!over&&max>0&&used>=max-1;
+  const col=over?'var(--close)':near?'var(--warn)':'var(--open)';
+  /* الحرمان في جلسة يجرّ أختها — نحذّر على الاثنين */
+  const sib=(schedule||[]).filter(x=>x.courseCode===c.courseCode&&
+    String(x.crn)!==String(c.crn));
+  const sibBan=sib.some(x=>absOf(x.crn).length>allowedAbs(x.courseDate));
+  const list=absOf(c.crn).slice().sort((a,b)=>a.on_date<b.on_date?1:-1);
+  return `<div class="cs-abs">
+    <div class="cs-abs-head">
+      <span>الغياب</span>
+      <b style="color:${col}">${used} من ${max}</b>
+    </div>
+    <div class="cs-abs-bar"><div style="width:${pct}%;background:${col}"></div></div>
+    <div class="cs-abs-meta">${total} محاضرة في الترم · الحد ١٥٪ = ${max} غياب${
+      over?' · <b style="color:var(--close)">تجاوزت الحد</b>'
+     :near?' · <b style="color:var(--warn)">باقي لك واحد</b>':''}</div>
+    ${sibBan?`<div class="cs-abs-meta" style="color:var(--close)">⚠️ تجاوزت الحد في جلسة أخرى من نفس المادة — الحرمان يشمل الجلستين</div>`:''}
+    <button class="btn-sm" onclick="markAbsent('${c.crn}')">➕ سجّل غياب اليوم</button>
+    ${list.length?`<div class="cs-abs-list">${list.map(a=>
+      `<div class="cs-abs-row"><span style="direction:ltr;unicode-bidi:isolate">${a.on_date}</span>
+       <button class="mini" onclick="unmarkAbsent('${a.id}')">✕</button></div>`).join('')}</div>`:''}
+  </div>`;
+}
+
 /* ═══ لوح تفاصيل المادة ═══
    يُفتح من تبويب اليوم فقط. الحذف والبحث موجودان في «جدولي» فما نكرّرهما هنا —
    هذا اللوح مخصّص لما لا مكان له غيره: الغياب والأحداث لاحقاً.
@@ -4110,7 +4243,7 @@ function mountCal(){
    على الجلسة، وقد يخصّ الحدث المعمل وحده. */
 let CS_OPEN=null;
 
-function openCourse(crn,start){
+function openCourse(crn,start,redraw){
   const list=(schedule||[]).map(c=>({c,t:parseTime(c.courseTiming)})).filter(x=>x.t);
   const hit=list.find(x=>String(x.c.crn)===String(crn)&&x.t.start===start)
           ||list.find(x=>String(x.c.crn)===String(crn));
@@ -4121,7 +4254,8 @@ function openCourse(crn,start){
   const sibs=list.filter(x=>x.c.courseCode===c.courseCode&&
     !(String(x.c.crn)===String(c.crn)&&x.t.start===t.start));
   const days=parseDays(c.courseDate).map(d=>DAY_AR[d]).join(' · ')||'—';
-  const row=(k,v)=>`<div class="cs-row"><span>${k}</span><b>${escapeHtml(v||'—')}</b></div>`;
+  const row=(k,v,ltr)=>`<div class="cs-row"><span>${k}</span><b class="${
+    ltr?'ltr':''}">${escapeHtml(v||'—')}</b></div>`;
   document.getElementById('csSheet').innerHTML=`
     <div class="guide-grip"></div>
     <div class="guide-head">
@@ -4130,19 +4264,26 @@ function openCourse(crn,start){
     </div>
     ${c.courseTitle?`<div class="guide-lead">${escapeHtml(c.courseTitle)}</div>`:''}
     <div class="cs-rows">
-      ${row('الوقت',fmtTime(t.start)+'–'+fmtTime(t.end))}
+      ${row('الوقت',fmtTime(t.start)+'–'+fmtTime(t.end),1)}
       ${row('الأيام',days)}
       ${row('القاعة',c.room)}
       ${row('الدكتور',c.instructor)}
-      ${row('CRN',c.crn)}
+      ${row('CRN',c.crn,1)}
     </div>
+    ${absBlock(c)}
     ${sibs.length?`<div class="cs-sib">🔁 لهذي المادة ${sibs.length===1?'جلسة أخرى':'جلسات أخرى'}: ${
-      sibs.map(x=>`§${x.c.section} ${fmtTime(x.t.start)}`).join(' · ')}</div>`:''}`;
+      sibs.map(x=>`<span style="direction:ltr;unicode-bidi:isolate">§${
+        x.c.section} ${fmtTime(x.t.start)}</span>`).join(' · ')}</div>`:''}`;
   document.getElementById('csOv').classList.add('open');
+  if(redraw)return;                             /* إعادة رسم: ما نكدّس خطوة رجوع */
   document.body.style.overflow='hidden';        /* الخلفية ما تنزلق تحت اللوح */
   /* زر الرجوع في الجوال يقفل اللوح بدل ما يطلع من الموقع كله */
   try{ history.pushState({cs:1},'') }catch(e){}
+  if(!ABS_LOADED)loadAbs().then(()=>redrawCourse());
 }
+
+/* بعد تسجيل/حذف غياب: نعيد رسم اللوح المفتوح في مكانه */
+function redrawCourse(){ if(CS_OPEN)openCourse(CS_OPEN.crn,CS_OPEN.start,1) }
 
 function closeCourse(fromPop){
   if(!CS_OPEN)return;
