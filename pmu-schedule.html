@@ -661,7 +661,7 @@ overflow-y:auto;padding:20px 18px 34px;animation:slideUp .28s ease}
 .day-card{cursor:pointer;align-items:stretch;gap:8px;padding:12px 13px;
 transition:transform .12s,border-color .15s}
 .day-card:active{transform:scale(.985)}
-.dc-top{display:flex;align-items:center;gap:9px;margin-bottom:5px}
+.dc-top{display:flex;align-items:center;justify-content:center;margin-bottom:5px}
 .dc-time{font-family:var(--mono);font-size:12px;color:var(--text2);font-weight:700}
 .dc-code{font-family:var(--mono);font-size:10.5px;color:var(--text3);
 background:var(--bg);border-radius:20px;padding:1px 7px}
@@ -699,6 +699,27 @@ border-radius:20px;padding:1px 8px}
 .ev-d{font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:3px}
 .ev-n{font-size:12px;color:var(--text2);margin-top:5px;line-height:1.6;word-break:break-word}
 .ev-empty{font-size:12px;color:var(--text3);padding:12px 0 2px;text-align:center}
+/* ── صور المحاضرة ── */
+.ph-day{margin-top:12px}
+.ph-date{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--text3);
+font-family:var(--mono);margin-bottom:7px}
+.ph-when{font-family:var(--sans);font-size:11px;color:var(--accent2);
+background:rgba(77,124,254,.12);border-radius:20px;padding:1px 8px}
+.ph-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.ph-item{position:relative;aspect-ratio:1;border-radius:11px;overflow:hidden;
+background:var(--bg)}
+.ph-item img{width:100%;height:100%;object-fit:cover;cursor:pointer;display:block}
+.ph-del{position:absolute;top:5px;inset-inline-end:5px;width:22px;height:22px;
+border:none;border-radius:50%;background:rgba(4,6,12,.72);color:#fff;font-size:11px;
+cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center}
+.ph-full{position:fixed;inset:0;z-index:9999;background:rgba(4,6,12,.94);
+display:flex;align-items:center;justify-content:center;padding:16px}
+.ph-full img{max-width:100%;max-height:100%;border-radius:12px}
+.ph-close{position:absolute;top:18px;inset-inline-end:18px;width:38px;height:38px;
+border:none;border-radius:50%;background:rgba(255,255,255,.14);color:#fff;
+font-size:17px;cursor:pointer}
+.dc-ph{font-size:11px;font-weight:700;color:var(--text2);background:var(--bg);
+border-radius:20px;padding:1px 8px;margin-inline-start:7px}
 /* ── سجل الغياب ── */
 .cal-fold{background:var(--bg);border:1px solid var(--border);color:var(--text2);
 width:30px;height:30px;border-radius:50%;font-size:17px;line-height:1;cursor:pointer;
@@ -723,6 +744,9 @@ border-radius:14px;padding:13px 14px}
 .cs-abs-bar div{height:100%;border-radius:20px;transition:width .3s}
 .cs-abs-meta{font-size:11.5px;color:var(--text3);line-height:1.7;margin-bottom:10px}
 .cs-abs-list{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+/* سمة hidden قيمتها display:none لكنها أضعف من قاعدة العنصر نفسه،
+   فبدون هذا السطر يبقى السجل ظاهراً والسهم وحده يتحرك */
+.cs-abs-list[hidden],.ev-list[hidden]{display:none}
 .cs-abs-row{display:flex;justify-content:space-between;align-items:center;
 background:var(--bg);border-radius:9px;padding:7px 11px;font-size:12px;
 font-family:var(--mono)}
@@ -4156,7 +4180,7 @@ function slotCard(c,t,cls,badge){
       <div class="dc-sub">${escapeHtml(c.room||'—')}${
         c.instructor?' · '+escapeHtml(c.instructor):''}</div>
       ${badge?`<div class="dc-badge">${badge}</div>`:''}
-      ${evChip(c)}
+      ${evChip(c)}${phChip(c)}
       ${absChip(c)}
     </div>
     <span class="dc-chev">›</span></div>`;
@@ -4442,6 +4466,150 @@ function evChip(c){
   </div>`;
 }
 
+/* ═══ صور المحاضرة ═══
+   الطالب يصوّر السبورة فتضيع في ألبومه بين ألف صورة. هنا تُرتَّب على
+   المحاضرة والتاريخ، فيلقاها وقت المذاكرة.
+   الملف يُخزَّن في مجلد باسم معرّف الطالب — سياسة التخزين تقارن أول مجلد
+   بهويته، فلا يصل أحد لملف غيره حتى لو خمّن المسار. */
+const PH_BUCKET='course-photos';
+const PH_MAX=1400;                        /* أطول ضلع بعد الضغط */
+const PH_Q=0.72;
+
+let PHOTOS=[], PH_TRIED=false, PH_URL={}, PH_BUSY=false;
+
+async function loadPhotos(){
+  if(!USER)return;
+  PH_TRIED=true;
+  try{
+    const {data,error}=await sb.from('course_photos')
+      .select('id,crn,term,on_date,event_id,path,note').eq('term',activeTermCode());
+    if(error)return;
+    PHOTOS=data||[];
+  }catch(e){}
+}
+function photosOf(crn){
+  return PHOTOS.filter(p=>String(p.crn)===String(crn))
+    .sort((a,b)=>a.on_date<b.on_date?1:-1);   /* الأحدث أولاً */
+}
+
+/* الدلو خاص، فنطلب روابط موقّتة. نخزّنها في الذاكرة عشان ما نطلبها كل رسم */
+async function photoUrl(path){
+  if(PH_URL[path])return PH_URL[path];
+  const {data,error}=await sb.storage.from(PH_BUCKET).createSignedUrl(path,3600);
+  if(error||!data)return null;
+  PH_URL[path]=data.signedUrl;
+  return data.signedUrl;
+}
+
+/* صورة الآيفون ٤ ميغا — الضغط في المتصفح ينزّلها لثلاثمئة كيلو تقريباً،
+   فالرفع أسرع والتكلفة أقل بلا فرق يُذكر في وضوح السبورة. */
+function shrink(file){
+  return new Promise((res,rej)=>{
+    const img=new Image(), url=URL.createObjectURL(file);
+    img.onload=()=>{
+      URL.revokeObjectURL(url);
+      let {width:w,height:h}=img;
+      const sc=Math.min(1,PH_MAX/Math.max(w,h));
+      w=Math.round(w*sc); h=Math.round(h*sc);
+      const cv=document.createElement('canvas');
+      cv.width=w; cv.height=h;
+      cv.getContext('2d').drawImage(img,0,0,w,h);
+      cv.toBlob(b=>b?res(b):rej(new Error('فشل الضغط')),'image/jpeg',PH_Q);
+    };
+    img.onerror=()=>{ URL.revokeObjectURL(url); rej(new Error('ما قدرنا نقرأ الصورة')) };
+    img.src=url;
+  });
+}
+
+async function pickPhoto(crn,eventId){
+  if(!USER||PH_BUSY)return;
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='image/*';
+  inp.onchange=async()=>{
+    const f=inp.files&&inp.files[0];
+    if(!f)return;
+    PH_BUSY=true; showToast('⏳ نرفع الصورة…');
+    try{
+      const blob=await shrink(f);
+      const name=`${USER.id}/${crn}/${Date.now()}-${Math.random().toString(36).slice(2,8)}.jpg`;
+      const up=await sb.storage.from(PH_BUCKET).upload(name,blob,{contentType:'image/jpeg'});
+      if(up.error)throw up.error;
+      const row={user_id:USER.id,term:activeTermCode(),crn:String(crn),
+                 on_date:ksaNow().date,event_id:eventId||null,path:name};
+      const {data,error}=await sb.from('course_photos').insert(row).select().single();
+      if(error){
+        /* الصف ما انحفظ: نشيل الملف بدل ما يبقى يتيماً يدفع ثمنه */
+        await sb.storage.from(PH_BUCKET).remove([name]).catch(()=>{});
+        throw error;
+      }
+      PHOTOS.push(data);
+      showToast('✅ انحفظت');
+      redrawCourse();
+    }catch(e){ showToast('ما انرفعت — جرّب مرة ثانية') }
+    finally{ PH_BUSY=false }
+  };
+  inp.click();
+}
+
+async function delPhoto(id){
+  const p=PHOTOS.find(x=>String(x.id)===String(id));
+  if(!p)return;
+  const {error}=await sb.from('course_photos').delete().eq('id',id);
+  if(error){ showToast('ما انحذف — جرّب مرة ثانية'); return }
+  await sb.storage.from(PH_BUCKET).remove([p.path]).catch(()=>{});
+  delete PH_URL[p.path];
+  PHOTOS=PHOTOS.filter(x=>String(x.id)!==String(id));
+  redrawCourse();
+}
+
+/* الروابط الموقّتة غير متزامنة، فنرسم الإطار أولاً ثم نعبّئ الصور */
+async function fillPhotos(){
+  const els=document.querySelectorAll('img[data-path]:not([src])');
+  for(const el of els){
+    const u=await photoUrl(el.dataset.path);
+    if(u)el.src=u;
+  }
+}
+
+function phBlock(c){
+  const list=photosOf(c.crn);
+  const byDate={};
+  list.forEach(p=>{ (byDate[p.on_date]=byDate[p.on_date]||[]).push(p) });
+  const days=Object.keys(byDate).sort().reverse();
+  return `<div class="cs-abs">
+    <div class="cs-abs-head"><span>صور المحاضرة</span>
+      <button class="ev-add" onclick="pickPhoto('${c.crn}')">📷 صوّر</button>
+    </div>
+    ${days.length?days.map(d=>`<div class="ph-day">
+        <div class="ph-date"><span class="ltr">${d}</span>
+          <span class="ph-when">${evWhen(d)}</span></div>
+        <div class="ph-grid">${byDate[d].map(p=>`<div class="ph-item">
+          <img data-path="${escapeHtml(p.path)}" alt="" loading="lazy"
+               onclick="openPhoto('${escapeHtml(p.path)}')">
+          <button class="ph-del" onclick="delPhoto('${p.id}')">✕</button>
+        </div>`).join('')}</div>
+      </div>`).join('')
+      :`<div class="ev-empty">ما في صور — صوّر السبورة وتلقاها هنا وقت المذاكرة</div>`}
+  </div>`;
+}
+
+/* عرض الصورة كاملة */
+async function openPhoto(path){
+  const u=await photoUrl(path);
+  if(!u)return;
+  const w=document.createElement('div');
+  w.className='ph-full';
+  w.innerHTML=`<img src="${u}" alt=""><button class="ph-close">✕</button>`;
+  w.onclick=()=>w.remove();
+  document.body.appendChild(w);
+}
+
+/* شارة على بطاقة اليوم: كم صورة لهذي المحاضرة اليوم */
+function phChip(c){
+  const n=photosOf(c.crn).filter(p=>p.on_date===ksaNow().date).length;
+  return n?`<span class="dc-ph">📷 ${n}</span>`:'';
+}
+
 /* ═══ لوح تفاصيل المادة ═══
    يُفتح من تبويب اليوم فقط. الحذف والبحث موجودان في «جدولي» فما نكرّرهما هنا —
    هذا اللوح مخصّص لما لا مكان له غيره: الغياب والأحداث لاحقاً.
@@ -4477,17 +4645,20 @@ function openCourse(crn,start,redraw){
       ${row('CRN',c.crn,1)}
     </div>
     ${evBlock(c)}
+    ${phBlock(c)}
     ${absBlock(c)}
     ${sibs.length?`<div class="cs-sib">🔁 لهذي المادة ${sibs.length===1?'جلسة أخرى':'جلسات أخرى'}: ${
       sibs.map(x=>`<span style="direction:ltr;unicode-bidi:isolate">§${
         x.c.section} ${fmtTime(x.t.start)}</span>`).join(' · ')}</div>`:''}`;
   document.getElementById('csOv').classList.add('open');
+  fillPhotos();                                 /* الروابط موقّتة وغير متزامنة */
   if(redraw)return;                             /* إعادة رسم: ما نكدّس خطوة رجوع */
   document.body.style.overflow='hidden';        /* الخلفية ما تنزلق تحت اللوح */
   /* زر الرجوع في الجوال يقفل اللوح بدل ما يطلع من الموقع كله */
   try{ history.pushState({cs:1},'') }catch(e){}
   if(!ABS_TRIED)loadAbs().then(()=>redrawCourse());
   if(!EV_TRIED)loadEvs().then(()=>redrawCourse());
+  if(!PH_TRIED)loadPhotos().then(()=>redrawCourse());
 }
 
 /* بعد تسجيل/حذف غياب: نعيد رسم اللوح المفتوح في مكانه */
@@ -4554,6 +4725,7 @@ function renderToday(){
      بلا ما يفتح اللوح. ABS_TRIED يمنع إعادة المحاولة كل ثانية لو فشلت. */
   if(!ABS_TRIED&&USER)loadAbs().then(()=>{TODAY_HTML='';renderToday()});
   if(!EV_TRIED&&USER)loadEvs().then(()=>{TODAY_HTML='';renderToday()});
+  if(!PH_TRIED&&USER)loadPhotos().then(()=>{TODAY_HTML='';renderToday()});
   mountCal();
   if(!TODAY_SCROLLED){
     TODAY_SCROLLED=true;
