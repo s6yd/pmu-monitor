@@ -503,6 +503,16 @@ function fdate(d){
   const x=new Date(d); if(isNaN(x)) return '—';
   return x.toLocaleDateString('ar-SA',{year:'numeric',month:'short',day:'numeric'});
 }
+/* «قبل ٣ س» أوضح من تاريخ مجرّد حين تسأل: هل نبّهته للتو؟ */
+function fwhen(d){
+  if(!d) return '—';
+  const x=new Date(d); if(isNaN(x)) return '—';
+  const m=Math.round((Date.now()-x.getTime())/60000);
+  if(m<1) return 'الآن';
+  if(m<60) return `قبل ${m} د`;
+  if(m<1440) return `قبل ${Math.round(m/60)} س`;
+  return fdate(d);
+}
 function daysLeft(d){
   if(!d) return null;
   return Math.ceil((new Date(d)-new Date())/864e5);
@@ -515,6 +525,22 @@ function toast(msg,kind){
 function flagged(txt){
   const s=String(txt||'').toLowerCase();
   return FLAGS.some(w=>s.includes(w));
+}
+
+/* «راجعتها» — تعليم اللفظ المشبوه أنه مقبول.
+   الكشف نصّي في المتصفح لا في القاعدة، فالقرار يُحفظ محلياً مثله.
+   يعني: يضيع لو مسحت بيانات المتصفح أو دخلت من جهاز ثاني. */
+let REV_OK=new Set();
+try{ REV_OK=new Set(JSON.parse(localStorage.getItem('revOk')||'[]')) }catch(e){}
+function revKey(r){ return r.id!==null&&r.id!==undefined?'id:'+r.id:'u:'+r.userId+'|'+r.instructor }
+function revOk(r){ return REV_OK.has(revKey(r)) }
+/* المعلَّمة = فيها لفظ ولم أقبلها بعد */
+function needsRev(r){ return flagged(r.comment) && !revOk(r) }
+function markRev(key,ok){
+  if(ok)REV_OK.add(key); else REV_OK.delete(key);
+  try{ localStorage.setItem('revOk',JSON.stringify([...REV_OK])) }catch(e){}
+  renderRevs(); renderOver();
+  toast(ok?'✅ علّمتها مراجَعة':'↩︎ رجّعتها للمراجعة');
 }
 
 /* ══════════ تحميل ══════════ */
@@ -564,7 +590,7 @@ async function loadAllInner(silent){
 /* ══════════ نظرة عامة ══════════ */
 function renderOver(){
   const s=STATS; if(!s) return;
-  const needRev = REVS.filter(r=>flagged(r.comment)).length;
+  const needRev = REVS.filter(needsRev).length;
 
   let health='';
   if(HEALTH && !HEALTH.telegramOk){
@@ -851,7 +877,7 @@ function renderRevs(){
 
   let list=REVS.filter(r=>{
     if(q && !((r.instructor+' '+r.comment+' '+r.course+' '+r.author).toLowerCase().includes(q))) return false;
-    if(f==='flag' && !flagged(r.comment)) return false;
+    if(f==='flag' && !needsRev(r)) return false;
     if(f==='low'  && r.rating>2) return false;
     if(f==='reported' && !(r.reports>0)) return false;
     if(f==='hidden' && !r.hidden) return false;
@@ -860,7 +886,7 @@ function renderRevs(){
 
   /* المبلَّغ عنها أولاً، ثم اللي فيها ألفاظ مشبوهة */
   list.sort((a,b)=>((b.reports||0)-(a.reports||0))||
-    ((flagged(b.comment)?1:0)-(flagged(a.comment)?1:0)));
+    ((needsRev(b)?1:0)-(needsRev(a)?1:0)));
 
   const box=document.getElementById('revsBody');
   if(!list.length){
@@ -870,9 +896,9 @@ function renderRevs(){
   }
 
   box.innerHTML=list.map(r=>{
-    const bad=flagged(r.comment);
+    const bad=needsRev(r), okd=revOk(r);
     const stars='★'.repeat(Math.round(r.rating))+'☆'.repeat(Math.max(0,5-Math.round(r.rating)));
-    const key = r.id!==null ? `id:${r.id}` : `u:${r.userId}|${r.instructor}`;
+    const key = revKey(r);   /* مفتاح واحد للحذف وللمراجعة — لو اختلفا صار الزر يعلّم صفاً والفحص يقرأ آخر */
     return `<div class="row">
       <div class="row-top">
         <div style="min-width:0">
@@ -885,6 +911,7 @@ function renderRevs(){
         ? `<div class="comment${bad?' flag':''}">${esc(r.comment)}</div>` : ''}
       ${r.reports?`<div class="flag-note">🚩 ${r.reports} بلاغ من الطلاب — تحتاج مراجعتك</div>`:''}
       ${bad?`<div class="flag-note">⚠️ فيها لفظ يحتاج مراجعتك</div>`:''}
+      ${okd?`<div class="flag-note" style="color:var(--open)">✅ راجعتها وقبلتها</div>`:''}
       ${r.hidden?`<div class="flag-note" style="color:var(--text3)">🙈 مخفية عن الطلاب</div>`:''}
       <div class="row-meta" style="margin-top:8px">
         <span>👍 <b>${r.agree||0}</b></span>
@@ -898,6 +925,8 @@ function renderRevs(){
       </div>
       <div class="row-acts">
         ${r.reports?`<button class="mini go" onclick="clearRep(${r.id})">✓ ألغِ البلاغ</button>`:''}
+        ${bad?`<button class="mini go" onclick="markRev('${esc(key)}',true)">✓ راجعتها</button>`:''}
+        ${okd?`<button class="mini" onclick="markRev('${esc(key)}',false)">↩︎ رجّعها للمراجعة</button>`:''}
         <button class="mini" onclick="hideRev(${r.id},${r.hidden?'false':'true'})">
           ${r.hidden?'👁️ أظهرها':'🙈 أخفها'}</button>
         <button class="mini no" onclick="delRev('${esc(key)}','${esc(r.instructor)}')">🗑️ احذف</button>
@@ -1529,6 +1558,27 @@ function renderSys(){
       · يُرمى الصفّ لو ما نضج خلال ${S.tick.maxAgeHr} ساعة.`:''}</div>
   </div>
 
+  ${(S.unwatch&&S.unwatch.total)?`<div class="sec-title">إلغاء المراقبة · ${S.unwatch.total}</div>
+  <div class="gauge">
+    <div class="kv"><span>من أين أُلغيت</span><b>${
+      Object.entries(S.unwatch.byVia||{}).map(([k,v])=>{
+        const ar={web:'الموقع',telegram:'تلقرام',admin:'اللوحة',expired:'انتهت الصلاحية'}[k]||k;
+        return ar+' '+v;
+      }).join(' · ')||'—'}</b></div>
+    ${(S.unwatch.recent||[]).map(e=>{
+      const via={web:'الموقع',telegram:'تلقرام',admin:'اللوحة',expired:'منتهية'}[e.via]||e.via;
+      const life=e.livedMin==null?'':(e.livedMin<60?e.livedMin+' د'
+        :e.livedMin<1440?Math.round(e.livedMin/60)+' س':Math.round(e.livedMin/1440)+' ي');
+      return `<div class="chg"><div class="chg-top">
+        <span class="chg-code">${esc(e.code||'—')}${e.scope==='course'?' · كل الشعب':(e.crn?' · '+esc(e.crn):'')}</span>
+        <span class="chg-ago">${esc(via)}${life?' · عاشت '+life:''} · ${ago(e.at)}</span>
+      </div>${e.lastStatus?`<div class="chg-row"><span class="chg-f">آخر حالة</span>
+        <span class="chg-v">${esc(e.lastStatus)}</span></div>`:''}</div>`;
+    }).join('')}
+    <div class="gauge-sub">المصدر أهم من العدد: من ألغى من تلقرام كان الزر أمامه،
+      ومن ألغى من الموقع بحث عنه — والفرق يقول أين يحتاج الطلاب توجيهاً.</div>
+  </div>`:''}
+
   ${(S.flaps&&S.flaps.length)?`<div class="sec-title">رفّات مرفوضة · آخر ${S.flaps.length}</div>
   <div class="gauge">
     ${S.flaps.map(f=>`<div class="chg">
@@ -1734,6 +1784,29 @@ function renderSys(){
 }
 
 /* ══════════ المراقبة ══════════ */
+/* بحث وترتيب التبويب — نحتفظ بهما خارج الرسم عشان التحديث التلقائي
+   كل ٣٠ ثانية ما يمسح ما كتبته ولا يرجّع الترتيب. */
+let MON_Q='', MON_SORT='watchers';
+
+function monMatch(m,q){
+  if(!q)return true;
+  const hay=[m.key,m.crn,m.term,m.status,
+             ...(m.rows||[]).map(r=>r.name+' '+r.email)].join(' ').toLowerCase();
+  return hay.includes(q);
+}
+function monSorted(){
+  const q=MON_Q.trim().toLowerCase();
+  const list=MONS.filter(m=>monMatch(m,q));
+  if(MON_SORT==='open')                       /* المفتوحة أولاً — هي المستعجلة */
+    return list.slice().sort((a,b)=>
+      ((b.status==='OPEN')-(a.status==='OPEN'))||(b.watchers-a.watchers));
+  if(MON_SORT==='notified')
+    return list.slice().sort((a,b)=>(b.notified||0)-(a.notified||0)||b.watchers-a.watchers);
+  return list;                                /* الأكثر طلباً — ترتيب السيرفر */
+}
+function monSetQ(v){ MON_Q=v; renderMonList() }
+function monSetSort(v){ MON_SORT=v; renderMons() }
+
 function renderMons(){
   const box=document.getElementById('monsBody');
   if(!MONS.length){
@@ -1742,7 +1815,50 @@ function renderMons(){
       <div class="empty-s">أول ما يراقب أحد مادة بتظهر هنا</div></div>`;
     return;
   }
-  box.innerHTML=`<div class="sec-title">أكثر المواد طلباً</div>` + MONS.map(m=>`
+  const secs=MONS.filter(m=>m.scope!=='course');
+  const open=secs.filter(m=>m.status==='OPEN').length;
+  const shut=secs.filter(m=>m.status&&m.status!=='OPEN'&&m.status!=='—').length;
+  const watchers=MONS.reduce((s,m)=>s+(m.watchers||0),0);
+  const notified=MONS.reduce((s,m)=>s+(m.notified||0),0);
+  const btn=(v,t)=>`<button class="mini${MON_SORT===v?' go':''}"
+     onclick="monSetSort('${v}')">${t}</button>`;
+
+  box.innerHTML=`
+    <div class="kpis" style="margin-bottom:10px">
+      <div class="kpi"><div class="kpi-val">${MONS.length}</div>
+        <div class="kpi-label">مادة مراقَبة</div></div>
+      <div class="kpi"><div class="kpi-val" style="color:var(--open)">${open}</div>
+        <div class="kpi-label">مفتوحة الآن</div></div>
+      <div class="kpi"><div class="kpi-val" style="color:var(--close)">${shut}</div>
+        <div class="kpi-label">مغلقة</div></div>
+      <div class="kpi"><div class="kpi-val">${watchers}</div>
+        <div class="kpi-label">طلب مراقبة</div></div>
+      <div class="kpi"><div class="kpi-val" style="color:var(--open)">${notified}</div>
+        <div class="kpi-label">طالب نُبِّه</div></div>
+    </div>
+    <div class="toolbar">
+      <input id="monSearch" placeholder="ابحث بالمادة أو CRN أو اسم طالب..."
+             value="${esc(MON_Q)}" oninput="monSetQ(this.value)">
+    </div>
+    <div class="row-meta" style="margin:8px 0">
+      ${btn('watchers','الأكثر طلباً')}${btn('open','المفتوحة أولاً')}${btn('notified','الأكثر تنبيهاً')}
+    </div>
+    <div id="monList"></div>`;
+  renderMonList();
+}
+
+/* نرسم القائمة وحدها عشان الكتابة في البحث ما تفقد التركيز */
+function renderMonList(){
+  const box=document.getElementById('monList');
+  if(!box)return;
+  const list=monSorted();
+  if(!list.length){
+    box.innerHTML=`<div class="empty"><div class="empty-icon">🔍</div>
+      <div class="empty-t">ما في نتيجة</div>
+      <div class="empty-s">جرّب كلمة أقصر</div></div>`;
+    return;
+  }
+  box.innerHTML=`<div class="sec-title">${list.length} من ${MONS.length}</div>` + list.map(m=>`
     <div class="row">
       <div class="row-top">
         <div>
@@ -1757,6 +1873,7 @@ function renderMons(){
       </div>
       <div class="row-meta">
         <span>يراقبها <b>${m.watchers}</b> طالب</span>
+        ${m.notified?`<span style="color:var(--open)">🔔 نُبِّه <b>${m.notified}</b></span>`:''}
         <button class="mini" onclick="toggleWatchers(this)">👥 المراقِبون</button>
       </div>
       <div class="watchers" hidden>
@@ -1764,6 +1881,9 @@ function renderMons(){
           <div class="w-who">
             <b>${esc(r.name)}</b>
             <span>${esc(r.email)}${r.linked?'':' · <span class="warn">تيليغرام غير مربوط</span>'}</span>
+            ${r.notifiedAt
+              ? `<span style="color:var(--open)">🔔 نُبِّه ${fwhen(r.notifiedAt)}</span>`
+              : '<span style="color:var(--text3)">ما نُبِّه بعد</span>'}
             ${r.askedAt?`<span class="warn">⏳ مهلة تأكيد حتى ${new Date(r.askedAt).toLocaleString('ar-SA')}</span>`:''}
           </div>
           <div class="w-acts">

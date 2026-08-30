@@ -148,6 +148,25 @@ function sb(method, table, { query = '', body = null, prefer = '' } = {}) {
   });
 }
 
+/* ============ سحبة على صفحات ============
+   Supabase يقصّ أي رد عند سقف الصفوف (1000 افتراضياً) ويرجع 200 بلا تحذير.
+   فالجدول اللي تجاوز الألف يُفحص جزئياً والباقي يُهمل بصمت.
+   نطلب صفحة صفحة بترتيب ثابت على id، ونقف عند أول صفحة ناقصة. */
+const SB_PAGE = 1000;
+const SB_PAGE_MAX = 100;                 /* حارس: 100 ألف صف كحد أقصى */
+async function sbAll(table, { query = '', order = 'id', pageSize = SB_PAGE } = {}) {
+  const out = [];
+  for (let page = 0; page < SB_PAGE_MAX; page++) {
+    const q = `${query}&order=${order}.asc&limit=${pageSize}&offset=${page * pageSize}`;
+    const rows = await sb('GET', table, { query: q });
+    if (!Array.isArray(rows)) break;
+    for (const r of rows) out.push(r);
+    if (rows.length < pageSize) return out;   /* صفحة ناقصة = النهاية */
+  }
+  console.log(`sbAll: ${table} تجاوز حارس الصفحات — الرد مقصوص`);
+  return out;
+}
+
 /* ============ Telegram ============ */
 function tg(method, payload) {
   return new Promise(resolve => {
@@ -256,7 +275,7 @@ const isUuid = v => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
    فنكتب كل حدث في القاعدة فور وقوعه (بلا await: التسجيل ما يؤخّر شيئاً)،
    ونستعيد الأحدث عند الإقلاع.
    ما نحفظ الكاش عمداً: صلاحيته دقيقة داخل الذروة، ويُبنى بسحبة واحدة. */
-const EVENT_KEEP = { message: 300, correction: 60, flap: 60 };
+const EVENT_KEEP = { message: 300, correction: 60, flap: 60, unwatch: 200 };
 const EVENT_MAX_AGE_DAYS = 30;
 let EVENTS_READY = false;          /* قبل الاستعادة ما نكتب، لئلا نضاعف */
 
@@ -274,7 +293,8 @@ async function restoreEvents() {
     }).catch(() => []);
     const list = (Array.isArray(rows) ? rows : []).map(r => r.payload);
     const target = kind === 'message' ? MSG_LOG
-                 : kind === 'correction' ? SCHED_LOG : FLAP_LOG;
+                 : kind === 'correction' ? SCHED_LOG
+                 : kind === 'unwatch' ? UNWATCH_LOG : FLAP_LOG;
     target.length = 0;
     list.forEach(p => target.push(p));
   }
@@ -523,10 +543,11 @@ async function dropExpired() {
   if (!SB_URL || !SB_SERVICE_KEY) return 0;
   const nowIso = new Date().toISOString();
   const due = await sb('GET', 'monitored_courses', {
-    query: `?expires_at=not.is.null&expires_at=lte.${encodeURIComponent(nowIso)}&select=id&limit=200`
+    query: `?expires_at=not.is.null&expires_at=lte.${encodeURIComponent(nowIso)}&select=*&limit=200`
   }).catch(() => null);
   if (!Array.isArray(due) || !due.length) return 0;
   const ids = due.map(r => r.id);
+  logUnwatch(due, 'expired');
   await sb('DELETE', 'monitored_courses',
     { query: `?id=in.(${ids.join(',')})`, prefer: 'return=minimal' }).catch(() => {});
   console.log(`expired: أوقفنا ${ids.length} مراقبة بلا تأكيد`);
@@ -885,6 +906,7 @@ async function handleCallback(cq) {
     return editMsg(cq, `⏳ <b>المراقبة مستمرة</b>\n\n${label} — بنبلغك أول ما تفتح.`);
   }
 
+  logUnwatch(row, 'telegram');
   await sb('DELETE', 'monitored_courses', {
     query: `?id=eq.${rowId}`, prefer: 'return=minimal'
   }).catch(() => {});
@@ -1439,7 +1461,7 @@ async function adminStats() {
     sb('GET', 'profiles', { query: '?select=*' }),
     sb('GET', 'instructor_reviews', { query: '?select=*' }),
     sb('GET', 'monitored_courses', { query: '?select=*' }),
-    sb('GET', 'user_schedule', { query: '?select=user_id' })
+    sbAll('user_schedule', { query: '?select=user_id' })
   ]);
   const P = Array.isArray(profiles) ? profiles : [];
   const R = Array.isArray(reviews) ? reviews : [];
@@ -1556,8 +1578,9 @@ async function adminMonitors() {
                         sections: isCourse && m.sections_state
                           ? Object.keys(m.sections_state).length : null,
                         status: isCourse ? null : (m.last_status || '—'),
-                        watchers: 0, rows: [] };
+                        watchers: 0, notified: 0, rows: [] };
     g[k].watchers++;
+    if (m.notified_at) g[k].notified++;
     const p = who[m.user_id] || {};
     g[k].rows.push({
       id: m.id,
@@ -1565,6 +1588,7 @@ async function adminMonitors() {
       email: p.email || '—',
       linked: !!p.telegram_chat_id,
       askedAt: m.expires_at || null,
+      notifiedAt: m.notified_at || null,   /* عشان ما نرسل تنبيهاً مرتين بلا ما ندري */
       since: m.created_at || null
     });
   });
@@ -2162,7 +2186,12 @@ async function adminHealth() {
               lastTick: CONFIRM_STAT.lastTick || null,
               lastForce: CONFIRM_STAT.lastForce || null,
               forces: CONFIRM_STAT.forces, purged: CONFIRM_STAT.purged },
-      flaps: FLAP_LOG.slice(0, 15)
+      flaps: FLAP_LOG.slice(0, 15),
+      unwatch: {
+        total: UNWATCH_LOG.length,
+        byVia: UNWATCH_LOG.reduce((a, e) => { a[e.via] = (a[e.via] || 0) + 1; return a }, {}),
+        recent: UNWATCH_LOG.slice(0, 12)
+      }
     },
     alerts: Object.entries(ALERTS).filter(([,v])=>v.active)
               .map(([k,v])=>({key:k,title:v.title,since:v.at})),
@@ -2523,6 +2552,7 @@ function fingerprint(fields) {
 }
 
 /* الرفّات المرفوضة — دليلك على أن الانتظار كان يستحق */
+const UNWATCH_LOG = [];    /* إلغاءات المراقبة — تُستعاد عند الإقلاع */
 const FLAP_LOG = [];
 const FLAP_LOG_MAX = 60;
 
@@ -2665,6 +2695,33 @@ async function notifyChanges(list, stat) {
   }
 }
 
+/* ═══ سجل إلغاء المراقبة ═══
+   الحذف كان يمحو الصفّ بلا أثر، فما نعرف كم يلغي ولا من أين.
+   والمصدر أهم من العدد: من يلغي من تلقرام عرف الطريق (الزر أمامه)،
+   ومن يلغي من الموقع بحث عنه — والفرق يقول أين يحتاج الطلاب توجيهاً.
+   بلا await: التسجيل ما يؤخّر الإلغاء ولا يفشله. */
+function logUnwatch(rows, via) {
+  if (!EVENTS_READY) return;
+  (Array.isArray(rows) ? rows : [rows]).forEach(r => {
+    if (!r) return;
+    const born = r.created_at ? new Date(r.created_at).getTime() : 0;
+    const ev = {
+      at: Date.now(), via,
+      userId: r.user_id || null,
+      code: r.course_code || null,
+      crn: r.crn || null,
+      scope: r.scope === 'course' ? 'course' : 'section',
+      lastStatus: r.last_status || null,
+      /* كم عاشت المراقبة قبل الإلغاء — يفرّق بين «جرّب وتراجع»
+         و«راقب أسابيع ثم سجّل» */
+      livedMin: born ? Math.round((Date.now() - born) / 60000) : null
+    };
+    UNWATCH_LOG.unshift(ev);
+    if (UNWATCH_LOG.length > 200) UNWATCH_LOG.length = 200;
+    logEvent('unwatch', ev);
+  });
+}
+
 const SCHED_LOG = [];
 const SCHED_LOG_MAX = 40;
 const FIELD_AR = {
@@ -2768,7 +2825,7 @@ async function syncSchedules(term, courses, force) {
       return live.get(crn + '#' + sessionKey(r.course_date, r.course_timing)) || 'skip';
     };
 
-    const rows = await sb('GET', 'user_schedule', {
+    const rows = await sbAll('user_schedule', {
       query: `?term=eq.${encodeURIComponent(term)}` +
              `&select=user_id,crn,section,course_code,course_title,` +
              `course_date,course_timing,instructor,room`
@@ -3607,6 +3664,7 @@ const server = http.createServer(async (req, res) => {
           (r.scope === 'course' ? ' · كل الشعب' : (r.crn ? ' · CRN ' + r.crn : ''));
 
         if (b.action === 'stop') {
+          logUnwatch(rows, 'admin');
           await sb('DELETE', 'monitored_courses',
             { query: `?id=in.(${ids.join(',')})`, prefer: 'return=minimal' });
           if (b.notify) for (const r of rows) {
@@ -3775,6 +3833,24 @@ const server = http.createServer(async (req, res) => {
     } catch (e) {
       return send(500, { error: e.message });
     }
+  }
+
+  /* الطالب يلغي المراقبة من الموقع مباشرة عبر Supabase بلا مرور
+     بالسيرفر، فما نشوف الحدث. هذا المسار للتسجيل فقط — لا يحذف
+     شيئاً ولا يعطّل الإلغاء لو فشل. */
+  if (parsed.pathname === '/api/unwatch-log' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    try {
+      const b = await readBody(req);
+      if (isUuid(b.userId)) {
+        logUnwatch({
+          user_id: b.userId, course_code: b.code, crn: b.crn,
+          scope: b.scope, last_status: b.lastStatus, created_at: b.createdAt
+        }, 'web');
+      }
+    } catch (e) { /* التسجيل ما يهم لو فشل */ }
+    res.writeHead(200); res.end('{"ok":true}');
+    return;
   }
 
   /* تفاعل الطالب مع تقييم: موافق / غير موافق / بلاغ */

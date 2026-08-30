@@ -3435,7 +3435,6 @@ async function quietRefresh(){
 
   /* نحدّث البطاقات في مكانها. البطاقة ما تحمل crn في سمة، فنستخرجه
      من زر الإضافة — toggleCourse('CRN'). */
-  let shown=0;
   document.querySelectorAll('.course-card').forEach(el=>{
     const btn=el.querySelector('.btn-add');
     const mm=btn&&/toggleCourse\('([^']+)'\)/.exec(btn.getAttribute('onclick')||'');
@@ -3453,12 +3452,12 @@ async function quietRefresh(){
     badge.textContent=c.status;
     el.classList.add('just-changed');
     setTimeout(()=>el.classList.remove('just-changed'),4000);
-    shown++;
   });
 
-  if(shown)showToast(LANG==='ar'
-    ?`🔄 تحدّثت ${shown} شعبة في القائمة`
-    :`🔄 ${shown} section(s) updated`,'ok');
+  /* بلا تنبيه إطلاقاً: أي صياغة توحي بأن شيئاً تغيّر أمام الطالب،
+     فيبحث عمّا لم يتغيّر — والتغيير قد يكون خارج فلتره أصلاً.
+     الوميض يقع على البطاقة نفسها، فهو صادق بطبيعته: يظهر لو كانت
+     في نتيجته، ولا يظهر لو ما كانت. ولا يحتاج شرحاً. */
 }
 
 function startQuietRefresh(){
@@ -4031,7 +4030,7 @@ const ACAD_CAL=[
 /* ── الترم الأول ── */
 {s:'2026-08-23',e:'2026-08-27',t:'reg', ar:'فترة التسجيل',                 en:'Registration period'},
 {s:'2026-08-30',              t:'start',ar:'بداية الدراسة — الترم الأول',   en:'Classes begin — Fall'},
-{s:'2026-08-30',e:'2026-09-03',t:'add', ar:'التسجيل المتأخر والحذف والإضافة',en:'Late registration & Add/Drop'},
+{s:'2026-08-28',e:'2026-09-03',t:'add', ar:'التسجيل المتأخر والحذف والإضافة',en:'Late registration & Add/Drop'},
 {s:'2026-09-06',e:'2026-09-10',t:'add',  ar:'فترة الحذف (آخر يوم بدون رسوم ١٠ سبتمبر)',en:'Drop period (last day without charge 10 Sep)'},
 {s:'2026-09-23',e:'2026-09-26',t:'off', ar:'إجازة اليوم الوطني',            en:'National Day holiday'},
 {s:'2026-11-05',              t:'warn', ar:'آخر يوم للانسحاب بتقدير W',     en:'Last day to withdraw with "W"'},
@@ -4069,7 +4068,10 @@ const CAL_ICON={reg:'📝',start:'🎓',add:'🔁',off:'🌴',warn:'⚠️',exam
    من تقويم التسجيل المعتمد للترم الأول ٢٠٢٦–٢٠٢٧.
    يختفي الكرت كامل بعد نهاية فترة الحذف. */
 const REG_CAL={
-  hideAfter:'2026-09-10',
+  /* جدول المستويات ينتهي بانتهاء آخر يوم فيه (فريشمان 27 أغسطس).
+     بعدها التسجيل مفتوح للجميع، فالجدول يصير معلومة ميتة تشغل
+     أهم مساحة في الصفحة. أما بقية المواعيد فتبقى في «مواعيد تهمك». */
+  hideAfter:'2026-08-27',
   termAr:'الترم الأول ٢٠٢٦–٢٠٢٧', termEn:'Fall 2026–2027',
   rows:[
     {k:'eve', d:'2026-08-23', ar:'مسائي · دراسات عليا · تحضيري',
@@ -4083,7 +4085,7 @@ const REG_CAL={
     {k:'fr',  d:'2026-08-27', min:0,  ar:'فريشمان', en:'Freshman',
      hAr:'٠ – ٢٩ ساعة', hEn:'0 – 29 credits'}
   ],
-  addDrop:{s:'2026-08-30',e:'2026-09-03'},
+  addDrop:{s:'2026-08-28',e:'2026-09-03'},
   drop:{s:'2026-09-06',e:'2026-09-10'}
 };
 
@@ -4919,13 +4921,46 @@ document.addEventListener('visibilitychange',()=>{
   /* رجوعه للتبويب أقوى إشارة على أنه بيقرأ القائمة الآن */
   if(QUIET_ON)quietRefresh().catch(()=>{});
   if(!USER)return;
-  try{ if(!tgLinked()) refreshProfile() }catch(e){}
+  resumeSync();
 });
 
-async function refreshProfile(){
+/* الطالب يربط تلقرام أو يلغي مراقبة من خارج الصفحة، ويرجع فيلقى الحالة القديمة.
+   المثبَّت على الشاشة الرئيسية لا يُعاد تحميله عند الفتح إطلاقاً، فالحالة القديمة
+   تعيش أياماً. رجوعه للصفحة هو إشارتنا الوحيدة.
+   نسحب ما يتغيّر من خارج الصفحة فقط: الملف الشخصي (حالة ربط تلقرام والاشتراك)
+   وقائمة المراقبة. الجدول والخطة لا نلمسهما هنا — يعدّلهما الطالب من جهازه،
+   وسحبهما يعني احتمال كتابة نسخة السحابة فوق تعديل محلي لسه ما رُفع. */
+let RESUME_AT=0, RESUMING=false;
+async function resumeSync(){
   if(!USER)return;
-  const {data}=await sb.from('profiles').select('*').eq('id',USER.id).single();
-  if(data){PROFILE=data;renderSettings();renderResults()}
+  if(RESUMING)return;
+  if(Date.now()-RESUME_AT<10000)return;   /* تبديل سريع بين التطبيقات ما يستاهل سحبة */
+  RESUMING=true; RESUME_AT=Date.now();
+  try{
+    /* محاولة ثانية بعد ثانيتين: أول سحبة بعد الرجوع قد تسبق تجديد التوكن */
+    if(!await refreshProfile()){
+      await new Promise(r=>setTimeout(r,2000));
+      await refreshProfile();
+    }
+    await loadMonitored();
+    renderResults();renderSettings();
+  }catch(e){ /* الشبكة قد تكون منقطعة لحظة الفتح — نبقي المعروض */ }
+  finally{ RESUMING=false }
+}
+
+/* iOS يرجّع الصفحة من الذاكرة عند الرجوع للخلف بلا visibilitychange */
+window.addEventListener('pageshow',e=>{ if(e.persisted)resumeSync() });
+
+async function refreshProfile(){
+  if(!USER)return false;
+  /* كانت تتجاهل الخطأ: السحبة تفشل (توكن منتهٍ بعد تخزين طويل، شبكة متعثّرة)
+     فتبقى PROFILE القديمة ويظل الشريط يقول «غير مربوط» وهو مربوط أصلاً.
+     نرجّع نجاحاً/فشلاً عشان النداء يقدر يعيد المحاولة. */
+  const {data,error}=await sb.from('profiles').select('*').eq('id',USER.id).single();
+  if(error||!data)return false;
+  PROFILE=data;renderSettings();renderResults();
+  try{ renderTgBar() }catch(e){}
+  return true;
 }
 
 /* ---- monitored courses ---- */
@@ -5043,6 +5078,7 @@ async function toggleMonitorAllGo(code){
   const term=document.getElementById('term').value;
   const ex=monitored.find(m=>m.scope==='course'&&sameCode(m.course_code,code)&&m.term===term);
   if(ex){
+    logUnwatch(ex);
     await sb.from('monitored_courses').delete().eq('id',ex.id);
     monitored=monitored.filter(m=>m.id!==ex.id);
     showToast(LANG==='ar'?`وقفت مراقبة كل شعب ${code}`:`Stopped watching all ${code}`);
@@ -5079,6 +5115,7 @@ async function toggleMonitorCourseGo(crn){
   const c=allCourses.find(x=>x.crn===crn);if(!c)return;
   const ex=monitored.find(m=>m.crn===crn);
   if(ex){
+    logUnwatch(ex);
     await sb.from('monitored_courses').delete().eq('id',ex.id);
     monitored=monitored.filter(m=>m.crn!==crn);
     showToast(LANG==='ar'?`وقفت مراقبة ${c.courseCode}`:`Stopped watching ${c.courseCode}`);
@@ -5105,7 +5142,21 @@ async function toggleMonitorCourseGo(crn){
   renderResults();renderSettings();
 }
 
+/* نبلّغ السيرفر بالإلغاء للتسجيل فقط — بلا await ومع catch،
+   فلا يؤخّر الإلغاء ولا يفشله لو تعطّل المسار. */
+function logUnwatch(row){
+  if(!USER||!row)return;
+  try{
+    fetch(API.replace('/courses','/unwatch-log'),{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({userId:USER.id,code:row.course_code,crn:row.crn,
+        scope:row.scope,lastStatus:row.last_status,createdAt:row.created_at})
+    }).catch(()=>{});
+  }catch(e){}
+}
+
 async function removeMonitor(id){
+  logUnwatch(monitored.find(m=>m.id===id));
   await sb.from('monitored_courses').delete().eq('id',id);
   monitored=monitored.filter(m=>m.id!==id);
   renderSettings();renderResults();
