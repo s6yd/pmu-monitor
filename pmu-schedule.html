@@ -712,9 +712,16 @@ background:rgba(77,124,254,.12);border-radius:20px;padding:1px 8px}
 .sg-n{font-size:12px;color:var(--text2);margin-top:5px;line-height:1.6;
 word-break:break-word}
 .sg-btns{display:flex;flex-direction:column;gap:6px;flex-shrink:0}
-.ev-share{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text2);
-cursor:pointer;padding:2px}
-.ev-share input{width:17px;height:17px;accent-color:var(--accent);flex-shrink:0}
+.ev-share{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--text2);
+cursor:pointer;padding:8px 10px;background:var(--card);border:1px solid var(--border);
+border-radius:10px;font-family:var(--sans);text-align:start;width:100%}
+.ev-share.on{border-color:var(--accent);color:var(--text)}
+.ev-box{width:19px;height:19px;border:1.5px solid var(--border);border-radius:6px;
+display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0}
+.ev-share.on .ev-box{background:var(--accent);border-color:var(--accent);color:#fff}
+.ev-btns{display:flex;gap:8px}
+.ev-btns .btn-sm{flex:1}
+.wk-l{border:none;cursor:pointer;font-family:var(--mono)}
 .ev-hint{font-size:11.5px;color:var(--text3);line-height:1.7}
 /* ── العرض الأسبوعي ── */
 .vw-switch{display:flex;gap:5px;background:var(--card);border:1px solid var(--border);
@@ -4424,6 +4431,7 @@ const EV_KINDS=[['quiz','📝 كويز'],['hw','📄 واجب'],['project','📐
 const EV_LABEL=Object.fromEntries(EV_KINDS);
 
 let EVS=[], EV_TRIED=false, EV_PAST_OPEN=false, EV_FORM=null;
+let EV_NOTE_SHARE=false, EV_EDIT=null;
 
 async function loadEvs(){
   if(!USER)return;
@@ -4451,16 +4459,39 @@ async function addEv(crn){
   const date=document.getElementById('evDate').value;
   const note=(document.getElementById('evNote').value||'').trim().slice(0,300);
   if(!date){ showToast('اختر التاريخ'); return }
-  const ns=document.getElementById('evNoteShare');
   const row={user_id:USER.id,term:activeTermCode(),crn:String(crn),
              kind,on_date:date,note:note||null,
-             note_shared:!!(ns&&ns.checked&&note)};
+             note_shared:!!(EV_NOTE_SHARE&&note)};
   const {data,error}=await sb.from('course_events').insert(row).select().single();
   if(error){ showToast('ما انحفظ — جرّب مرة ثانية'); return }
   EVS.push(data); EV_FORM=null;
   showToast('✅ انحفظ');
   redrawCourse();
 }
+/* التعديل بعد الحفظ: كان لازم يحذف ويضيف من جديد لتصحيح كلمة */
+function editEv(id){
+  const e=EVS.find(x=>String(x.id)===String(id));
+  if(!e)return;
+  EV_EDIT=String(id); EV_FORM=null; EV_NOTE_SHARE=!!e.note_shared;
+  redrawCourse();
+}
+async function saveEvEdit(id){
+  const e=EVS.find(x=>String(x.id)===String(id));
+  if(!e)return;
+  const kind=document.getElementById('edKind').value;
+  const date=document.getElementById('edDate').value;
+  const note=(document.getElementById('edNote').value||'').trim().slice(0,300);
+  if(!date){ showToast('اختر التاريخ'); return }
+  const patch={kind,on_date:date,note:note||null,
+               note_shared:!!(EV_NOTE_SHARE&&note)};
+  const {error}=await sb.from('course_events').update(patch).eq('id',id);
+  if(error){ showToast('ما انحفظ — جرّب مرة ثانية'); return }
+  Object.assign(e,patch);
+  EV_EDIT=null; showToast('✅ انحفظ');
+  redrawCourse();
+}
+function cancelEvEdit(){ EV_EDIT=null; redrawCourse() }
+
 async function delEv(id){
   if(!confirm('تحذف هذا الموعد؟'))return;
   const {error}=await sb.from('course_events').delete().eq('id',id);
@@ -4479,12 +4510,27 @@ function evWhen(d){
 }
 
 function evRow(e,past){
+  if(EV_EDIT===String(e.id))return `<div class="ev-form">
+    <select id="edKind">${EV_KINDS.map(([k,l])=>
+      `<option value="${k}"${k===e.kind?' selected':''}>${l}</option>`).join('')}</select>
+    <input type="date" id="edDate" value="${e.on_date}">
+    <input type="text" id="edNote" maxlength="300" value="${escapeHtml(e.note||'')}"
+           placeholder="ملاحظة (اختياري)">
+    <button class="ev-share${EV_NOTE_SHARE?' on':''}"
+      onclick="EV_NOTE_SHARE=!EV_NOTE_SHARE;this.classList.toggle('on',EV_NOTE_SHARE)">
+      <span class="ev-box">${EV_NOTE_SHARE?'✓':''}</span>
+      <span>شارك الملاحظة مع زملائك في الشعبة</span></button>
+    <div class="ev-btns">
+      <button class="btn-sm" onclick="saveEvEdit('${e.id}')">احفظ</button>
+      <button class="mini" onclick="cancelEvEdit()">إلغاء</button>
+    </div></div>`;
   return `<div class="ev-row${past?' past':''}">
     <div class="ev-main">
       <div class="ev-t">${EV_LABEL[e.kind]||'📌'}<span class="ev-when">${evWhen(e.on_date)}</span></div>
       <div class="ev-d ltr">${e.on_date}</div>
       ${e.note?`<div class="ev-n">${escapeHtml(e.note)}</div>`:''}
     </div>
+    <button class="cs-abs-del" onclick="editEv('${e.id}')" title="عدّل">✎</button>
     <button class="cs-abs-del" onclick="delEv('${e.id}')" title="احذف">✕</button>
   </div>`;
 }
@@ -4503,8 +4549,10 @@ function evBlock(c){
       <select id="evKind">${EV_KINDS.map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select>
       <input type="date" id="evDate" value="${today}">
       <input type="text" id="evNote" maxlength="300" placeholder="ملاحظة (اختياري) — مثلاً: الفصول ١–٣">
-      <label class="ev-share"><input type="checkbox" id="evNoteShare">
-        <span>شارك الملاحظة مع زملائك في الشعبة</span></label>
+      <button class="ev-share${EV_NOTE_SHARE?' on':''}" id="evNoteShare"
+        onclick="EV_NOTE_SHARE=!EV_NOTE_SHARE;this.classList.toggle('on',EV_NOTE_SHARE)">
+        <span class="ev-box">${EV_NOTE_SHARE?'✓':''}</span>
+        <span>شارك الملاحظة مع زملائك في الشعبة</span></button>
       <div class="ev-hint">📢 الموعد نفسه يظهر لزملائك في الشعبة بلا اسمك. الملاحظة والصور تبقى خاصة إلا لو شاركتها.</div>
       <button class="btn-sm" onclick="addEv('${c.crn}')">احفظ</button>
     </div>`:''}
@@ -4819,7 +4867,7 @@ function redrawCourse(){ if(CS_OPEN)openCourse(CS_OPEN.crn,CS_OPEN.start,1) }
 
 function closeCourse(fromPop){
   if(!CS_OPEN)return;
-  CS_OPEN=null; EV_FORM=null;
+  CS_OPEN=null; EV_FORM=null; EV_EDIT=null;
   const ov=document.getElementById('csOv');
   if(ov)ov.classList.remove('open');
   document.body.style.overflow='';
@@ -4896,15 +4944,16 @@ function renderWeek(){
           ${e.note?`<i>${escapeHtml(e.note)}</i>`:''}</div>`;
       }).join('')}
       ${lessons.length?`<div class="wk-lessons">${lessons.map(x=>
-        `<span class="wk-l ltr">${fmtTime(x.t.start)} ${escapeHtml(x.c.courseCode)}</span>`
+        `<button class="wk-l ltr" onclick="openCourse('${x.c.crn}',${x.t.start})"
+          >${fmtTime(x.t.start)} ${escapeHtml(x.c.courseCode)}</button>`
         ).join('')}</div>`:(empty?`<div class="wk-none">—</div>`:'')}
     </div>`;
   }).join('');
 
   return `<div class="wk-nav">
-      <button class="mini" onclick="shiftWeek(1)">›</button>
+      <button class="mini" onclick="shiftWeek(-1)">السابق</button>
       <button class="wk-label" onclick="openWeekPicker()">${label} <span>▾</span></button>
-      <button class="mini" onclick="shiftWeek(-1)">‹</button>
+      <button class="mini" onclick="shiftWeek(1)">التالي</button>
     </div>${body}`;
 }
 
