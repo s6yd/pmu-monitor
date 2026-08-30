@@ -1578,8 +1578,9 @@ async function adminMonitors() {
                         sections: isCourse && m.sections_state
                           ? Object.keys(m.sections_state).length : null,
                         status: isCourse ? null : (m.last_status || '—'),
-                        watchers: 0, rows: [] };
+                        watchers: 0, notified: 0, rows: [] };
     g[k].watchers++;
+    if (m.notified_at) g[k].notified++;
     const p = who[m.user_id] || {};
     g[k].rows.push({
       id: m.id,
@@ -1587,6 +1588,7 @@ async function adminMonitors() {
       email: p.email || '—',
       linked: !!p.telegram_chat_id,
       askedAt: m.expires_at || null,
+      notifiedAt: m.notified_at || null,   /* عشان ما نرسل تنبيهاً مرتين بلا ما ندري */
       since: m.created_at || null
     });
   });
