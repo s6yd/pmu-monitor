@@ -995,6 +995,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 </div>
 
 <div class="tabs tabs4">
+  <button class="tab" id="tabToday" onclick="switchTab('today')" style="display:none">☀️ اليوم</button>
   <button class="tab active" id="tabSearch" onclick="switchTab('search')"data-i18n="tabSearch">🔍 البحث</button>
   <button class="tab" id="tabSched" onclick="switchTab('sched')"data-i18n="tabSched">📅 جدولي <span class="tab-badge" id="schedBadge">0</span></button>
   <button class="tab" id="tabPlan" onclick="switchTab('plan')"data-i18n="tabPlan">📋 خطتي</button>
@@ -1005,6 +1006,8 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 <div class="main">
 
 <!-- SEARCH -->
+<div class="page" id="pageToday"></div>
+
 <div class="page active" id="pageSearch">
   <div class="search-card">
     <div class="sc-title" data-i18n="searchTitle">البحث عن المواد</div>
@@ -3288,10 +3291,11 @@ function switchTab(n){
   /* ما نحفظ لو التبويب نفسه، عشان لا نطمس تصفيراً مقصوداً */
   if(n!==CUR_TAB)TAB_SCROLL[CUR_TAB]=window.scrollY||0;
   CUR_TAB=n;
-  ['search','sched','plan','docs','set'].forEach(t=>{
+  ['today','search','sched','plan','docs','set'].forEach(t=>{
     document.getElementById('page'+t[0].toUpperCase()+t.slice(1)).classList.toggle('active',t===n);
     document.getElementById('tab'+t[0].toUpperCase()+t.slice(1)).classList.toggle('active',t===n);
   });
+  if(n==='today'){renderToday();startTodayTick()}else stopTodayTick();
   if(n==='sched'){renderSlots();renderSchedule();}
   if(n==='plan')renderPlan();
   if(n==='sched'){renderCalendar();renderRegCal();}
@@ -3950,6 +3954,165 @@ function renderSchedule(){
       <span class="cnt">${items.length} ${t('lecture')}</span></div>${body}</div>`;
   }).join('');
 }
+
+/* ════════════ تبويب «اليوم» — نسخة تجريبية ════════════
+   حساب محض على بيانات موجودة في الذاكرة: صفر طلبات شبكة، صفر كتابة.
+   لا يظهر إلا للبريد المذكور تحت — أي طالب آخر لا يرى الزر ولا الصفحة. */
+const BETA_EMAILS=['mohammadmusabbeh@gmail.com'];
+function isBeta(){
+  const e=(USER&&USER.email||'').toLowerCase().trim();
+  return !!e && BETA_EMAILS.includes(e);
+}
+function syncBetaTabs(){
+  const b=document.getElementById('tabToday');
+  if(b)b.style.display=isBeta()?'':'none';
+  if(!isBeta()&&CUR_TAB==='today')switchTab('search');
+}
+
+/* التوقيت مثبّت على السعودية لا على ساعة الجهاز: أوقات المحاضرات نصوص
+   بلا منطقة زمنية، فطالب مسافر أو ساعته مضبوطة غلط يشوف عدّاداً كاذباً. */
+const KSA_WD={Sun:'U',Mon:'M',Tue:'T',Wed:'W',Thu:'R',Fri:'F',Sat:'S'};
+function ksaNow(){
+  const f=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Riyadh',weekday:'short',
+    year:'numeric',month:'2-digit',day:'2-digit',
+    hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+  const p={};f.formatToParts(new Date()).forEach(x=>p[x.type]=x.value);
+  const h=+p.hour%24;                       /* بعض المحرّكات ترجّع 24 عند منتصف الليل */
+  return { day:KSA_WD[p.weekday]||'U',
+           date:`${p.year}-${p.month}-${p.day}`,
+           min:h*60+ +p.minute, sec:+p.second };
+}
+
+/* ترتيب أيام الدراسة يبدأ بالأحد — للبحث عن أقرب يوم فيه محاضرة */
+const WEEK_ORDER=['U','M','T','W','R','F','S'];
+function lessonsOn(day){
+  return (schedule||[])
+    .map(c=>({c,t:parseTime(c.courseTiming)}))
+    .filter(x=>x.t&&parseDays(x.c.courseDate).includes(day))
+    .sort((a,b)=>a.t.start-b.t.start);
+}
+
+/* «بعد ساعة و٢٠ د» أهدأ من رقم يركض. الثواني في آخر خمس دقائق فقط،
+   وهي اللحظة الوحيدة اللي تصير فيها مهمة فعلاً. */
+function fmtLeft(mins,secs){
+  if(mins<5){
+    const tot=mins*60+(60-secs)%60;
+    return `${Math.floor(tot/60)}:${String(tot%60).padStart(2,'0')} دقيقة`;
+  }
+  if(mins<60)return `${mins} دقيقة`;
+  const h=Math.floor(mins/60),m=mins%60;
+  return m?`${h} ساعة و${m} د`:`${h} ساعة`;
+}
+function fmtDays(n){
+  if(n===0)return 'اليوم';
+  if(n===1)return 'بكرة';
+  if(n===2)return 'بعد يومين';
+  return `بعد ${n} أيام`;
+}
+function dDiff(a,b){ return Math.round((new Date(b+'T00:00:00Z')-new Date(a+'T00:00:00Z'))/864e5) }
+
+/* أقرب حدث في التقويم الأكاديمي — يملأ الصفحة يوم ما فيه محاضرات،
+   فلا يشوف الطالب صندوقاً فاضياً ينتظر منه عملاً. */
+function nextAcad(today){
+  let best=null;
+  for(const e of (typeof ACAD_CAL!=='undefined'?ACAD_CAL:[])){
+    const end=e.e||e.s;
+    if(end<today)continue;                    /* انتهى */
+    const d=dDiff(today,e.s);
+    const running=e.s<=today&&today<=end;
+    const cand={e,days:running?0:d,running};
+    if(!best||cand.days<best.days)best=cand;
+  }
+  return best;
+}
+function todayHoliday(today){
+  for(const e of (typeof ACAD_CAL!=='undefined'?ACAD_CAL:[]))
+    if(e.t==='off'&&e.s<=today&&today<=(e.e||e.s))return e;
+  return null;
+}
+
+function slotCard(c,t,extra){
+  return `<div class="slot">
+    <div class="slot-time">${fmtTime(t.start)}–${fmtTime(t.end)}</div>
+    <div class="slot-info tap" data-code="${escapeHtml(c.courseCode)}"
+         onclick="searchIn(this.dataset.code)">
+      <div class="slot-name">${c.courseCode} §${c.section}</div>
+      ${c.courseTitle?`<div class="slot-title">${escapeHtml(c.courseTitle)}</div>`:''}
+      <div class="slot-sub">${escapeHtml(c.room||'—')} · ${escapeHtml(c.instructor||'—')}</div>
+      ${extra||''}
+    </div></div>`;
+}
+
+function renderToday(){
+  const box=document.getElementById('pageToday');
+  if(!box)return;
+  const n=ksaNow();
+  const mine=lessonsOn(n.day);
+  const running=mine.find(x=>x.t.start<=n.min&&n.min<x.t.end);
+  const next=mine.find(x=>x.t.start>n.min);
+  const hol=todayHoliday(n.date);
+  let hero='';
+
+  if(running){
+    const left=running.t.end-n.min;
+    hero=`<div class="day-block"><div class="day-head">
+        <span>محاضرتك الآن</span><span class="cnt">تنتهي بعد ${fmtLeft(left,n.sec)}</span></div>
+      <div class="day-body">${slotCard(running.c,running.t)}</div></div>`;
+  }else if(next){
+    const left=next.t.start-n.min;
+    hero=`<div class="day-block"><div class="day-head">
+        <span>محاضرتك القادمة</span><span class="cnt">بعد ${fmtLeft(left,n.sec)}</span></div>
+      <div class="day-body">${slotCard(next.c,next.t)}</div></div>`;
+  }else{
+    /* ما بقي شيء اليوم — نوجّهه لأقرب يوم فيه محاضرة بدل صندوق فاضٍ */
+    let found=null;
+    for(let i=1;i<=7&&!found;i++){
+      const d=WEEK_ORDER[(WEEK_ORDER.indexOf(n.day)+i)%7];
+      const l=lessonsOn(d);
+      if(l.length)found={d,i,first:l[0]};
+    }
+    const head=hol?`🏖️ ${escapeHtml(hol.ar)}`
+              :mine.length?'✅ خلصت محاضراتك اليوم':'☕ ما عندك محاضرات اليوم';
+    hero=`<div class="day-block"><div class="day-head"><span>${head}</span></div>
+      <div class="day-body">${found
+        ?slotCard(found.first.c,found.first.t,
+           `<div class="slot-sub" style="opacity:.75">${fmtDays(found.i)} · ${DAY_AR[found.d]}</div>`)
+        :`<div class="empty-day">ما في محاضرات في جدولك</div>`}</div></div>`;
+  }
+
+  /* بقية اليوم */
+  const rest=mine.filter(x=>x.t.start>n.min&&(!next||x.c.crn!==next.c.crn||x.t.start!==next.t.start));
+  const restHtml=rest.length?`<div class="day-block">
+      <div class="day-head"><span>بقية اليوم</span>
+        <span class="cnt">${rest.length} محاضرة</span></div>
+      <div class="day-body">${rest.map(x=>slotCard(x.c,x.t)).join('')}</div></div>`:'';
+
+  /* أقرب موعد أكاديمي */
+  const a=nextAcad(n.date);
+  const acad=a?`<div class="day-block"><div class="day-head">
+      <span>أقرب موعد مهم</span>
+      <span class="cnt">${a.running?'جارٍ الآن':fmtDays(a.days)}</span></div>
+    <div class="day-body"><div class="slot">
+      <div class="slot-time">${a.e.s.slice(5).replace('-','/')}</div>
+      <div class="slot-info"><div class="slot-name">${escapeHtml(a.e.ar)}</div>
+      ${a.e.e?`<div class="slot-sub">حتى ${a.e.e.slice(5).replace('-','/')}</div>`:''}
+      </div></div></div></div>`:'';
+
+  box.innerHTML=hero+restHtml+acad;
+}
+
+/* المؤقّت يشتغل فقط والتبويب مفتوح والصفحة ظاهرة — بطارية الجوال أهم
+   من ثانية دقيقة في تبويب ما أحد يشوفه. */
+let TODAY_TICK=null;
+function startTodayTick(){
+  stopTodayTick();
+  TODAY_TICK=setInterval(()=>{
+    if(document.hidden||CUR_TAB!=='today')return;
+    renderToday();
+  },1000);
+}
+function stopTodayTick(){ if(TODAY_TICK){clearInterval(TODAY_TICK);TODAY_TICK=null} }
+
 
 /* حالة المراقبة تُجلب للتحقق من نسخة الاختبار فقط */
 let MON_STATE=null;
@@ -4958,7 +5121,7 @@ async function refreshProfile(){
      نرجّع نجاحاً/فشلاً عشان النداء يقدر يعيد المحاولة. */
   const {data,error}=await sb.from('profiles').select('*').eq('id',USER.id).single();
   if(error||!data)return false;
-  PROFILE=data;renderSettings();renderResults();
+  PROFILE=data;renderSettings();renderResults();syncBetaTabs();
   try{ renderTgBar() }catch(e){}
   return true;
 }
@@ -6723,6 +6886,7 @@ function setAuthUI(){
     note.classList.add('visible');
     document.getElementById('syncText').textContent=t('syncOut');
   }
+  try{ syncBetaTabs() }catch(e){}   /* الزر يظهر مع الدخول ويختفي مع الخروج */
 }
 
 /* تحميل بيانات المستخدم من السحابة */
