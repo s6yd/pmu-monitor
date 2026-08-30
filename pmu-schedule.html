@@ -699,6 +699,23 @@ border-radius:20px;padding:1px 8px}
 .ev-d{font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:3px}
 .ev-n{font-size:12px;color:var(--text2);margin-top:5px;line-height:1.6;word-break:break-word}
 .ev-empty{font-size:12px;color:var(--text3);padding:12px 0 2px;text-align:center}
+/* ── مواعيد الزملاء ── */
+.sg-row{display:flex;gap:10px;align-items:flex-start;background:var(--bg);
+border-radius:12px;padding:11px 12px;margin-top:9px}
+.sg-main{flex:1;min-width:0}
+.sg-t{font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px}
+.sg-when{font-size:11px;font-weight:600;color:var(--accent2);
+background:rgba(77,124,254,.12);border-radius:20px;padding:1px 8px}
+.sg-d{font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:3px}
+.sg-w{font-size:11.5px;color:var(--warn);margin-top:5px;line-height:1.6}
+.sg-w.ok{color:var(--open)}
+.sg-n{font-size:12px;color:var(--text2);margin-top:5px;line-height:1.6;
+word-break:break-word}
+.sg-btns{display:flex;flex-direction:column;gap:6px;flex-shrink:0}
+.ev-share{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text2);
+cursor:pointer;padding:2px}
+.ev-share input{width:17px;height:17px;accent-color:var(--accent);flex-shrink:0}
+.ev-hint{font-size:11.5px;color:var(--text3);line-height:1.7}
 /* ── العرض الأسبوعي ── */
 .vw-switch{display:flex;gap:5px;background:var(--card);border:1px solid var(--border);
 border-radius:12px;padding:4px;margin-bottom:12px}
@@ -4434,8 +4451,10 @@ async function addEv(crn){
   const date=document.getElementById('evDate').value;
   const note=(document.getElementById('evNote').value||'').trim().slice(0,300);
   if(!date){ showToast('اختر التاريخ'); return }
+  const ns=document.getElementById('evNoteShare');
   const row={user_id:USER.id,term:activeTermCode(),crn:String(crn),
-             kind,on_date:date,note:note||null};
+             kind,on_date:date,note:note||null,
+             note_shared:!!(ns&&ns.checked&&note)};
   const {data,error}=await sb.from('course_events').insert(row).select().single();
   if(error){ showToast('ما انحفظ — جرّب مرة ثانية'); return }
   EVS.push(data); EV_FORM=null;
@@ -4484,6 +4503,9 @@ function evBlock(c){
       <select id="evKind">${EV_KINDS.map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select>
       <input type="date" id="evDate" value="${today}">
       <input type="text" id="evNote" maxlength="300" placeholder="ملاحظة (اختياري) — مثلاً: الفصول ١–٣">
+      <label class="ev-share"><input type="checkbox" id="evNoteShare">
+        <span>شارك الملاحظة مع زملائك في الشعبة</span></label>
+      <div class="ev-hint">📢 الموعد نفسه يظهر لزملائك في الشعبة بلا اسمك. الملاحظة والصور تبقى خاصة إلا لو شاركتها.</div>
       <button class="btn-sm" onclick="addEv('${c.crn}')">احفظ</button>
     </div>`:''}
     ${soon.length?`<div class="ev-list">${soon.map(e=>evRow(e)).join('')}</div>`
@@ -4657,6 +4679,88 @@ function phChip(c){
   return n?`<span class="dc-ph">📷 ${n}</span>`:'';
 }
 
+/* ═══ مواعيد الزملاء ═══
+   طالب يضيف موعداً فيراه زملاؤه في نفس الشعبة كاقتراح — لا يُضاف تلقائياً.
+   العرض shared_events يفرّغ الملاحظة غير المشتركة في القاعدة نفسها، ولا
+   يخرج user_id إطلاقاً، فلا أسماء ولا تجميع لأحداث شخص واحد.
+   العتبة: يظهر من أول طالب مع «غير مؤكد»، ويصير مؤكداً عند ثلاثة. */
+const SHARE_MIN=3;
+let SHARED=[], SH_TRIED=false;
+
+async function loadShared(){
+  if(!USER)return;
+  SH_TRIED=true;
+  try{
+    const {data,error}=await sb.from('shared_events')
+      .select('id,crn,term,kind,on_date,note,mine').eq('term',activeTermCode());
+    if(error)return;
+    SHARED=data||[];
+  }catch(e){}
+}
+
+/* نجمّع على (النوع + التاريخ): «كويز يوم ١٥» اقتراح واحد مهما كتبه عشرة */
+function suggestionsFor(crn){
+  const today=ksaNow().date;
+  const g={};
+  SHARED.filter(e=>String(e.crn)===String(crn)&&e.on_date>=today).forEach(e=>{
+    const k=e.kind+'|'+e.on_date;
+    const o=g[k]||(g[k]={kind:e.kind,on_date:e.on_date,n:0,mine:false,notes:[]});
+    o.n++;
+    if(e.mine)o.mine=true;
+    if(e.note)o.notes.push(e.note);
+  });
+  /* ما نقترح عليه شيئاً أضافه أصلاً */
+  return Object.values(g).filter(o=>!o.mine)
+    .sort((a,b)=>a.on_date<b.on_date?-1:1);
+}
+
+/* الاقتراح يُضاف بضغطة منه — لا إضافة صامتة مهما كثر المؤكدون */
+async function acceptSuggestion(crn,kind,date){
+  if(!USER)return;
+  const row={user_id:USER.id,term:activeTermCode(),crn:String(crn),
+             kind,on_date:date,note:null};
+  const {data,error}=await sb.from('course_events').insert(row).select().single();
+  if(error){ showToast('ما انحفظ — جرّب مرة ثانية'); return }
+  EVS.push(data);
+  showToast('✅ انضاف لمواعيدك');
+  redrawCourse();
+}
+function ignoreSuggestion(kind,date,crn){
+  const k=`sug_${crn}_${kind}_${date}`;
+  const l=load('pmu_sug_ignored',[]);
+  if(!l.includes(k)){ l.push(k); save('pmu_sug_ignored',l) }
+  redrawCourse();
+}
+function ignored(crn,kind,date){
+  return load('pmu_sug_ignored',[]).includes(`sug_${crn}_${kind}_${date}`);
+}
+
+function shareBlock(c){
+  const list=suggestionsFor(c.crn).filter(o=>!ignored(c.crn,o.kind,o.on_date));
+  if(!list.length)return '';
+  return `<div class="cs-abs">
+    <div class="cs-abs-head"><span>زملاؤك في الشعبة</span></div>
+    ${list.map(o=>{
+      const ok=o.n>=SHARE_MIN;
+      /* تحت الثلاثة ما نذكر عدداً — طالبان في شعبة صغيرة يكشفان الهوية */
+      const who=ok?`✅ ${o.n} من شعبتك أضافوه`:'⚠️ غير مؤكد — أضافه طالب واحد أو اثنان';
+      return `<div class="sg-row">
+        <div class="sg-main">
+          <div class="sg-t">${EV_LABEL[o.kind]||'📌'}
+            <span class="sg-when">${evWhen(o.on_date)}</span></div>
+          <div class="sg-d ltr">${o.on_date}</div>
+          <div class="sg-w${ok?' ok':''}">${who}</div>
+          ${o.notes.length?`<div class="sg-n">${escapeHtml(o.notes[0])}</div>`:''}
+        </div>
+        <div class="sg-btns">
+          <button class="btn-sm" onclick="acceptSuggestion('${c.crn}','${o.kind}','${o.on_date}')">أضفه</button>
+          <button class="mini" onclick="ignoreSuggestion('${o.kind}','${o.on_date}','${c.crn}')">تجاهل</button>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
 /* ═══ لوح تفاصيل المادة ═══
    يُفتح من تبويب اليوم فقط. الحذف والبحث موجودان في «جدولي» فما نكرّرهما هنا —
    هذا اللوح مخصّص لما لا مكان له غيره: الغياب والأحداث لاحقاً.
@@ -4692,6 +4796,7 @@ function openCourse(crn,start,redraw){
       ${row('CRN',c.crn,1)}
     </div>
     ${evBlock(c)}
+    ${shareBlock(c)}
     ${phBlock(c)}
     ${absBlock(c)}
     ${sibs.length?`<div class="cs-sib">🔁 لهذي المادة ${sibs.length===1?'جلسة أخرى':'جلسات أخرى'}: ${
@@ -4706,6 +4811,7 @@ function openCourse(crn,start,redraw){
   if(!ABS_TRIED)loadAbs().then(()=>redrawCourse());
   if(!EV_TRIED)loadEvs().then(()=>redrawCourse());
   if(!PH_TRIED)loadPhotos().then(()=>redrawCourse());
+  if(!SH_TRIED)loadShared().then(()=>redrawCourse());
 }
 
 /* بعد تسجيل/حذف غياب: نعيد رسم اللوح المفتوح في مكانه */
@@ -4918,6 +5024,7 @@ function renderToday(){
   if(!ABS_TRIED&&USER)loadAbs().then(()=>{TODAY_HTML='';renderToday()});
   if(!EV_TRIED&&USER)loadEvs().then(()=>{TODAY_HTML='';renderToday()});
   if(!PH_TRIED&&USER)loadPhotos().then(()=>{TODAY_HTML='';renderToday()});
+  if(!SH_TRIED&&USER)loadShared().then(()=>{TODAY_HTML='';renderToday()});
   mountCal();
   if(!TODAY_SCROLLED){
     TODAY_SCROLLED=true;
