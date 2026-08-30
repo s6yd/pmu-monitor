@@ -94,6 +94,7 @@ border:1px solid var(--border2);border-radius:13px;padding:12px 14px;margin-bott
 .tabs{position:sticky;top:52px;z-index:99;background:rgba(8,11,18,.94);backdrop-filter:blur(16px);
 border-bottom:1px solid var(--border);display:grid;grid-template-columns:1fr 1fr 1fr}
 .tabs.tabs4{grid-template-columns:1fr 1fr 1fr 1fr auto}
+.tabs.tabs4.tabs5{grid-template-columns:1fr 1fr 1fr 1fr 1fr auto}
 .tabs.tabs4 .tab{font-size:11px;padding:12px 2px;gap:3px}
 .tabs.tabs4 .tab-badge{font-size:9px;padding:1px 5px}
 .tab{background:none;border:none;color:var(--text3);font-family:var(--sans);font-size:13px;font-weight:600;
@@ -995,9 +996,9 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 </div>
 
 <div class="tabs tabs4">
-  <button class="tab" id="tabToday" onclick="switchTab('today')" style="display:none">☀️ اليوم</button>
   <button class="tab active" id="tabSearch" onclick="switchTab('search')"data-i18n="tabSearch">🔍 البحث</button>
   <button class="tab" id="tabSched" onclick="switchTab('sched')"data-i18n="tabSched">📅 جدولي <span class="tab-badge" id="schedBadge">0</span></button>
+  <button class="tab" id="tabToday" onclick="switchTab('today')" style="display:none">☀️ اليوم</button>
   <button class="tab" id="tabPlan" onclick="switchTab('plan')"data-i18n="tabPlan">📋 خطتي</button>
   <button class="tab" id="tabDocs" onclick="switchTab('docs')" data-i18n="tabDocs">👨‍🏫 دكاترة</button>
   <button class="tab" id="tabSet" onclick="switchTab('set')" style="padding:12px 12px;font-size:15px">⚙️</button>
@@ -3964,9 +3965,13 @@ function isBeta(){
   return !!e && BETA_EMAILS.includes(e);
 }
 function syncBetaTabs(){
+  const on=isBeta();
   const b=document.getElementById('tabToday');
-  if(b)b.style.display=isBeta()?'':'none';
-  if(!isBeta()&&CUR_TAB==='today')switchTab('search');
+  if(b)b.style.display=on?'':'none';
+  /* الشريط شبكة بأعمدة ثابتة: بلا عمود سادس ينزل الترس لسطر ثانٍ */
+  const bar=document.querySelector('.tabs.tabs4');
+  if(bar)bar.classList.toggle('tabs5',on);
+  if(!on&&CUR_TAB==='today')switchTab('search');
 }
 
 /* التوقيت مثبّت على السعودية لا على ساعة الجهاز: أوقات المحاضرات نصوص
@@ -4013,17 +4018,18 @@ function dDiff(a,b){ return Math.round((new Date(b+'T00:00:00Z')-new Date(a+'T00
 
 /* أقرب حدث في التقويم الأكاديمي — يملأ الصفحة يوم ما فيه محاضرات،
    فلا يشوف الطالب صندوقاً فاضياً ينتظر منه عملاً. */
-function nextAcad(today){
-  let best=null;
+function nextAcad(today,n){
+  const out=[];
   for(const e of (typeof ACAD_CAL!=='undefined'?ACAD_CAL:[])){
     const end=e.e||e.s;
     if(end<today)continue;                    /* انتهى */
-    const d=dDiff(today,e.s);
+    /* «بداية الدراسة» ليست موعداً يُستعد له — تُعرض وقد بدأت فعلاً فلا تفيد */
+    if(e.t==='start'&&e.s<=today)continue;
     const running=e.s<=today&&today<=end;
-    const cand={e,days:running?0:d,running};
-    if(!best||cand.days<best.days)best=cand;
+    out.push({e,days:running?0:dDiff(today,e.s),running});
   }
-  return best;
+  out.sort((a,b)=>a.days-b.days||(a.e.s<b.e.s?-1:1));
+  return out.slice(0,n||1);
 }
 function todayHoliday(today){
   for(const e of (typeof ACAD_CAL!=='undefined'?ACAD_CAL:[]))
@@ -4081,22 +4087,26 @@ function renderToday(){
   }
 
   /* بقية اليوم */
-  const rest=mine.filter(x=>x.t.start>n.min&&(!next||x.c.crn!==next.c.crn||x.t.start!==next.t.start));
+  /* المعروض في الأعلى هو next فقط. أما لو فيه محاضرة جارية فما استهلكنا
+     أي محاضرة قادمة، وكل ما بعد الآن يدخل «بقية اليوم». */
+  const after=next&&!running?next.t.start:n.min;
+  const rest=mine.filter(x=>x.t.start>after);
   const restHtml=rest.length?`<div class="day-block">
       <div class="day-head"><span>بقية اليوم</span>
         <span class="cnt">${rest.length} محاضرة</span></div>
       <div class="day-body">${rest.map(x=>slotCard(x.c,x.t)).join('')}</div></div>`:'';
 
   /* أقرب موعد أكاديمي */
-  const a=nextAcad(n.date);
-  const acad=a?`<div class="day-block"><div class="day-head">
-      <span>أقرب موعد مهم</span>
-      <span class="cnt">${a.running?'جارٍ الآن':fmtDays(a.days)}</span></div>
-    <div class="day-body"><div class="slot">
+  const ac=nextAcad(n.date,2);
+  const acad=ac.length?`<div class="day-block"><div class="day-head">
+      <span>مواعيد مهمة</span>
+      <span class="cnt">${ac[0].running?'جارٍ الآن':fmtDays(ac[0].days)}</span></div>
+    <div class="day-body">${ac.map(a=>`<div class="slot">
       <div class="slot-time">${a.e.s.slice(5).replace('-','/')}</div>
       <div class="slot-info"><div class="slot-name">${escapeHtml(a.e.ar)}</div>
-      ${a.e.e?`<div class="slot-sub">حتى ${a.e.e.slice(5).replace('-','/')}</div>`:''}
-      </div></div></div></div>`:'';
+      <div class="slot-sub">${a.running?'جارٍ الآن':fmtDays(a.days)}${
+        a.e.e?` · حتى ${a.e.e.slice(5).replace('-','/')}`:''}</div>
+      </div></div>`).join('')}</div></div>`:'';
 
   box.innerHTML=hero+restHtml+acad;
 }

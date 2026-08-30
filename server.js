@@ -313,6 +313,10 @@ async function saveState() {
       runs: SCHED_SYNC.runs,
       confirmForces: CONFIRM_STAT.forces,
       confirmPurged: CONFIRM_STAT.purged,
+      /* مفاتيح اللوحة: بدونها يرجع كل شي للوضع التلقائي بعد كل نشر،
+         فيشتغل التسخين وأنت مطفّيه أو ترجع المراقبة وأنت موقّفها. */
+      toggles: { ttlOverride: TTL_OVERRIDE, monitorPaused: MONITOR_PAUSED,
+                 prewarmOn: PREWARM_ON, finalsOn: FINALS_ON },
       ops: { searches: OPS.searches, feedback: OPS.feedback,
              pmuFails: OPS.pmuFails, tgFails: OPS.tgFails,
              searchesCached: OPS.searchesCached, searchStale: OPS.searchStale,
@@ -337,8 +341,22 @@ async function restoreState() {
   CONFIRM_STAT.forces = v.confirmForces || 0;
   CONFIRM_STAT.purged = v.confirmPurged || 0;
   Object.assign(OPS, v.ops || {});
+
+  const g = v.toggles || {};
+  if ('ttlOverride' in g) TTL_OVERRIDE = g.ttlOverride || null;
+  if ('monitorPaused' in g) MONITOR_PAUSED = !!g.monitorPaused;
+  if ('prewarmOn' in g) PREWARM_ON = !!g.prewarmOn;
+  /* FINALS_ENABLED=off في Render مفتاح قتل على مستوى النشر — يغلب المحفوظ.
+     غير ذلك، ما ضبطته من اللوحة هو الأصح. */
+  if ('finalsOn' in g && (process.env.FINALS_ENABLED || '').trim() !== 'off')
+    FINALS_ON = !!g.finalsOn;
+
   console.log('استعادة الحالة: ذروة التغذية ' +
     ([...FEED_PEAK.values()][0] || '—') + ' · تصحيحات ' + SCHED_SYNC.totalUpdated);
+  console.log('استعادة المفاتيح: المراقبة ' + (MONITOR_PAUSED ? 'موقوفة' : 'شغالة') +
+    ' · التسخين ' + (PREWARM_ON ? 'مفعّل' : 'مطفأ') +
+    ' · الصلاحية ' + (TTL_OVERRIDE ? TTL_OVERRIDE + ' د يدوي' : 'تلقائية') +
+    ' · النهائيات ' + (FINALS_ON ? 'معروضة' : 'موقوفة'));
 }
 
 const sendMsg = async (chatId, text, markup) => {
@@ -3742,6 +3760,7 @@ const server = http.createServer(async (req, res) => {
           const was = MONITOR_PAUSED;
           /* بدون حقل on نرجّع الحالة فقط — ما نغيّر شي بالغلط */
           if ('on' in b) MONITOR_PAUSED = !b.on;   /* on = المراقبة شغالة */
+          if (was !== MONITOR_PAUSED) saveState().catch(() => {});
           if (was !== MONITOR_PAUSED)
             sendMsg(ADMIN_CHAT_ID, MONITOR_PAUSED
               ? '⏸️ <b>المراقبة موقوفة يدوياً</b>\n\nما راح يستلم أحد إشعارات فتح شعب حتى تشغّلها.'
@@ -3764,6 +3783,7 @@ const server = http.createServer(async (req, res) => {
           const b = await readBody(req);
           if ('on' in b) PREWARM_ON = !!b.on;
           if (PREWARM_ON) prewarmTick().catch(() => {});   /* دورة فورية */
+          saveState().catch(() => {});
         }
         return send(200, { on: PREWARM_ON, stat: PREWARM,
                            ttlMin: Math.round(coursesTTL() / 60000) });
@@ -3776,6 +3796,7 @@ const server = http.createServer(async (req, res) => {
           /* 0 أو فاضي أو قيمة غير صالحة = رجوع للتلقائي */
           if (!v || !isFinite(v) || v <= 0) TTL_OVERRIDE = null;
           else TTL_OVERRIDE = Math.min(TTL_MAX_ALLOWED, Math.max(TTL_MIN_ALLOWED, v));
+          saveState().catch(() => {});
         }
         return send(200, { override: TTL_OVERRIDE, choices: TTL_CHOICES,
                            min: TTL_MIN_ALLOWED, max: TTL_MAX_ALLOWED,
@@ -3788,6 +3809,7 @@ const server = http.createServer(async (req, res) => {
           const b = await readBody(req);
           const was = FINALS_ON;
           FINALS_ON = !!b.on;
+          if (was !== FINALS_ON) saveState().catch(() => {});
           if (was !== FINALS_ON) {
             /* لما نشغّله نفضي الكاش عشان يسحب جدول الترم الجديد لا القديم */
             if (FINALS_ON) { finalsCache.M = null; finalsCache.F = null; }
