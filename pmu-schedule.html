@@ -656,6 +656,57 @@ overflow-y:auto;padding:20px 18px 34px;animation:slideUp .28s ease}
 /* الوقت والـCRN أرقام لاتينية: بلا هذا يقلبهما اتجاه الصفحة
    فيظهر «18:50–18:00» بدل «18:00–18:50» */
 .cs-row b.ltr{direction:ltr;unicode-bidi:isolate;text-align:end;font-family:var(--mono);font-size:12.5px}
+/* ── بطاقة اليوم ── */
+.ltr{direction:ltr;unicode-bidi:isolate}
+.day-card{cursor:pointer;align-items:stretch;gap:8px;padding:12px 13px;
+transition:transform .12s,border-color .15s}
+.day-card:active{transform:scale(.985)}
+.dc-top{display:flex;align-items:center;gap:9px;margin-bottom:5px}
+.dc-time{font-family:var(--mono);font-size:12px;color:var(--text2);font-weight:700}
+.dc-code{font-family:var(--mono);font-size:10.5px;color:var(--text3);
+background:var(--bg);border-radius:20px;padding:1px 7px}
+.dc-name{font-size:14.5px;font-weight:700;line-height:1.4}
+.dc-sub{font-size:12px;color:var(--text3);margin-top:3px;line-height:1.6}
+.dc-badge{font-size:12px;font-weight:700;color:var(--accent2);margin-top:6px}
+.dc-chev{color:var(--text3);font-size:19px;align-self:center;flex-shrink:0;opacity:.55}
+.slot-abs{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:11px}
+.slot-abs-bar{flex:1;height:5px;background:var(--bg);border-radius:20px;overflow:hidden}
+.slot-abs-bar div{height:100%;border-radius:20px}
+.slot-abs b{font-family:var(--mono);font-size:11.5px}
+/* ── مواعيد المادة ── */
+.ev-add{background:var(--accent);border:none;color:#fff;font-family:var(--sans);
+font-size:12px;font-weight:700;border-radius:9px;padding:6px 12px;cursor:pointer}
+.ev-form{display:flex;flex-direction:column;gap:8px;margin-top:11px;
+background:var(--bg);border-radius:12px;padding:11px}
+.ev-form select,.ev-form input{background:var(--card);border:1px solid var(--border);
+border-radius:9px;padding:9px 11px;color:var(--text);font-family:var(--sans);font-size:13px}
+.ev-form input[type=date]{direction:ltr;text-align:start;font-family:var(--mono)}
+.ev-list{display:flex;flex-direction:column;gap:7px;margin-top:11px}
+.ev-row{display:flex;align-items:flex-start;gap:9px;background:var(--bg);
+border-radius:11px;padding:10px 12px}
+.ev-row.past{opacity:.5}
+.ev-main{flex:1;min-width:0}
+.ev-t{font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px}
+.ev-when{font-size:11px;font-weight:600;color:var(--accent2);background:rgba(77,124,254,.12);
+border-radius:20px;padding:1px 8px}
+.ev-d{font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:3px}
+.ev-n{font-size:12px;color:var(--text2);margin-top:5px;line-height:1.6;word-break:break-word}
+.ev-empty{font-size:12px;color:var(--text3);padding:12px 0 2px;text-align:center}
+/* ── سجل الغياب ── */
+.cal-fold{background:var(--bg);border:1px solid var(--border);color:var(--text2);
+width:30px;height:30px;border-radius:50%;font-size:17px;line-height:1;cursor:pointer;
+display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:transform .2s}
+.cal-fold.open{transform:rotate(90deg)}
+.cs-abs-toggle{width:100%;display:flex;justify-content:space-between;align-items:center;
+background:var(--bg);border:1px solid var(--border);border-radius:11px;
+padding:10px 12px;margin-top:11px;color:var(--text2);font-size:12.5px;
+font-family:var(--sans);font-weight:600;cursor:pointer}
+.cs-abs-toggle .chev{font-size:17px;color:var(--text3);transition:transform .2s;
+display:inline-block}
+.cs-abs-toggle.open .chev{transform:rotate(90deg)}
+.cs-abs-del{background:none;border:none;color:var(--text3);font-size:14px;
+cursor:pointer;padding:3px 7px;border-radius:8px;line-height:1}
+.cs-abs-del:active{background:var(--warn-bg);color:var(--close)}
 .cs-abs{margin-top:14px;background:var(--card);border:1px solid var(--border);
 border-radius:14px;padding:13px 14px}
 .cs-abs-head{display:flex;justify-content:space-between;align-items:center;font-size:13px}
@@ -1168,7 +1219,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
         <div class="fin-title" data-i18n="calTitle">🗓️ مواعيد تهمك</div>
         <div class="fin-sub" data-i18n="calSub">من التقويم الأكاديمي المعتمد</div>
       </div>
-      <button class="mini" id="calFold" onclick="toggleCal()" style="display:none">▾</button>
+      <button class="cal-fold" id="calFold" onclick="toggleCal()" style="display:none">›</button>
     </div>
     <div id="calBody"></div>
   </div>
@@ -4084,16 +4135,25 @@ function todayHoliday(today){
 }
 
 function slotCard(c,t,cls,badge){
-  return `<div class="slot ${cls||''}" ${cls==='now'?'id="todayNow"':''}
-       ${cls==='next'?'id="todayNext"':''}>
-    <div class="slot-time">${fmtTime(t.start)}–${fmtTime(t.end)}</div>
-    <div class="slot-info tap" data-crn="${escapeHtml(c.crn)}"
-         data-start="${t.start}" onclick="openCourse(this.dataset.crn,+this.dataset.start)">
-      <div class="slot-name">${c.courseCode} §${c.section}</div>
-      ${c.courseTitle?`<div class="slot-title">${escapeHtml(c.courseTitle)}</div>`:''}
-      <div class="slot-sub">${escapeHtml(c.room||'—')} · ${escapeHtml(c.instructor||'—')}</div>
-      ${badge?`<div class="slot-sub" style="color:var(--accent2);font-weight:700">${badge}</div>`:''}
-    </div></div>`;
+  /* الاسم أولاً لا الرمز: «MEEN 4396 §104» يعرفه الطالب، أما اسم المادة
+     والقاعة والدكتور فهي ما يحتاجه كل يوم. */
+  return `<div class="slot day-card ${cls||''}" ${cls==='now'?'id="todayNow"':''}
+       ${cls==='next'?'id="todayNext"':''}
+       data-crn="${escapeHtml(c.crn)}" data-start="${t.start}"
+       onclick="openCourse(this.dataset.crn,+this.dataset.start)">
+    <div class="slot-info">
+      <div class="dc-top">
+        <span class="dc-time ltr">${fmtTime(t.start)}–${fmtTime(t.end)}</span>
+        <span class="dc-code ltr">${c.courseCode} §${c.section}</span>
+      </div>
+      <div class="dc-name">${escapeHtml(c.courseTitle||c.courseCode)}</div>
+      <div class="dc-sub">${escapeHtml(c.room||'—')}${
+        c.instructor?' · '+escapeHtml(c.instructor):''}</div>
+      ${badge?`<div class="dc-badge">${badge}</div>`:''}
+      ${evChip(c)}
+      ${absChip(c)}
+    </div>
+    <span class="dc-chev">›</span></div>`;
 }
 
 /* بطاقة المواعيد الأكاديمية تعيش في «جدولي» للطلاب. لمن عنده تبويب اليوم
@@ -4103,7 +4163,7 @@ function toggleCal(){
   CAL_OPEN=!CAL_OPEN;
   const b=document.getElementById('calBody'),f=document.getElementById('calFold');
   if(b)b.style.display=CAL_OPEN?'':'none';
-  if(f)f.textContent=CAL_OPEN?'▴':'▾';
+  if(f)f.classList.toggle('open',CAL_OPEN);
 }
 function mountCal(){
   if(CAL_MOVED||!isBeta())return;
@@ -4124,6 +4184,13 @@ function mountCal(){
    الحساب من بياناتك لا بالتخمين: أيام الجلسة من courseDate، معدودة بين
    بداية الدراسة وآخر يوم قبل النهائيات، ناقص إجازات التقويم. */
 const ABS_LIMIT=0.15;
+let ABS_LOG_OPEN=false;
+function toggleAbsLog(btn){
+  ABS_LOG_OPEN=!ABS_LOG_OPEN;
+  const l=btn.parentNode.querySelector('.cs-abs-list');
+  if(l)l.hidden=!ABS_LOG_OPEN;
+  btn.classList.toggle('open',ABS_LOG_OPEN);
+}
 
 function termBounds(){
   const cal=(typeof ACAD_CAL!=='undefined'?ACAD_CAL:[]);
@@ -4136,6 +4203,8 @@ function termBounds(){
   let end=null;
   for(const e of cal)
     if(e.t==='exam'&&e.s>start&&(!end||e.s<end))end=e.s;
+  /* الترم انتهى فعلاً: عرض عدّاد غياب لترم منقضٍ مضلّل */
+  if(start&&end&&today>=end)return null;
   return start&&end?{start,end}:null;
 }
 
@@ -4175,9 +4244,10 @@ function allowedAbs(courseDate){
 }
 
 /* ═══ التخزين ═══ */
-let ABS=[], ABS_LOADED=false;
+let ABS=[], ABS_LOADED=false, ABS_TRIED=false;
 async function loadAbs(){
   if(!USER)return;
+  ABS_TRIED=true;                          /* بلا هذا نعيد المحاولة كل ثانية لو فشلت */
   try{
     const {data,error}=await sb.from('absences').select('id,crn,term,on_date')
       .eq('term',activeTermCode());
@@ -4205,6 +4275,21 @@ async function unmarkAbsent(id){
 }
 
 /* ═══ العرض ═══ */
+/* ملخّص قصير على بطاقة اليوم — يشوف كم باقٍ له بلا ما يفتح شيئاً */
+function absChip(c){
+  const max=allowedAbs(c.courseDate);
+  if(!max)return '';
+  const used=absOf(c.crn).length;
+  if(!used)return '';                      /* بلا غياب ما نزحم البطاقة */
+  const over=used>max, near=!over&&used>=max-1;
+  const col=over?'var(--close)':near?'var(--warn)':'var(--open)';
+  const pct=Math.min(100,Math.round(used/max*100));
+  return `<div class="slot-abs">
+    <span style="color:${col}">${over?'⛔':near?'⚠️':'🗓️'} غياب</span>
+    <div class="slot-abs-bar"><div style="width:${pct}%;background:${col}"></div></div>
+    <b class="ltr" style="color:${col}">${used}/${max}</b></div>`;
+}
+
 function absBlock(c){
   const used=absOf(c.crn).length;
   const total=meetingsInTerm(c.courseDate);
@@ -4222,7 +4307,7 @@ function absBlock(c){
   return `<div class="cs-abs">
     <div class="cs-abs-head">
       <span>الغياب</span>
-      <b style="color:${col}">${used} من ${max}</b>
+      <b class="ltr" style="color:${col}">${used} / ${max}</b>
     </div>
     <div class="cs-abs-bar"><div style="width:${pct}%;background:${col}"></div></div>
     <div class="cs-abs-meta">${total} محاضرة في الترم · الحد ١٥٪ = ${max} غياب${
@@ -4230,10 +4315,119 @@ function absBlock(c){
      :near?' · <b style="color:var(--warn)">باقي لك واحد</b>':''}</div>
     ${sibBan?`<div class="cs-abs-meta" style="color:var(--close)">⚠️ تجاوزت الحد في جلسة أخرى من نفس المادة — الحرمان يشمل الجلستين</div>`:''}
     <button class="btn-sm" onclick="markAbsent('${c.crn}')">➕ سجّل غياب اليوم</button>
-    ${list.length?`<div class="cs-abs-list">${list.map(a=>
-      `<div class="cs-abs-row"><span style="direction:ltr;unicode-bidi:isolate">${a.on_date}</span>
-       <button class="mini" onclick="unmarkAbsent('${a.id}')">✕</button></div>`).join('')}</div>`:''}
+    ${list.length?`<button class="cs-abs-toggle" onclick="toggleAbsLog(this)">
+      <span>سجل الغياب (${list.length})</span><span class="chev">›</span></button>
+      <div class="cs-abs-list" ${ABS_LOG_OPEN?'':'hidden'}>${list.map(a=>
+      `<div class="cs-abs-row"><span class="ltr">${a.on_date}</span>
+       <button class="cs-abs-del" onclick="unmarkAbsent('${a.id}')" title="احذف">✕</button>
+       </div>`).join('')}</div>`:''}
   </div>`;
+}
+
+/* ═══ المواعيد المهمة للمادة ═══
+   الحدث يخصّ جلسته وحدها (CRN) لا المادة كاملة: زملاؤك في المحاضرة قد
+   يكونون في معامل مختلفة، فحدث المعمل لا يعنيهم. وهذا أدق أساس للمشاركة لاحقاً.
+   الماضية تبقى محفوظة لكن مطويّة — قد يراجع متى كان الكويز الأول. */
+const EV_KINDS=[['quiz','📝 كويز'],['hw','📄 واجب'],['project','📐 مشروع'],
+                ['midterm','📕 اختبار فصلي'],['other','📌 غير ذلك']];
+const EV_LABEL=Object.fromEntries(EV_KINDS);
+
+let EVS=[], EV_TRIED=false, EV_PAST_OPEN=false, EV_FORM=null;
+
+async function loadEvs(){
+  if(!USER)return;
+  EV_TRIED=true;
+  try{
+    const {data,error}=await sb.from('course_events')
+      .select('id,crn,term,kind,on_date,note').eq('term',activeTermCode());
+    if(error)return;
+    EVS=data||[];
+  }catch(e){}
+}
+function evsOf(crn){
+  return EVS.filter(e=>String(e.crn)===String(crn))
+    .sort((a,b)=>a.on_date<b.on_date?-1:1);
+}
+/* أقرب حدث قادم للجلسة — للشارة على بطاقة اليوم */
+function nextEv(crn){
+  const today=ksaNow().date;
+  return evsOf(crn).find(e=>e.on_date>=today)||null;
+}
+
+async function addEv(crn){
+  if(!USER)return;
+  const kind=document.getElementById('evKind').value;
+  const date=document.getElementById('evDate').value;
+  const note=(document.getElementById('evNote').value||'').trim().slice(0,300);
+  if(!date){ showToast('اختر التاريخ'); return }
+  const row={user_id:USER.id,term:activeTermCode(),crn:String(crn),
+             kind,on_date:date,note:note||null};
+  const {data,error}=await sb.from('course_events').insert(row).select().single();
+  if(error){ showToast('ما انحفظ — جرّب مرة ثانية'); return }
+  EVS.push(data); EV_FORM=null;
+  showToast('✅ انحفظ');
+  redrawCourse();
+}
+async function delEv(id){
+  const {error}=await sb.from('course_events').delete().eq('id',id);
+  if(error){ showToast('ما انحذف — جرّب مرة ثانية'); return }
+  EVS=EVS.filter(e=>String(e.id)!==String(id));
+  redrawCourse();
+}
+function toggleEvForm(crn){ EV_FORM=EV_FORM?null:String(crn); redrawCourse() }
+function toggleEvPast(){ EV_PAST_OPEN=!EV_PAST_OPEN; redrawCourse() }
+
+/* كم باقٍ على الموعد — «بعد يومين» أوضح من تاريخ مجرّد */
+function evWhen(d){
+  const n=dDiff(ksaNow().date,d);
+  if(n<0)return `قبل ${Math.abs(n)} يوم`;
+  return fmtDays(n);
+}
+
+function evRow(e,past){
+  return `<div class="ev-row${past?' past':''}">
+    <div class="ev-main">
+      <div class="ev-t">${EV_LABEL[e.kind]||'📌'}<span class="ev-when">${evWhen(e.on_date)}</span></div>
+      <div class="ev-d ltr">${e.on_date}</div>
+      ${e.note?`<div class="ev-n">${escapeHtml(e.note)}</div>`:''}
+    </div>
+    <button class="cs-abs-del" onclick="delEv('${e.id}')" title="احذف">✕</button>
+  </div>`;
+}
+
+function evBlock(c){
+  const today=ksaNow().date;
+  const all=evsOf(c.crn);
+  const soon=all.filter(e=>e.on_date>=today);
+  const past=all.filter(e=>e.on_date<today).reverse();
+  const open=EV_FORM===String(c.crn);
+  return `<div class="cs-abs">
+    <div class="cs-abs-head"><span>مواعيد المادة</span>
+      <button class="ev-add" onclick="toggleEvForm('${c.crn}')">${open?'إلغاء':'➕ أضف'}</button>
+    </div>
+    ${open?`<div class="ev-form">
+      <select id="evKind">${EV_KINDS.map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select>
+      <input type="date" id="evDate" value="${today}">
+      <input type="text" id="evNote" maxlength="300" placeholder="ملاحظة (اختياري) — مثلاً: الفصول ١–٣">
+      <button class="btn-sm" onclick="addEv('${c.crn}')">احفظ</button>
+    </div>`:''}
+    ${soon.length?`<div class="ev-list">${soon.map(e=>evRow(e)).join('')}</div>`
+      :`<div class="ev-empty">ما في مواعيد قادمة</div>`}
+    ${past.length?`<button class="cs-abs-toggle${EV_PAST_OPEN?' open':''}" onclick="toggleEvPast()">
+        <span>مواعيد ماضية (${past.length})</span><span class="chev">›</span></button>
+      ${EV_PAST_OPEN?`<div class="ev-list">${past.map(e=>evRow(e,1)).join('')}</div>`:''}`:''}
+  </div>`;
+}
+
+/* شارة على بطاقة اليوم: أقرب موعد خلال أسبوع */
+function evChip(c){
+  const e=nextEv(c.crn);
+  if(!e)return '';
+  const n=dDiff(ksaNow().date,e.on_date);
+  if(n>7)return '';
+  const col=n<=1?'var(--warn)':'var(--accent2)';
+  return `<div class="slot-abs"><span style="color:${col}">${
+    EV_LABEL[e.kind]||'📌'} ${evWhen(e.on_date)}</span></div>`;
 }
 
 /* ═══ لوح تفاصيل المادة ═══
@@ -4259,10 +4453,10 @@ function openCourse(crn,start,redraw){
   document.getElementById('csSheet').innerHTML=`
     <div class="guide-grip"></div>
     <div class="guide-head">
-      <h2>${c.courseCode} §${c.section}</h2>
+      <h2>${escapeHtml(c.courseTitle||c.courseCode)}</h2>
       <button class="guide-close" onclick="closeCourse()">✕</button>
     </div>
-    ${c.courseTitle?`<div class="guide-lead">${escapeHtml(c.courseTitle)}</div>`:''}
+    <div class="guide-lead ltr" style="text-align:start">${c.courseCode} §${c.section}</div>
     <div class="cs-rows">
       ${row('الوقت',fmtTime(t.start)+'–'+fmtTime(t.end),1)}
       ${row('الأيام',days)}
@@ -4270,6 +4464,7 @@ function openCourse(crn,start,redraw){
       ${row('الدكتور',c.instructor)}
       ${row('CRN',c.crn,1)}
     </div>
+    ${evBlock(c)}
     ${absBlock(c)}
     ${sibs.length?`<div class="cs-sib">🔁 لهذي المادة ${sibs.length===1?'جلسة أخرى':'جلسات أخرى'}: ${
       sibs.map(x=>`<span style="direction:ltr;unicode-bidi:isolate">§${
@@ -4279,7 +4474,8 @@ function openCourse(crn,start,redraw){
   document.body.style.overflow='hidden';        /* الخلفية ما تنزلق تحت اللوح */
   /* زر الرجوع في الجوال يقفل اللوح بدل ما يطلع من الموقع كله */
   try{ history.pushState({cs:1},'') }catch(e){}
-  if(!ABS_LOADED)loadAbs().then(()=>redrawCourse());
+  if(!ABS_TRIED)loadAbs().then(()=>redrawCourse());
+  if(!EV_TRIED)loadEvs().then(()=>redrawCourse());
 }
 
 /* بعد تسجيل/حذف غياب: نعيد رسم اللوح المفتوح في مكانه */
@@ -4287,7 +4483,7 @@ function redrawCourse(){ if(CS_OPEN)openCourse(CS_OPEN.crn,CS_OPEN.start,1) }
 
 function closeCourse(fromPop){
   if(!CS_OPEN)return;
-  CS_OPEN=null;
+  CS_OPEN=null; EV_FORM=null;
   const ov=document.getElementById('csOv');
   if(ov)ov.classList.remove('open');
   document.body.style.overflow='';
@@ -4342,6 +4538,10 @@ function renderToday(){
   /* ما نلمس الـDOM إلا لو تغيّر فعلاً: إعادة الرسم كل ثانية تقطع الضغط
      وتقفز بالصفحة، والنص ما يتغيّر إلا مرة كل دقيقة في الغالب. */
   if(html!==TODAY_HTML&&!CS_OPEN){ box.innerHTML=html; TODAY_HTML=html }
+  /* الغياب يُسحب مرة واحدة عند أول رسم — الشريط لازم يظهر على البطاقة
+     بلا ما يفتح اللوح. ABS_TRIED يمنع إعادة المحاولة كل ثانية لو فشلت. */
+  if(!ABS_TRIED&&USER)loadAbs().then(()=>{TODAY_HTML='';renderToday()});
+  if(!EV_TRIED&&USER)loadEvs().then(()=>{TODAY_HTML='';renderToday()});
   mountCal();
   if(!TODAY_SCROLLED){
     TODAY_SCROLLED=true;
