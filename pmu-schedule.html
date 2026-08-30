@@ -708,6 +708,21 @@ cursor:pointer}
 .vw-switch button.on{background:var(--accent);color:#fff}
 .wk-nav{display:flex;align-items:center;justify-content:space-between;
 margin-bottom:11px;font-size:13.5px;font-weight:700}
+.wk-label{background:none;border:none;color:var(--text);font-family:var(--sans);
+font-size:13.5px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px}
+.wk-label span{color:var(--text3);font-size:11px}
+.wp-row{width:100%;display:flex;justify-content:space-between;align-items:center;gap:10px;
+background:var(--card);border:1px solid var(--border);border-radius:12px;
+padding:11px 13px;margin-bottom:7px;cursor:pointer;text-align:start;
+font-family:var(--sans);color:var(--text)}
+.wp-row.cur{border-color:var(--accent);background:rgba(77,124,254,.08)}
+.wp-l{display:flex;flex-direction:column;gap:3px;min-width:0}
+.wp-l b{font-size:13px;font-weight:700}
+.wp-l span{font-size:11px;color:var(--text3);font-family:var(--mono)}
+.wp-r{display:flex;flex-wrap:wrap;gap:5px;justify-content:flex-end}
+.wp-chip{font-size:11px;font-weight:700;background:rgba(77,124,254,.12);
+color:var(--accent2);border-radius:20px;padding:2px 9px;white-space:nowrap}
+.wp-none{font-size:12px;color:var(--text3)}
 .wk-day{background:var(--card);border:1px solid var(--border);border-radius:14px;
 padding:12px 13px;margin-bottom:9px}
 .wk-day.today{border-color:var(--accent)}
@@ -4781,10 +4796,60 @@ function renderWeek(){
   }).join('');
 
   return `<div class="wk-nav">
-      <button class="mini" onclick="shiftWeek(-1)">›</button>
-      <b>${label}</b>
-      <button class="mini" onclick="shiftWeek(1)">‹</button>
+      <button class="mini" onclick="shiftWeek(1)">›</button>
+      <button class="wk-label" onclick="openWeekPicker()">${label} <span>▾</span></button>
+      <button class="mini" onclick="shiftWeek(-1)">‹</button>
     </div>${body}`;
+}
+
+/* قائمة أسابيع الترم: كل أسبوع وما فيه من مواعيد مجمّعة بنوعها.
+   الهدف أن يعرف بنظرة أي أسبوع ثقيل عليه ويقفز له مباشرة. */
+function termWeeks(){
+  const b=termBounds();
+  const today=ksaNow().date;
+  if(!b)return [];
+  const out=[]; let w=weekStart(b.start), i=1, guard=0;
+  while(w<b.end&&guard++<40){
+    const end=dayAdd(w,4);                       /* الأحد → الخميس */
+    const kinds={};
+    EVS.forEach(e=>{
+      if(e.on_date>=w&&e.on_date<=end){
+        const crns=new Set((schedule||[]).map(c=>String(c.crn)));
+        if(crns.has(String(e.crn)))kinds[e.kind]=(kinds[e.kind]||0)+1;
+      }
+    });
+    out.push({ n:i, start:w, end,
+               cur:today>=w&&today<=dayAdd(w,6), kinds });
+    w=dayAdd(w,7); i++;
+  }
+  return out;
+}
+
+function openWeekPicker(){
+  const cur=weekStart(ksaNow().date);
+  const rows=termWeeks().map(x=>{
+    const chips=Object.entries(x.kinds)
+      .map(([k,n])=>`<span class="wp-chip">${n} ${(EV_LABEL[k]||'📌').replace(/^\S+\s/,'')}</span>`)
+      .join('');
+    const off=Math.round((new Date(x.start+'T00:00:00Z')-new Date(cur+'T00:00:00Z'))/(7*864e5));
+    return `<button class="wp-row${x.cur?' cur':''}" onclick="gotoWeek(${off})">
+      <div class="wp-l"><b>الأسبوع ${x.n}${x.cur?' · الحالي':''}</b>
+        <span class="ltr">${x.start.slice(5)} – ${x.end.slice(5)}</span></div>
+      <div class="wp-r">${chips||'<span class="wp-none">—</span>'}</div>
+    </button>`;
+  }).join('');
+  const w=document.createElement('div');
+  w.className='guide-overlay open'; w.id='wpOv';
+  w.onclick=e=>{ if(e.target===w)w.remove() };
+  w.innerHTML=`<div class="guide-sheet"><div class="guide-grip"></div>
+    <div class="guide-head"><h2>أسابيع الترم</h2>
+      <button class="guide-close" onclick="document.getElementById('wpOv').remove()">✕</button>
+    </div>${rows||'<div class="ev-empty">ما في أسابيع — الترم ما بدأ بعد</div>'}</div>`;
+  document.body.appendChild(w);
+}
+function gotoWeek(off){
+  const o=document.getElementById('wpOv'); if(o)o.remove();
+  WEEK_OFF=off; TODAY_HTML=''; renderToday();
 }
 
 function viewSwitch(){
