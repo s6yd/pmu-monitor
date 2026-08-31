@@ -3629,9 +3629,14 @@ function switchTab(n){
   /* ما نحفظ لو التبويب نفسه، عشان لا نطمس تصفيراً مقصوداً */
   if(n!==CUR_TAB)TAB_SCROLL[CUR_TAB]=window.scrollY||0;
   CUR_TAB=n;
-  ['today','search','sched','plan','docs','set'].forEach(t=>{
-    document.getElementById('page'+t[0].toUpperCase()+t.slice(1)).classList.toggle('active',t===n);
-    document.getElementById('tab'+t[0].toUpperCase()+t.slice(1)).classList.toggle('active',t===n);
+  /* زر الإعدادات انتقل للترويسة باسم setBtn، فما عاد له tabSet.
+     العنصر المفقود كان يرمي استثناء يوقف بقية الدالة قبل رسم الجدول. */
+  ['today','search','sched','plan','docs','set'].forEach(k=>{
+    const cap=k[0].toUpperCase()+k.slice(1);
+    const pg=document.getElementById('page'+cap);
+    if(pg)pg.classList.toggle('active',k===n);
+    const tb=document.getElementById('tab'+cap)||(k==='set'?document.getElementById('setBtn'):null);
+    if(tb)tb.classList.toggle('active',k===n);
   });
   if(n==='today'){TODAY_SCROLLED=false;renderToday();startTodayTick()}else stopTodayTick();
   if(n==='sched'){renderSlots();renderSchedule();}
