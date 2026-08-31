@@ -776,6 +776,10 @@ background:rgba(77,124,254,.12);border-radius:20px;padding:1px 8px}
 .ph-item{position:relative;aspect-ratio:1;border-radius:11px;overflow:hidden;
 background:var(--bg)}
 .ph-item img{width:100%;height:100%;object-fit:cover;cursor:pointer;display:block}
+.ph-item.shared{outline:2px solid var(--accent);outline-offset:-2px}
+.ph-share{position:absolute;bottom:5px;inset-inline-end:5px;width:24px;height:24px;
+border:none;border-radius:50%;background:rgba(4,6,12,.72);font-size:11px;cursor:pointer;
+line-height:1;display:flex;align-items:center;justify-content:center}
 .ph-del{position:absolute;top:5px;inset-inline-end:5px;width:22px;height:22px;
 border:none;border-radius:50%;background:rgba(4,6,12,.72);color:#fff;font-size:11px;
 cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center}
@@ -787,6 +791,20 @@ border:none;border-radius:50%;background:rgba(255,255,255,.14);color:#fff;
 font-size:17px;cursor:pointer}
 .dc-ph{font-size:11px;font-weight:700;color:var(--text2);background:var(--bg);
 border-radius:20px;padding:1px 8px;margin-inline-start:7px}
+/* ── ملفات المادة ── */
+.fl-row{display:flex;align-items:center;gap:7px;background:var(--bg);border-radius:11px;
+padding:8px 10px;margin-top:8px}
+.fl-main{flex:1;min-width:0;display:flex;align-items:center;gap:10px;background:none;
+border:none;cursor:pointer;text-align:start;font-family:var(--sans);color:var(--text);
+padding:0}
+.fl-ico{font-size:20px;flex-shrink:0}
+.fl-info{min-width:0;display:flex;flex-direction:column;gap:2px}
+.fl-info b{font-size:12.5px;font-weight:700;overflow:hidden;white-space:nowrap;
+text-overflow:ellipsis}
+.fl-info i{font-style:normal;font-size:11px;color:var(--text3);font-family:var(--mono)}
+.fl-btn{position:static;width:26px;height:26px;flex-shrink:0}
+.fl-sep{font-size:11.5px;color:var(--text3);margin-top:13px;padding-top:11px;
+border-top:1px solid var(--border)}
 /* ── سجل الغياب ── */
 .cal-fold{background:var(--bg);border:1px solid var(--border);color:var(--text2);
 width:30px;height:30px;border-radius:50%;font-size:17px;line-height:1;cursor:pointer;
@@ -4591,6 +4609,36 @@ const PH_MAX=1400;                        /* أطول ضلع بعد الضغط *
 const PH_Q=0.72;
 
 let PHOTOS=[], PH_TRIED=false, PH_URL={}, PH_BUSY=false;
+let SH_PHOTOS=[], SHP_TRIED=false;
+
+async function loadSharedPhotos(){
+  if(!USER)return;
+  SHP_TRIED=true;
+  try{
+    const {data,error}=await sb.from('shared_photos')
+      .select('id,crn,term,on_date,path,note,mine').eq('term',activeTermCode());
+    if(error)return;
+    SH_PHOTOS=(data||[]).filter(p=>!p.mine);   /* صوري تظهر في قسمي */
+  }catch(e){}
+}
+function sharedPhotosOf(crn){
+  return SH_PHOTOS.filter(p=>String(p.crn)===String(crn)&&p.kind!=='file')
+    .sort((a,b)=>a.on_date<b.on_date?1:-1);
+}
+
+/* المشاركة بضغطة على كل صورة — الصورة خاصة افتراضياً، عكس المواعيد:
+   الموعد تاريخ مجرّد، أما الصورة فقد يظهر فيها ما لا يريده الطالب. */
+async function toggleShare(id){
+  const p=PHOTOS.find(x=>String(x.id)===String(id));
+  if(!p)return;
+  const on=!p.shared;
+  if(on&&!confirm('تشارك الصورة مع زملائك في الشعبة؟ من يشوفها يقدر يحفظها، وإلغاء المشاركة بعدين ما يسترجعها.'))return;
+  const {error}=await sb.from('course_photos').update({shared:on}).eq('id',id);
+  if(error){ showToast('ما انحفظ — جرّب مرة ثانية'); return }
+  p.shared=on;
+  showToast(on?'📢 صارت مشتركة':'🔒 رجعت خاصة');
+  redrawCourse();
+}
 
 async function loadPhotos(){
   if(!USER)return;
@@ -4603,8 +4651,16 @@ async function loadPhotos(){
   }catch(e){}
 }
 function photosOf(crn){
-  return PHOTOS.filter(p=>String(p.crn)===String(crn))
+  return PHOTOS.filter(p=>String(p.crn)===String(crn)&&p.kind!=='file')
     .sort((a,b)=>a.on_date<b.on_date?1:-1);   /* الأحدث أولاً */
+}
+function filesOf(crn){
+  return PHOTOS.filter(p=>String(p.crn)===String(crn)&&p.kind==='file')
+    .sort((a,b)=>a.on_date<b.on_date?1:-1);
+}
+function sharedFilesOf(crn){
+  return SH_PHOTOS.filter(p=>String(p.crn)===String(crn)&&p.kind==='file')
+    .sort((a,b)=>a.on_date<b.on_date?1:-1);
 }
 
 /* الدلو خاص، فنطلب روابط موقّتة. نخزّنها في الذاكرة عشان ما نطلبها كل رسم */
@@ -4634,6 +4690,60 @@ function shrink(file){
     img.onerror=()=>{ URL.revokeObjectURL(url); rej(new Error('ما قدرنا نقرأ الصورة')) };
     img.src=url;
   });
+}
+
+/* الملفات (PDF وغيره): لا تُضغط في المتصفح مثل الصور، فسلايدات محاضرة قد
+   تكون خمسين ميغا. الحد ضروري لأن Supabase يحاسب على التخزين والتحميل معاً. */
+const FILE_MAX_MB=10;
+const FILE_TYPES={pdf:'📕',docx:'📘',doc:'📘',pptx:'📙',ppt:'📙',
+                  xlsx:'📗',xls:'📗',txt:'📄'};
+function fileIcon(name){
+  const e=String(name||'').split('.').pop().toLowerCase();
+  return FILE_TYPES[e]||'📎';
+}
+function fmtSize(kb){
+  if(!kb)return '';
+  return kb>=1024?`${(kb/1024).toFixed(1)} م.ب`:`${kb} ك.ب`;
+}
+
+async function pickFile(crn,eventId){
+  if(!USER||PH_BUSY)return;
+  const inp=document.createElement('input');
+  inp.type='file';
+  inp.accept='.pdf,.docx,.doc,.pptx,.ppt,.xlsx,.xls,.txt';
+  inp.onchange=async()=>{
+    const f=inp.files&&inp.files[0];
+    if(!f)return;
+    const ext=f.name.split('.').pop().toLowerCase();
+    if(!FILE_TYPES[ext]){ showToast('نوع الملف مو مدعوم'); return }
+    if(f.size>FILE_MAX_MB*1048576){
+      showToast(`الملف أكبر من ${FILE_MAX_MB} ميغا`); return }
+    PH_BUSY=true; showToast('⏳ نرفع الملف…');
+    try{
+      const name=`${USER.id}/${crn}/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
+      const up=await sb.storage.from(PH_BUCKET).upload(name,f,{contentType:f.type||'application/octet-stream'});
+      if(up.error)throw up.error;
+      const row={user_id:USER.id,term:activeTermCode(),crn:String(crn),
+                 on_date:ksaNow().date,event_id:eventId||null,path:name,
+                 kind:'file',filename:f.name.slice(0,160),
+                 size_kb:Math.round(f.size/1024)};
+      const {data,error}=await sb.from('course_photos').insert(row).select().single();
+      if(error){
+        await sb.storage.from(PH_BUCKET).remove([name]).catch(()=>{});
+        throw error;
+      }
+      PHOTOS.push(data);
+      showToast('✅ انحفظ');
+      redrawCourse();
+    }catch(e){ showToast('ما انرفع — جرّب مرة ثانية') }
+    finally{ PH_BUSY=false }
+  };
+  inp.click();
+}
+
+async function openFile(path){
+  const u=await photoUrl(path);
+  if(u)window.open(u,'_blank');
 }
 
 async function pickPhoto(crn,eventId){
@@ -4700,13 +4810,63 @@ function phBlock(c){
     ${days.length?days.map(d=>`<div class="ph-day">
         <div class="ph-date"><span class="ltr">${d}</span>
           <span class="ph-when">${evWhen(d)}</span></div>
-        <div class="ph-grid">${byDate[d].map(p=>`<div class="ph-item">
+        <div class="ph-grid">${byDate[d].map(p=>`<div class="ph-item${
+            p.shared?' shared':''}">
           <img data-path="${escapeHtml(p.path)}" alt="" loading="lazy"
                onclick="openPhoto('${escapeHtml(p.path)}')">
           <button class="ph-del" onclick="delPhoto('${p.id}')">✕</button>
+          <button class="ph-share" onclick="toggleShare('${p.id}')"
+            title="${p.shared?'مشتركة':'خاصة'}">${p.shared?'📢':'🔒'}</button>
         </div>`).join('')}</div>
       </div>`).join('')
       :`<div class="ev-empty">ما في صور — صوّر السبورة وتلقاها هنا وقت المذاكرة</div>`}
+  </div>`;
+}
+
+function fileRow(f,mine){
+  return `<div class="fl-row">
+    <button class="fl-main" onclick="openFile('${escapeHtml(f.path)}')">
+      <span class="fl-ico">${fileIcon(f.filename)}</span>
+      <span class="fl-info">
+        <b>${escapeHtml(f.filename||'ملف')}</b>
+        <i>${f.on_date} ${f.size_kb?'· '+fmtSize(f.size_kb):''}</i>
+      </span></button>
+    ${mine?`<button class="ph-share fl-btn" onclick="toggleShare('${f.id}')"
+        title="${f.shared?'مشترك':'خاص'}">${f.shared?'📢':'🔒'}</button>
+      <button class="cs-abs-del" onclick="delPhoto('${f.id}')">✕</button>`:''}
+  </div>`;
+}
+
+function flBlock(c){
+  const mine=filesOf(c.crn), theirs=sharedFilesOf(c.crn).filter(f=>!f.mine);
+  return `<div class="cs-abs">
+    <div class="cs-abs-head"><span>ملفات المادة</span>
+      <button class="ev-add" onclick="pickFile('${c.crn}')">📎 ارفع ملف</button>
+    </div>
+    ${mine.length?mine.map(f=>fileRow(f,1)).join('')
+      :`<div class="ev-empty">ما في ملفات — ارفع السلايدات أو الواجب وتلقاها هنا</div>`}
+    ${theirs.length?`<div class="fl-sep">من زملائك</div>${
+      theirs.map(f=>fileRow(f)).join('')}`:''}
+  </div>`;
+}
+
+function sharedPhBlock(c){
+  const list=sharedPhotosOf(c.crn);
+  if(!list.length)return '';
+  const byDate={};
+  list.forEach(p=>{ (byDate[p.on_date]=byDate[p.on_date]||[]).push(p) });
+  const days=Object.keys(byDate).sort().reverse();
+  return `<div class="cs-abs">
+    <div class="cs-abs-head"><span>صور من زملائك</span>
+      <span class="sg-when">${list.length}</span></div>
+    ${days.map(d=>`<div class="ph-day">
+      <div class="ph-date"><span class="ltr">${d}</span>
+        <span class="ph-when">${evWhen(d)}</span></div>
+      <div class="ph-grid">${byDate[d].map(p=>`<div class="ph-item">
+        <img data-path="${escapeHtml(p.path)}" alt="" loading="lazy"
+             onclick="openPhoto('${escapeHtml(p.path)}')">
+      </div>`).join('')}</div>
+    </div>`).join('')}
   </div>`;
 }
 
@@ -4846,6 +5006,8 @@ function openCourse(crn,start,redraw){
     ${evBlock(c)}
     ${shareBlock(c)}
     ${phBlock(c)}
+    ${sharedPhBlock(c)}
+    ${flBlock(c)}
     ${absBlock(c)}
     ${sibs.length?`<div class="cs-sib">🔁 لهذي المادة ${sibs.length===1?'جلسة أخرى':'جلسات أخرى'}: ${
       sibs.map(x=>`<span style="direction:ltr;unicode-bidi:isolate">§${
@@ -4860,6 +5022,7 @@ function openCourse(crn,start,redraw){
   if(!EV_TRIED)loadEvs().then(()=>redrawCourse());
   if(!PH_TRIED)loadPhotos().then(()=>redrawCourse());
   if(!SH_TRIED)loadShared().then(()=>redrawCourse());
+  if(!SHP_TRIED)loadSharedPhotos().then(()=>{redrawCourse();fillPhotos()});
 }
 
 /* بعد تسجيل/حذف غياب: نعيد رسم اللوح المفتوح في مكانه */
