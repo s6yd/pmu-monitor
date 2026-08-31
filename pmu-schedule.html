@@ -71,8 +71,23 @@ html.light .logo-icon{box-shadow:0 2px 8px rgba(47,95,232,.28)}
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh}
 
+/* ثلاث مناطق: الأدوات · الشعار في المنتصف · الحساب.
+   1fr على الطرفين يثبّت الشعار وسطاً مهما طال اسم الطالب. */
+/* direction:rtl مثبّت: الأدوات يميناً والحساب يساراً في اللغتين.
+   بدونه ينعكس كل شيء مع الإنجليزي ويتوه الطالب بين الوضعين. */
 .topbar{position:sticky;top:0;z-index:100;background:var(--topbar-bg);backdrop-filter:blur(16px);
-border-bottom:1px solid var(--border);padding:0 16px;height:52px;display:flex;align-items:center;justify-content:space-between}
+border-bottom:1px solid var(--border);padding:0 10px;height:58px;direction:rtl;
+display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:6px}
+.tb-side{display:flex;align-items:center;gap:5px;min-width:0;flex-wrap:nowrap}
+.tb-side.end{justify-content:flex-end}
+.topbar .logo{justify-content:center;text-align:center;direction:ltr;flex-shrink:0;
+padding:0 4px}
+.topbar .logo>div{text-align:start}
+/* زر الإعدادات أوضحهم — له مكانته بين الأدوات */
+#setBtn{background:var(--accent);border-color:var(--accent);color:#fff;
+width:34px;height:34px;font-size:16px}
+.topbar .lang-btn{flex-shrink:0}
+.tabs{direction:rtl}
 .logo{display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;line-height:1.15}
 .brand-sub{font-size:9.5px;font-family:var(--mono);color:var(--text3);letter-spacing:.5px;margin-top:2px}
 .lang-btn{background:transparent;border:1px solid var(--border2);color:var(--text2);border-radius:20px;
@@ -93,12 +108,18 @@ border:1px solid var(--border2);border-radius:13px;padding:12px 14px;margin-bott
 
 .tabs{position:sticky;top:52px;z-index:99;background:rgba(8,11,18,.94);backdrop-filter:blur(16px);
 border-bottom:1px solid var(--border);display:grid;grid-template-columns:1fr 1fr 1fr}
-.tabs.tabs4{grid-template-columns:1fr 1fr 1fr 1fr auto}
-.tabs.tabs4.tabs5{grid-template-columns:1fr 1fr 1fr 1fr 1fr auto}
+.tabs.tabs4{grid-template-columns:repeat(4,1fr)}
+.tabs.tabs4.tabs5{grid-template-columns:repeat(5,1fr)}
 .tabs.tabs4 .tab{font-size:11px;padding:12px 2px;gap:3px}
 .tabs.tabs4 .tab-badge{font-size:9px;padding:1px 5px}
+.tab .ti .tab-badge{position:absolute;top:-4px;inset-inline-end:-12px}
+/* الأيقونة فوق والاسم تحت — أوضح على الجوال من سطر واحد مزدحم */
 .tab{background:none;border:none;color:var(--text3);font-family:var(--sans);font-size:13px;font-weight:600;
-padding:12px 0;cursor:pointer;position:relative;display:flex;align-items:center;justify-content:center;gap:6px}
+padding:9px 0 8px;cursor:pointer;position:relative;display:flex;flex-direction:column;
+align-items:center;justify-content:center;gap:3px}
+.tab .ti{font-size:20px;line-height:1.1;position:relative;display:inline-block}
+.tab .tl{font-size:11px;font-weight:700;line-height:1.2;white-space:nowrap}
+.tabs.tabs4 .tab .tl{font-size:10.5px}
 .tab.active{color:var(--accent2)}
 .tab.active::after{content:'';position:absolute;bottom:0;left:15%;right:15%;height:2px;background:var(--accent);border-radius:2px}
 .tab-badge{background:var(--accent);color:#fff;font-size:10px;font-family:var(--mono);padding:1px 6px;border-radius:20px}
@@ -705,6 +726,21 @@ background:var(--bg);color:var(--text2);border-radius:6px;font-size:9px;
 cursor:pointer;line-height:1;padding:0}
 .crn-ord button:disabled{opacity:.3}
 .crn-tap{display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer}
+/* ── مفاتيح التنبيهات ── */
+.nt-row{display:flex;align-items:center;gap:12px;padding:11px 0;
+border-bottom:1px solid var(--border)}
+.nt-row:last-child{border-bottom:none}
+.nt-row.dim{opacity:.42}
+.nt-txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.nt-txt b{font-size:13px;font-weight:700}
+.nt-txt span{font-size:11.5px;color:var(--text3);line-height:1.6}
+.nt-sw{width:44px;height:26px;border-radius:20px;border:none;background:var(--border);
+position:relative;cursor:pointer;flex-shrink:0;transition:background .18s;padding:0}
+.nt-sw.on{background:var(--accent)}
+.nt-sw i{position:absolute;top:3px;inset-inline-start:3px;width:20px;height:20px;
+border-radius:50%;background:#fff;transition:transform .18s}
+.nt-sw.on i{transform:translateX(-18px)}
+html[dir=ltr] .nt-sw.on i{transform:translateX(18px)}
 /* ── شبكة الجدول ── */
 .gr-wrap{display:flex;overflow-x:auto;gap:1px;background:var(--border);
 border-radius:14px;padding:1px;-webkit-overflow-scrolling:touch}
@@ -764,8 +800,14 @@ border-radius:12px;padding:4px;margin-bottom:12px}
 font-family:var(--sans);font-size:13px;font-weight:700;padding:8px;border-radius:9px;
 cursor:pointer}
 .vw-switch button.on{background:var(--accent);color:#fff}
-.wk-nav{display:flex;align-items:center;justify-content:space-between;
+.wk-nav{display:flex;align-items:center;justify-content:space-between;gap:8px;
 margin-bottom:11px;font-size:13.5px;font-weight:700}
+/* الأزرار الثلاثة بشكل واحد — كان فيها مدوّر ومربّع فبانت غير مرتّبة */
+.wk-nav .mini,.wk-nav .wk-label{background:var(--card);border:1px solid var(--border);
+color:var(--text2);border-radius:10px;padding:7px 13px;font-family:var(--sans);
+font-size:12.5px;font-weight:700;cursor:pointer;line-height:1.2}
+.wk-nav .mini:disabled{opacity:.35}
+.wk-nav .wk-label{flex:1;justify-content:center;color:var(--text);gap:6px}
 .wk-label{background:none;border:none;color:var(--text);font-family:var(--sans);
 font-size:13.5px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px}
 .wk-label span{color:var(--text3);font-size:11px}
@@ -823,6 +865,12 @@ display:flex;align-items:center;justify-content:center;padding:16px}
 .ph-close{position:absolute;top:18px;inset-inline-end:18px;width:38px;height:38px;
 border:none;border-radius:50%;background:rgba(255,255,255,.14);color:#fff;
 font-size:17px;cursor:pointer}
+.rp-btn{position:absolute;top:5px;inset-inline-start:5px;width:22px;height:22px;
+border:none;border-radius:50%;background:rgba(4,6,12,.72);font-size:10px;
+cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center}
+.rp-btn.done{background:rgba(34,197,94,.35)}
+.fl-row .rp-btn,.sg-btns .rp-btn{position:static;flex-shrink:0;
+background:var(--card);border:1px solid var(--border)}
 .dc-ph{font-size:11px;font-weight:700;color:var(--text2);background:var(--bg);
 border-radius:20px;padding:1px 8px;margin-inline-start:7px}
 /* ── ملفات المادة ── */
@@ -840,6 +888,8 @@ text-overflow:ellipsis}
 .fl-sep{font-size:11.5px;color:var(--text3);margin-top:13px;padding-top:11px;
 border-top:1px solid var(--border)}
 /* ── سجل الغياب ── */
+#proBody[hidden]{display:none}
+.pro-head .cal-fold{margin-inline-start:auto}
 .cal-fold{background:var(--bg);border:1px solid var(--border);color:var(--text2);
 width:30px;height:30px;border-radius:50%;font-size:17px;line-height:1;cursor:pointer;
 display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:transform .2s}
@@ -1214,25 +1264,33 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 <div class="env-bar" id="envBar"></div>
 <div class="tg-bar" id="tgBar" hidden></div>
 <div class="topbar">
+  <div class="tb-side">
+    <button class="lang-btn" id="langBtn" onclick="toggleLang()">EN</button>
+    <button class="lang-btn" id="themeBtn" onclick="toggleTheme()">🌙</button>
+    <button class="lang-btn" id="setBtn" onclick="switchTab('set')" title="⚙️">⚙️</button>
+  </div>
   <div class="logo">
     <div class="logo-icon">🎓</div>
-    <div><div id="brandName">جدولك</div><div class="brand-sub" id="brandUni">PMU</div></div>
+    <div><div id="brandName">Jadwalik</div><div class="brand-sub" id="brandUni">PMU</div></div>
   </div>
-  <div style="display:flex;align-items:center;gap:8px">
+  <div class="tb-side end">
     <div class="status-pill"><div class="pulse-dot" id="statusDot"></div><span id="statusText">جاهز</span></div>
-    <button class="lang-btn" id="themeBtn" onclick="toggleTheme()">🌙</button>
-    <button class="lang-btn" id="langBtn" onclick="toggleLang()">EN</button>
     <button class="auth-btn" id="authBtn" onclick="handleAuth()">دخول</button>
   </div>
 </div>
 
 <div class="tabs tabs4">
-  <button class="tab active" id="tabSearch" onclick="switchTab('search')"data-i18n="tabSearch">🔍 البحث</button>
-  <button class="tab" id="tabSched" onclick="switchTab('sched')"data-i18n="tabSched">📅 جدولي <span class="tab-badge" id="schedBadge">0</span></button>
-  <button class="tab" id="tabToday" onclick="switchTab('today')" style="display:none">☀️ اليوم</button>
-  <button class="tab" id="tabPlan" onclick="switchTab('plan')"data-i18n="tabPlan">📋 خطتي</button>
-  <button class="tab" id="tabDocs" onclick="switchTab('docs')" data-i18n="tabDocs">👨‍🏫 دكاترة</button>
-  <button class="tab" id="tabSet" onclick="switchTab('set')" style="padding:12px 12px;font-size:15px">⚙️</button>
+  <button class="tab active" id="tabSearch" onclick="switchTab('search')">
+    <span class="ti">🔍</span><span class="tl" data-i18n="tabSearchL">البحث</span></button>
+  <button class="tab" id="tabSched" onclick="switchTab('sched')">
+    <span class="ti">📅<span class="tab-badge" id="schedBadge">0</span></span>
+    <span class="tl" data-i18n="tabSchedL">جدولي</span></button>
+  <button class="tab" id="tabToday" onclick="switchTab('today')" style="display:none">
+    <span class="ti">☀️</span><span class="tl" data-i18n="tabTodayL">اليوم</span></button>
+  <button class="tab" id="tabPlan" onclick="switchTab('plan')">
+    <span class="ti">📋</span><span class="tl" data-i18n="tabPlanL">خطتي</span></button>
+  <button class="tab" id="tabDocs" onclick="switchTab('docs')">
+    <span class="ti">👨‍🏫</span><span class="tl" data-i18n="tabDocsL">دكاترة</span></button>
 </div>
 
 <div class="main">
@@ -1502,7 +1560,9 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
         <p id="proSub" data-i18n="proSub">فعّل المراقبة والحفظ السحابي</p>
       </div>
       <div class="pro-price" id="proPrice" data-i18n="proPrice">19 ريال / سنة</div>
+      <button class="cal-fold" id="proFold" onclick="togglePro()">›</button>
     </div>
+    <div id="proBody" hidden>
     <div class="pro-list" id="proList">
       <div class="pro-item">🔔 <span data-i18n-html="proFeat1"><b>مراقبة المواد</b> — إشعار تيليغرام فوري أول ما تنفتح أي شعبة</span></div>
       <div class="pro-item">☁️ <span data-i18n-html="proFeat2"><b>حفظ سحابي</b> — خطتك وجدولك ومعدلك من أي جهاز</span></div>
@@ -1510,6 +1570,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     </div>
     <button class="btn-pro" id="btnPro" onclick="togglePay()" data-i18n="proBtn">اشترك الحين</button>
     <div class="pro-soon" id="proSoon"></div>
+    </div>
 
     <div class="pay-box" id="payBox">
       <div class="pay-line"><span data-i18n="payAmount">المبلغ</span><b data-i18n="payRiyal">19 ريال</b></div>
@@ -1530,6 +1591,12 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
       <button class="btn-sm" id="btnTg" onclick="linkTelegram()">ربط</button>
     </div>
     <div class="tg-code" id="tgCode" style="display:none">—</div>
+  </div>
+
+  <div class="set-card" id="notifCard" style="display:none">
+    <div class="sc-title" data-i18n="ntTitle">تنبيهات جدولك</div>
+    <div class="sc-sub" data-i18n="ntSub">تصلك على تيليغرام الساعة ٥ العصر</div>
+    <div id="notifList"></div>
   </div>
 
   <div class="set-card">
@@ -3903,9 +3970,7 @@ function renderCrn(){
   if(!p||!p.classList.contains('on'))return;
   const ar=LANG==='ar';
   const list=crnOrdered();
-  p.innerHTML=`<div class="crn-hint" style="margin:0 0 9px">${ar
-      ?'رتّبها بأولوية تسجيلك — الأعلى تسجّله أول.'
-      :'Order them by registration priority.'}</div>`
+  p.innerHTML=`<div class="crn-hint" style="margin:0 0 9px">${t('crnOrderHint')}</div>`
     +list.map((c,i)=>`
     <div class="crn-row">
       <span class="crn-ord">
@@ -4215,7 +4280,7 @@ function renderLabWarn(){
 let SCHED_VIEW='list';
 /* ثلاثة مستويات بدل التكبير باللمس: الأخير يتعارض مع تمرير الصفحة على الجوال.
    الضيق يُدخل الأيام الخمسة في عرض الجوال بلا سحب. */
-const GRID_Z=[['w',108,54,'واسع'],['m',82,44,'متوسط'],['s',62,36,'ضيق']];
+const GRID_Z=[['w',108,54,'grWide'],['m',82,44,'grMed'],['s',62,36,'grNarrow']];
 let GRID_ZOOM=load('pmu_grid_zoom','w');
 function setGridZoom(z){ GRID_ZOOM=z; save('pmu_grid_zoom',z); renderGrid() }
 function zoomCfg(){ return GRID_Z.find(x=>x[0]===GRID_ZOOM)||GRID_Z[0] }
@@ -4267,7 +4332,7 @@ function renderGrid(){
   }).join('');
 
   box.innerHTML=`<div class="gr-zoom">${GRID_Z.map(([k,,,lbl])=>
-      `<button class="${k===GRID_ZOOM?'on':''}" onclick="setGridZoom('${k}')">${lbl}</button>`
+      `<button class="${k===GRID_ZOOM?'on':''}" onclick="setGridZoom('${k}')">${t(lbl)}</button>`
     ).join('')}</div>
     <div class="gr-wrap"><div class="gr-hours">
       <div class="gr-dh"></div>
@@ -4275,8 +4340,7 @@ function renderGrid(){
         ${rows.map((h,i)=>`<span style="top:${i*GRID_H}px">${
           String(h).padStart(2,'0')}:00</span>`).join('')}
       </div></div>${cols}</div>
-    <div class="gr-hint">${GRID_ZOOM==='s'?'':'صغّرها لتدخل كاملة · '
-      }للحذف والتعديل ارجع للقائمة</div>`;
+    <div class="gr-hint">${GRID_ZOOM==='s'?'':t('grHint')}${t('grBack')}</div>`;
 }
 function c2t(c){ return `${c.courseCode} §${c.section} · ${c.courseTitle||''}` }
 
@@ -4329,11 +4393,26 @@ function renderSchedule(){
 /* ════════════ تبويب «اليوم» — نسخة تجريبية ════════════
    حساب محض على بيانات موجودة في الذاكرة: صفر طلبات شبكة، صفر كتابة.
    لا يظهر إلا للبريد المذكور تحت — أي طالب آخر لا يرى الزر ولا الصفحة. */
-const BETA_EMAILS=['mohammadmusabbeh@gmail.com'];
+/* انفتح للجميع بعد التجربة. القائمة تبقى للاستخدام مستقبلاً:
+   BETA_EMAILS غير فاضية = التبويب محصور بمن فيها. */
+const BETA_EMAILS=[];
 function isBeta(){
-  const e=(USER&&USER.email||'').toLowerCase().trim();
+  if(!USER)return false;                  /* التبويب يعتمد على جدول محفوظ */
+  if(!BETA_EMAILS.length)return true;
+  const e=(USER.email||'').toLowerCase().trim();
   return !!e && BETA_EMAILS.includes(e);
 }
+/* صفحة البداية تُشتق من التقويم لا تُثبَّت: أثناء التسجيل يدخل الطالب
+   ليبحث ويبني جدوله، وبعده يدخل ليشوف يومه. سطر يحلّ نفسه كل ترم. */
+function regOpenNow(){
+  const d=ksaNow().date;
+  const w=(typeof REG_CAL!=='undefined')&&REG_CAL.addDrop;
+  if(!w)return false;
+  const first=(REG_CAL.rows&&REG_CAL.rows[0]&&REG_CAL.rows[0].d)||w.s;
+  return d>=first&&d<=w.e;
+}
+function defaultTab(){ return regOpenNow()?'search':'today' }
+
 function syncBetaTabs(){
   const on=isBeta();
   const b=document.getElementById('tabToday');
@@ -4372,17 +4451,17 @@ function lessonsOn(day){
 function fmtLeft(mins,secs){
   if(mins<5){
     const tot=mins*60+(60-secs)%60;
-    return `${Math.floor(tot/60)}:${String(tot%60).padStart(2,'0')} دقيقة`;
+    return `${Math.floor(tot/60)}:${String(tot%60).padStart(2,'0')} ${t('tdMin')}`;
   }
-  if(mins<60)return `${mins} دقيقة`;
+  if(mins<60)return `${mins} ${t('tdMin')}`;
   const h=Math.floor(mins/60),m=mins%60;
-  return m?`${h} ساعة و${m} د`:`${h} ساعة`;
+  return m?`${h} ${t('tdHr')} ${t('tdAnd')}${m} ${t('tdM')}`:`${h} ${t('tdHr')}`;
 }
 function fmtDays(n){
-  if(n===0)return 'اليوم';
-  if(n===1)return 'بكرة';
-  if(n===2)return 'بعد يومين';
-  return `بعد ${n} أيام`;
+  if(n===0)return t('tdToday');
+  if(n===1)return t('tdTomorrow');
+  if(n===2)return t('tdIn2');
+  return `${t('tdInN')} ${n} ${t('tdDays')}`;
 }
 function dDiff(a,b){ return Math.round((new Date(b+'T00:00:00Z')-new Date(a+'T00:00:00Z'))/864e5) }
 
@@ -4535,17 +4614,17 @@ async function markAbsent(crn,date){
   if(!USER)return;
   const today=ksaNow().date;
   const on=date||today;
-  if(on>today){ showToast('ما تقدر تسجّل غياب ليوم ما جا بعد'); return }
+  if(on>today){ showToast(t('absFuture')); return }
   const b=termBounds();
-  if(b&&on<b.start){ showToast('هذا قبل بداية الترم'); return }
+  if(b&&on<b.start){ showToast(t('absBefore')); return }
   /* اليوم لازم يكون من أيام هذي الجلسة أصلاً */
   const c=(schedule||[]).find(x=>String(x.crn)===String(crn));
   if(c){
     const letter=WEEK_ORDER[new Date(on+'T00:00:00Z').getUTCDay()];
     if(!parseDays(c.courseDate).includes(letter)){
-      showToast('ما عندك محاضرة لهذي المادة في هذا اليوم'); return }
+      showToast(t('absNoClass')); return }
   }
-  if(absOf(crn).some(a=>a.on_date===on)){ showToast('مسجّل غياب لهذا اليوم أصلاً'); return }
+  if(absOf(crn).some(a=>a.on_date===on)){ showToast(t('absDup')); return }
   const row={user_id:USER.id,term:activeTermCode(),crn:String(crn),on_date:on};
   const {data,error}=await sb.from('absences').insert(row).select().single();
   if(error){ showToast('ما انحفظ — جرّب مرة ثانية'); return }
@@ -4553,7 +4632,7 @@ async function markAbsent(crn,date){
   redrawCourse();
 }
 async function unmarkAbsent(id){
-  if(!confirm('تشيل هذا الغياب؟'))return;
+  if(!confirm(t('absDel')))return;
   const {error}=await sb.from('absences').delete().eq('id',id);
   if(error){ showToast('ما انحذف — جرّب مرة ثانية'); return }
   ABS=ABS.filter(a=>String(a.id)!==String(id));
@@ -4571,7 +4650,7 @@ function absChip(c){
   const col=over?'var(--close)':near?'var(--warn)':'var(--open)';
   const pct=Math.min(100,Math.round(used/max*100));
   return `<div class="slot-abs">
-    <span style="color:${col}">${over?'⛔':near?'⚠️':'🗓️'} غياب</span>
+    <span style="color:${col}">${over?'⛔':near?'⚠️':'🗓️'} ${t('absChip')}</span>
     <div class="slot-abs-bar"><div style="width:${pct}%;background:${col}"></div></div>
     <b class="ltr" style="color:${col}">${used}/${max}</b></div>`;
 }
@@ -4592,25 +4671,25 @@ function absBlock(c){
   const list=absOf(c.crn).slice().sort((a,b)=>a.on_date<b.on_date?1:-1);
   return `<div class="cs-abs">
     <div class="cs-abs-head">
-      <span>الغياب</span>
+      <span>${t('absTitle')}</span>
       <b class="ltr" style="color:${col}">${used} / ${max}</b>
     </div>
     <div class="cs-abs-bar"><div style="width:${pct}%;background:${col}"></div></div>
-    <div class="cs-abs-meta">${total} محاضرة في الترم · الحد ١٥٪ = ${max} غياب${
-      over?' · <b style="color:var(--close)">تجاوزت الحد</b>'
-     :near?' · <b style="color:var(--warn)">باقي لك واحد</b>':''}</div>
-    ${sibBan?`<div class="cs-abs-meta" style="color:var(--close)">⚠️ تجاوزت الحد في جلسة أخرى من نفس المادة — الحرمان يشمل الجلستين</div>`:''}
+    <div class="cs-abs-meta">${total} ${t('absMeta1')} ${max} ${t('absMeta2')}${
+      over?` · <b style="color:var(--close)">${t('absOver')}</b>`
+     :near?` · <b style="color:var(--warn)">${t('absNear')}</b>`:''}</div>
+    ${sibBan?`<div class="cs-abs-meta" style="color:var(--close)">${t('absSibBan')}</div>`:''}
     <div class="abs-add">
       <input type="date" id="absDate" value="${ksaNow().date}"
              max="${ksaNow().date}"${termBounds()?` min="${termBounds().start}"`:''}>
       <button class="btn-sm" onclick="markAbsent('${c.crn}',
-        document.getElementById('absDate').value)">➕ سجّل غياب</button>
+        document.getElementById('absDate').value)">${t('absAdd')}</button>
     </div>
     ${list.length?`<button class="cs-abs-toggle" onclick="toggleAbsLog(this)">
-      <span>سجل الغياب (${list.length})</span><span class="chev">›</span></button>
+      <span>${t('absLog')} (${list.length})</span><span class="chev">›</span></button>
       <div class="cs-abs-list" ${ABS_LOG_OPEN?'':'hidden'}>${list.map(a=>
       `<div class="cs-abs-row"><span class="ltr">${a.on_date}</span>
-       <button class="cs-abs-del" onclick="unmarkAbsent('${a.id}')" title="احذف">✕</button>
+       <button class="cs-abs-del" onclick="unmarkAbsent('${a.id}')" title="${t('delT')}">✕</button>
        </div>`).join('')}</div>`:''}
   </div>`;
 }
@@ -4619,9 +4698,11 @@ function absBlock(c){
    الحدث يخصّ جلسته وحدها (CRN) لا المادة كاملة: زملاؤك في المحاضرة قد
    يكونون في معامل مختلفة، فحدث المعمل لا يعنيهم. وهذا أدق أساس للمشاركة لاحقاً.
    الماضية تبقى محفوظة لكن مطويّة — قد يراجع متى كان الكويز الأول. */
-const EV_KINDS=[['quiz','📝 كويز'],['hw','📄 واجب'],['project','📐 مشروع'],
-                ['midterm','📕 اختبار فصلي'],['other','📌 غير ذلك']];
-const EV_LABEL=Object.fromEntries(EV_KINDS);
+/* الأنواع تُبنى عند العرض لا مرة واحدة — تسمية اللغة تتغيّر مع الزر */
+const EV_KEYS=[['quiz','kQuiz'],['hw','kHw'],['project','kProject'],
+               ['midterm','kMidterm'],['other','kOther']];
+function evKinds(){ return EV_KEYS.map(([k,tk])=>[k,t(tk)]) }
+function evLabel(k){ const p=EV_KEYS.find(x=>x[0]===k); return p?t(p[1]):'📌' }
 
 let EVS=[], EV_TRIED=false, EV_PAST_OPEN=false, EV_FORM=null;
 let EV_NOTE_SHARE=false, EV_EDIT=null;
@@ -4631,7 +4712,8 @@ async function loadEvs(){
   EV_TRIED=true;
   try{
     const {data,error}=await sb.from('course_events')
-      .select('id,crn,term,kind,on_date,note').eq('term',activeTermCode());
+      .select('id,crn,term,kind,on_date,note,note_shared,snooze_to')
+      .eq('term',activeTermCode());
     if(error)return;
     EVS=data||[];
   }catch(e){}
@@ -4651,14 +4733,14 @@ async function addEv(crn){
   const kind=document.getElementById('evKind').value;
   const date=document.getElementById('evDate').value;
   const note=(document.getElementById('evNote').value||'').trim().slice(0,300);
-  if(!date){ showToast('اختر التاريخ'); return }
+  if(!date){ showToast(t('evPickDate')); return }
   const row={user_id:USER.id,term:activeTermCode(),crn:String(crn),
              kind,on_date:date,note:note||null,
              note_shared:!!(EV_NOTE_SHARE&&note)};
   const {data,error}=await sb.from('course_events').insert(row).select().single();
-  if(error){ showToast('ما انحفظ — جرّب مرة ثانية'); return }
+  if(error){ showToast(t('errSave')); return }
   EVS.push(data); EV_FORM=null;
-  showToast('✅ انحفظ');
+  showToast(t('evSaved'));
   redrawCourse();
 }
 /* التعديل بعد الحفظ: كان لازم يحذف ويضيف من جديد لتصحيح كلمة */
@@ -4674,21 +4756,35 @@ async function saveEvEdit(id){
   const kind=document.getElementById('edKind').value;
   const date=document.getElementById('edDate').value;
   const note=(document.getElementById('edNote').value||'').trim().slice(0,300);
-  if(!date){ showToast('اختر التاريخ'); return }
+  if(!date){ showToast(t('evPickDate')); return }
   const patch={kind,on_date:date,note:note||null,
                note_shared:!!(EV_NOTE_SHARE&&note)};
   const {error}=await sb.from('course_events').update(patch).eq('id',id);
-  if(error){ showToast('ما انحفظ — جرّب مرة ثانية'); return }
+  if(error){ showToast(t('errSave')); return }
   Object.assign(e,patch);
-  EV_EDIT=null; showToast('✅ انحفظ');
+  EV_EDIT=null; showToast(t('evSaved'));
   redrawCourse();
 }
 function cancelEvEdit(){ EV_EDIT=null; redrawCourse() }
 
+/* «ذكّرني بكرة»: تاريخ بدل عدّاد تأجيلات — الطالب قد يؤجّل مرتين،
+   والتاريخ يجاوب «متى» لا «كم مرة». */
+async function snoozeEv(id){
+  const e=EVS.find(x=>String(x.id)===String(id));
+  if(!e)return;
+  const to=dayAdd(ksaNow().date,1);
+  if(to>=e.on_date){ showToast(t('evSnoozeNo')); return }
+  const {error}=await sb.from('course_events').update({snooze_to:to}).eq('id',id);
+  if(error){ showToast(t('errSave')); return }
+  e.snooze_to=to;
+  showToast(t('evSnooze'));
+  redrawCourse();
+}
+
 async function delEv(id){
-  if(!confirm('تحذف هذا الموعد؟'))return;
+  if(!confirm(t('evDel')))return;
   const {error}=await sb.from('course_events').delete().eq('id',id);
-  if(error){ showToast('ما انحذف — جرّب مرة ثانية'); return }
+  if(error){ showToast(t('errDel')); return }
   EVS=EVS.filter(e=>String(e.id)!==String(id));
   redrawCourse();
 }
@@ -4698,33 +4794,36 @@ function toggleEvPast(){ EV_PAST_OPEN=!EV_PAST_OPEN; redrawCourse() }
 /* كم باقٍ على الموعد — «بعد يومين» أوضح من تاريخ مجرّد */
 function evWhen(d){
   const n=dDiff(ksaNow().date,d);
-  if(n<0)return `قبل ${Math.abs(n)} يوم`;
+  if(n<0)return `${t('tdAgo')} ${Math.abs(n)} ${t('tdDay1')}`.trim();
   return fmtDays(n);
 }
 
 function evRow(e,past){
   if(EV_EDIT===String(e.id))return `<div class="ev-form">
-    <select id="edKind">${EV_KINDS.map(([k,l])=>
+    <select id="edKind">${evKinds().map(([k,l])=>
       `<option value="${k}"${k===e.kind?' selected':''}>${l}</option>`).join('')}</select>
     <input type="date" id="edDate" value="${e.on_date}">
     <input type="text" id="edNote" maxlength="300" value="${escapeHtml(e.note||'')}"
-           placeholder="ملاحظة (اختياري)">
+           placeholder="${t('evNotePh')}">
     <button class="ev-share${EV_NOTE_SHARE?' on':''}"
       onclick="EV_NOTE_SHARE=!EV_NOTE_SHARE;this.classList.toggle('on',EV_NOTE_SHARE)">
       <span class="ev-box">${EV_NOTE_SHARE?'✓':''}</span>
-      <span>شارك الملاحظة مع زملائك في الشعبة</span></button>
+      <span>${t('evShareNote')}</span></button>
     <div class="ev-btns">
-      <button class="btn-sm" onclick="saveEvEdit('${e.id}')">احفظ</button>
-      <button class="mini" onclick="cancelEvEdit()">إلغاء</button>
+      <button class="btn-sm" onclick="saveEvEdit('${e.id}')">${t('evSave')}</button>
+      <button class="mini" onclick="cancelEvEdit()">${t('evCancel')}</button>
     </div></div>`;
   return `<div class="ev-row${past?' past':''}">
     <div class="ev-main">
-      <div class="ev-t">${EV_LABEL[e.kind]||'📌'}<span class="ev-when">${evWhen(e.on_date)}</span></div>
+      <div class="ev-t">${evLabel(e.kind)}<span class="ev-when">${evWhen(e.on_date)}</span></div>
       <div class="ev-d ltr">${e.on_date}</div>
       ${e.note?`<div class="ev-n">${escapeHtml(e.note)}</div>`:''}
     </div>
-    <button class="cs-abs-del" onclick="editEv('${e.id}')" title="عدّل">✎</button>
-    <button class="cs-abs-del" onclick="delEv('${e.id}')" title="احذف">✕</button>
+    ${!past&&e.on_date>dayAdd(ksaNow().date,1)?`<button class="cs-abs-del"
+      onclick="snoozeEv('${e.id}')" title="${t('evSnoozeT')}">${
+      e.snooze_to&&e.snooze_to>ksaNow().date?'⏰':'🔕'}</button>`:''}
+    <button class="cs-abs-del" onclick="editEv('${e.id}')" title="${t('editT')}">✎</button>
+    <button class="cs-abs-del" onclick="delEv('${e.id}')" title="${t('delT')}">✕</button>
   </div>`;
 }
 
@@ -4735,24 +4834,25 @@ function evBlock(c){
   const past=all.filter(e=>e.on_date<today).reverse();
   const open=EV_FORM===String(c.crn);
   return `<div class="cs-abs">
-    <div class="cs-abs-head"><span>مواعيد المادة</span>
-      <button class="ev-add" onclick="toggleEvForm('${c.crn}')">${open?'إلغاء':'➕ أضف'}</button>
+    <div class="cs-abs-head"><span>${t('evTitle')}</span>
+      <button class="ev-add" onclick="toggleEvForm('${c.crn}')">${
+        open?t('evCancel'):t('evAdd')}</button>
     </div>
     ${open?`<div class="ev-form">
-      <select id="evKind">${EV_KINDS.map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select>
+      <select id="evKind">${evKinds().map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select>
       <input type="date" id="evDate" value="${today}">
-      <input type="text" id="evNote" maxlength="300" placeholder="ملاحظة (اختياري) — مثلاً: الفصول ١–٣">
+      <input type="text" id="evNote" maxlength="300" placeholder="${t('evNotePh')}">
       <button class="ev-share${EV_NOTE_SHARE?' on':''}" id="evNoteShare"
         onclick="EV_NOTE_SHARE=!EV_NOTE_SHARE;this.classList.toggle('on',EV_NOTE_SHARE)">
         <span class="ev-box">${EV_NOTE_SHARE?'✓':''}</span>
-        <span>شارك الملاحظة مع زملائك في الشعبة</span></button>
-      <div class="ev-hint">📢 الموعد نفسه يظهر لزملائك في الشعبة بلا اسمك. الملاحظة والصور تبقى خاصة إلا لو شاركتها.</div>
-      <button class="btn-sm" onclick="addEv('${c.crn}')">احفظ</button>
+        <span>${t('evShareNote')}</span></button>
+      <div class="ev-hint">${t('evHint')}</div>
+      <button class="btn-sm" onclick="addEv('${c.crn}')">${t('evSave')}</button>
     </div>`:''}
     ${soon.length?`<div class="ev-list">${soon.map(e=>evRow(e)).join('')}</div>`
-      :`<div class="ev-empty">ما في مواعيد قادمة</div>`}
+      :`<div class="ev-empty">${t('evNoneUp')}</div>`}
     ${past.length?`<button class="cs-abs-toggle${EV_PAST_OPEN?' open':''}" onclick="toggleEvPast()">
-        <span>مواعيد ماضية (${past.length})</span><span class="chev">›</span></button>
+        <span>${t('evPast')} (${past.length})</span><span class="chev">›</span></button>
       ${EV_PAST_OPEN?`<div class="ev-list">${past.map(e=>evRow(e,1)).join('')}</div>`:''}`:''}
   </div>`;
 }
@@ -4767,7 +4867,7 @@ function evChip(c){
   const n=dDiff(today,e.on_date);
   const col=n<=1?'var(--warn)':'var(--accent2)';
   return `<div class="dc-ev" style="color:${col}">
-    <span>${EV_LABEL[e.kind]||'📌'}</span>
+    <span>${evLabel(e.kind)}</span>
     <b>${evWhen(e.on_date)}</b>
     ${more?`<span class="dc-more">+${more}</span>`:''}
     ${e.note?`<span class="dc-evn">${escapeHtml(e.note)}</span>`:''}
@@ -4807,11 +4907,11 @@ async function toggleShare(id){
   const p=PHOTOS.find(x=>String(x.id)===String(id));
   if(!p)return;
   const on=!p.shared;
-  if(on&&!confirm('تشارك الصورة مع زملائك في الشعبة؟ من يشوفها يقدر يحفظها، وإلغاء المشاركة بعدين ما يسترجعها.'))return;
+  if(on&&!confirm(t('phShareAsk')))return;
   const {error}=await sb.from('course_photos').update({shared:on}).eq('id',id);
-  if(error){ showToast('ما انحفظ — جرّب مرة ثانية'); return }
+  if(error){ showToast(t('errSave')); return }
   p.shared=on;
-  showToast(on?'📢 صارت مشتركة':'🔒 رجعت خاصة');
+  showToast(on?t('phShared'):t('phPrivate'));
   redrawCourse();
 }
 
@@ -4878,7 +4978,7 @@ function fileIcon(name){
 }
 function fmtSize(kb){
   if(!kb)return '';
-  return kb>=1024?`${(kb/1024).toFixed(1)} م.ب`:`${kb} ك.ب`;
+  return kb>=1024?`${(kb/1024).toFixed(1)} ${t('flMb2')}`:`${kb} ${t('flKb')}`;
 }
 
 async function pickFile(crn,eventId){
@@ -4890,10 +4990,10 @@ async function pickFile(crn,eventId){
     const f=inp.files&&inp.files[0];
     if(!f)return;
     const ext=f.name.split('.').pop().toLowerCase();
-    if(!FILE_TYPES[ext]){ showToast('نوع الملف مو مدعوم'); return }
+    if(!FILE_TYPES[ext]){ showToast(t('flBadType')); return }
     if(f.size>FILE_MAX_MB*1048576){
-      showToast(`الملف أكبر من ${FILE_MAX_MB} ميغا`); return }
-    PH_BUSY=true; showToast('⏳ نرفع الملف…');
+      showToast(`${t('flBig')} ${FILE_MAX_MB} ${t('flMb')}`); return }
+    PH_BUSY=true; showToast(t('flUp'));
     try{
       const name=`${USER.id}/${crn}/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
       const up=await sb.storage.from(PH_BUCKET).upload(name,f,{contentType:f.type||'application/octet-stream'});
@@ -4908,9 +5008,9 @@ async function pickFile(crn,eventId){
         throw error;
       }
       PHOTOS.push(data);
-      showToast('✅ انحفظ');
+      showToast(t('evSaved'));
       redrawCourse();
-    }catch(e){ showToast('ما انرفع — جرّب مرة ثانية') }
+    }catch(e){ showToast(t('flErr')) }
     finally{ PH_BUSY=false }
   };
   inp.click();
@@ -4928,7 +5028,7 @@ async function pickPhoto(crn,eventId){
   inp.onchange=async()=>{
     const f=inp.files&&inp.files[0];
     if(!f)return;
-    PH_BUSY=true; showToast('⏳ نرفع الصورة…');
+    PH_BUSY=true; showToast(t('phUp'));
     try{
       const blob=await shrink(f);
       const name=`${USER.id}/${crn}/${Date.now()}-${Math.random().toString(36).slice(2,8)}.jpg`;
@@ -4943,9 +5043,9 @@ async function pickPhoto(crn,eventId){
         throw error;
       }
       PHOTOS.push(data);
-      showToast('✅ انحفظت');
+      showToast(t('phSaved'));
       redrawCourse();
-    }catch(e){ showToast('ما انرفعت — جرّب مرة ثانية') }
+    }catch(e){ showToast(t('phErr')) }
     finally{ PH_BUSY=false }
   };
   inp.click();
@@ -4955,9 +5055,9 @@ async function delPhoto(id){
   const p=PHOTOS.find(x=>String(x.id)===String(id));
   if(!p)return;
   /* زر الحذف صغير وفوق الصورة — الضغط بالغلط وارد، والصورة لا ترجع */
-  if(!confirm('تحذف الصورة؟ ما ترجع بعدها.'))return;
+  if(!confirm(t('phDel')))return;
   const {error}=await sb.from('course_photos').delete().eq('id',id);
-  if(error){ showToast('ما انحذف — جرّب مرة ثانية'); return }
+  if(error){ showToast(t('errDel')); return }
   await sb.storage.from(PH_BUCKET).remove([p.path]).catch(()=>{});
   delete PH_URL[p.path];
   PHOTOS=PHOTOS.filter(x=>String(x.id)!==String(id));
@@ -4979,8 +5079,8 @@ function phBlock(c){
   list.forEach(p=>{ (byDate[p.on_date]=byDate[p.on_date]||[]).push(p) });
   const days=Object.keys(byDate).sort().reverse();
   return `<div class="cs-abs">
-    <div class="cs-abs-head"><span>صور المحاضرة</span>
-      <button class="ev-add" onclick="pickPhoto('${c.crn}')">📷 صوّر</button>
+    <div class="cs-abs-head"><span>${t('phTitle')}</span>
+      <button class="ev-add" onclick="pickPhoto('${c.crn}')">${t('phAdd')}</button>
     </div>
     ${days.length?days.map(d=>`<div class="ph-day">
         <div class="ph-date"><span class="ltr">${d}</span>
@@ -4991,10 +5091,10 @@ function phBlock(c){
                onclick="openPhoto('${escapeHtml(p.path)}')">
           <button class="ph-del" onclick="delPhoto('${p.id}')">✕</button>
           <button class="ph-share" onclick="toggleShare('${p.id}')"
-            title="${p.shared?'مشتركة':'خاصة'}">${p.shared?'📢':'🔒'}</button>
+            title="${p.shared?t('phSharedT'):t('phPrivateT')}">${p.shared?'📢':'🔒'}</button>
         </div>`).join('')}</div>
       </div>`).join('')
-      :`<div class="ev-empty">ما في صور — صوّر السبورة وتلقاها هنا وقت المذاكرة</div>`}
+      :`<div class="ev-empty">${t('phNone')}</div>`}
   </div>`;
 }
 
@@ -5007,20 +5107,21 @@ function fileRow(f,mine){
         <i>${f.on_date} ${f.size_kb?'· '+fmtSize(f.size_kb):''}</i>
       </span></button>
     ${mine?`<button class="ph-share fl-btn" onclick="toggleShare('${f.id}')"
-        title="${f.shared?'مشترك':'خاص'}">${f.shared?'📢':'🔒'}</button>
-      <button class="cs-abs-del" onclick="delPhoto('${f.id}')">✕</button>`:''}
+        title="${f.shared?t('phSharedT'):t('phPrivateT')}">${f.shared?'📢':'🔒'}</button>
+      <button class="cs-abs-del" onclick="delPhoto('${f.id}')">✕</button>`
+      :reportBtn('photo',f.id)}
   </div>`;
 }
 
 function flBlock(c){
   const mine=filesOf(c.crn), theirs=sharedFilesOf(c.crn).filter(f=>!f.mine);
   return `<div class="cs-abs">
-    <div class="cs-abs-head"><span>ملفات المادة</span>
-      <button class="ev-add" onclick="pickFile('${c.crn}')">📎 ارفع ملف</button>
+    <div class="cs-abs-head"><span>${t('flTitle')}</span>
+      <button class="ev-add" onclick="pickFile('${c.crn}')">${t('flAdd')}</button>
     </div>
     ${mine.length?mine.map(f=>fileRow(f,1)).join('')
-      :`<div class="ev-empty">ما في ملفات — ارفع السلايدات أو الواجب وتلقاها هنا</div>`}
-    ${theirs.length?`<div class="fl-sep">من زملائك</div>${
+      :`<div class="ev-empty">${t('flNone')}</div>`}
+    ${theirs.length?`<div class="fl-sep">${t('flPeers')}</div>${
       theirs.map(f=>fileRow(f)).join('')}`:''}
   </div>`;
 }
@@ -5032,7 +5133,7 @@ function sharedPhBlock(c){
   list.forEach(p=>{ (byDate[p.on_date]=byDate[p.on_date]||[]).push(p) });
   const days=Object.keys(byDate).sort().reverse();
   return `<div class="cs-abs">
-    <div class="cs-abs-head"><span>صور من زملائك</span>
+    <div class="cs-abs-head"><span>${t('phPeers')}</span>
       <span class="sg-when">${list.length}</span></div>
     ${days.map(d=>`<div class="ph-day">
       <div class="ph-date"><span class="ltr">${d}</span>
@@ -5040,9 +5141,44 @@ function sharedPhBlock(c){
       <div class="ph-grid">${byDate[d].map(p=>`<div class="ph-item">
         <img data-path="${escapeHtml(p.path)}" alt="" loading="lazy"
              onclick="openPhoto('${escapeHtml(p.path)}')">
+        ${reportBtn('photo',p.id)}
       </div>`).join('')}</div>
     </div>`).join('')}
   </div>`;
+}
+
+/* ═══ البلاغ عن محتوى مشترك ═══
+   من يرى صورة أو موعداً غير لائق يحتاج طريقة يقولها بها. بلا هذا الزر،
+   المشاركة تصير باباً مفتوحاً بلا ضابط.
+   البلاغ لا يخفي شيئاً تلقائياً — يصل للوحة ويقرّر الإداري. الإخفاء
+   التلقائي يعني أن طالبين يقدران يحجبان محتوى سليماً بالإساءة. */
+let REPORTED=[];
+async function loadReports(){
+  if(!USER)return;
+  try{
+    const {data,error}=await sb.from('content_reports').select('kind,target_id');
+    if(!error)REPORTED=data||[];
+  }catch(e){}
+}
+function didReport(kind,id){
+  return REPORTED.some(r=>r.kind===kind&&String(r.target_id)===String(id));
+}
+async function reportContent(kind,id){
+  if(!USER)return;
+  if(didReport(kind,id)){ showToast(t('rpDup')); return }
+  if(!confirm(t('rpAsk')))return;
+  const {error}=await sb.from('content_reports')
+    .insert({reporter:USER.id,kind,target_id:id});
+  if(error){ showToast(t('rpErr')); return }
+  REPORTED.push({kind,target_id:id});
+  showToast(t('rpDone'));
+  redrawCourse();
+}
+function reportBtn(kind,id){
+  const done=didReport(kind,id);
+  return `<button class="rp-btn${done?' done':''}"
+    onclick="reportContent('${kind}','${id}')"
+    title="${done?t('rpDoneT'):t('rpT')}">${done?'✓':'🚩'}</button>`;
 }
 
 /* عرض الصورة كاملة */
@@ -5087,8 +5223,8 @@ function suggestionsFor(crn){
   const g={};
   SHARED.filter(e=>String(e.crn)===String(crn)&&e.on_date>=today).forEach(e=>{
     const k=e.kind+'|'+e.on_date;
-    const o=g[k]||(g[k]={kind:e.kind,on_date:e.on_date,n:0,mine:false,notes:[]});
-    o.n++;
+    const o=g[k]||(g[k]={kind:e.kind,on_date:e.on_date,n:0,mine:false,notes:[],ids:[]});
+    o.n++; o.ids.push(e.id);
     if(e.mine)o.mine=true;
     if(e.note)o.notes.push(e.note);
   });
@@ -5103,9 +5239,9 @@ async function acceptSuggestion(crn,kind,date){
   const row={user_id:USER.id,term:activeTermCode(),crn:String(crn),
              kind,on_date:date,note:null};
   const {data,error}=await sb.from('course_events').insert(row).select().single();
-  if(error){ showToast('ما انحفظ — جرّب مرة ثانية'); return }
+  if(error){ showToast(t('errSave')); return }
   EVS.push(data);
-  showToast('✅ انضاف لمواعيدك');
+  showToast(t('sgAdded'));
   redrawCourse();
 }
 function ignoreSuggestion(kind,date,crn){
@@ -5122,22 +5258,23 @@ function shareBlock(c){
   const list=suggestionsFor(c.crn).filter(o=>!ignored(c.crn,o.kind,o.on_date));
   if(!list.length)return '';
   return `<div class="cs-abs">
-    <div class="cs-abs-head"><span>زملاؤك في الشعبة</span></div>
+    <div class="cs-abs-head"><span>${t('sgTitle')}</span></div>
     ${list.map(o=>{
       const ok=o.n>=SHARE_MIN;
       /* تحت الثلاثة ما نذكر عدداً — طالبان في شعبة صغيرة يكشفان الهوية */
-      const who=ok?`✅ ${o.n} من شعبتك أضافوه`:'⚠️ غير مؤكد — أضافه طالب واحد أو اثنان';
+      const who=ok?`✅ ${o.n} ${t('sgOk')}`:t('sgWeak');
       return `<div class="sg-row">
         <div class="sg-main">
-          <div class="sg-t">${EV_LABEL[o.kind]||'📌'}
+          <div class="sg-t">${evLabel(o.kind)}
             <span class="sg-when">${evWhen(o.on_date)}</span></div>
           <div class="sg-d ltr">${o.on_date}</div>
           <div class="sg-w${ok?' ok':''}">${who}</div>
           ${o.notes.length?`<div class="sg-n">${escapeHtml(o.notes[0])}</div>`:''}
         </div>
         <div class="sg-btns">
-          <button class="btn-sm" onclick="acceptSuggestion('${c.crn}','${o.kind}','${o.on_date}')">أضفه</button>
-          <button class="mini" onclick="ignoreSuggestion('${o.kind}','${o.on_date}','${c.crn}')">تجاهل</button>
+          <button class="btn-sm" onclick="acceptSuggestion('${c.crn}','${o.kind}','${o.on_date}')">${t('sgAdd')}</button>
+          <button class="mini" onclick="ignoreSuggestion('${o.kind}','${o.on_date}','${c.crn}')">${t('sgIgnore')}</button>
+          ${o.ids&&o.ids.length?reportBtn('event',o.ids[0]):''}
         </div>
       </div>`;
     }).join('')}
@@ -5198,6 +5335,7 @@ function openCourse(crn,start,redraw){
   if(!PH_TRIED)loadPhotos().then(()=>redrawCourse());
   if(!SH_TRIED)loadShared().then(()=>redrawCourse());
   if(!SHP_TRIED)loadSharedPhotos().then(()=>{redrawCourse();fillPhotos()});
+  if(!REPORTED.length)loadReports().then(()=>redrawCourse());
 }
 
 /* بعد تسجيل/حذف غياب: نعيد رسم اللوح المفتوح في مكانه */
@@ -5236,7 +5374,7 @@ function weekRange(){
 }
 function shiftWeek(n){
   const r=weekRange(), v=WEEK_OFF+n;
-  if(r&&(v<r.min||v>r.max)){ showToast('هذا خارج الترم'); return }
+  if(r&&(v<r.min||v>r.max)){ showToast(t('wkOut')); return }
   WEEK_OFF=v; TODAY_HTML=''; renderToday();
 }
 
@@ -5268,10 +5406,11 @@ function renderWeek(){
   const start=dayAdd(weekStart(n.date),WEEK_OFF*7);
   const days=[0,1,2,3,4].map(i=>dayAdd(start,i));   /* الأحد → الخميس */
   const rg=weekRange();
-  const label=WEEK_OFF===0?'هذا الأسبوع'
-             :WEEK_OFF===1?'الأسبوع الجاي'
-             :WEEK_OFF===-1?'الأسبوع اللي فات'
-             :WEEK_OFF>0?`بعد ${WEEK_OFF} أسابيع`:`قبل ${-WEEK_OFF} أسابيع`;
+  const label=WEEK_OFF===0?t('wkThis')
+             :WEEK_OFF===1?t('wkNext')
+             :WEEK_OFF===-1?t('wkPrev')
+             :WEEK_OFF>0?`${t('wkInN')} ${WEEK_OFF} ${t('wkWeeks')}`
+                        :`${t('wkAgoN')} ${-WEEK_OFF} ${t('wkWeeks')}`.trim();
 
   const body=days.map((iso,i)=>{
     const letter=WEEK_ORDER[new Date(iso+'T00:00:00Z').getUTCDay()];
@@ -5284,16 +5423,17 @@ function renderWeek(){
     const empty=!lessons.length&&!evs.length&&!acad.length;
     return `<div class="wk-day${isToday?' today':''}${empty?' empty':''}">
       <div class="wk-head">
-        <span class="wk-name">${DAY_AR[letter]}${isToday?' · اليوم':''}</span>
+        <span class="wk-name">${t('days')[letter]}${isToday?' · '+t('tdToday'):''}</span>
         <span class="wk-date ltr">${iso.slice(5)}</span>
       </div>
-      ${hol?`<div class="wk-hol">🏖️ ${escapeHtml(hol.ar)}</div>`:''}
-      ${acad.map(e=>`<div class="wk-acad">📌 ${escapeHtml(e.ar)}</div>`).join('')}
+      ${hol?`<div class="wk-hol">🏖️ ${escapeHtml(LANG==='ar'?hol.ar:(hol.en||hol.ar))}</div>`:''}
+      ${acad.map(e=>`<div class="wk-acad">📌 ${
+        escapeHtml(LANG==='ar'?e.ar:(e.en||e.ar))}</div>`).join('')}
       ${evs.map(e=>{
         const c=courseOfCrn(e.crn);
         return `<div class="wk-ev" onclick="openCourse('${e.crn}',${
           (parseTime(c&&c.courseTiming)||{start:0}).start})">
-          <b>${EV_LABEL[e.kind]||'📌'}</b>
+          <b>${evLabel(e.kind)}</b>
           <span>${c?escapeHtml(c.courseCode):''}</span>
           ${e.note?`<i>${escapeHtml(e.note)}</i>`:''}</div>`;
       }).join('')}
@@ -5306,10 +5446,10 @@ function renderWeek(){
 
   return `<div class="wk-nav">
       <button class="mini" onclick="shiftWeek(-1)"${
-        rg&&WEEK_OFF<=rg.min?' disabled':''}>السابق</button>
+        rg&&WEEK_OFF<=rg.min?' disabled':''}>${t('wkBack')}</button>
       <button class="wk-label" onclick="openWeekPicker()">${label} <span>▾</span></button>
       <button class="mini" onclick="shiftWeek(1)"${
-        rg&&WEEK_OFF>=rg.max?' disabled':''}>التالي</button>
+        rg&&WEEK_OFF>=rg.max?' disabled':''}>${t('wkFwd')}</button>
     </div>${body}`;
 }
 
@@ -5340,11 +5480,11 @@ function openWeekPicker(){
   const cur=weekStart(ksaNow().date);
   const rows=termWeeks().map(x=>{
     const chips=Object.entries(x.kinds)
-      .map(([k,n])=>`<span class="wp-chip">${n} ${(EV_LABEL[k]||'📌').replace(/^\S+\s/,'')}</span>`)
+      .map(([k,n])=>`<span class="wp-chip">${n} ${evLabel(k).replace(/^\S+\s/,'')}</span>`)
       .join('');
     const off=Math.round((new Date(x.start+'T00:00:00Z')-new Date(cur+'T00:00:00Z'))/(7*864e5));
     return `<button class="wp-row${x.cur?' cur':''}" onclick="gotoWeek(${off})">
-      <div class="wp-l"><b>الأسبوع ${x.n}${x.cur?' · الحالي':''}</b>
+      <div class="wp-l"><b>${t('wkNum')} ${x.n}${x.cur?' · '+t('wkCur'):''}</b>
         <span class="ltr">${x.start.slice(5)} – ${x.end.slice(5)}</span></div>
       <div class="wp-r">${chips||'<span class="wp-none">—</span>'}</div>
     </button>`;
@@ -5353,9 +5493,9 @@ function openWeekPicker(){
   w.className='guide-overlay open'; w.id='wpOv';
   w.onclick=e=>{ if(e.target===w)w.remove() };
   w.innerHTML=`<div class="guide-sheet"><div class="guide-grip"></div>
-    <div class="guide-head"><h2>أسابيع الترم</h2>
+    <div class="guide-head"><h2>${t('wkPicker')}</h2>
       <button class="guide-close" onclick="document.getElementById('wpOv').remove()">✕</button>
-    </div>${rows||'<div class="ev-empty">ما في أسابيع — الترم ما بدأ بعد</div>'}</div>`;
+    </div>${rows||`<div class="ev-empty">${t('wkNone')}</div>`}</div>`;
   document.body.appendChild(w);
 }
 function gotoWeek(off){
@@ -5365,8 +5505,8 @@ function gotoWeek(off){
 
 function viewSwitch(){
   return `<div class="vw-switch">
-    <button class="${VIEW==='day'?'on':''}" onclick="setView('day')">اليوم</button>
-    <button class="${VIEW==='week'?'on':''}" onclick="setView('week')">الأسبوع</button>
+    <button class="${VIEW==='day'?'on':''}" onclick="setView('day')">${t('tdDay')}</button>
+    <button class="${VIEW==='week'?'on':''}" onclick="setView('week')">${t('tdWeek')}</button>
   </div>`;
 }
 
@@ -5395,15 +5535,16 @@ function renderToday(){
       const past=x.t.end<=n.min;
       const isNow=running&&x===running;
       const isNext=!running&&next&&x===next;
-      const badge=isNow?`⏳ تنتهي بعد ${fmtLeft(x.t.end-n.min,n.sec)}`
-                :isNext?`⏰ بعد ${fmtLeft(x.t.start-n.min,n.sec)}`
-                :past?'✓ خلصت':'';
+      const badge=isNow?`${t('tdEndsIn')} ${fmtLeft(x.t.end-n.min,n.sec)}`
+                :isNext?`${t('tdStartsIn')} ${fmtLeft(x.t.start-n.min,n.sec)}`
+                :past?t('tdDone'):'';
       return slotCard(x.c,x.t,isNow?'now':isNext?'next':past?'past':'',badge);
     }).join('');
-    const head=hol?`🏖️ ${escapeHtml(hol.ar)}`:`${DAY_AR[n.day]}`;
+    const head=hol?`🏖️ ${escapeHtml(LANG==='ar'?hol.ar:(hol.en||hol.ar))}`
+      :`${t('days')[n.day]}`;
     const done=mine.filter(x=>x.t.end<=n.min).length;
     html+=`<div class="day-block"><div class="day-head"><span>${head}</span>
-      <span class="cnt">${done} من ${mine.length} خلصت</span></div>
+      <span class="cnt">${done} ${t('tdOf')} ${mine.length} ${t('tdDoneN')}</span></div>
       <div class="day-body">${rows}</div></div>`;
   }else{
     /* ما عنده محاضرات اليوم — نوجّهه لأقرب يوم فيه، لا صندوق فاضٍ */
@@ -5413,12 +5554,12 @@ function renderToday(){
       const l=lessonsOn(d);
       if(l.length)found={d,i,first:l[0]};
     }
-    const head=hol?`🏖️ ${escapeHtml(hol.ar)}`:'☕ ما عندك محاضرات اليوم';
+    const head=hol?`🏖️ ${escapeHtml(LANG==='ar'?hol.ar:(hol.en||hol.ar))}`:t('tdNoToday');
     html+=`<div class="day-block"><div class="day-head"><span>${head}</span></div>
       <div class="day-body">${found
         ?slotCard(found.first.c,found.first.t,'',
-           `${fmtDays(found.i)} · ${DAY_AR[found.d]}`)
-        :`<div class="empty-day">ما في محاضرات في جدولك</div>`}</div></div>`;
+           `${fmtDays(found.i)} · ${t('days')[found.d]}`)
+        :`<div class="empty-day">${t('tdNoAny')}</div>`}</div></div>`;
   }
 
   /* ما نلمس الـDOM إلا لو تغيّر فعلاً: إعادة الرسم كل ثانية تقطع الضغط
@@ -6362,6 +6503,16 @@ function daysLeft(){
 function isTrial(){ return !PROFILE?.is_pro && daysLeft()>0 && !PROFILE?.paid_at; }
 /* ملاحظة: paid_at يتعبأ يدوياً عند تأكيد الدفع */
 
+/* البطاقة مطويّة افتراضياً: كل شي مجاني الآن، فالتفاصيل تشغل مساحة بلا
+   قرار مطلوب من الطالب. يبقى ظاهراً «مجاني حالياً» ومن يبي التفاصيل يفتحها. */
+let PRO_OPEN=false;
+function togglePro(){
+  PRO_OPEN=!PRO_OPEN;
+  const b=document.getElementById('proBody'),f=document.getElementById('proFold');
+  if(b)b.hidden=!PRO_OPEN;
+  if(f)f.classList.toggle('open',PRO_OPEN);
+}
+
 /* ═══ الفترة التجريبية المجانية ═══
    خلّه false لما تبدأ تحصيل الاشتراك — يرجع كل شي زي ما كان. */
 const FREE_BETA = true;
@@ -6764,6 +6915,46 @@ function toggleMyRev(){
   if(c)c.classList.toggle('open');
 }
 
+/* تفضيلات التنبيهات — محفوظة في profiles.notif_prefs (jsonb).
+   جدول مستقل لأربعة مفاتيح مبالغة، والملف الشخصي يُسحب مع كل دخول أصلاً. */
+const NOTIF_KEYS=[
+  ['event','ntEv','ntEvSub'],
+  ['confirmed','ntCf','ntCfSub'],
+  ['absence','ntAb','ntAbSub'],
+  ['acad','ntAc','ntAcSub']
+];
+const NOTIF_DEF={on:true,event:true,confirmed:true,absence:true,acad:true};
+function notifPrefs(){
+  const p=(PROFILE&&PROFILE.notif_prefs)||{};
+  return Object.assign({},NOTIF_DEF,p);
+}
+async function setNotif(key,val){
+  if(!USER)return;
+  const next=Object.assign({},notifPrefs(),{[key]:val});
+  const {error}=await sb.from('profiles').update({notif_prefs:next}).eq('id',USER.id);
+  if(error){ showToast('ما انحفظ — جرّب مرة ثانية'); return }
+  PROFILE=Object.assign({},PROFILE,{notif_prefs:next});
+  renderSettings();
+}
+function renderNotif(){
+  const card=document.getElementById('notifCard');
+  if(!card)return;
+  /* بلا ربط تيليغرام ما فيه وين يوصل التنبيه — نخفي البطاقة بدل ما نعد بشيء ما يجي */
+  const linked=!!(PROFILE&&PROFILE.telegram_chat_id);
+  card.style.display=linked?'':'none';
+  if(!linked)return;
+  const p=notifPrefs();
+  /* لا نسمّي المعامل t — يحجب دالة الترجمة داخل الدالة */
+  const row=(k,title,sub,on,dim)=>`<div class="nt-row${dim?' dim':''}">
+      <div class="nt-txt"><b>${title}</b><span>${sub}</span></div>
+      <button class="nt-sw${on?' on':''}" onclick="setNotif('${k}',${!on})"
+        role="switch" aria-checked="${on}"><i></i></button>
+    </div>`;
+  document.getElementById('notifList').innerHTML=
+    row('on',t('ntAll'),t('ntAllSub'),p.on)
+    +NOTIF_KEYS.map(([k,tk,dk])=>row(k,t(tk),t(dk),p.on&&p[k],!p.on)).join('');
+}
+
 function renderTgAndMon(ar){
   syncMajorSelect();
   syncFbEmail();
@@ -6778,6 +6969,7 @@ function renderTgAndMon(ar){
   tb.textContent=linked?(ar?'إعادة ربط':'Relink'):(ar?'ربط':'Link');
   tb.className='btn-sm'+(linked?' ghost':'');
   if(linked)document.getElementById('tgCode').style.display='none';
+  renderNotif();
 
   /* تحذير دائم لمن عنده مراقبات بلا ربط — يشمل اللي أنشأها قبل التعديل */
   const ml0=document.getElementById('monList');
@@ -7509,7 +7701,49 @@ pro:[
 {n:'★',t:'حفظ سحابي',d:'خطتك وجدولك ومعدلك محفوظة في حسابك — افتح من أي جهاز وتلقى كل شي زي ما تركته.'}],
 tip:'<b>🎁 كل الميزات مفتوحة مجاناً</b> — جدولك في فترة تجريبية، سجّل دخول واستمتع بكل شي بدون أي رسوم.'},
 
-en:{title:'How to use Jadwalik',lead:'Every feature in one line — under two minutes',
+en:{grWide:'Wide',grMed:'Medium',grNarrow:'Narrow',grHint:'Shrink it to fit · ',
+grBack:'To edit or remove, go back to the list',
+crnOrderHint:'Order them by registration priority — top one first.',
+ntTitle:'Schedule alerts',ntSub:'Sent on Telegram at 5 PM',
+ntAll:'All alerts',ntAllSub:'Master switch — turns everything off',
+ntEv:'📝 Upcoming date',ntEvSub:'Two days before a quiz or homework',
+ntCf:'✅ Date confirmed by peers',ntCfSub:'When three in your section add the same date',
+ntAb:'⚠️ Near the absence limit',ntAbSub:'When one absence is left in a course',
+ntAc:'🗓️ Academic date',ntAcSub:'Two days before the last drop or withdrawal day',phTitle:'Class photos',phAdd:'📷 Photo',phNone:'No photos — snap the board and find it here when you study',
+phUp:'⏳ Uploading…',phSaved:'✅ Saved',phErr:'Upload failed — try again',
+phDel:'Delete this photo? It cannot be undone.',phPeers:'Photos from your section',
+phShareAsk:'Share this photo with your section? Anyone who sees it can save it, and unsharing later will not undo that.',
+phShared:'📢 Shared',phPrivate:'🔒 Private again',phSharedT:'Shared',phPrivateT:'Private',
+flTitle:'Course files',flAdd:'📎 Upload file',flNone:'No files — upload the slides or homework and find them here',
+flPeers:'From your section',flUp:'⏳ Uploading…',flErr:'Upload failed — try again',
+flBadType:'File type not supported',flBig:'File is larger than',flMb:'MB',flMb2:'MB',flKb:'KB',
+sgTitle:'Your section',sgOk:'from your section added it',sgWeak:'⚠️ Unconfirmed — added by one or two students',
+sgAdd:'Add it',sgIgnore:'Ignore',sgAdded:'✅ Added to your dates',
+rpAsk:'Report this content? An admin will review it.',rpDone:'🚩 Report sent — thank you',
+rpDup:'You already reported it',rpErr:'Could not send — try again',rpT:'Report',rpDoneT:'Reported',evSnoozeT:'Remind me tomorrow',editT:'Edit',delT:'Delete',absTitle:'Absences',absMeta1:'classes this term · 15% limit =',absMeta2:'absences',
+absOver:'Over the limit',absNear:'One left',absSibBan:'⚠️ You are over the limit in another session of this course — the ban covers both',
+absAdd:'➕ Log absence',absLog:'Absence log',absChip:'Absent',
+absFuture:'You cannot log an absence for a future day',absBefore:'That is before the term starts',
+absNoClass:'You have no class for this course on that day',absDup:'Already logged for that day',
+absDel:'Remove this absence?',
+evTitle:'Course dates',evAdd:'➕ Add',evCancel:'Cancel',evSave:'Save',
+evNotePh:'Note (optional) — e.g. Chapters 1–3',evNoneUp:'No upcoming dates',
+evPast:'Past dates',evShareNote:'Share the note with your section',
+evHint:'📢 The date itself is shown to your section without your name. Notes and photos stay private unless you share them.',
+evPickDate:'Pick a date',evSaved:'✅ Saved',evDel:'Delete this date?',
+evSnooze:'⏰ Reminding you tomorrow',evSnoozeNo:'It is tomorrow — cannot snooze',
+kQuiz:'📝 Quiz',kHw:'📄 Homework',kProject:'📐 Project',kMidterm:'📕 Midterm',kOther:'📌 Other',
+errSave:'Could not save — try again',errDel:'Could not delete — try again',tabSearchL:'Search',tabSchedL:'Schedule',tabTodayL:'Today',tabPlanL:'Plan',tabDocsL:'Faculty',
+tdTab:'☀️ Today',tdDay:'Today',tdWeek:'Week',
+tdNoToday:'☕ No classes today',tdNoAny:'No classes in your schedule',
+tdEndsIn:'⏳ Ends in',tdStartsIn:'⏰ In',tdDone:'✓ Done',tdOf:'of',tdDoneN:'done',
+tdMin:'min',tdHr:'h',tdAnd:'',tdM:'m',
+tdToday:'Today',tdTomorrow:'Tomorrow',tdIn2:'In 2 days',tdInN:'In',tdDays:'days',
+tdAgo:'',tdDay1:'days ago',
+wkThis:'This week',wkNext:'Next week',wkPrev:'Last week',
+wkInN:'In',wkAgoN:'',wkWeeks:'weeks',wkBack:'Prev',wkFwd:'Next',
+wkPicker:'Term weeks',wkNum:'Week',wkCur:'current',wkNone:'No weeks — term has not started',
+wkOut:'Outside the term',title:'How to use Jadwalik',lead:'Every feature in one line — under two minutes',
 sec1:'Getting started',sec2:'Extra features',
 steps:[
 {n:'1',t:'Pick your major',d:'In <b>⚙️ Settings</b> choose your major — <b>20 programs</b>, every college. Your plan, credits and prerequisites switch automatically.'},
@@ -7560,7 +7794,49 @@ function maybeShowGuide(){
 
 /* ================= i18n ================= */
 const I18N={
-ar:{brand:'جدولك',tabSearch:'🔍 البحث',tabSched:'📅 جدولي ',tabPlan:'📋 خطتي',
+ar:{grWide:'واسع',grMed:'متوسط',grNarrow:'ضيق',grHint:'صغّرها لتدخل كاملة · ',
+grBack:'للحذف والتعديل ارجع للقائمة',
+crnOrderHint:'رتّبها بأولوية تسجيلك — الأعلى تسجّله أول.',
+ntTitle:'تنبيهات جدولك',ntSub:'تصلك على تيليغرام الساعة ٥ العصر',
+ntAll:'كل التنبيهات',ntAllSub:'المفتاح الرئيسي — يوقفها كلها',
+ntEv:'📝 موعد قادم',ntEvSub:'قبل الكويز أو الواجب بيومين',
+ntCf:'✅ موعد أكّده زملاؤك',ntCfSub:'لما ثلاثة من شعبتك يضيفون نفس الموعد',
+ntAb:'⚠️ قرب الحرمان',ntAbSub:'لما يبقى لك غياب واحد في مادة',
+ntAc:'🗓️ موعد أكاديمي',ntAcSub:'قبل آخر يوم حذف أو انسحاب بيومين',phTitle:'صور المحاضرة',phAdd:'📷 صوّر',phNone:'ما في صور — صوّر السبورة وتلقاها هنا وقت المذاكرة',
+phUp:'⏳ نرفع الصورة…',phSaved:'✅ انحفظت',phErr:'ما انرفعت — جرّب مرة ثانية',
+phDel:'تحذف الصورة؟ ما ترجع بعدها.',phPeers:'صور من زملائك',
+phShareAsk:'تشارك الصورة مع زملائك في الشعبة؟ من يشوفها يقدر يحفظها، وإلغاء المشاركة بعدين ما يسترجعها.',
+phShared:'📢 صارت مشتركة',phPrivate:'🔒 رجعت خاصة',phSharedT:'مشتركة',phPrivateT:'خاصة',
+flTitle:'ملفات المادة',flAdd:'📎 ارفع ملف',flNone:'ما في ملفات — ارفع السلايدات أو الواجب وتلقاها هنا',
+flPeers:'من زملائك',flUp:'⏳ نرفع الملف…',flErr:'ما انرفع — جرّب مرة ثانية',
+flBadType:'نوع الملف مو مدعوم',flBig:'الملف أكبر من',flMb:'ميغا',flMb2:'م.ب',flKb:'ك.ب',
+sgTitle:'زملاؤك في الشعبة',sgOk:'من شعبتك أضافوه',sgWeak:'⚠️ غير مؤكد — أضافه طالب واحد أو اثنان',
+sgAdd:'أضفه',sgIgnore:'تجاهل',sgAdded:'✅ انضاف لمواعيدك',
+rpAsk:'تبلّغ عن هذا المحتوى؟ راح يراجعه المشرف.',rpDone:'🚩 وصل البلاغ — شكراً لك',
+rpDup:'بلّغت عنه من قبل',rpErr:'ما انرسل — جرّب مرة ثانية',rpT:'بلّغ',rpDoneT:'بلّغت عنه',evSnoozeT:'ذكّرني بكرة',editT:'عدّل',delT:'احذف',absTitle:'الغياب',absMeta1:'محاضرة في الترم · الحد ١٥٪ =',absMeta2:'غياب',
+absOver:'تجاوزت الحد',absNear:'باقي لك واحد',absSibBan:'⚠️ تجاوزت الحد في جلسة أخرى من نفس المادة — الحرمان يشمل الجلستين',
+absAdd:'➕ سجّل غياب',absLog:'سجل الغياب',absChip:'غياب',
+absFuture:'ما تقدر تسجّل غياب ليوم ما جا بعد',absBefore:'هذا قبل بداية الترم',
+absNoClass:'ما عندك محاضرة لهذي المادة في هذا اليوم',absDup:'مسجّل غياب لهذا اليوم أصلاً',
+absDel:'تشيل هذا الغياب؟',
+evTitle:'مواعيد المادة',evAdd:'➕ أضف',evCancel:'إلغاء',evSave:'احفظ',
+evNotePh:'ملاحظة (اختياري) — مثلاً: الفصول ١–٣',evNoneUp:'ما في مواعيد قادمة',
+evPast:'مواعيد ماضية',evShareNote:'شارك الملاحظة مع زملائك في الشعبة',
+evHint:'📢 الموعد نفسه يظهر لزملائك في الشعبة بلا اسمك. الملاحظة والصور تبقى خاصة إلا لو شاركتها.',
+evPickDate:'اختر التاريخ',evSaved:'✅ انحفظ',evDel:'تحذف هذا الموعد؟',
+evSnooze:'⏰ بذكّرك بكرة',evSnoozeNo:'الموعد بكرة — ما ينفع تأجيل',
+kQuiz:'📝 كويز',kHw:'📄 واجب',kProject:'📐 مشروع',kMidterm:'📕 اختبار فصلي',kOther:'📌 غير ذلك',
+errSave:'ما انحفظ — جرّب مرة ثانية',errDel:'ما انحذف — جرّب مرة ثانية',tabSearchL:'البحث',tabSchedL:'جدولي',tabTodayL:'اليوم',tabPlanL:'خطتي',tabDocsL:'دكاترة',
+tdTab:'☀️ اليوم',tdDay:'اليوم',tdWeek:'الأسبوع',
+tdNoToday:'☕ ما عندك محاضرات اليوم',tdNoAny:'ما في محاضرات في جدولك',
+tdEndsIn:'⏳ تنتهي بعد',tdStartsIn:'⏰ بعد',tdDone:'✓ خلصت',tdOf:'من',tdDoneN:'خلصت',
+tdMin:'دقيقة',tdHr:'ساعة',tdAnd:'و',tdM:'د',
+tdToday:'اليوم',tdTomorrow:'بكرة',tdIn2:'بعد يومين',tdInN:'بعد',tdDays:'أيام',
+tdAgo:'قبل',tdDay1:'يوم',
+wkThis:'هذا الأسبوع',wkNext:'الأسبوع الجاي',wkPrev:'الأسبوع اللي فات',
+wkInN:'بعد',wkAgoN:'قبل',wkWeeks:'أسابيع',wkBack:'السابق',wkFwd:'التالي',
+wkPicker:'أسابيع الترم',wkNum:'الأسبوع',wkCur:'الحالي',wkNone:'ما في أسابيع — الترم ما بدأ بعد',
+wkOut:'هذا خارج الترم',brand:'جدولك',tabSearch:'🔍 البحث',tabSched:'📅 جدولي ',tabPlan:'📋 خطتي',
 searchTitle:'البحث عن المواد',semester:'السيمستر',college:'الكلية',gender:'الجنس',
 filterLabel:'فلتر (اختياري)',filterPh:'MEEN 3395 · 30547 · اسم الدكتور',
 filterHelp:'ابحث بكود المادة، أو الـ CRN، أو اسم المادة، أو اسم الدكتور',
@@ -7779,7 +8055,7 @@ function applyLang(){
   document.documentElement.lang=LANG;
   document.documentElement.dir=LANG==='ar'?'rtl':'ltr';
   document.getElementById('langBtn').textContent=LANG==='ar'?'EN':'ع';
-  document.getElementById('brandName').textContent=L.brand;
+  /* الاسم علامة تجارية — يبقى Jadwalik في اللغتين ولا يُترجم */
 
   document.querySelectorAll('[data-i18n-ph]').forEach(el=>{
     const k=el.getAttribute('data-i18n-ph');
@@ -7794,7 +8070,7 @@ function applyLang(){
   document.querySelectorAll('[data-i18n]').forEach(el=>{
     const k=el.getAttribute('data-i18n');
     if(L[k]===undefined)return;
-    if(k==='tabSched'){el.childNodes[0].nodeValue=L[k];return}
+    /* شارة العدد صارت داخل الأيقونة، فالاسم عنصر مستقل ما يمسّها */
     el.textContent=L[k];
   });
 
@@ -8372,6 +8648,16 @@ async function pushSchedule(){ return saveQueue('schedule',writeSchedule) }
   });
 })();
 
+
+/* صفحة البداية: البحث أثناء نافذة التسجيل، و«اليوم» بعدها.
+   لا نغيّرها إذا وصل الطالب برابط فيه بحث محدّد. */
+(function(){
+  try{
+    if(location.search&&/[?&](q|crn|code)=/.test(location.search))return;
+    if(defaultTab()!=='today')return;
+    if(typeof switchTab==='function')switchTab('today');
+  }catch(e){}
+})();
 
 /* مفتاح المراقبة: من الرابط ?key=xxx أو محفوظ من قبل */
 (function(){
