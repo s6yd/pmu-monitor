@@ -712,7 +712,7 @@ border-radius:14px;padding:1px;-webkit-overflow-scrolling:touch}
 flex-shrink:0;width:46px}
 .gr-hours span{position:absolute;inset-inline-end:6px;font-family:var(--mono);
 font-size:9.5px;color:var(--text3);transform:translateY(-4px)}
-.gr-col{flex:0 0 108px;background:var(--card)}
+.gr-col{flex-grow:0;flex-shrink:0;background:var(--card);min-width:0}
 .gr-dh{height:30px;display:flex;align-items:center;justify-content:center;
 font-size:11.5px;font-weight:700;color:var(--text2);border-bottom:1px solid var(--border)}
 .gr-body{position:relative}
@@ -720,10 +720,18 @@ font-size:11.5px;font-weight:700;color:var(--text2);border-bottom:1px solid var(
 border-inline-start:2px solid var(--accent);border-radius:7px;padding:4px 5px;
 overflow:hidden;display:flex;flex-direction:column;gap:1px}
 .gr-item.clash{background:rgba(245,158,11,.16);border-inline-start-color:var(--warn)}
-.gr-item b{font-size:10.5px;font-weight:700;white-space:nowrap}
+/* الصفحة RTL: بلا تثبيت الاتجاه يقتطع المتصفح أول الاسم لا آخره،
+   فيظهر «…Methods» بدل «…Computational» */
+.gr-item b,.gr-item i,.gr-item u{direction:ltr;unicode-bidi:isolate;text-align:start;
+white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;max-width:100%}
+.gr-item b{font-size:10.5px;font-weight:700;line-height:1.35}
 .gr-item i{font-style:normal;font-size:9px;color:var(--text3);font-family:var(--mono)}
-.gr-item u{text-decoration:none;font-size:9px;color:var(--text3);white-space:nowrap;
-overflow:hidden;text-overflow:ellipsis}
+.gr-item u{text-decoration:none;font-size:9px;color:var(--text3)}
+.gr-zoom{display:flex;gap:5px;justify-content:center;margin-bottom:10px}
+.gr-zoom button{background:var(--card);border:1px solid var(--border);color:var(--text3);
+font-family:var(--sans);font-size:11.5px;font-weight:700;padding:6px 14px;
+border-radius:9px;cursor:pointer}
+.gr-zoom button.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .gr-hint{font-size:11px;color:var(--text3);text-align:center;margin-top:9px}
 /* ── مواعيد الزملاء ── */
 .sg-row{display:flex;gap:10px;align-items:flex-start;background:var(--bg);
@@ -4205,6 +4213,12 @@ function renderLabWarn(){
    خمسة أيام في عرض جوال تعني 70 بكسل لليوم، فالشبكة تُمرَّر أفقياً
    والرمز يُختصر: «4322 §102» بدل «MEEN 4322 §102». */
 let SCHED_VIEW='list';
+/* ثلاثة مستويات بدل التكبير باللمس: الأخير يتعارض مع تمرير الصفحة على الجوال.
+   الضيق يُدخل الأيام الخمسة في عرض الجوال بلا سحب. */
+const GRID_Z=[['w',108,54,'واسع'],['m',82,44,'متوسط'],['s',62,36,'ضيق']];
+let GRID_ZOOM=load('pmu_grid_zoom','w');
+function setGridZoom(z){ GRID_ZOOM=z; save('pmu_grid_zoom',z); renderGrid() }
+function zoomCfg(){ return GRID_Z.find(x=>x[0]===GRID_ZOOM)||GRID_Z[0] }
 function setSchedView(v){
   SCHED_VIEW=v;
   document.getElementById('svList').classList.toggle('on',v==='list');
@@ -4213,14 +4227,15 @@ function setSchedView(v){
   document.getElementById('schedGrid').style.display=v==='grid'?'':'none';
   if(v==='grid')renderGrid();
 }
-const GRID_H=54;                       /* ارتفاع الساعة بالبكسل */
-function shortCode(c){
-  const m=String(c.courseCode||'').match(/(\d+)\s*$/);
-  return (m?m[1]:c.courseCode)+' §'+(c.section||'');
+/* الاسم أوضح من الرقم. لو ما اتسع يُقتطع من آخره لا من أوله — والصفحة RTL
+   فبلا تثبيت الاتجاه يعرض المتصفح «…Methods» بدل «…Computational». */
+function gridLabel(c){
+  return (c.courseTitle||c.courseCode||'')+'';
 }
 function renderGrid(){
   const box=document.getElementById('schedGrid');
   if(!box)return;
+  const [,COLW,GRID_H]=zoomCfg();
   const items=schedule.map(c=>({c,t:parseTime(c.courseTiming)})).filter(x=>x.t);
   if(!items.length){ box.innerHTML=''; return }
   /* من أول محاضرة لآخرها لا من الصباح الباكر — وإلا صار نصفها فاضياً */
@@ -4235,7 +4250,7 @@ function renderGrid(){
 
   const cols=DAY_KEYS.map(day=>{
     const its=items.filter(x=>parseDays(x.c.courseDate).includes(day));
-    return `<div class="gr-col">
+    return `<div class="gr-col" style="flex-basis:${COLW}px">
       <div class="gr-dh">${t('days')[day]}</div>
       <div class="gr-body" style="height:${(hi-lo+1)*GRID_H}px">
         ${its.map(x=>{
@@ -4243,21 +4258,25 @@ function renderGrid(){
           const h=Math.max(26,(x.t.end-x.t.start)/60*GRID_H-3);
           return `<div class="gr-item${cl.has(x.c.crn)?' clash':''}"
             style="top:${top}px;height:${h}px" title="${escapeHtml(c2t(x.c))}">
-            <b class="ltr">${escapeHtml(shortCode(x.c))}</b>
-            <i class="ltr">${fmtTime(x.t.start)}</i>
-            ${h>44?`<u class="ltr">${escapeHtml(x.c.room||'')}</u>`:''}
+            <b>${escapeHtml(gridLabel(x.c))}</b>
+            <i>${fmtTime(x.t.start)} §${escapeHtml(x.c.section||'')}</i>
+            ${h>GRID_H?`<u>${escapeHtml(x.c.room||'')}</u>`:''}
           </div>`;
         }).join('')}
       </div></div>`;
   }).join('');
 
-  box.innerHTML=`<div class="gr-wrap"><div class="gr-hours">
+  box.innerHTML=`<div class="gr-zoom">${GRID_Z.map(([k,,,lbl])=>
+      `<button class="${k===GRID_ZOOM?'on':''}" onclick="setGridZoom('${k}')">${lbl}</button>`
+    ).join('')}</div>
+    <div class="gr-wrap"><div class="gr-hours">
       <div class="gr-dh"></div>
-      <div style="height:${(hi-lo+1)*GRID_H}px;position:relative">
+      <div style="height:${(hi-lo+1)*GRID_H}px;position:relative" class="gr-hcol">
         ${rows.map((h,i)=>`<span style="top:${i*GRID_H}px">${
           String(h).padStart(2,'0')}:00</span>`).join('')}
       </div></div>${cols}</div>
-    <div class="gr-hint">اسحب يميناً ويساراً · للحذف والتعديل ارجع للقائمة</div>`;
+    <div class="gr-hint">${GRID_ZOOM==='s'?'':'صغّرها لتدخل كاملة · '
+      }للحذف والتعديل ارجع للقائمة</div>`;
 }
 function c2t(c){ return `${c.courseCode} §${c.section} · ${c.courseTitle||''}` }
 
