@@ -73,21 +73,26 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 
 /* ثلاث مناطق: الأدوات · الشعار في المنتصف · الحساب.
    1fr على الطرفين يثبّت الشعار وسطاً مهما طال اسم الطالب. */
-/* direction:rtl مثبّت: الأدوات يميناً والحساب يساراً في اللغتين.
-   بدونه ينعكس كل شيء مع الإنجليزي ويتوه الطالب بين الوضعين. */
+/* المواضع مثبّتة بـorder لا بـdirection: الأخير كان يقلب اتجاه النص
+   داخل الأزرار ويمنع الترجمة من الظهور صحيحة.
+   الإعدادات آخر شيء على اليمين، والحساب على اليسار، في اللغتين. */
 .topbar{position:sticky;top:0;z-index:100;background:var(--topbar-bg);backdrop-filter:blur(16px);
-border-bottom:1px solid var(--border);padding:0 10px;height:58px;direction:rtl;
-display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:6px}
-.tb-side{display:flex;align-items:center;gap:5px;min-width:0;flex-wrap:nowrap}
-.tb-side.end{justify-content:flex-end}
-.topbar .logo{justify-content:center;text-align:center;direction:ltr;flex-shrink:0;
-padding:0 4px}
-.topbar .logo>div{text-align:start}
-/* زر الإعدادات أوضحهم — له مكانته بين الأدوات */
-#setBtn{background:var(--accent);border-color:var(--accent);color:#fff;
-width:34px;height:34px;font-size:16px}
+border-bottom:1px solid var(--border);padding:0 10px;height:58px;
+display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px}
+.topbar>.tb-side:first-of-type{order:3;justify-content:flex-end}
+.topbar>.logo{order:2}
+.topbar>.tb-side.end{order:1;justify-content:flex-start}
+.tb-side{display:flex;align-items:center;gap:6px;min-width:0;flex-wrap:nowrap}
+.topbar .logo{justify-content:center;text-align:center;flex-shrink:0;padding:0 2px}
+/* اللغة والسطوع فوق بعض ومصغّران — نادراً ما يُستعملان */
+.tb-mini{display:flex;flex-direction:column;gap:3px}
+.lang-btn.sm{width:30px;height:20px;font-size:10px;border-radius:7px;padding:0}
+/* الترس رمز تعبيري يرسمه النظام بحجم لا نتحكّم فيه — SVG أدق وأنظف */
+#setBtn{width:30px;height:43px;border-radius:9px;display:flex;align-items:center;
+justify-content:center;padding:0;color:var(--text2)}
+#setBtn svg{width:18px;height:18px;display:block}
+#setBtn:active{color:var(--accent2)}
 .topbar .lang-btn{flex-shrink:0}
-.tabs{direction:rtl}
 .logo{display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;line-height:1.15}
 .brand-sub{font-size:9.5px;font-family:var(--mono);color:var(--text3);letter-spacing:.5px;margin-top:2px}
 .lang-btn{background:transparent;border:1px solid var(--border2);color:var(--text2);border-radius:20px;
@@ -445,10 +450,16 @@ padding-left:4px;background-image:none;flex-shrink:0}
 /* ---- Settings / Pro ---- */
 .pro-card{background:linear-gradient(160deg,rgba(245,158,11,.14),var(--card));
 border:1px solid rgba(245,158,11,.4);border-radius:16px;padding:18px;margin-bottom:14px}
-.pro-head{display:flex;align-items:center;gap:11px;margin-bottom:12px}
-.pro-icon{font-size:24px}
-.pro-head h3{font-size:15px;font-weight:600}
-.pro-head p{font-size:11.5px;color:var(--text2);margin-top:2px}
+/* الترويسة كانت تعصر النص فينزل كلمة بكل سطر: النص يأخذ ما بقي،
+   والسعر والسهم لا ينكمشان ولا يلتفّان. */
+.pro-head{display:flex;align-items:center;gap:10px;margin-bottom:0}
+.pro-head>div:not(.pro-price){flex:1;min-width:0}
+.pro-icon{font-size:22px;flex:0 0 auto}
+.pro-head h3{font-size:14px;font-weight:700;line-height:1.4}
+.pro-head p{font-size:11px;color:var(--text2);margin-top:2px;line-height:1.5}
+.pro-price{flex:0 0 auto;white-space:nowrap}
+.pro-card{padding:14px 15px}
+#proBody{margin-top:13px}
 .pro-price{margin-right:auto;font-family:var(--mono);font-size:13px;color:var(--warn);
 background:rgba(245,158,11,.15);padding:4px 11px;border-radius:20px;white-space:nowrap}
 .pro-list{display:flex;flex-direction:column;gap:7px;margin-bottom:14px}
@@ -1265,9 +1276,11 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 <div class="tg-bar" id="tgBar" hidden></div>
 <div class="topbar">
   <div class="tb-side">
-    <button class="lang-btn" id="langBtn" onclick="toggleLang()">EN</button>
-    <button class="lang-btn" id="themeBtn" onclick="toggleTheme()">🌙</button>
-    <button class="lang-btn" id="setBtn" onclick="switchTab('set')" title="⚙️">⚙️</button>
+    <div class="tb-mini">
+      <button class="lang-btn sm" id="langBtn" onclick="toggleLang()">EN</button>
+      <button class="lang-btn sm" id="themeBtn" onclick="toggleTheme()">🌙</button>
+    </div>
+    <button class="lang-btn" id="setBtn" onclick="switchTab('set')" aria-label="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
   </div>
   <div class="logo">
     <div class="logo-icon">🎓</div>
@@ -1560,7 +1573,8 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
         <p id="proSub" data-i18n="proSub">فعّل المراقبة والحفظ السحابي</p>
       </div>
       <div class="pro-price" id="proPrice" data-i18n="proPrice">19 ريال / سنة</div>
-      <button class="cal-fold" id="proFold" onclick="togglePro()">›</button>
+      <button class="cal-fold" id="proFold" onclick="togglePro()"
+        aria-label="tafseel">›</button>
     </div>
     <div id="proBody" hidden>
     <div class="pro-list" id="proList">
@@ -6833,11 +6847,11 @@ function renderSettings(){
   if(FREE_BETA){
     card.classList.add('pro-trial');
     card.classList.remove('pro-active');
-    document.getElementById('proTitle').textContent=ar?
-      '🎁 كل الميزات مفتوحة مجاناً':'🎁 Everything unlocked, free';
+    /* البطاقة مطويّة، فالعنوان قصير يتّسع بالعرض بدل ما ينزل كلمة بكل سطر.
+       التفصيل الكامل في الوصف داخلها. */
+    document.getElementById('proTitle').textContent=ar?'🎁 كل شي مجاني':'🎁 All free';
     document.getElementById('proSub').textContent=ar?
-      'جدولك في فترة تجريبية — استمتع بكل شي بدون أي رسوم':
-      'Jadwalik is in open beta — enjoy everything at no cost';
+      'فترة تجريبية — بلا رسوم':'Open beta — no fees';
     document.getElementById('proPrice').textContent=ar?'مجاني حالياً':'Free for now';
     btn.style.display='none';
     document.getElementById('payBox').classList.remove('visible');
@@ -7701,39 +7715,7 @@ pro:[
 {n:'★',t:'حفظ سحابي',d:'خطتك وجدولك ومعدلك محفوظة في حسابك — افتح من أي جهاز وتلقى كل شي زي ما تركته.'}],
 tip:'<b>🎁 كل الميزات مفتوحة مجاناً</b> — جدولك في فترة تجريبية، سجّل دخول واستمتع بكل شي بدون أي رسوم.'},
 
-en:{grWide:'Wide',grMed:'Medium',grNarrow:'Narrow',grHint:'Shrink it to fit · ',
-grBack:'To edit or remove, go back to the list',
-crnOrderHint:'Order them by registration priority — top one first.',
-ntTitle:'Schedule alerts',ntSub:'Sent on Telegram at 5 PM',
-ntAll:'All alerts',ntAllSub:'Master switch — turns everything off',
-ntEv:'📝 Upcoming date',ntEvSub:'Two days before a quiz or homework',
-ntCf:'✅ Date confirmed by peers',ntCfSub:'When three in your section add the same date',
-ntAb:'⚠️ Near the absence limit',ntAbSub:'When one absence is left in a course',
-ntAc:'🗓️ Academic date',ntAcSub:'Two days before the last drop or withdrawal day',phTitle:'Class photos',phAdd:'📷 Photo',phNone:'No photos — snap the board and find it here when you study',
-phUp:'⏳ Uploading…',phSaved:'✅ Saved',phErr:'Upload failed — try again',
-phDel:'Delete this photo? It cannot be undone.',phPeers:'Photos from your section',
-phShareAsk:'Share this photo with your section? Anyone who sees it can save it, and unsharing later will not undo that.',
-phShared:'📢 Shared',phPrivate:'🔒 Private again',phSharedT:'Shared',phPrivateT:'Private',
-flTitle:'Course files',flAdd:'📎 Upload file',flNone:'No files — upload the slides or homework and find them here',
-flPeers:'From your section',flUp:'⏳ Uploading…',flErr:'Upload failed — try again',
-flBadType:'File type not supported',flBig:'File is larger than',flMb:'MB',flMb2:'MB',flKb:'KB',
-sgTitle:'Your section',sgOk:'from your section added it',sgWeak:'⚠️ Unconfirmed — added by one or two students',
-sgAdd:'Add it',sgIgnore:'Ignore',sgAdded:'✅ Added to your dates',
-rpAsk:'Report this content? An admin will review it.',rpDone:'🚩 Report sent — thank you',
-rpDup:'You already reported it',rpErr:'Could not send — try again',rpT:'Report',rpDoneT:'Reported',evSnoozeT:'Remind me tomorrow',editT:'Edit',delT:'Delete',absTitle:'Absences',absMeta1:'classes this term · 15% limit =',absMeta2:'absences',
-absOver:'Over the limit',absNear:'One left',absSibBan:'⚠️ You are over the limit in another session of this course — the ban covers both',
-absAdd:'➕ Log absence',absLog:'Absence log',absChip:'Absent',
-absFuture:'You cannot log an absence for a future day',absBefore:'That is before the term starts',
-absNoClass:'You have no class for this course on that day',absDup:'Already logged for that day',
-absDel:'Remove this absence?',
-evTitle:'Course dates',evAdd:'➕ Add',evCancel:'Cancel',evSave:'Save',
-evNotePh:'Note (optional) — e.g. Chapters 1–3',evNoneUp:'No upcoming dates',
-evPast:'Past dates',evShareNote:'Share the note with your section',
-evHint:'📢 The date itself is shown to your section without your name. Notes and photos stay private unless you share them.',
-evPickDate:'Pick a date',evSaved:'✅ Saved',evDel:'Delete this date?',
-evSnooze:'⏰ Reminding you tomorrow',evSnoozeNo:'It is tomorrow — cannot snooze',
-kQuiz:'📝 Quiz',kHw:'📄 Homework',kProject:'📐 Project',kMidterm:'📕 Midterm',kOther:'📌 Other',
-errSave:'Could not save — try again',errDel:'Could not delete — try again',tabSearchL:'Search',tabSchedL:'Schedule',tabTodayL:'Today',tabPlanL:'Plan',tabDocsL:'Faculty',
+en:{
 tdTab:'☀️ Today',tdDay:'Today',tdWeek:'Week',
 tdNoToday:'☕ No classes today',tdNoAny:'No classes in your schedule',
 tdEndsIn:'⏳ Ends in',tdStartsIn:'⏰ In',tdDone:'✓ Done',tdOf:'of',tdDoneN:'done',
@@ -7919,7 +7901,50 @@ J1:'السنة الثالثة — الترم الأول',J2:'السنة الثا
 SU:'الصيف — التدريب',R1:'السنة الرابعة — الترم الأول',R2:'السنة الرابعة — الترم الثاني',
 PP1:'المستوى التأسيسي — Pre-Beginner',PP2:'المستوى المبتدئ — Beginner',PP3:'المستوى المتوسط — Intermediate',PP4:'المستوى المتقدم — Advanced',T1:'السنة الخامسة — الترم الأول',T2:'السنة الخامسة — الترم الثاني'}},
 
-en:{brand:'Jadwalik',tabSearch:'🔍 Search',tabSched:'📅 Schedule ',tabPlan:'📋 My Plan',
+en:{tdTab:'☀️ Today',tdDay:'Today',tdWeek:'Week',
+tdNoToday:'☕ No classes today',tdNoAny:'No classes in your schedule',
+tdEndsIn:'⏳ Ends in',tdStartsIn:'⏰ In',tdDone:'✓ Done',tdOf:'of',tdDoneN:'done',
+tdMin:'min',tdHr:'h',tdAnd:'',tdM:'m',
+tdToday:'Today',tdTomorrow:'Tomorrow',tdIn2:'In 2 days',tdInN:'In',tdDays:'days',
+tdAgo:'',tdDay1:'days ago',
+wkThis:'This week',wkNext:'Next week',wkPrev:'Last week',
+wkInN:'In',wkAgoN:'',wkWeeks:'weeks',wkBack:'Prev',wkFwd:'Next',
+wkPicker:'Term weeks',wkNum:'Week',wkCur:'current',
+wkNone:'No weeks — term has not started',wkOut:'Outside the term',
+grWide:'Wide',grMed:'Medium',grNarrow:'Narrow',grHint:'Shrink it to fit · ',
+grBack:'To edit or remove, go back to the list',
+crnOrderHint:'Order them by registration priority — top one first.',
+ntTitle:'Schedule alerts',ntSub:'Sent on Telegram at 5 PM',
+ntAll:'All alerts',ntAllSub:'Master switch — turns everything off',
+ntEv:'📝 Upcoming date',ntEvSub:'Two days before a quiz or homework',
+ntCf:'✅ Date confirmed by peers',ntCfSub:'When three in your section add the same date',
+ntAb:'⚠️ Near the absence limit',ntAbSub:'When one absence is left in a course',
+ntAc:'🗓️ Academic date',ntAcSub:'Two days before the last drop or withdrawal day',phTitle:'Class photos',phAdd:'📷 Photo',phNone:'No photos — snap the board and find it here when you study',
+phUp:'⏳ Uploading…',phSaved:'✅ Saved',phErr:'Upload failed — try again',
+phDel:'Delete this photo? It cannot be undone.',phPeers:'Photos from your section',
+phShareAsk:'Share this photo with your section? Anyone who sees it can save it, and unsharing later will not undo that.',
+phShared:'📢 Shared',phPrivate:'🔒 Private again',phSharedT:'Shared',phPrivateT:'Private',
+flTitle:'Course files',flAdd:'📎 Upload file',flNone:'No files — upload the slides or homework and find them here',
+flPeers:'From your section',flUp:'⏳ Uploading…',flErr:'Upload failed — try again',
+flBadType:'File type not supported',flBig:'File is larger than',flMb:'MB',flMb2:'MB',flKb:'KB',
+sgTitle:'Your section',sgOk:'from your section added it',sgWeak:'⚠️ Unconfirmed — added by one or two students',
+sgAdd:'Add it',sgIgnore:'Ignore',sgAdded:'✅ Added to your dates',
+rpAsk:'Report this content? An admin will review it.',rpDone:'🚩 Report sent — thank you',
+rpDup:'You already reported it',rpErr:'Could not send — try again',rpT:'Report',rpDoneT:'Reported',evSnoozeT:'Remind me tomorrow',editT:'Edit',delT:'Delete',absTitle:'Absences',absMeta1:'classes this term · 15% limit =',absMeta2:'absences',
+absOver:'Over the limit',absNear:'One left',absSibBan:'⚠️ You are over the limit in another session of this course — the ban covers both',
+absAdd:'➕ Log absence',absLog:'Absence log',absChip:'Absent',
+absFuture:'You cannot log an absence for a future day',absBefore:'That is before the term starts',
+absNoClass:'You have no class for this course on that day',absDup:'Already logged for that day',
+absDel:'Remove this absence?',
+evTitle:'Course dates',evAdd:'➕ Add',evCancel:'Cancel',evSave:'Save',
+evNotePh:'Note (optional) — e.g. Chapters 1–3',evNoneUp:'No upcoming dates',
+evPast:'Past dates',evShareNote:'Share the note with your section',
+evHint:'📢 The date itself is shown to your section without your name. Notes and photos stay private unless you share them.',
+evPickDate:'Pick a date',evSaved:'✅ Saved',evDel:'Delete this date?',
+evSnooze:'⏰ Reminding you tomorrow',evSnoozeNo:'It is tomorrow — cannot snooze',
+kQuiz:'📝 Quiz',kHw:'📄 Homework',kProject:'📐 Project',kMidterm:'📕 Midterm',kOther:'📌 Other',
+errSave:'Could not save — try again',errDel:'Could not delete — try again',tabSearchL:'Search',tabSchedL:'Schedule',tabTodayL:'Today',tabPlanL:'Plan',tabDocsL:'Faculty',
+brand:'Jadwalik',tabSearch:'🔍 Search',tabSched:'📅 Schedule ',tabPlan:'📋 My Plan',
 searchTitle:'Course Search',semester:'Semester',college:'College',gender:'Gender',
 filterLabel:'Filter (optional)',filterPh:'MEEN 3395 · 30547 · instructor name',
 filterHelp:'Search by course code, CRN, course title, or instructor name',
