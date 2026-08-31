@@ -1424,8 +1424,8 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
   <div class="lab-warn" id="labWarn"></div>
 
   <div class="vw-switch" id="schedView" style="display:none">
-    <button class="on" onclick="setSchedView('list')" id="svList">قائمة</button>
-    <button onclick="setSchedView('grid')" id="svGrid">شبكة</button>
+    <button class="on" onclick="setSchedView('list')" id="svList" data-i18n="svList">قائمة</button>
+    <button onclick="setSchedView('grid')" id="svGrid" data-i18n="svGrid">شبكة</button>
   </div>
   <div id="schedDays"></div>
   <div id="schedGrid" style="display:none"></div>
@@ -3997,7 +3997,7 @@ function renderCrn(){
         <span class="crn-num">${escapeHtml(String(c.crn||'—'))}</span>
         <span class="crn-code">${escapeHtml(c.courseCode)} §${escapeHtml(c.section||'')}</span>
       </span>
-      <span class="crn-copy">${ar?'نسخ':'copy'}</span>
+      <span class="crn-copy">${t('crnCopy')}</span>
     </div>`).join('')
     +`<button class="crn-all" onclick="copyAllCrn()">${
       ar?`📋 انسخ الأرقام كلها (${schedule.length})`:`📋 Copy all (${schedule.length})`}</button>`
@@ -4641,14 +4641,14 @@ async function markAbsent(crn,date){
   if(absOf(crn).some(a=>a.on_date===on)){ showToast(t('absDup')); return }
   const row={user_id:USER.id,term:activeTermCode(),crn:String(crn),on_date:on};
   const {data,error}=await sb.from('absences').insert(row).select().single();
-  if(error){ showToast('ما انحفظ — جرّب مرة ثانية'); return }
+  if(error){ showToast(t('errSave')); return }
   ABS.push(data);
   redrawCourse();
 }
 async function unmarkAbsent(id){
   if(!confirm(t('absDel')))return;
   const {error}=await sb.from('absences').delete().eq('id',id);
-  if(error){ showToast('ما انحذف — جرّب مرة ثانية'); return }
+  if(error){ showToast(t('errDel')); return }
   ABS=ABS.filter(a=>String(a.id)!==String(id));
   redrawCourse();
 }
@@ -4974,9 +4974,9 @@ function shrink(file){
       const cv=document.createElement('canvas');
       cv.width=w; cv.height=h;
       cv.getContext('2d').drawImage(img,0,0,w,h);
-      cv.toBlob(b=>b?res(b):rej(new Error('فشل الضغط')),'image/jpeg',PH_Q);
+      cv.toBlob(b=>b?res(b):rej(new Error(t('phShrinkErr'))),'image/jpeg',PH_Q);
     };
-    img.onerror=()=>{ URL.revokeObjectURL(url); rej(new Error('ما قدرنا نقرأ الصورة')) };
+    img.onerror=()=>{ URL.revokeObjectURL(url); rej(new Error(t('phShrinkErr'))) };
     img.src=url;
   });
 }
@@ -5117,7 +5117,7 @@ function fileRow(f,mine){
     <button class="fl-main" onclick="openFile('${escapeHtml(f.path)}')">
       <span class="fl-ico">${fileIcon(f.filename)}</span>
       <span class="fl-info">
-        <b>${escapeHtml(f.filename||'ملف')}</b>
+        <b>${escapeHtml(f.filename||t('flFile'))}</b>
         <i>${f.on_date} ${f.size_kb?'· '+fmtSize(f.size_kb):''}</i>
       </span></button>
     ${mine?`<button class="ph-share fl-btn" onclick="toggleShare('${f.id}')"
@@ -5308,10 +5308,10 @@ function openCourse(crn,start,redraw){
           ||list.find(x=>String(x.c.crn)===String(crn));
   if(!hit)return;
   CS_OPEN={crn:String(crn),start};
-  const c=hit.c,t=hit.t;
+  const c=hit.c,tm=hit.t;   /* لا نسمّيه t — يحجب دالة الترجمة */
   /* جلسات أخرى لنفس المادة (محاضرة ومعمل بشعبتين) — يعرفها بلا ما يخرج */
   const sibs=list.filter(x=>x.c.courseCode===c.courseCode&&
-    !(String(x.c.crn)===String(c.crn)&&x.t.start===t.start));
+    !(String(x.c.crn)===String(c.crn)&&x.t.start===tm.start));
   const days=parseDays(c.courseDate).map(d=>DAY_AR[d]).join(' · ')||'—';
   const row=(k,v,ltr)=>`<div class="cs-row"><span>${k}</span><b class="${
     ltr?'ltr':''}">${escapeHtml(v||'—')}</b></div>`;
@@ -5323,10 +5323,10 @@ function openCourse(crn,start,redraw){
     </div>
     <div class="guide-lead ltr" style="text-align:start">${c.courseCode} §${c.section}</div>
     <div class="cs-rows">
-      ${row('الوقت',fmtTime(t.start)+'–'+fmtTime(t.end),1)}
-      ${row('الأيام',days)}
-      ${row('القاعة',c.room)}
-      ${row('الدكتور',c.instructor)}
+      ${row(t('csTime'),fmtTime(tm.start)+'–'+fmtTime(tm.end),1)}
+      ${row(t('csDays'),days)}
+      ${row(t('csRoom'),c.room)}
+      ${row(t('csDoc'),c.instructor)}
       ${row('CRN',c.crn,1)}
     </div>
     ${evBlock(c)}
@@ -5335,7 +5335,7 @@ function openCourse(crn,start,redraw){
     ${sharedPhBlock(c)}
     ${flBlock(c)}
     ${absBlock(c)}
-    ${sibs.length?`<div class="cs-sib">🔁 لهذي المادة ${sibs.length===1?'جلسة أخرى':'جلسات أخرى'}: ${
+    ${sibs.length?`<div class="cs-sib">${sibs.length===1?t('csSib1'):t('csSib2')} ${
       sibs.map(x=>`<span style="direction:ltr;unicode-bidi:isolate">§${
         x.c.section} ${fmtTime(x.t.start)}</span>`).join(' · ')}</div>`:''}`;
   document.getElementById('csOv').classList.add('open');
@@ -6946,7 +6946,7 @@ async function setNotif(key,val){
   if(!USER)return;
   const next=Object.assign({},notifPrefs(),{[key]:val});
   const {error}=await sb.from('profiles').update({notif_prefs:next}).eq('id',USER.id);
-  if(error){ showToast('ما انحفظ — جرّب مرة ثانية'); return }
+  if(error){ showToast(t('errSave')); return }
   PROFILE=Object.assign({},PROFILE,{notif_prefs:next});
   renderSettings();
 }
@@ -7776,7 +7776,11 @@ function maybeShowGuide(){
 
 /* ================= i18n ================= */
 const I18N={
-ar:{grWide:'واسع',grMed:'متوسط',grNarrow:'ضيق',grHint:'صغّرها لتدخل كاملة · ',
+ar:{svList:'قائمة',svGrid:'شبكة',csTime:'الوقت',csDays:'الأيام',csRoom:'القاعة',
+csDoc:'الدكتور',csSib1:'🔁 لهذي المادة جلسة أخرى:',csSib2:'🔁 لهذي المادة جلسات أخرى:',
+phShrinkErr:'ما قدرنا نقرأ الصورة',flFile:'ملف',
+crnCopy:'نسخ',crnCopyAll:'📋 انسخ الأرقام كلها',
+crnHint2:'اضغط أي رقم لنسخه لحاله. الأرقام تُطبع كذلك مع الجدول.',grWide:'واسع',grMed:'متوسط',grNarrow:'ضيق',grHint:'صغّرها لتدخل كاملة · ',
 grBack:'للحذف والتعديل ارجع للقائمة',
 crnOrderHint:'رتّبها بأولوية تسجيلك — الأعلى تسجّله أول.',
 ntTitle:'تنبيهات جدولك',ntSub:'تصلك على تيليغرام الساعة ٥ العصر',
@@ -7901,7 +7905,12 @@ J1:'السنة الثالثة — الترم الأول',J2:'السنة الثا
 SU:'الصيف — التدريب',R1:'السنة الرابعة — الترم الأول',R2:'السنة الرابعة — الترم الثاني',
 PP1:'المستوى التأسيسي — Pre-Beginner',PP2:'المستوى المبتدئ — Beginner',PP3:'المستوى المتوسط — Intermediate',PP4:'المستوى المتقدم — Advanced',T1:'السنة الخامسة — الترم الأول',T2:'السنة الخامسة — الترم الثاني'}},
 
-en:{tdTab:'☀️ Today',tdDay:'Today',tdWeek:'Week',
+en:{svList:'List',svGrid:'Grid',csTime:'Time',csDays:'Days',csRoom:'Room',
+csDoc:'Instructor',csSib1:'🔁 This course has another session:',
+csSib2:'🔁 This course has other sessions:',
+phShrinkErr:'Could not read the image',flFile:'File',
+crnCopy:'copy',crnCopyAll:'📋 Copy all numbers',
+crnHint2:'Tap any number to copy it alone. They are printed with the schedule too.',tdTab:'☀️ Today',tdDay:'Today',tdWeek:'Week',
 tdNoToday:'☕ No classes today',tdNoAny:'No classes in your schedule',
 tdEndsIn:'⏳ Ends in',tdStartsIn:'⏰ In',tdDone:'✓ Done',tdOf:'of',tdDoneN:'done',
 tdMin:'min',tdHr:'h',tdAnd:'',tdM:'m',

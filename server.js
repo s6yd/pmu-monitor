@@ -168,6 +168,239 @@ async function sbAll(table, { query = '', order = 'id', pageSize = SB_PAGE } = {
 }
 
 /* ============ Telegram ============ */
+/* ═══════════ تنبيهات جدولك ═══════════
+   دورة يومية الساعة 5 العصر بتوقيت السعودية. تقرأ المواعيد والغياب،
+   تحترم تفضيلات الطالب و«ذكّرني بكرة»، وترسل عبر البوت.
+   المبدأ: قلة التنبيهات تحميها. طالب يكتم البوت يخسر معه تنبيهات
+   المراقبة كلها، فأي تنبيه زائد أغلى مما يبدو. */
+const NOTIF_HOUR = 17;                    /* 5 العصر */
+const NOTIF_LEAD = 2;                     /* ننبّه قبل الموعد بيومين */
+const NOTIF_CONFIRM_MIN = 3;              /* عتبة «أكّده زملاؤك» */
+const NOTIF_DEF = { on: true, event: true, confirmed: true, absence: true, acad: true };
+const NOTIF_KIND_AR = { quiz: '📝 كويز', hw: '📄 واجب', project: '📐 مشروع',
+                        midterm: '📕 اختبار فصلي', other: '📌 موعد' };
+
+
+/* التقويم على السيرفر — المواعيد الحرجة فقط. نسخة مصغّرة من ACAD_CAL في
+   الواجهة، وهذا تكرار مقصود لكنه دَيْن: أي تعديل هناك لازم ينعكس هنا.
+   الأصح لاحقاً أن يُقرأ من جدول في Supabase وتقرأه الجهتان. */
+const ACAD_CAL_SERVER = [
+  { s: '2026-08-30', t: 'start', ar: 'بداية الدراسة' },
+  { s: '2026-09-06', e: '2026-09-10', t: 'add', ar: 'فترة الحذف (آخر يوم بدون رسوم)' },
+  { s: '2026-09-23', e: '2026-09-26', t: 'off', ar: 'إجازة اليوم الوطني' },
+  { s: '2026-11-05', t: 'warn', ar: 'آخر يوم للانسحاب بتقدير W' },
+  { s: '2026-11-22', e: '2026-11-24', t: 'off', ar: 'إجازة منتصف الترم' },
+  { s: '2026-12-20', e: '2026-12-30', t: 'exam', ar: 'الاختبارات النهائية' }
+];
+
+/* حد الغياب: 15% من محاضرات الجلسة، معدودة بين بداية الدراسة وأول يوم
+   نهائيات ناقص الإجازات — نفس قاعدة الواجهة بالضبط. */
+const WD_LETTER_SRV = ['U', 'M', 'T', 'W', 'R', 'F', 'S'];
+function absAllowedFor(courseDate) {
+  const days = String(courseDate || '').toUpperCase().split('')
+    .filter(c => 'UMTWRFS'.includes(c));
+  if (!days.length) return 0;
+  const start = ACAD_CAL_SERVER.find(e => e.t === 'start');
+  const exam = ACAD_CAL_SERVER.find(e => e.t === 'exam');
+  if (!start || !exam) return 0;
+  const off = new Set();
+  ACAD_CAL_SERVER.filter(e => e.t === 'off').forEach(e => {
+    let d = new Date(e.s + 'T00:00:00Z');
+    const last = new Date((e.e || e.s) + 'T00:00:00Z');
+    let g = 0;
+    while (d <= last && g++ < 400) {
+      off.add(d.toISOString().slice(0, 10));
+      d = new Date(d.getTime() + 864e5);
+    }
+  });
+  let n = 0, g = 0;
+  let d = new Date(start.s + 'T00:00:00Z');
+  const end = new Date(exam.s + 'T00:00:00Z');
+  while (d < end && g++ < 400) {
+    const iso = d.toISOString().slice(0, 10);
+    if (days.includes(WD_LETTER_SRV[d.getUTCDay()]) && !off.has(iso)) n++;
+    d = new Date(d.getTime() + 864e5);
+  }
+  return Math.floor(n * 0.15);
+}
+
+/* التاريخ والساعة بتوقيت السعودية — نعيد استخدام riyadhNow القائمة
+   بدل حساب ثانٍ قد ينحرف عنها. */
+function ksaParts() {
+  const d = riyadhNow();
+  return { date: d.toISOString().slice(0, 10), hour: d.getUTCHours() };
+}
+
+function notifPrefsOf(profile) {
+  return Object.assign({}, NOTIF_DEF, (profile && profile.notif_prefs) || {});
+}
+
+/* ما نرسل لمن لم يربط تيليغرام، ولا لمن أطفأ النوع أو المفتاح الرئيسي */
+function wants(profile, key) {
+  if (!profile || !profile.telegram_chat_id) return false;
+  const p = notifPrefsOf(profile);
+  return !!(p.on && p[key]);
+}
+
+/* ═══ بناء رسائل اليوم ═══
+   دالة نقية: تأخذ الحالة وترجّع الرسائل. الإرسال منفصل عنها عشان
+   نقدر نختبر المنطق بلا شبكة ولا قاعدة. */
+function buildNotifications(state) {
+  const { today, profiles, schedules, events, absences, acadCal, sharedCounts } = state;
+  const target = dayShift(today, NOTIF_LEAD);
+  const out = [];
+
+  /* من يدرس أي CRN — نحتاجها للغياب و«أكّده زملاؤك» */
+  const byUser = {};
+  (schedules || []).forEach(r => {
+    (byUser[r.user_id] = byUser[r.user_id] || []).push(r);
+  });
+
+  for (const prof of (profiles || [])) {
+    const uid = prof.id;
+    const mine = byUser[uid] || [];
+    if (!mine.length) continue;
+    const lines = [];
+
+    /* 1) موعد قادم بعد يومين */
+    if (wants(prof, 'event')) {
+      for (const e of (events || [])) {
+        if (e.user_id !== uid) continue;
+        if (e.on_date !== target) continue;
+        if (e.notified_on === today) continue;          /* أُرسل اليوم */
+        if (e.snooze_to && e.snooze_to > today) continue; /* مؤجَّل */
+        const c = mine.find(m => String(m.crn) === String(e.crn));
+        lines.push({
+          kind: 'event', id: e.id,
+          text: `${NOTIF_KIND_AR[e.kind] || '📌 موعد'} بعد يومين\n` +
+                `${c ? c.course_code : ''}${e.note ? '\n' + e.note : ''}`
+        });
+      }
+    }
+
+    /* 2) موعد أكّده ثلاثة من الشعبة وما هو عندك */
+    if (wants(prof, 'confirmed')) {
+      for (const s of (sharedCounts || [])) {
+        if (s.n < NOTIF_CONFIRM_MIN) continue;
+        if (s.on_date <= today) continue;               /* مضى */
+        const c = mine.find(m => String(m.crn) === String(s.crn));
+        if (!c) continue;                               /* مو في شعبتك */
+        const has = (events || []).some(e => e.user_id === uid &&
+          String(e.crn) === String(s.crn) && e.kind === s.kind && e.on_date === s.on_date);
+        if (has) continue;                              /* عندك أصلاً */
+        lines.push({
+          kind: 'confirmed',
+          text: `✅ ${s.n} من شعبتك حدّدوا ${NOTIF_KIND_AR[s.kind] || 'موعداً'}\n` +
+                `${c.course_code} · ${s.on_date}`
+        });
+      }
+    }
+
+    /* 3) قرب الحرمان */
+    if (wants(prof, 'absence')) {
+      const seen = {};
+      for (const c of mine) {
+        const used = (absences || []).filter(a =>
+          a.user_id === uid && String(a.crn) === String(c.crn)).length;
+        const max = c.allowed_abs;
+        if (!max || used !== max - 1) continue;         /* بقي واحد بالضبط */
+        if (seen[c.crn]) continue;
+        seen[c.crn] = 1;
+        lines.push({
+          kind: 'absence',
+          text: `⚠️ باقي لك غياب واحد في ${c.course_code}\n` +
+                `${used} من ${max} — الغياب الجاي حرمان`
+        });
+      }
+    }
+
+    /* 4) موعد أكاديمي */
+    if (wants(prof, 'acad')) {
+      for (const a of (acadCal || [])) {
+        if (a.s !== target) continue;
+        if (a.t !== 'warn' && a.t !== 'add') continue;  /* المواعيد الحرجة فقط */
+        lines.push({ kind: 'acad', text: `🗓️ بعد يومين: ${a.ar}` });
+      }
+    }
+
+    if (lines.length)
+      out.push({ user_id: uid, chat_id: prof.telegram_chat_id, lines });
+  }
+  return out;
+}
+
+/* ═══ الدورة ═══ */
+let NOTIF_LAST = null;                    /* آخر يوم أُرسل فيه — يمنع التكرار */
+
+async function notifyTick() {
+  if (!SB_URL || !SB_SERVICE_KEY) return;
+  const { date, hour } = ksaParts();
+  if (hour !== NOTIF_HOUR) return;
+  if (NOTIF_LAST === date) return;        /* أُرسلت اليوم */
+  NOTIF_LAST = date;
+
+  try {
+    const term = ACTIVE_TERM;
+    const [profiles, schedules, events, absences] = await Promise.all([
+      sbAll('profiles', { query: '?select=id,telegram_chat_id,notif_prefs' }),
+      sbAll('user_schedule', {
+        query: `?term=eq.${encodeURIComponent(term)}&select=user_id,crn,course_code,course_date`
+      }),
+      sbAll('course_events', {
+        query: `?term=eq.${encodeURIComponent(term)}&select=*`
+      }),
+      sbAll('absences', {
+        query: `?term=eq.${encodeURIComponent(term)}&select=user_id,crn`
+      })
+    ]);
+
+    /* عدّ المواعيد المشتركة لكل (شعبة + نوع + تاريخ) */
+    const cnt = {};
+    events.forEach(e => {
+      if (e.shared === false) return;
+      const k = `${e.crn}|${e.kind}|${e.on_date}`;
+      cnt[k] = cnt[k] || { crn: e.crn, kind: e.kind, on_date: e.on_date, n: 0 };
+      cnt[k].n++;
+    });
+
+    /* حد الغياب لكل جلسة — يُحسب من أيامها كما في الواجهة */
+    const withMax = schedules.map(r => Object.assign({}, r, {
+      allowed_abs: absAllowedFor(r.course_date)
+    }));
+
+    const msgs = buildNotifications({
+      today: date, profiles, schedules: withMax, events, absences,
+      acadCal: ACAD_CAL_SERVER, sharedCounts: Object.values(cnt)
+    });
+
+    let sent = 0, evIds = [];
+    for (const m of msgs) {
+      const body = m.lines.map(l => l.text).join('\n\n');
+      const r = await sendMsg(m.chat_id, `🔔 تنبيهات جدولك\n\n${body}`);
+      if (r && r.ok) {
+        sent++;
+        m.lines.forEach(l => { if (l.kind === 'event' && l.id) evIds.push(l.id) });
+      }
+      await new Promise(r2 => setTimeout(r2, 120));   /* حدود تيليغرام */
+    }
+
+    /* نعلّم المرسَل حتى لا يتكرر لو أُعيد تشغيل السيرفر */
+    if (evIds.length)
+      await sb('PATCH', 'course_events', {
+        query: `?id=in.(${evIds.join(',')})`,
+        body: { notified_on: date }, prefer: 'return=minimal'
+      }).catch(() => {});
+
+    if (sent) {
+      console.log(`تنبيهات جدولك: ${sent} رسالة`);
+      logEvent('notify', { sent, at: Date.now() });
+    }
+  } catch (e) {
+    console.log('notifyTick: ' + e.message);
+    NOTIF_LAST = null;                    /* نعيد المحاولة الساعة الجاية */
+  }
+}
+
 function tg(method, payload) {
   return new Promise(resolve => {
     if (!TELEGRAM_TOKEN) return resolve({ ok: false, description: 'TELEGRAM_TOKEN غير مضبوط' });
@@ -275,7 +508,7 @@ const isUuid = v => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
    فنكتب كل حدث في القاعدة فور وقوعه (بلا await: التسجيل ما يؤخّر شيئاً)،
    ونستعيد الأحدث عند الإقلاع.
    ما نحفظ الكاش عمداً: صلاحيته دقيقة داخل الذروة، ويُبنى بسحبة واحدة. */
-const EVENT_KEEP = { message: 300, correction: 60, flap: 60, unwatch: 200 };
+const EVENT_KEEP = { message: 300, correction: 60, flap: 60, unwatch: 200, notify: 60 };
 const EVENT_MAX_AGE_DAYS = 30;
 let EVENTS_READY = false;          /* قبل الاستعادة ما نكتب، لئلا نضاعف */
 
@@ -313,6 +546,10 @@ async function saveState() {
       runs: SCHED_SYNC.runs,
       confirmForces: CONFIRM_STAT.forces,
       confirmPurged: CONFIRM_STAT.purged,
+      /* مفاتيح اللوحة: بدونها يرجع كل شي للوضع التلقائي بعد كل نشر،
+         فيشتغل التسخين وأنت مطفّيه أو ترجع المراقبة وأنت موقّفها. */
+      toggles: { ttlOverride: TTL_OVERRIDE, monitorPaused: MONITOR_PAUSED,
+                 prewarmOn: PREWARM_ON, finalsOn: FINALS_ON },
       ops: { searches: OPS.searches, feedback: OPS.feedback,
              pmuFails: OPS.pmuFails, tgFails: OPS.tgFails,
              searchesCached: OPS.searchesCached, searchStale: OPS.searchStale,
@@ -337,8 +574,22 @@ async function restoreState() {
   CONFIRM_STAT.forces = v.confirmForces || 0;
   CONFIRM_STAT.purged = v.confirmPurged || 0;
   Object.assign(OPS, v.ops || {});
+
+  const g = v.toggles || {};
+  if ('ttlOverride' in g) TTL_OVERRIDE = g.ttlOverride || null;
+  if ('monitorPaused' in g) MONITOR_PAUSED = !!g.monitorPaused;
+  if ('prewarmOn' in g) PREWARM_ON = !!g.prewarmOn;
+  /* FINALS_ENABLED=off في Render مفتاح قتل على مستوى النشر — يغلب المحفوظ.
+     غير ذلك، ما ضبطته من اللوحة هو الأصح. */
+  if ('finalsOn' in g && (process.env.FINALS_ENABLED || '').trim() !== 'off')
+    FINALS_ON = !!g.finalsOn;
+
   console.log('استعادة الحالة: ذروة التغذية ' +
     ([...FEED_PEAK.values()][0] || '—') + ' · تصحيحات ' + SCHED_SYNC.totalUpdated);
+  console.log('استعادة المفاتيح: المراقبة ' + (MONITOR_PAUSED ? 'موقوفة' : 'شغالة') +
+    ' · التسخين ' + (PREWARM_ON ? 'مفعّل' : 'مطفأ') +
+    ' · الصلاحية ' + (TTL_OVERRIDE ? TTL_OVERRIDE + ' د يدوي' : 'تلقائية') +
+    ' · النهائيات ' + (FINALS_ON ? 'معروضة' : 'موقوفة'));
 }
 
 const sendMsg = async (chatId, text, markup) => {
@@ -1454,6 +1705,78 @@ function readBody(req) {
 
 const isActive = p => !!(p.is_pro ||
   (p.subscription_expires_at && new Date(p.subscription_expires_at) > new Date()));
+
+/* --- حجم التخزين ---
+   Supabase يحاسب على التخزين والتحميل معاً. الحجم محفوظ في size_kb
+   لكل ملف، فالجمع محلي بلا استعلام على Storage. */
+async function adminStorage() {
+  const rows = await sbAll('course_photos',
+    { query: '?select=id,kind,size_kb,shared,user_id,term,created_at' });
+  if (!Array.isArray(rows)) return { total_kb: 0, photos: 0, files: 0 };
+  const sum = a => a.reduce((n, r) => n + (r.size_kb || 0), 0);
+  const ph = rows.filter(r => r.kind !== 'file');
+  const fl = rows.filter(r => r.kind === 'file');
+  /* الصور القديمة انرفعت قبل عمود size_kb — نقدّرها بمتوسط المعروف */
+  const known = ph.filter(r => r.size_kb);
+  const avg = known.length ? Math.round(sum(known) / known.length) : 300;
+  const phKb = sum(ph) + ph.filter(r => !r.size_kb).length * avg;
+  const byUser = {};
+  rows.forEach(r => { byUser[r.user_id] = (byUser[r.user_id] || 0) + (r.size_kb || avg) });
+  const top = Object.entries(byUser).sort((a, b) => b[1] - a[1]).slice(0, 5)
+    .map(([u, kb]) => ({ user: String(u).slice(0, 8), kb }));
+  const day = new Date(Date.now() - 7 * 864e5).toISOString();
+  return {
+    total_kb: phKb + sum(fl),
+    photos: ph.length, photos_kb: phKb,
+    files: fl.length, files_kb: sum(fl),
+    shared: rows.filter(r => r.shared).length,
+    estimated: ph.filter(r => !r.size_kb).length,   /* كم صورة حجمها مقدَّر */
+    week: rows.filter(r => r.created_at > day).length,
+    top
+  };
+}
+
+/* --- بلاغات المحتوى المشترك ---
+   البلاغ لا يخفي شيئاً تلقائياً: طالبان يقدران يحجبان محتوى سليماً بالإساءة.
+   يصل هنا وينبّهني، وأنا أقرّر. */
+let REPORTS_SEEN = 0;
+async function adminReports() {
+  const rows = await sbAll('content_reports', { query: '?select=*' });
+  if (!Array.isArray(rows) || !rows.length) return [];
+  /* نجيب المحتوى المبلَّغ عنه ليظهر مع البلاغ لا كرقم مجرّد */
+  const phIds = rows.filter(r => r.kind === 'photo').map(r => r.target_id);
+  const evIds = rows.filter(r => r.kind === 'event').map(r => r.target_id);
+  const [ph, ev] = await Promise.all([
+    phIds.length ? sb('GET', 'course_photos',
+      { query: `?id=in.(${phIds.join(',')})&select=id,path,crn,on_date,kind,filename,user_id` })
+      : Promise.resolve([]),
+    evIds.length ? sb('GET', 'course_events',
+      { query: `?id=in.(${evIds.join(',')})&select=id,crn,kind,on_date,note,user_id` })
+      : Promise.resolve([])
+  ]);
+  const byId = {};
+  (Array.isArray(ph) ? ph : []).forEach(x => { byId['photo:' + x.id] = x });
+  (Array.isArray(ev) ? ev : []).forEach(x => { byId['event:' + x.id] = x });
+  return rows
+    .map(r => Object.assign({}, r, { target: byId[r.kind + ':' + r.target_id] || null }))
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+}
+
+/* إنذار فوري عند بلاغ جديد — نفحص مع دورة المراقبة القائمة */
+async function reportsWatch() {
+  try {
+    const rows = await sb('GET', 'content_reports',
+      { query: '?select=id&order=id.desc&limit=1' }).catch(() => []);
+    const top = Array.isArray(rows) && rows[0] ? rows[0].id : 0;
+    if (!REPORTS_SEEN) { REPORTS_SEEN = top; return; }   /* أول إقلاع: مرجع فقط */
+    if (top > REPORTS_SEEN) {
+      const n = top - REPORTS_SEEN;
+      REPORTS_SEEN = top;
+      alert('report', 'بلاغ على محتوى مشترك',
+        `${n} بلاغ جديد. افتح اللوحة › تبويب البلاغات وراجعه.`);
+    }
+  } catch (e) {}
+}
 
 /* --- إحصائيات عامة --- */
 async function adminStats() {
@@ -3601,6 +3924,8 @@ const server = http.createServer(async (req, res) => {
       if (act === 'reviews')  return send(200, { reviews: await adminReviews() });
       if (act === 'monitors') return send(200, { monitors: await adminMonitors() });
       if (act === 'feedback') return send(200, { feedback: await adminFeedback() });
+      if (act === 'reports')  return send(200, { reports: await adminReports() });
+      if (act === 'storage')  return send(200, await adminStorage());
       if (act === 'user')     return send(200, await adminUserDetail(parsed.query.id || ''));
       if (act === 'tickets')  return send(200, { tickets: await adminTickets(parsed.query.status) });
       if (act === 'broadcast-status') return send(200, BROADCAST);
@@ -3742,6 +4067,7 @@ const server = http.createServer(async (req, res) => {
           const was = MONITOR_PAUSED;
           /* بدون حقل on نرجّع الحالة فقط — ما نغيّر شي بالغلط */
           if ('on' in b) MONITOR_PAUSED = !b.on;   /* on = المراقبة شغالة */
+          if (was !== MONITOR_PAUSED) saveState().catch(() => {});
           if (was !== MONITOR_PAUSED)
             sendMsg(ADMIN_CHAT_ID, MONITOR_PAUSED
               ? '⏸️ <b>المراقبة موقوفة يدوياً</b>\n\nما راح يستلم أحد إشعارات فتح شعب حتى تشغّلها.'
@@ -3764,6 +4090,7 @@ const server = http.createServer(async (req, res) => {
           const b = await readBody(req);
           if ('on' in b) PREWARM_ON = !!b.on;
           if (PREWARM_ON) prewarmTick().catch(() => {});   /* دورة فورية */
+          saveState().catch(() => {});
         }
         return send(200, { on: PREWARM_ON, stat: PREWARM,
                            ttlMin: Math.round(coursesTTL() / 60000) });
@@ -3776,6 +4103,7 @@ const server = http.createServer(async (req, res) => {
           /* 0 أو فاضي أو قيمة غير صالحة = رجوع للتلقائي */
           if (!v || !isFinite(v) || v <= 0) TTL_OVERRIDE = null;
           else TTL_OVERRIDE = Math.min(TTL_MAX_ALLOWED, Math.max(TTL_MIN_ALLOWED, v));
+          saveState().catch(() => {});
         }
         return send(200, { override: TTL_OVERRIDE, choices: TTL_CHOICES,
                            min: TTL_MIN_ALLOWED, max: TTL_MAX_ALLOWED,
@@ -3788,6 +4116,7 @@ const server = http.createServer(async (req, res) => {
           const b = await readBody(req);
           const was = FINALS_ON;
           FINALS_ON = !!b.on;
+          if (was !== FINALS_ON) saveState().catch(() => {});
           if (was !== FINALS_ON) {
             /* لما نشغّله نفضي الكاش عشان يسحب جدول الترم الجديد لا القديم */
             if (FINALS_ON) { finalsCache.M = null; finalsCache.F = null; }
@@ -4248,6 +4577,11 @@ server.listen(PORT, () => {
   setInterval(() => { prewarmTick().catch(() => {}) }, 20000);
   /* ساعة التأكيد: تفحص الطابور كل 5 دقائق، وما تسحب إلا لو نضج صفّ */
   setInterval(() => { confirmTick().catch(() => {}) }, CONFIRM_TICK);
+  /* تنبيهات جدولك: فحص كل 10 دقائق، وما ترسل إلا الساعة 5 العصر مرة واحدة */
+  setInterval(() => { notifyTick().catch(() => {}) }, 10 * 60 * 1000);
+  /* البلاغات: فحص خفيف كل 3 دقائق — صف واحد لا أكثر */
+  setInterval(() => { reportsWatch().catch(() => {}) }, 3 * 60 * 1000);
+  reportsWatch().catch(() => {});
 
   /* الاستعادة أولاً، ثم نسمح بالكتابة — وإلا ضاعفنا ما استعدناه */
   (async () => {
