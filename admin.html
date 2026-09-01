@@ -72,7 +72,7 @@ display:grid;grid-template-columns:repeat(4,1fr)}
 .tab{background:none;border:none;color:var(--text3);font-family:var(--sans);
 font-size:12px;font-weight:600;padding:12px 2px;cursor:pointer;position:relative}
 .tab.active{color:var(--accent2)}
-.tabs6{grid-template-columns:repeat(7,1fr)}
+.tabs6{grid-template-columns:repeat(9,1fr)}
 .tabs6 .tab{font-size:11px;padding:11px 2px}
 .row.dim{opacity:.45}
 .tabs6 .tab{font-size:10.5px;padding:12px 1px}
@@ -357,6 +357,7 @@ padding:1px 6px;border-radius:5px;color:var(--accent2)}
   <button class="tab"        data-p="fb"    onclick="go('fb')">تذاكر<span class="tab-badge" id="fbBadge"></span></button>
   <button class="tab"        data-p="msgs"  onclick="go('msgs')">الرسائل</button>
   <button class="tab"        data-p="rep"   onclick="go('rep')">بلاغات<span class="tab-badge" id="repBadge"></span></button>
+  <button class="tab"        data-p="stg"   onclick="go('stg')">التخزين</button>
   <button class="tab"        data-p="sys"   onclick="go('sys')">النظام<span class="tab-dot" id="sysDot"></span></button>
 </div>
 
@@ -424,8 +425,12 @@ padding:1px 6px;border-radius:5px;color:var(--accent2)}
 
   <div class="page" id="pageReps"><div id="repsBody"></div></div>
 
-  <div class="page" id="pageSys">
+  <div class="page" id="pageStg">
     <div id="stgBody"></div>
+    <div id="upBody"></div>
+  </div>
+
+  <div class="page" id="pageSys">
     <div id="sysBody"><div class="spinner"></div></div>
   </div>
 
@@ -496,7 +501,7 @@ function logout(){
 function go(p){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.p===p));
   const ids={over:'pageOver',users:'pageUsers',revs:'pageRevs',mons:'pageMons',
-             fb:'pageFb',msgs:'pageMsgs',rep:'pageReps',sys:'pageSys'};
+             fb:'pageFb',msgs:'pageMsgs',rep:'pageReps',stg:'pageStg',sys:'pageSys'};
   document.querySelectorAll('.page').forEach(el=>el.classList.remove('active'));
   document.getElementById(ids[p]).classList.add('active');
 }
@@ -580,19 +585,20 @@ async function loadAll(silent){
 async function loadAllInner(silent){
   if(!TOKEN) return;
   try{
-    const [s,u,r,m,h,f,tk,mg,rp,stg] = await Promise.all([
+    const [s,u,r,m,h,f,tk,mg,rp,stg,up] = await Promise.all([
       api('stats'), api('users'), api('reviews'), api('monitors'),
       api('health').catch(()=>null), api('feedback').catch(()=>({feedback:[]})),
       api('tickets?status=all').catch(()=>({tickets:[]})),
       api('messages').catch(()=>({messages:[],kinds:[]})),
       api('reports').catch(()=>({reports:[]})),
-      api('storage').catch(()=>null)
+      api('storage').catch(()=>null),
+      api('uploads').catch(()=>null)
     ]);
     STATS=s; USERS=u.users||[]; REVS=r.reviews||[]; MONS=m.monitors||[]; HEALTH=h;
     FB=(f&&f.feedback)||[]; TICKETS=(tk&&tk.tickets)||[]; MSGS=mg||{messages:[],kinds:[]};
-    REPS=(rp&&rp.reports)||[]; STORAGE=stg||null;
+    REPS=(rp&&rp.reports)||[]; STORAGE=stg||null; UPLOADS=up||null;
     renderOver(); renderUsers(); renderRevs(); renderMons(); renderFb();
-    renderMsgs(); renderReps(); renderStorage(); renderSys();
+    renderMsgs(); renderReps(); renderStorage(); renderUploads(); renderSys();
   }catch(e){ toast(e.message,'err') }
 }
 
@@ -626,10 +632,83 @@ function renderStorage(){
     </div>
     ${S.estimated?`<div class="row-meta" style="margin-top:8px">
       <span>⚠️ ${S.estimated} صورة حجمها مقدَّر — رُفعت قبل تسجيل الأحجام</span></div>`:''}
+    ${S.estimated?`<button class="btn" id="stgSyncBtn" onclick="syncSizes()"
+      style="margin-top:8px">📐 احسب الأحجام الحقيقية</button>`:''}
     ${S.top&&S.top.length?`<div class="row" style="margin-top:10px">
       <div class="row-head"><b>أكثر الطلاب استهلاكاً</b></div>
       ${S.top.map(x=>`<div class="row-meta"><span>${x.user}…</span>
         <b>${fmtKb(x.kb)}</b></div>`).join('')}</div>`:''}`;
+}
+
+/* الأحجام المقدَّرة تبقى تقديراً للأبد ما لم تُقرأ مرة من Storage.
+   زر واحد يقرأها ويملأ العمود، فيختفي التحذير ولا يعود. */
+async function syncSizes(){
+  const b=document.getElementById('stgSyncBtn');
+  if(b){ b.disabled=true; b.textContent='جارٍ القياس…' }
+  try{
+    const r=await api('storage-sync',{body:{}});
+    toast(`قِيست ${r.updated} من ${r.checked}` +
+      (r.missing?` · ${r.missing} ما لقيت ملفها`:''),'ok');
+    STORAGE=await api('storage').catch(()=>STORAGE);
+    renderStorage();
+    UPLOADS=await api('uploads').catch(()=>UPLOADS);
+    renderUploads();
+  }catch(e){
+    toast(e.message,'err');
+    if(b){ b.disabled=false; b.textContent='📐 احسب الأحجام الحقيقية' }
+  }
+}
+
+/* ══════════ ما رُفع فعلاً ══════════
+   الأرقام تقول كم ميغابايت، ولا تقول هل الطلاب يستعملون الميزة.
+   هنا المحتوى نفسه ومعه حالته: مشارك أو خاص. */
+let UPLOADS=null, UP_FILTER='all';
+function setUpFilter(f){ UP_FILTER=f; renderUploads() }
+const UP_ICON={photo:'🖼️',file:'📎',note:'📝'};
+const UP_NAME={photo:'صورة',file:'ملف',note:'ملاحظة'};
+
+function renderUploads(){
+  const box=document.getElementById('upBody');
+  if(!box)return;
+  if(!UPLOADS){ box.innerHTML=''; return }
+  const U=UPLOADS;
+  if(!U.total){
+    box.innerHTML=`<div class="empty"><div class="empty-icon">📭</div>
+      <div class="empty-t">ما رفع أحد شيئاً بعد</div>
+      <div class="empty-s">أول صورة أو ملف أو ملاحظة بتظهر هنا</div></div>`;
+    return;
+  }
+  const list=UP_FILTER==='all'?U.items
+    :UP_FILTER==='shared'?U.items.filter(x=>x.shared)
+    :U.items.filter(x=>x.type===UP_FILTER);
+  const tab=(k,lbl,n)=>`<button class="mini${UP_FILTER===k?' go':''}"
+    onclick="setUpFilter('${k}')">${lbl}${n!=null?` (${n})`:''}</button>`;
+  box.innerHTML=`<div class="sec-title">ما رُفع · ${U.total} من ${U.users} طالب</div>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-val">${U.counts.photo}</div>
+        <div class="kpi-label">صورة · ${U.sharedCounts.photo} مشتركة</div></div>
+      <div class="kpi"><div class="kpi-val">${U.counts.file}</div>
+        <div class="kpi-label">ملف · ${U.sharedCounts.file} مشترك</div></div>
+      <div class="kpi"><div class="kpi-val">${U.counts.note}</div>
+        <div class="kpi-label">ملاحظة · ${U.sharedCounts.note} مشتركة</div></div>
+    </div>
+    <div class="row-acts" style="margin-top:10px">
+      ${tab('all','الكل',U.total)}${tab('photo','صور',U.counts.photo)}
+      ${tab('file','ملفات',U.counts.file)}${tab('note','ملاحظات',U.counts.note)}
+      ${tab('shared','المشترك',U.items.filter(x=>x.shared).length)}
+    </div>
+    ${list.length?list.map(x=>`<div class="row" style="margin-top:8px">
+      <div class="row-head">
+        <b>${UP_ICON[x.type]} ${esc(x.title||UP_NAME[x.type])}</b>
+        <span class="pill ${x.shared?'on':'off'}">${x.shared?'📢 مشترك':'🔒 خاص'}</span>
+      </div>
+      <div class="row-meta"><span>CRN ${esc(x.crn)} · ${esc(x.on_date||'—')}</span>
+        <span>${x.size_kb?fmtKb(x.size_kb):''}</span></div>
+      ${x.note?`<div class="row-meta"><span>${esc(x.note).slice(0,120)}</span></div>`:''}
+      <div class="row-meta"><span>${esc(x.user)}…</span>
+        <span>${fwhen(x.at)}</span></div>
+    </div>`).join('')
+    :`<div class="empty"><div class="empty-t">ما في شيء بهذا الفلتر</div></div>`}`;
 }
 
 /* ══════════ بلاغات المحتوى ══════════
