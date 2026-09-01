@@ -1068,18 +1068,31 @@ color:var(--text2);font-size:12.5px;font-weight:600;padding:9px 16px;border-radi
 .guide-visual{display:block;text-align:center;text-decoration:none;margin-bottom:18px;
 background:var(--accent);color:#fff;font-size:13.5px;font-weight:700;
 padding:12px;border-radius:12px}
-.g-step{display:flex;gap:13px;padding:14px 0;border-bottom:1px solid var(--border)}
-.g-step:last-of-type{border-bottom:none}
-.g-num{width:27px;height:27px;border-radius:9px;background:var(--accent);color:#fff;
-font-family:var(--mono);font-size:12px;font-weight:600;flex-shrink:0;
-display:flex;align-items:center;justify-content:center}
-.g-num.pro{background:var(--warn);color:#1a1200}
-.g-body h4{font-size:13.5px;font-weight:600;margin-bottom:4px}
-.g-body p{font-size:12.5px;color:var(--text2);line-height:1.75}
-.g-body code{font-family:var(--mono);font-size:11.5px;background:var(--card);
+/* ── الدليل: أقسام تُطوى ──
+   كان قائمة واحدة فيها خمس عشرة خطوة، فالطالب يمرّرها ولا يقرأها.
+   الأقسام تخلّيه يفتح اللي يهمه، ووسم «جديد» يوريه وش تغيّر. */
+.g-acc{border:1px solid var(--border);border-radius:13px;margin-bottom:9px;
+overflow:hidden;background:var(--card)}
+.g-acc-head{width:100%;display:flex;align-items:center;gap:10px;padding:13px 14px;
+background:none;border:none;font-family:inherit;color:var(--text);cursor:pointer;
+text-align:start;-webkit-tap-highlight-color:transparent}
+.g-acc-ic{font-size:17px;line-height:1;flex-shrink:0}
+.g-acc-name{flex:1;font-size:13.5px;font-weight:700;min-width:0;
+display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.g-acc-n{font-family:var(--mono);font-size:11px;color:var(--text3);flex-shrink:0}
+.g-acc-arrow{font-size:15px;color:var(--text3);flex-shrink:0;line-height:1;
+transition:transform .18s ease}
+.g-acc.open .g-acc-arrow{transform:rotate(180deg)}
+.g-acc-body{display:none;padding:0 14px 4px}
+.g-acc.open .g-acc-body{display:block}
+.g-item{padding:11px 0;border-top:1px solid var(--border)}
+.g-item h4{font-size:13px;font-weight:600;margin-bottom:4px;
+display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.g-item p{font-size:12.5px;color:var(--text2);line-height:1.8}
+.g-item code{font-family:var(--mono);font-size:11.5px;background:var(--bg);
 padding:1px 6px;border-radius:6px;color:var(--accent2)}
-.g-sec{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;
-letter-spacing:1px;margin:20px 0 4px;padding-top:14px;border-top:1px solid var(--border)}
+.g-new{font-size:10px;font-weight:700;color:#0b1f14;background:var(--open);
+border-radius:20px;padding:1px 7px;flex-shrink:0}
 .g-tip{background:rgba(61,111,255,.08);border:1px solid var(--border2);border-radius:12px;
 padding:12px 14px;font-size:12.5px;color:var(--text2);line-height:1.7;margin-top:16px}
 .g-tip b{color:var(--text)}
@@ -1197,9 +1210,13 @@ html,body{background:#fff!important;color:#111827!important;
 margin:0!important;padding:0!important;min-height:0!important}
 
 /* اخفِ واجهة الشاشة كاملة */
+/* الشبكة ومبدّل العرض والشريطان يخصّون الشاشة وحدها — بدونهم كانت
+   الطباعة تخرج بورقة أولى فيها التطبيق نفسه قبل ورقة الجدول. */
 .topbar,.tabs,.sched-actions,.slot-remove,.conflict-alert,.sched-summary,.lab-warn,
 .guide-fab,.guide-overlay,.toast,.state-box,.sync-note,.next-check,.reg-card,.crn-panel,
 .slot-bar,#slotBar,
+.vw-switch,#schedView,#schedGrid,.gr-zoom,.gr-hint,#gridPeek,
+.env-bar,.tg-bar,.pick-hint,#schedPickHint,
 #schedDays,.modal,.overlay,.finals-card,.cal-card,.legal-foot{display:none!important}
 .page{display:none!important}
 .main{padding:0!important;max-width:none!important;margin:0!important}
@@ -6511,6 +6528,15 @@ function shortName(n){
 }
 
 /* ===== Plan ===== */
+/* أي تغيير في الخطة قد يفتح مادة مقفلة في البحث أو يقفلها:
+   العلامة، الدرجة (F أو W تلغي الاجتياز)، ومفتاح المستوى التحضيري.
+   كانت toggleDone وحدها تحدّث النتائج، فيبقى «متطلب ناقص» معروضاً
+   حتى يعيد الطالب تحميل الصفحة. */
+function planTouched(){
+  renderPlan();
+  try{ if(typeof allCourses!=='undefined'&&allCourses.length)renderResults() }catch(e){}
+}
+
 function toggleDone(code){
   const i=completed.indexOf(code);
   if(i>-1){completed.splice(i,1);delete grades[code];save('pmu_grades',grades);}
@@ -6520,8 +6546,7 @@ function toggleDone(code){
     completed.push(code);
   }
   save('pmu_completed',completed);pushCompleted();
-  renderPlan();
-  if(allCourses.length)renderResults();
+  planTouched();
 }
 
 /* هل اختار الطالب تخصصه فعلاً؟ */
@@ -7830,7 +7855,20 @@ function renderDocDetail(){
           ar?'ما كتب أحد رأيه بعد.':'No written reviews yet.'}</div>`}</div>`;
 }
 
-function escapeHtml(x){return (x||'').replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]))}
+/* بيانات الجامعة تجي وفيها كيانات HTML مرمَّزة أصلاً («Think&#x27;g»)،
+   فترميزها مرة ثانية يطبع الكيان كما هو أمام الطالب. نفك الترميز أولاً
+   ثم نرمّز. textarea آمن: المحتوى يُقرأ نصاً ولا يُنفَّذ. */
+let _ENT=null;
+function decodeEnt(s){
+  if(!/&[#a-zA-Z]/.test(s))return s;
+  try{
+    if(!_ENT)_ENT=document.createElement('textarea');
+    _ENT.innerHTML=s;
+    return _ENT.value;
+  }catch(e){ return s }
+}
+function escapeHtml(x){return decodeEnt(String(x==null?'':x))
+  .replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]))}
 
 /* ---------- نموذج التقييم ---------- */
 function openRatingForm(){
@@ -7998,72 +8036,126 @@ async function deleteMyReview(name){
 
 /* ================= GUIDE ================= */
 const GUIDE={
-ar:{title:'كيف تستخدم جدولك',lead:'كل ميزة بسطر — أقل من دقيقتين',
-sec1:'البداية',sec2:'ميزات إضافية',
-steps:[
-{n:'1',t:'اختر تخصصك',d:'من <b>⚙️ الإعدادات</b> اختر تخصصك — <b>20 تخصص</b>، كل كليات الجامعة. الخطة والساعات والمتطلبات تتغير معك تلقائياً.'},
-{n:'2',t:'علّم اللي خلصته',d:'في <b>📋 خطتي</b> اضغط المربّع جنب كل مادة درستها. المواد اللي متطلبها ناقص تظهر <b>مقفلة</b>، وتنفتح أول ما تعلّم متطلبها.'},
-{n:'3',t:'شوف مقترح الترم الجاي',d:'فوق الخطة يطلع لك مقترح جاهز. اللي معلّم <b>"لا تؤجلها"</b> مواد تفتح لك مواد بعدها — تأجيلها يأخّر تخرّجك.'},
-{n:'4',t:'اضغط أي مادة تشوف شعبها',d:'من <b>📋 خطتي</b> اضغط أي مادة — من المقترح أو من الخطة كاملة — ينقلك للبحث ويوريك شعبها وأوقاتها ودكاترتها في <b>ترم التسجيل القادم</b> مباشرة.'},
-{n:'5',t:'احسب معدلك',d:'حط درجة أي مادة خلصتها، والمعدل يتحدّث فوراً بنظام الجامعة (‎A+‎ = 4.00). تقدر كمان تجرّب: كم لازم أجيب هذا الترم عشان أوصل معدل معيّن.'},
-{n:'6',t:'ابحث عن موادك',d:'في <b>🔍 البحث</b> اختر الترم واضغط ابحث. الفلتر يقبل <b>كود المادة</b> أو <b>الـ CRN</b> أو <b>اسم المادة</b> أو <b>اسم الدكتور</b>. وكل شعبة مكتوب عليها إذا هي للطلاب ولا للطالبات.'},
-{n:'7',t:'ابنِ جدولك',d:'اضغط <b>+</b> على أي شعبة تضيفها. لو تعارضت مع مادة عندك، الموقع ينبّهك قبل ما تسجّل.'},
-{n:'8',t:'اطبع جدولك',d:'زر <b>🖨️ اطبع الجدول</b> يطلع ورقة واحدة منظّمة — شبكة أسبوعية ملوّنة تبيّن فراغاتك، ومعها اختباراتك النهائية.'},
-{n:'9',t:'اختباراتك النهائية',d:'في <b>📅 جدولي</b> اضغط <b>اعرض</b> تحت "اختباراتك النهائية" — يطلع لك موعد وقاعة كل اختبار من مواد جدولك، وينبّهك لو صار اختبارين بنفس الوقت.'},
-{n:'10',t:'مواعيد تهمك',d:'نفس الصفحة تعرض أقرب المواعيد بعدّاد أيام: التسجيل، بداية الدراسة، <b>آخر يوم انسحاب</b>، والاختبارات. المواعيد القريبة تتلوّن تنبيهاً.'},
-{n:'11',t:'قيّم دكاترتك',d:'في <b>👨‍🏫 دكاترة</b> شوف تقييمات الطلاب قبل ما تسجّل، وقيّم أنت <b>بشكل مجهول</b> — ما أحد يشوف اسمك. وفي صفحة كل دكتور زر <b>"شوف مواده هذا الترم"</b>.'},
-{n:'12',t:'قول لنا رأيك',d:'في <b>⚙️ الإعدادات</b> خانة <b>"رأيك يهمنا"</b> — اكتب أي اقتراح أو مشكلة. توصلني فوراً، وإذا حطيت وسيلة تواصل أرد عليك.'}],
-pro:[
-{n:'★',t:'راقب المواد المسكّرة',d:'أي مادة <code>CLOSE</code> جنبها <b>🔕</b> — اضغطه يصير <b>🔔</b>. السيرفر يفحص كل 5 دقائق <b>حتى والموقع مسكّر</b>، فما تحتاج تفتح الصفحة. راقب كم مادة ما تبي.'},
-{n:'★',t:'اربط تيليغرام',d:'من <b>⚙️ الإعدادات</b> اضغط "ربط" → يفتح البوت → Start. أول ما تنفتح مادتك يوصلك إشعار فيه الـ CRN والوقت والقاعة.'},
-{n:'★',t:'حفظ سحابي',d:'خطتك وجدولك ومعدلك محفوظة في حسابك — افتح من أي جهاز وتلقى كل شي زي ما تركته.'}],
+ar:{title:'كيف تستخدم جدولك',lead:'مقسّم على أقسام — افتح اللي يهمك',
+newLbl:'جديد',
+sections:[
+{ic:'🚀',name:'ابدأ من هنا',open:1,items:[
+ {t:'اختر تخصصك',d:'من <b>⚙️ الإعدادات</b> اختر تخصصك — <b>٢٠ تخصص</b>، كل كليات الجامعة. الخطة والساعات والمتطلبات تتغيّر معك تلقائياً.'},
+ {t:'علّم اللي خلصته',d:'في <b>📋 خطتي</b> اضغط المربّع جنب كل مادة درستها. المواد اللي متطلبها ناقص تظهر <b>مقفلة</b>، وتنفتح أول ما تعلّم متطلبها.'},
+ {t:'ابحث وابنِ جدولك',d:'في <b>🔍 البحث</b> اختر الترم واضغط ابحث. الفلتر يقبل <b>كود المادة</b> أو <b>CRN</b> أو <b>اسم المادة</b> أو <b>اسم الدكتور</b>. اضغط <b>➕</b> على أي شعبة تضيفها.'}]},
+
+{ic:'☀️',name:'يومك',isNew:1,items:[
+ {t:'وين أنت من يومك',isNew:1,d:'تبويب <b>اليوم</b> يرتّب محاضراتك بالترتيب: الجارية تتلوّن أخضر ومعها شريط يمشي، و<b>خط «الآن»</b> يتحرك بينها مع الساعة، واللي خلص يبهت لحاله.'},
+ {t:'فراغاتك مكتوبة',isNew:1,d:'بين كل محاضرتين يطلع سطر مثل «فراغ ١ ساعة و١٠ د» — تعرف متى تذاكر ومتى ترجع البيت بدون ما تحسب.'},
+ {t:'اضغط المادة يفتح ملفها',d:'أي محاضرة تضغطها ينفتح لوح فيه وقتها وقاعتها ودكتورها، وتحته كل شي يخص المادة.'},
+ {t:'الغياب',isNew:1,d:'سجّل غيابك بتاريخه، ويحسب لك النسبة تلقائياً — الحد <b>١٥٪</b> من محاضرات الترم. العدّاد يقول لك <b>٢ من ٤</b> قبل ما توصل الحرمان.<br><b>ملاحظة:</b> الحساب إرشادي، والمرجع الرسمي سجل الجامعة.'},
+ {t:'مواعيد المادة',isNew:1,d:'كويز · واجب · مشروع · ميدتيرم · نهائي. تكتبه مرة ويطلع في يومه ويذكّرك قبله. وتقدر تعدّله أو تأجّله.'},
+ {t:'صور وملفات المادة',isNew:1,d:'صوّر السبورة أو ارفع الملخص — ينحفظ على المادة نفسها وتلقاه وقت المذاكرة، بدل ما يضيع بين ألف صورة في ألبومك. الصور تُضغط تلقائياً، والحد ١٠ ميغا للملف.'},
+ {t:'شارك مع شعبتك',isNew:1,d:'أي موعد أو ملف تقدر تشاركه بضغطة <b>📢</b> فيوصل لزملائك في <b>نفس الشعبة</b> وبدون اسمك.<br>🔒 وكل شي ترفعه <b>خاص فيك</b> ما لم تختر تشاركه.'},
+ {t:'أسبوعك كامل',isNew:1,d:'بدّل لـ<b>الأسبوع</b> تشوف الخمسة أيام: عدد محاضرات كل يوم ووقت أول وآخر وحدة، ومواعيدك في يومها، وتواريخ الحذف والانسحاب. وتقدر تتنقل بين أسابيع الترم.'}]},
+
+{ic:'📅',name:'جدولك',items:[
+ {t:'ثلاثة جداول تجرّب فيها',d:'<b>جدول ١ · ٢ · ٣</b> — جرّب توزيعات مختلفة قبل ما تقرر، وبدّل بينها بضغطة.'},
+ {t:'التعارض ينبّهك',d:'لو أضفت شعبة تتعارض مع مادة عندك، الموقع يقول لك قبل ما تسجّل — لا بعدها.'},
+ {t:'الشبكة واضغط أي مادة',isNew:1,d:'حوّل لـ<b>شبكة</b> تشوف أسبوعك كجدول، بثلاثة أحجام. والاسم مقطوع؟ اضغط المادة تطلع لك بطاقة فيها الاسم والقاعة والدكتور كاملة، وتختفي بأي لمسة.'},
+ {t:'اطبع جدولك',d:'<b>🖨️ اطبع</b> يطلع ورقة واحدة منظّمة — شبكة أسبوعية ملوّنة تبيّن فراغاتك، ومعها اختباراتك النهائية.'},
+ {t:'اختباراتك النهائية',d:'اضغط <b>اعرض</b> تحت «اختباراتك النهائية» — موعد وقاعة كل اختبار، وتنبيه لو صار اختبارين بنفس الوقت.'},
+ {t:'مواعيد تهمك',d:'أقرب المواعيد بعدّاد أيام: التسجيل، بداية الدراسة، <b>آخر يوم انسحاب</b>، والاختبارات. القريبة تتلوّن تنبيهاً.'}]},
+
+{ic:'📋',name:'خطتك ومعدلك',items:[
+ {t:'مقترح الترم الجاي',d:'فوق الخطة يطلع لك مقترح جاهز بناءً على اللي خلصته.'},
+ {t:'«لا تؤجلها»',d:'المواد المعلّمة كذا تفتح لك مواد بعدها — تأجيلها يأخّر تخرّجك.'},
+ {t:'احسب معدلك',d:'حط درجة أي مادة خلصتها والمعدل يتحدّث فوراً بنظام الجامعة (‎A+‎ = 4.00). وتقدر تسأل: كم لازم أجيب هذا الترم عشان أوصل معدل معيّن.'},
+ {t:'اضغط مادة تشوف شعبها',d:'من الخطة أو المقترح — اضغط أي مادة ينقلك للبحث ويوريك شعبها وأوقاتها ودكاترتها في <b>ترم التسجيل القادم</b>.'}]},
+
+{ic:'🔔',name:'تنبيهاتك',items:[
+ {t:'راقب المواد المسكّرة',d:'أي مادة <code>CLOSE</code> جنبها <b>🔕</b> — اضغطه يصير <b>🔔</b>. السيرفر يفحص كل ٥ دقائق <b>حتى والموقع مسكّر</b>، فما تحتاج تفتح الصفحة. راقب كم مادة ما تبي.'},
+ {t:'اربط تيليغرام',d:'من <b>⚙️ الإعدادات</b> اضغط «ربط» → يفتح البوت → Start. أول ما تنفتح مادتك يوصلك إشعار فيه الـCRN والوقت والقاعة.'},
+ {t:'لو تغيّر جدولك',isNew:1,d:'غيّرت الجامعة دكتور أو قاعة أو وقت مادة عندك؟ يوصلك إشعار، ويظهر تنبيه على المادة في جدولك يبيّن لك <b>وش كان ووش صار</b>.'},
+ {t:'تحكّم بالتنبيهات',isNew:1,d:'من <b>⚙️ الإعدادات</b> اختر أي إشعار تبيه وأيهم لا — كل نوع بمفتاح مستقل.'}]},
+
+{ic:'👨‍🏫',name:'الدكاترة ورأيك',items:[
+ {t:'قيّم دكاترتك',d:'في <b>👨‍🏫 دكاترة</b> شوف تقييمات الطلاب قبل ما تسجّل، وقيّم أنت <b>بشكل مجهول</b> — ما أحد يشوف اسمك. وفي صفحة كل دكتور زر «شوف مواده هذا الترم».'},
+ {t:'حفظ سحابي',d:'خطتك وجدولك ومعدلك محفوظة في حسابك — افتح من أي جهاز وتلقى كل شي زي ما تركته.'},
+ {t:'قول لنا رأيك',d:'في <b>⚙️ الإعدادات</b> خانة «رأيك يهمنا» — اكتب أي اقتراح أو مشكلة. توصلني فوراً، وإذا حطيت وسيلة تواصل أرد عليك.'}]}],
 tip:'<b>🎁 كل الميزات مفتوحة مجاناً</b> — جدولك في فترة تجريبية، سجّل دخول واستمتع بكل شي بدون أي رسوم.'},
 
-en:{
-tdTab:'☀️ Today',tdDay:'Today',tdWeek:'Week',
-tdNoToday:'☕ No classes today',tdNoAny:'No classes in your schedule',
-tdEndsIn:'⏳ Ends in',tdStartsIn:'⏰ In',tdDone:'✓ Done',tdOf:'of',tdDoneN:'done',
-tdMin:'min',tdHr:'h',tdAnd:'',tdM:'m',
-tdToday:'Today',tdTomorrow:'Tomorrow',tdIn2:'In 2 days',tdInN:'In',tdDays:'days',
-tdAgo:'',tdDay1:'days ago',
-wkThis:'This week',wkNext:'Next week',wkPrev:'Last week',
-wkInN:'In',wkAgoN:'',wkWeeks:'weeks',wkBack:'Prev',wkFwd:'Next',
-wkPicker:'Term weeks',wkNum:'Week',wkCur:'current',wkNone:'No weeks — term has not started',
-wkOut:'Outside the term',title:'How to use Jadwalik',lead:'Every feature in one line — under two minutes',
-sec1:'Getting started',sec2:'Extra features',
-steps:[
-{n:'1',t:'Pick your major',d:'In <b>⚙️ Settings</b> choose your major — <b>20 programs</b>, every college. Your plan, credits and prerequisites switch automatically.'},
-{n:'2',t:'Mark what you finished',d:'In <b>📋 My Plan</b> tick the box next to each course you passed. Courses missing a prerequisite show as <b>locked</b> and open the moment you tick it.'},
-{n:'3',t:'See next term suggestion',d:'A ready plan appears above your degree plan. Anything marked <b>"Do not delay"</b> unlocks later courses — delaying it delays your graduation.'},
-{n:'4',t:'Tap any course for its sections',d:'In <b>📋 My Plan</b> tap any course — from the suggestion or the full plan — and it jumps to Search showing its sections, times and instructors for the <b>upcoming registration term</b>.'},
-{n:'5',t:'Calculate your GPA',d:'Enter a grade for any finished course and your GPA updates instantly on the PMU scale (A+ = 4.00). You can also ask: what do I need this term to reach a target GPA.'},
-{n:'6',t:'Search for courses',d:'In <b>🔍 Search</b> pick the term and hit search. The filter accepts a <b>course code</b>, <b>CRN</b>, <b>course title</b>, or <b>instructor name</b>. Every section is labelled male or female.'},
-{n:'7',t:'Build your schedule',d:'Tap <b>+</b> on any section to add it. If it clashes with a course you already have, you get warned before you register.'},
-{n:'8',t:'Print your schedule',d:'<b>🖨️ Print schedule</b> gives you one clean page — a colour-coded weekly grid showing your gaps, with your final exams underneath.'},
-{n:'9',t:'Your final exams',d:'In <b>📅 Schedule</b> tap <b>Show</b> under "Your final exams" — you get the date and room for every course in your schedule, and a warning if two exams collide.'},
-{n:'10',t:'Dates that matter',d:'The same page shows upcoming dates with a countdown: registration, first day of class, <b>the withdrawal deadline</b>, and finals. Near dates turn amber.'},
-{n:'11',t:'Rate your instructors',d:'In <b>👨‍🏫 Faculty</b> read student ratings before you register, and rate <b>anonymously</b> — nobody sees your name. Each instructor page has a <b>"See their courses this term"</b> button.'},
-{n:'12',t:'Tell us what you think',d:'In <b>⚙️ Settings</b> the <b>"Your feedback matters"</b> box takes any idea or problem. It reaches me instantly, and if you leave contact details I reply.'}],
-pro:[
-{n:'★',t:'Monitor closed sections',d:'Any <code>CLOSE</code> course has a <b>🔕</b> — tap it to make it <b>🔔</b>. The server checks every 5 minutes <b>even with the site closed</b>, so you never keep the page open. Watch as many as you like.'},
-{n:'★',t:'Link Telegram',d:'In <b>⚙️ Settings</b> tap "Link" → the bot opens → Start. When your course opens you get an alert with the CRN, time and room.'},
-{n:'★',t:'Cloud sync',d:'Your plan, schedule and GPA live in your account — open from any device and find everything as you left it.'}],
+en:{title:'How to use Jadwalik',lead:'Split into sections — open what matters to you',
+newLbl:'New',
+sections:[
+{ic:'🚀',name:'Start here',open:1,items:[
+ {t:'Pick your major',d:'In <b>⚙️ Settings</b> choose your major — <b>20 programs</b>, every college. Your plan, credits and prerequisites switch automatically.'},
+ {t:'Mark what you finished',d:'In <b>📋 My Plan</b> tick the box next to each course you passed. Courses missing a prerequisite show as <b>locked</b> and open the moment you tick it.'},
+ {t:'Search and build',d:'In <b>🔍 Search</b> pick the term and hit search. The filter accepts a <b>course code</b>, <b>CRN</b>, <b>course title</b> or <b>instructor name</b>. Tap <b>➕</b> on any section to add it.'}]},
+
+{ic:'☀️',name:'Your day',isNew:1,items:[
+ {t:'Where you are in your day',isNew:1,d:'The <b>Today</b> tab lays out your lectures in order: the running one turns green with a bar that moves, a <b>“now” line</b> travels between them with the clock, and finished ones fade on their own.'},
+ {t:'Your gaps, spelled out',isNew:1,d:'Between lectures you get a line like “1h 10m break” — so you know when to study and when to head home, without doing the maths.'},
+ {t:'Tap a course for its file',d:'Tap any lecture and a sheet opens with its time, room and instructor, and everything about that course underneath.'},
+ {t:'Absences',isNew:1,d:'Log an absence with its date and the rate is calculated for you — the limit is <b>15%</b> of the term\'s lectures. The counter tells you <b>2 of 4</b> before you hit exclusion.<br><b>Note:</b> this is indicative; the official record is the university\'s.'},
+ {t:'Course deadlines',isNew:1,d:'Quiz · homework · project · midterm · final. Enter it once and it appears on its day and reminds you beforehand. You can edit it or snooze it.'},
+ {t:'Photos and files',isNew:1,d:'Snap the board or upload the summary — it is saved on the course itself and waiting when you revise, instead of getting lost among a thousand photos. Images are compressed automatically; the limit is 10 MB per file.'},
+ {t:'Share with your section',isNew:1,d:'Any deadline or file can be shared with one <b>📢</b> tap — it reaches classmates in <b>your own section</b>, without your name.<br>🔒 Everything you upload is <b>private to you</b> unless you choose to share it.'},
+ {t:'Your whole week',isNew:1,d:'Switch to <b>Week</b> for all five days: how many lectures each day and its first and last time, your deadlines on their day, and add/drop and withdrawal dates. You can move between the term\'s weeks.'}]},
+
+{ic:'📅',name:'Your schedule',items:[
+ {t:'Three schedules to try',d:'<b>Schedule 1 · 2 · 3</b> — try different arrangements before you commit, and switch with one tap.'},
+ {t:'Clashes warn you',d:'If a section you add clashes with a course you already have, you are told before you register — not after.'},
+ {t:'Grid view, and tap any course',isNew:1,d:'Switch to <b>Grid</b> to see your week as a timetable, in three sizes. Name cut off? Tap the course and a card shows the full name, room and instructor — it disappears at any touch.'},
+ {t:'Print your schedule',d:'<b>🖨️ Print</b> gives you one clean page — a colour-coded weekly grid showing your gaps, with your final exams underneath.'},
+ {t:'Your final exams',d:'Tap <b>Show</b> under “Your final exams” — the date and room for every exam, and a warning if two collide.'},
+ {t:'Dates that matter',d:'Upcoming dates with a countdown: registration, first day of class, <b>the withdrawal deadline</b>, and finals. Near dates turn amber.'}]},
+
+{ic:'📋',name:'Your plan and GPA',items:[
+ {t:'Next term suggestion',d:'A ready plan appears above your degree plan, based on what you have finished.'},
+ {t:'“Do not delay”',d:'Courses marked this way unlock later ones — delaying them delays your graduation.'},
+ {t:'Calculate your GPA',d:'Enter a grade for any finished course and your GPA updates instantly on the PMU scale (A+ = 4.00). You can also ask what you need this term to reach a target.'},
+ {t:'Tap a course for its sections',d:'From the plan or the suggestion — tap any course and it jumps to Search showing its sections, times and instructors for the <b>upcoming registration term</b>.'}]},
+
+{ic:'🔔',name:'Your alerts',items:[
+ {t:'Monitor closed sections',d:'Any <code>CLOSE</code> course has a <b>🔕</b> — tap it to make it <b>🔔</b>. The server checks every 5 minutes <b>even with the site closed</b>, so you never keep the page open. Watch as many as you like.'},
+ {t:'Link Telegram',d:'In <b>⚙️ Settings</b> tap “Link” → the bot opens → Start. When your course opens you get an alert with the CRN, time and room.'},
+ {t:'If your schedule changes',isNew:1,d:'Did the university change an instructor, room or time on one of your courses? You get an alert, and a notice appears on that course showing <b>what it was and what it became</b>.'},
+ {t:'Control your alerts',isNew:1,d:'In <b>⚙️ Settings</b> choose which notifications you want and which you do not — each type has its own switch.'}]},
+
+{ic:'👨‍🏫',name:'Faculty and feedback',items:[
+ {t:'Rate your instructors',d:'In <b>👨‍🏫 Faculty</b> read student ratings before you register, and rate <b>anonymously</b> — nobody sees your name. Each instructor page has a “See their courses this term” button.'},
+ {t:'Cloud sync',d:'Your plan, schedule and GPA live in your account — open from any device and find everything as you left it.'},
+ {t:'Tell us what you think',d:'In <b>⚙️ Settings</b> the “Your feedback matters” box takes any idea or problem. It reaches me instantly, and if you leave contact details I reply.'}]}],
 tip:'<b>🎁 Everything is free right now</b> — Jadwalik is in open beta. Sign in and enjoy every feature at no cost.'}
 };
+
+/* أي أقسام مفتوحة — يبقى محفوظاً عبر تبديل اللغة وإعادة الرسم */
+let G_OPEN=null;
 
 function renderGuide(){
   const G=GUIDE[LANG];
   document.getElementById('gTitle').textContent=G.title;
   document.getElementById('gLead').textContent=G.lead;
-  const row=(x,pro)=>`<div class="g-step">
-    <div class="g-num ${pro?'pro':''}">${x.n}</div>
-    <div class="g-body"><h4>${x.t}</h4><p>${x.d}</p></div></div>`;
-  document.getElementById('guideBody').innerHTML=
-    `<div class="g-sec" style="border:none;padding-top:0;margin-top:0">${G.sec1}</div>`+
-    G.steps.map(x=>row(x,0)).join('')+
-    `<div class="g-sec">${G.sec2}</div>`+
-    G.pro.map(x=>row(x,1)).join('')+
-    `<div class="g-tip">${G.tip}</div>`;
+  /* أول مرة: القسم المعلَّم open مفتوح وبقيته مطوية */
+  if(!G_OPEN)G_OPEN=G.sections.map(s=>!!s.open);
+  const pill=x=>x.isNew?`<span class="g-new">${G.newLbl}</span>`:'';
+  document.getElementById('guideBody').innerHTML=G.sections.map((sec,i)=>`
+    <div class="g-acc${G_OPEN[i]?' open':''}">
+      <button class="g-acc-head" onclick="gToggle(${i})" aria-expanded="${!!G_OPEN[i]}">
+        <span class="g-acc-ic">${sec.ic}</span>
+        <span class="g-acc-name">${sec.name}${pill(sec)}</span>
+        <span class="g-acc-n">${sec.items.length}</span>
+        <span class="g-acc-arrow">⌄</span>
+      </button>
+      <div class="g-acc-body">${sec.items.map(x=>`
+        <div class="g-item"><h4>${x.t}${pill(x)}</h4><p>${x.d}</p></div>`).join('')}</div>
+    </div>`).join('')
+    +`<div class="g-tip">${G.tip}</div>`;
+}
+/* الطي والفتح — الحالة في G_OPEN فتبقى بعد تبديل اللغة */
+function gToggle(i){
+  G_OPEN[i]=!G_OPEN[i];
+  const el=document.querySelectorAll('#guideBody .g-acc')[i];
+  if(!el)return;
+  el.classList.toggle('open',G_OPEN[i]);
+  const h=el.querySelector('.g-acc-head');
+  if(h)h.setAttribute('aria-expanded',String(G_OPEN[i]));
 }
 function openGuide(){renderGuide();document.getElementById('guideOverlay').classList.add('open');
   document.body.style.overflow='hidden';}
@@ -8485,7 +8577,7 @@ function markSem(id){
   });
   save('pmu_completed',completed);
   pushCompleted();
-  renderPlan();
+  planTouched();
 }
 
 function onPrepToggle(){
@@ -8494,7 +8586,7 @@ function onPrepToggle(){
   save('pmu_prep',on);
   if(majorChosen())applyMajor(MAJOR,false,false);
   else if(el)showToast(LANG==='ar'?'اختر تخصصك أول':'Pick your major first','warn');
-  renderPlan();
+  planTouched();               /* مفتاح المستوى التحضيري بوابة متطلبات */
   renderPickHints();
 }
 
@@ -8606,8 +8698,9 @@ function setGrade(code,val){
   if(val)grades[code]=val;else delete grades[code];
   save('pmu_grades',grades);
   pushGrades();
-  /* الدرجة تؤثر في الشريط والساعات والمقترح والمتطلبات، لا في المعدل وحده */
-  renderPlan();
+  /* الدرجة تؤثر في الشريط والساعات والمقترح والمتطلبات، لا في المعدل وحده.
+     و F أو W تلغي الاجتياز، فقد تُعيد قفل مادة في البحث. */
+  planTouched();
 }
 
 function renderGPA(){
