@@ -5115,10 +5115,14 @@ async function toggleShare(id){
   if(!p)return;
   const on=!p.shared;
   if(on&&!confirm(t('phShareAsk')))return;
-  const {error}=await sb.from('course_photos').update({shared:on}).eq('id',id);
-  if(error){ showToast(t('errSave')); return }
-  p.shared=on;
-  showToast(on?t('phShared'):t('phPrivate'));
+  /* .select() ضروري: التحديث الذي تحجبه RLS يطابق صفراً من الصفوف
+     ويرجع بلا خطأ. بدونه نعلن النجاح ونقلب الحالة محلياً، ثم يرجع
+     القفل عند أول تحديث للصفحة — نجاح كاذب. */
+  const {data,error}=await sb.from('course_photos')
+    .update({shared:on}).eq('id',id).select('id,shared');
+  if(error||!data||!data.length){ showToast(t('errSave'),'err'); return }
+  p.shared=data[0].shared;
+  showToast(p.shared?t('phShared'):t('phPrivate'));
   redrawCourse();
 }
 
@@ -5127,7 +5131,11 @@ async function loadPhotos(){
   PH_TRIED=true;
   try{
     const {data,error}=await sb.from('course_photos')
-      .select('id,crn,term,on_date,event_id,path,note').eq('term',activeTermCode());
+      /* shared و kind كانتا ناقصتين: بدون shared تجي undefined فيظهر
+         القفل مهما شاركت، وبدون kind تسقط كل الملفات في شبكة الصور
+         ويبقى قسم «ملفات المادة» فاضياً أبداً. */
+      .select('id,crn,term,on_date,event_id,path,note,shared,kind,filename,size_kb')
+      .eq('term',activeTermCode());
     if(error)return;
     PHOTOS=data||[];
   }catch(e){}
