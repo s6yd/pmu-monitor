@@ -1688,6 +1688,35 @@ const clientIP = req =>
   (req.headers['x-forwarded-for'] || '').split(',')[0].trim() ||
   req.socket.remoteAddress || 'unknown';
 
+/* ═══ حدّ الطلبات ═══
+   /api/courses أغلى نقطة وأكثرها انكشافاً: كل طلب يعيد ١٨٠٠ مادة.
+   الردّ مخزَّن مضغوطاً فالطلب الواحد زهيد، والخطر الحقيقي حلقة مجنونة
+   أو ساحب بيانات يطلب عشرات المرات في الثانية.
+   الحدّ سخيّ عمداً — طلاب الحرم كلهم خلف عنوان واحد (NAT)، فحدّ ضيّق
+   يقفل الموقع على شعبة كاملة بدل ما يوقف ساحباً واحداً.
+   ٣٠٠ في الدقيقة: ما يبلغها إنسان، ويوقف الآلة عند ٥ طلبات في الثانية. */
+const RATE = new Map();
+const RATE_WINDOW = 60 * 1000;
+const RATE_MAX = 300;
+
+function rateHit(ip) {
+  const now = Date.now();
+  let rec = RATE.get(ip);
+  if (!rec || now - rec.first > RATE_WINDOW) {
+    rec = { first: now, count: 0 };
+    RATE.set(ip, rec);
+  }
+  rec.count++;
+  if (RATE.size > 5000) {                     /* تنظيف كسول: المنتهية أولاً */
+    for (const [k, v] of RATE) if (now - v.first > RATE_WINDOW) RATE.delete(k);
+    if (RATE.size > 5000) RATE.clear();       /* آخر ملاذ — لا نُراكم ذاكرة */
+  }
+  return {
+    ok: rec.count <= RATE_MAX,
+    retry: Math.max(1, Math.ceil((rec.first + RATE_WINDOW - now) / 1000))
+  };
+}
+
 function isAdmin(req) {
   if (!ADMIN_TOKEN || ADMIN_TOKEN.length < 12) return false;   // مقفلة لو ما ضبطت كلمة السر
   const given = req.headers['x-admin-token'] || '';
@@ -3738,6 +3767,45 @@ margin:0 3px;animation:b 1.3s infinite}
 </div></body></html>`;
 }
 
+/* ============ صفحة ٤٠٤ ============ */
+function notFoundPage() {
+  return `<!DOCTYPE html>
+<html lang="ar" dir="rtl"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>جدولك — الصفحة غير موجودة</title>
+<meta name="robots" content="noindex">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;600;700&family=JetBrains+Mono:wght@500&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#080b12;color:#e2e8f8;font-family:'IBM Plex Sans Arabic',system-ui,sans-serif;
+min-height:100vh;display:flex;align-items:center;justify-content:center;padding:28px;text-align:center}
+.w{max-width:420px}
+.ic{width:76px;height:76px;background:#3d6fff;border-radius:22px;display:flex;
+align-items:center;justify-content:center;font-size:27px;margin:0 auto 22px;
+box-shadow:0 10px 34px rgba(61,111,255,.35);
+font-family:'JetBrains Mono',monospace;font-weight:500;
+direction:ltr;unicode-bidi:isolate}
+h1{font-size:22px;font-weight:700;margin-bottom:12px}
+p{font-size:14.5px;color:#8b96b8;line-height:1.9;margin-bottom:18px}
+.en{font-size:12.5px;color:#4a5580;margin-bottom:24px;direction:ltr;unicode-bidi:isolate}
+.btn{display:inline-block;background:#3d6fff;color:#fff;text-decoration:none;
+padding:13px 30px;border-radius:13px;font-size:14.5px;font-weight:600;
+box-shadow:0 8px 24px rgba(61,111,255,.3)}
+.links{margin-top:22px;font-size:13px;color:#4a5580}
+.links a{color:#6b8fff;text-decoration:none;padding:0 7px}
+.f{margin-top:26px;font-size:11.5px;color:#4a5580;font-family:'JetBrains Mono',monospace}
+</style></head><body>
+<div class="w">
+  <div class="ic">404</div>
+  <h1>ما لقينا الصفحة</h1>
+  <p>الرابط اللي فتحته مو موجود أو تغيّر. بياناتك ما تأثرت — جدولك وخطتك ومعدلك محفوظة في حسابك.</p>
+  <div class="en">The page you requested does not exist.</div>
+  <a class="btn" href="/">الرجوع للرئيسية</a>
+  <div class="links"><a href="/guide">دليل الاستخدام</a>·<a href="/privacy">الخصوصية</a>·<a href="/terms">الشروط</a></div>
+  <div class="f">jadwalik.com</div>
+</div></body></html>`;
+}
+
 /* ============ HTTP server ============ */
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -3799,6 +3867,15 @@ const server = http.createServer(async (req, res) => {
 
   /* بحث المواد */
   if (parsed.pathname === '/api/courses') {
+    const rl = rateHit(clientIP(req));
+    if (!rl.ok) {
+      OPS.rateLimited = (OPS.rateLimited || 0) + 1;
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Retry-After', String(rl.retry));
+      res.writeHead(429);
+      res.end(JSON.stringify({ success: false, error: 'طلبات كثيرة — جرّب بعد شوي' }));
+      return;
+    }
     touchVisitor(req);
     res.setHeader('Content-Type', 'application/json');
     /* ═══ ردّ مضغوط مخزَّن ═══
@@ -4480,9 +4557,20 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  res.setHeader('Content-Type', 'application/json');
+  /* ---------- ٤٠٤ ----------
+     الواجهات ترد JSON لأن الكود يقرأها، والصفحات ترد HTML لأن الطالب
+     يقرأها بعينه. قبل هذا كان أي رابط مكسور يعرض سطر JSON عارياً. */
+  if (parsed.pathname.startsWith('/api/')) {
+    res.setHeader('Content-Type', 'application/json');
+    res.writeHead(404);
+    res.end(JSON.stringify({ error: 'Not found' }));
+    return;
+  }
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('X-Robots-Tag', 'noindex');
+  res.setHeader('Cache-Control', 'no-store');
   res.writeHead(404);
-  res.end(JSON.stringify({ error: 'Not found' }));
+  res.end(notFoundPage());
 });
 
 /* ═══ ساعة التأكيد المستقلة ═══
