@@ -5094,7 +5094,11 @@ async function loadSharedPhotos(){
   SHP_TRIED=true;
   try{
     const {data,error}=await sb.from('shared_photos')
-      .select('id,crn,term,on_date,path,note,mine').eq('term',activeTermCode());
+      /* kind و filename و size_kb لازمة: sharedFilesOf تفرز بـkind،
+         وبدونها تجي undefined فما يظهر أي ملف مشارك أبداً، وتتسرّب
+         الملفات إلى شبكة الصور. */
+      .select('id,crn,term,on_date,path,note,kind,filename,size_kb,mine')
+      .eq('term',activeTermCode());
     if(error)return;
     SH_PHOTOS=(data||[]).filter(p=>!p.mine);   /* صوري تظهر في قسمي */
   }catch(e){}
