@@ -1774,6 +1774,34 @@ async function adminStorage() {
   };
 }
 
+/* --- نداء Storage REST ---
+   sb() تخاطب /rest/v1 لجداول القاعدة، والتخزين مسار آخر تماماً. */
+function sbStorage(method, path, body) {
+  return new Promise(resolve => {
+    if (!SB_URL || !SB_SERVICE_KEY) return resolve(null);
+    const u = new URL(`${SB_URL}/storage/v1/object/${path}`);
+    const data = body ? JSON.stringify(body) : null;
+    const headers = {
+      apikey: SB_SERVICE_KEY,
+      Authorization: `Bearer ${SB_SERVICE_KEY}`
+    };
+    if (data) {
+      headers['Content-Type'] = 'application/json';
+      headers['Content-Length'] = Buffer.byteLength(data);
+    }
+    const rq = https.request(
+      { hostname: u.hostname, path: u.pathname + u.search, method, headers },
+      r => {
+        let d = '';
+        r.on('data', c => d += c);
+        r.on('end', () => { try { resolve(JSON.parse(d)) } catch (e) { resolve(null) } });
+      });
+    rq.on('error', () => resolve(null));
+    if (data) rq.write(data);
+    rq.end();
+  });
+}
+
 /* --- ما رُفع فعلاً ---
    الأرقام تقول «٩٠٠ ك.ب» ولا تقول هل الميزة مستعملة. هذي تعرض المحتوى
    نفسه: صور وملفات وملاحظات، ومع كل واحد حالته مشارك أو خاص. */
@@ -1793,15 +1821,37 @@ async function adminUploads() {
     on_date: r.on_date, at: r.created_at, user: cut(r.user_id),
     note: r.note || null
   }));
-  /* الملاحظة وحدها هي المحتوى الذي يكتبه الطالب في الموعد — الموعد بلا
-     ملاحظة تاريخ مجرّد لا يفيد في قياس الاستعمال. */
-  (Array.isArray(ev) ? ev : []).filter(r => r.note).forEach(r => items.push({
+  /* كل موعد محتوى كتبه الطالب، بملاحظة أو بلا. استبعاد ما لا ملاحظة له
+     كان يُخفي أكثرها — والعنوان وحده يقيس الاستعمال. */
+  (Array.isArray(ev) ? ev : []).forEach(r => items.push({
     id: r.id, type: 'note', title: r.title || r.kind,
-    size_kb: null, shared: !!r.note_shared, crn: r.crn, term: r.term,
+    size_kb: null, shared: !!(r.shared || r.note_shared),
+    crn: r.crn, term: r.term,
     on_date: r.on_date, at: r.created_at, user: cut(r.user_id),
-    note: r.note
+    note: r.note || null
   }));
   items.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+
+  /* روابط موقّعة للمعاينة: بدونها ترى صفاً يقول «صورة» ولا ترى الصورة.
+     نوقّع أحدث ستين فقط — التوقيع نداء لكل ملف، والقائمة تطول. */
+  const withPath = (Array.isArray(ph) ? ph : []).filter(r => r.path).slice(0, 60);
+  if (withPath.length) {
+    const signed = await sbStorage('POST', 'sign/course-photos',
+      { expiresIn: 3600, paths: withPath.map(r => r.path) });
+    if (Array.isArray(signed)) {
+      const byPath = new Map();
+      signed.forEach(x => {
+        if (x && x.path && x.signedURL)
+          byPath.set(x.path, SB_URL + '/storage/v1' + x.signedURL);
+      });
+      const pathOf = new Map(withPath.map(r => [r.id, r.path]));
+      items.forEach(it => {
+        if (it.type === 'note') return;
+        const p = pathOf.get(it.id);
+        if (p && byPath.has(p)) it.url = byPath.get(p);
+      });
+    }
+  }
   const n = t => items.filter(x => x.type === t).length;
   const s = t => items.filter(x => x.type === t && x.shared).length;
   return {
@@ -1827,29 +1877,14 @@ async function adminStorageSync() {
   const need = rows.filter(r => !r.size_kb && r.path);
   if (!need.length) return { ok: true, checked: 0, updated: 0, missing: 0 };
 
-  /* الملفات موزّعة على مجلد لكل طالب، فنسرد كل مجلد على حدة */
-  const folders = [...new Set(need.map(r => String(r.path).split('/')[0]))];
+  /* المسار «مستخدم/شعبة/ملف» — أي مجلدان لا واحد. سرد مجلد المستخدم
+     يرجّع أسماء المجلدات لا الملفات، فنسرد المجلد الأب الحقيقي. */
+  const folders = [...new Set(need.map(r =>
+    String(r.path).slice(0, String(r.path).lastIndexOf('/'))).filter(Boolean))];
   const sizes = new Map();
   for (const f of folders) {
-    const body = JSON.stringify({ prefix: f, limit: 1000 });
-    const res = await new Promise(resolve => {
-      const u = new URL(`${SB_URL}/storage/v1/object/list/course-photos`);
-      const rq = https.request({
-        hostname: u.hostname, path: u.pathname, method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(body),
-          apikey: SB_SERVICE_KEY,
-          Authorization: `Bearer ${SB_SERVICE_KEY}`
-        }
-      }, r => {
-        let d = '';
-        r.on('data', c => d += c);
-        r.on('end', () => { try { resolve(JSON.parse(d)) } catch (e) { resolve(null) } });
-      });
-      rq.on('error', () => resolve(null));
-      rq.write(body); rq.end();
-    });
+    const res = await sbStorage('POST', `list/course-photos`,
+      { prefix: f, limit: 1000 });
     if (Array.isArray(res)) res.forEach(o => {
       const kb = o && o.metadata && o.metadata.size
         ? Math.max(1, Math.round(o.metadata.size / 1024)) : 0;

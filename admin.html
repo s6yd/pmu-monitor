@@ -702,6 +702,13 @@ function renderUploads(){
         <b>${UP_ICON[x.type]} ${esc(x.title||UP_NAME[x.type])}</b>
         <span class="pill ${x.shared?'on':'off'}">${x.shared?'📢 مشترك':'🔒 خاص'}</span>
       </div>
+      ${x.url&&x.type==='photo'?`<img src="${esc(x.url)}" loading="lazy" alt=""
+        onclick="window.open('${esc(x.url)}','_blank')"
+        style="width:100%;max-height:190px;object-fit:cover;border-radius:10px;
+               margin-top:9px;cursor:pointer">`:''}
+      ${x.url&&x.type==='file'?`<div class="row-acts">
+        <a class="mini" href="${esc(x.url)}" target="_blank" rel="noopener">📎 افتح الملف</a>
+      </div>`:''}
       <div class="row-meta"><span>CRN ${esc(x.crn)} · ${esc(x.on_date||'—')}</span>
         <span>${x.size_kb?fmtKb(x.size_kb):''}</span></div>
       ${x.note?`<div class="row-meta"><span>${esc(x.note).slice(0,120)}</span></div>`:''}
