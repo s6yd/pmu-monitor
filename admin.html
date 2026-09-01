@@ -684,6 +684,8 @@ function renderUploads(){
   const tab=(k,lbl,n)=>`<button class="mini${UP_FILTER===k?' go':''}"
     onclick="setUpFilter('${k}')">${lbl}${n!=null?` (${n})`:''}</button>`;
   box.innerHTML=`<div class="sec-title">ما رُفع · ${U.total} من ${U.users} طالب</div>
+    ${U.errors&&U.errors.length?`<div class="row" style="margin-top:8px">
+      <div class="row-meta"><span>⚠️ ${U.errors.map(esc).join(' · ')}</span></div></div>`:''}
     <div class="kpis">
       <div class="kpi"><div class="kpi-val">${U.counts.photo}</div>
         <div class="kpi-label">صورة · ${U.sharedCounts.photo} مشتركة</div></div>

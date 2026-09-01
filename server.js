@@ -1807,12 +1807,20 @@ function sbStorage(method, path, body) {
    نفسه: صور وملفات وملاحظات، ومع كل واحد حالته مشارك أو خاص. */
 async function adminUploads() {
   const [ph, ev] = await Promise.all([
+    /* path لازم للتوقيع — بدونه ما فيه معاينة إطلاقاً */
     sbAll('course_photos',
-      { query: '?select=id,kind,filename,size_kb,shared,crn,term,on_date,created_at,user_id,note' }),
+      { query: '?select=id,kind,filename,size_kb,shared,crn,term,on_date,created_at,user_id,note,path' }),
+    /* course_events ما فيه title ولا shared — الموجود kind وnote وnote_shared.
+       طلب عمود غير موجود يُفشل الاستعلام كله فتجي القائمة فاضية. */
     sbAll('course_events',
-      { query: '?select=id,kind,title,note,note_shared,shared,crn,term,on_date,created_at,user_id' })
+      { query: '?select=id,kind,note,note_shared,crn,term,on_date,created_at,user_id' })
   ]);
   const cut = (u) => String(u || '').slice(0, 8);
+  /* الاستعلام الفاشل كان يظهر كصفر — لا فرق بين «ما رفع أحد» و«الاستعلام
+     انكسر». الآن نقولها صراحة، لأن الصفر الكاذب أضاع علينا جولتين. */
+  const errs = [];
+  if (!Array.isArray(ph)) errs.push('تعذّرت قراءة الصور والملفات');
+  if (!Array.isArray(ev)) errs.push('تعذّرت قراءة المواعيد');
   const items = [];
   (Array.isArray(ph) ? ph : []).forEach(r => items.push({
     id: r.id, type: r.kind === 'file' ? 'file' : 'photo',
@@ -1823,12 +1831,14 @@ async function adminUploads() {
   }));
   /* كل موعد محتوى كتبه الطالب، بملاحظة أو بلا. استبعاد ما لا ملاحظة له
      كان يُخفي أكثرها — والعنوان وحده يقيس الاستعمال. */
+  const EV_AR = { quiz:'كويز', hw:'واجب', proj:'مشروع', mid:'ميدتيرم', final:'نهائي' };
   (Array.isArray(ev) ? ev : []).forEach(r => items.push({
-    id: r.id, type: 'note', title: r.title || r.kind,
-    size_kb: null, shared: !!(r.shared || r.note_shared),
+    id: r.id, type: 'note',
+    title: r.note || EV_AR[r.kind] || r.kind || 'موعد',
+    size_kb: null, shared: !!r.note_shared,
     crn: r.crn, term: r.term,
     on_date: r.on_date, at: r.created_at, user: cut(r.user_id),
-    note: r.note || null
+    note: r.note || null, kind: r.kind || null
   }));
   items.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
 
@@ -1855,6 +1865,7 @@ async function adminUploads() {
   const n = t => items.filter(x => x.type === t).length;
   const s = t => items.filter(x => x.type === t && x.shared).length;
   return {
+    errors: errs,
     items: items.slice(0, 300),
     total: items.length,
     counts: { photo: n('photo'), file: n('file'), note: n('note') },
