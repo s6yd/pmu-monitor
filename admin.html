@@ -72,7 +72,9 @@ display:grid;grid-template-columns:repeat(4,1fr)}
 .tab{background:none;border:none;color:var(--text3);font-family:var(--sans);
 font-size:12px;font-weight:600;padding:12px 2px;cursor:pointer;position:relative}
 .tab.active{color:var(--accent2)}
-.tabs6{grid-template-columns:repeat(6,1fr)}
+.tabs6{grid-template-columns:repeat(7,1fr)}
+.tabs6 .tab{font-size:11px;padding:11px 2px}
+.row.dim{opacity:.45}
 .tabs6 .tab{font-size:10.5px;padding:12px 1px}
 .tab-badge{display:none;position:absolute;top:6px;inset-inline-end:3px;
 background:var(--accent);color:#fff;font-size:9px;font-family:var(--mono);
@@ -354,6 +356,7 @@ padding:1px 6px;border-radius:5px;color:var(--accent2)}
   <button class="tab"        data-p="mons"  onclick="go('mons')">المراقبة</button>
   <button class="tab"        data-p="fb"    onclick="go('fb')">تذاكر<span class="tab-badge" id="fbBadge"></span></button>
   <button class="tab"        data-p="msgs"  onclick="go('msgs')">الرسائل</button>
+  <button class="tab"        data-p="rep"   onclick="go('rep')">بلاغات<span class="tab-badge" id="repBadge"></span></button>
   <button class="tab"        data-p="sys"   onclick="go('sys')">النظام<span class="tab-dot" id="sysDot"></span></button>
 </div>
 
@@ -419,7 +422,10 @@ padding:1px 6px;border-radius:5px;color:var(--accent2)}
     <div id="msgsBody"><div class="spinner"></div></div>
   </div>
 
+  <div class="page" id="pageReps"><div id="repsBody"></div></div>
+
   <div class="page" id="pageSys">
+    <div id="stgBody"></div>
     <div id="sysBody"><div class="spinner"></div></div>
   </div>
 
@@ -490,7 +496,7 @@ function logout(){
 function go(p){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.p===p));
   const ids={over:'pageOver',users:'pageUsers',revs:'pageRevs',mons:'pageMons',
-             fb:'pageFb',msgs:'pageMsgs',sys:'pageSys'};
+             fb:'pageFb',msgs:'pageMsgs',rep:'pageReps',sys:'pageSys'};
   document.querySelectorAll('.page').forEach(el=>el.classList.remove('active'));
   document.getElementById(ids[p]).classList.add('active');
 }
@@ -574,17 +580,112 @@ async function loadAll(silent){
 async function loadAllInner(silent){
   if(!TOKEN) return;
   try{
-    const [s,u,r,m,h,f,tk,mg] = await Promise.all([
+    const [s,u,r,m,h,f,tk,mg,rp,stg] = await Promise.all([
       api('stats'), api('users'), api('reviews'), api('monitors'),
       api('health').catch(()=>null), api('feedback').catch(()=>({feedback:[]})),
       api('tickets?status=all').catch(()=>({tickets:[]})),
-      api('messages').catch(()=>({messages:[],kinds:[]}))
+      api('messages').catch(()=>({messages:[],kinds:[]})),
+      api('reports').catch(()=>({reports:[]})),
+      api('storage').catch(()=>null)
     ]);
     STATS=s; USERS=u.users||[]; REVS=r.reviews||[]; MONS=m.monitors||[]; HEALTH=h;
     FB=(f&&f.feedback)||[]; TICKETS=(tk&&tk.tickets)||[]; MSGS=mg||{messages:[],kinds:[]};
+    REPS=(rp&&rp.reports)||[]; STORAGE=stg||null;
     renderOver(); renderUsers(); renderRevs(); renderMons(); renderFb();
-    renderMsgs(); renderSys();
+    renderMsgs(); renderReps(); renderStorage(); renderSys();
   }catch(e){ toast(e.message,'err') }
+}
+
+/* ══════════ التخزين ══════════
+   Supabase يحاسب على التخزين والتحميل، والفاتورة تكبر بهدوء — فالرقم
+   لازم يكون أمام عينك لا في لوحة Supabase. */
+let STORAGE=null;
+function fmtKb(kb){
+  if(!kb)return '0';
+  if(kb>=1048576)return (kb/1048576).toFixed(2)+' ج.ب';
+  if(kb>=1024)return (kb/1024).toFixed(1)+' م.ب';
+  return kb+' ك.ب';
+}
+function renderStorage(){
+  const box=document.getElementById('stgBody');
+  if(!box)return;
+  if(!STORAGE){ box.innerHTML=''; return }
+  const S=STORAGE;
+  box.innerHTML=`<div class="sec-title">التخزين</div>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-val">${fmtKb(S.total_kb)}</div>
+        <div class="kpi-label">الإجمالي</div></div>
+      <div class="kpi"><div class="kpi-val">${S.photos}</div>
+        <div class="kpi-label">صورة · ${fmtKb(S.photos_kb)}</div></div>
+      <div class="kpi"><div class="kpi-val">${S.files}</div>
+        <div class="kpi-label">ملف · ${fmtKb(S.files_kb)}</div></div>
+      <div class="kpi"><div class="kpi-val">${S.week}</div>
+        <div class="kpi-label">مرفوع هذا الأسبوع</div></div>
+      <div class="kpi"><div class="kpi-val">${S.shared}</div>
+        <div class="kpi-label">مشترك</div></div>
+    </div>
+    ${S.estimated?`<div class="row-meta" style="margin-top:8px">
+      <span>⚠️ ${S.estimated} صورة حجمها مقدَّر — رُفعت قبل تسجيل الأحجام</span></div>`:''}
+    ${S.top&&S.top.length?`<div class="row" style="margin-top:10px">
+      <div class="row-head"><b>أكثر الطلاب استهلاكاً</b></div>
+      ${S.top.map(x=>`<div class="row-meta"><span>${x.user}…</span>
+        <b>${fmtKb(x.kb)}</b></div>`).join('')}</div>`:''}`;
+}
+
+/* ══════════ بلاغات المحتوى ══════════
+   ما نخفي شيئاً تلقائياً: طالبان يقدران يحجبان محتوى سليماً بالإساءة.
+   البلاغ يوصل هنا مع المحتوى نفسه، والقرار لي. */
+let REPS=[];
+let REPS_DONE=new Set();
+try{ REPS_DONE=new Set(JSON.parse(localStorage.getItem('repsDone')||'[]')) }catch(e){}
+function repDone(id){ return REPS_DONE.has(String(id)) }
+function markRep(id,ok){
+  ok?REPS_DONE.add(String(id)):REPS_DONE.delete(String(id));
+  try{ localStorage.setItem('repsDone',JSON.stringify([...REPS_DONE])) }catch(e){}
+  renderReps(); renderOver();
+}
+function openRepPhoto(path){
+  /* الصورة في دلو خاص — نفتحها بمسارها عبر لوحة Supabase */
+  toast('المسار: '+path,'ok');
+}
+function renderReps(){
+  const box=document.getElementById('repsBody');
+  if(!box)return;
+  const open=REPS.filter(r=>!repDone(r.id));
+  const b=document.getElementById('repBadge');
+  if(b){ b.textContent=open.length||''; b.style.display=open.length?'':'none' }
+  if(!REPS.length){
+    box.innerHTML=`<div class="empty"><div class="empty-icon">🚩</div>
+      <div class="empty-t">ما في بلاغات</div>
+      <div class="empty-s">أي بلاغ على محتوى مشترك بيظهر هنا</div></div>`;
+    return;
+  }
+  box.innerHTML=`<div class="sec-title">${open.length} مفتوح من ${REPS.length}</div>`
+    +REPS.map(r=>{
+      const t=r.target||{};
+      const done=repDone(r.id);
+      const body=r.kind==='photo'
+        ? `<div class="row-meta"><span>${t.kind==='file'?'📎 ملف':'📷 صورة'}</span>
+           <span>${esc(t.filename||t.path||'—')}</span></div>`
+        : `<div class="row-meta"><span>📌 موعد</span>
+           <span>${esc(t.kind||'')} · ${esc(t.on_date||'')}</span>
+           ${t.note?`<span>${esc(t.note)}</span>`:''}</div>`;
+      return `<div class="row${done?' dim':''}">
+        <div class="row-head">
+          <b>${r.kind==='photo'?'محتوى مرفوع':'موعد مشترك'} #${r.target_id}</b>
+          <span>${fwhen(r.created_at)}</span>
+        </div>
+        ${body}
+        <div class="row-meta">
+          <span>CRN ${esc(t.crn||'—')}</span>
+          <span>صاحبه ${esc(String(t.user_id||'—')).slice(0,8)}…</span>
+        </div>
+        <div class="row-meta">
+          ${done
+            ? `<button class="mini" onclick="markRep('${r.id}',false)">↩︎ رجّعه</button>`
+            : `<button class="mini go" onclick="markRep('${r.id}',true)">✓ راجعته</button>`}
+        </div></div>`;
+    }).join('');
 }
 
 /* ══════════ نظرة عامة ══════════ */
