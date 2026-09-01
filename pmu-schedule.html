@@ -824,6 +824,21 @@ font-family:var(--sans);font-size:11.5px;font-weight:700;padding:6px 14px;
 border-radius:9px;cursor:pointer}
 .gr-zoom button.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .gr-hint{font-size:11px;color:var(--text3);text-align:center;margin-top:9px}
+/* ── اللوحة السريعة على الشبكة ── */
+.gr-item{cursor:pointer}
+.gr-item.peeking{outline:2px solid var(--accent);outline-offset:-1px}
+#gridPeek{position:fixed;z-index:400;width:min(272px,calc(100vw - 16px));
+background:var(--card);border:1px solid var(--border2);border-radius:14px;
+padding:12px 14px;box-shadow:0 12px 34px var(--shadow),0 2px 8px rgba(0,0,0,.18);
+pointer-events:none;opacity:0;transform:translateY(4px);
+transition:opacity .13s ease,transform .13s ease}
+#gridPeek.in{opacity:1;transform:none}
+.pk-h{font-family:var(--mono);font-size:11px;color:var(--text3);font-weight:700}
+.pk-t{font-size:13.5px;font-weight:700;line-height:1.45;margin:3px 0 9px}
+.pk-r{display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+font-size:12px;padding:3px 0}
+.pk-r span{color:var(--text3);flex-shrink:0}
+.pk-r b{font-weight:600;text-align:end;min-width:0;overflow-wrap:anywhere}
 /* ── مواعيد الزملاء ── */
 .sg-row{display:flex;gap:10px;align-items:flex-start;background:var(--bg);
 border-radius:12px;padding:11px 12px;margin-top:9px}
@@ -4370,6 +4385,8 @@ function gridLabel(c){
 function renderGrid(){
   const box=document.getElementById('schedGrid');
   if(!box)return;
+  /* البطاقة المرتبطة راح تُحذف مع إعادة الرسم — نغلق اللوحة أولاً */
+  try{ closePeek() }catch(e){}
   const [,COLW,GRID_H]=zoomCfg();
   const items=schedule.map(c=>({c,t:parseTime(c.courseTiming)})).filter(x=>x.t);
   if(!items.length){ box.innerHTML=''; return }
@@ -4392,7 +4409,9 @@ function renderGrid(){
           const top=(x.t.start-lo*60)/60*GRID_H;
           const h=Math.max(26,(x.t.end-x.t.start)/60*GRID_H-3);
           return `<div class="gr-item${cl.has(x.c.crn)?' clash':''}"
-            style="top:${top}px;height:${h}px" title="${escapeHtml(c2t(x.c))}">
+            style="top:${top}px;height:${h}px" title="${escapeHtml(c2t(x.c))}"
+            data-crn="${escapeHtml(x.c.crn)}" data-start="${x.t.start}"
+            onclick="gridPeek(event,this)">
             <b>${escapeHtml(gridLabel(x.c))}</b>
             <i>${fmtTime(x.t.start)} §${escapeHtml(x.c.section||'')}</i>
             ${h>GRID_H?`<u>${escapeHtml(x.c.room||'')}</u>`:''}
@@ -4413,6 +4432,83 @@ function renderGrid(){
     <div class="gr-hint">${GRID_ZOOM==='s'?'':t('grHint')}${t('grBack')}</div>`;
 }
 function c2t(c){ return `${c.courseCode} §${c.section} · ${c.courseTitle||''}` }
+
+/* ═══ لوحة سريعة على بطاقة الشبكة ═══
+   البطاقة ضيقة فالاسم والقاعة مقطوعان. ضغطة تُظهر بطاقة عائمة صغيرة
+   بالمعلومات كاملة، وتختفي بأي تمرير أو ضغطة ثانية — لا تعلّق الصفحة
+   ولا تحتاج زر إغلاق. `pointer-events:none` عليها: أي ضغطة تمرّ للصفحة
+   وتغلقها في الوقت نفسه، فما تصير حاجزاً بين الطالب وجدوله. */
+let PEEK_OFF=null, PEEK_SKIP=false;
+function closePeek(){
+  const el=document.getElementById('gridPeek');
+  if(el)el.remove();
+  document.querySelectorAll('.gr-item.peeking')
+    .forEach(e=>e.classList.remove('peeking'));
+  if(PEEK_OFF){ PEEK_OFF(); PEEK_OFF=null; }
+}
+function gridPeek(ev,el){
+  if(ev)ev.stopPropagation();
+  /* pointerdown يسبق click دائماً، فاللوحة تُغلق قبل وصولنا هنا.
+     PEEK_SKIP يُرفع فقط لو كانت الضغطة على البطاقة المفتوحة نفسها،
+     فتكون النتيجة إغلاقاً لا إعادة فتح — أما الإغلاق بالتمرير فلا
+     يرفعه، عشان الضغط بعده يفتح فوراً. */
+  const skip=PEEK_SKIP; PEEK_SKIP=false;
+  closePeek();
+  if(skip)return;
+
+  const c=(schedule||[]).find(x=>String(x.crn)===el.dataset.crn);
+  if(!c)return;
+  const tm=parseTime(c.courseTiming);
+  const rows=[
+    [t('csTime'), tm?`${fmtTime(tm.start)}–${fmtTime(tm.end)}`:'—', true],
+    [t('csDays'), (parseDays(c.courseDate)||[]).map(d=>t('days')[d]).join(' · ')||'—', false],
+    [t('csRoom'), c.room||'—', true],
+    [t('csDoc'),  c.instructor||'—', true]
+  ];
+  const box=document.createElement('div');
+  box.id='gridPeek';
+  box.innerHTML=`<div class="pk-h ltr">${escapeHtml(c.courseCode||'')} §${
+      escapeHtml(c.section||'')}</div>
+    <div class="pk-t">${escapeHtml(c.courseTitle||'')}</div>
+    ${rows.map(([k,v,ltr])=>`<div class="pk-r"><span>${k}</span>
+      <b${ltr?' class="ltr"':''}>${escapeHtml(v)}</b></div>`).join('')}`;
+  document.body.appendChild(box);
+  el.classList.add('peeking');
+
+  /* الموضع: فوق البطاقة إن وُجد مكان، وإلا تحتها، ومحصور داخل الشاشة */
+  const r=el.getBoundingClientRect();
+  const w=box.offsetWidth, h=box.offsetHeight;
+  const vw=document.documentElement.clientWidth;
+  const vh=document.documentElement.clientHeight;
+  let left=r.left+r.width/2-w/2;
+  left=Math.max(8,Math.min(left,vw-w-8));
+  let top=r.top-h-8;
+  if(top<8)top=Math.min(r.bottom+8,vh-h-8);
+  box.style.left=left+'px';
+  box.style.top=Math.max(8,top)+'px';
+  box.classList.add('in');
+
+  /* الإغلاق: أي تمرير أو ضغطة أو تغيير حجم أو زر Esc */
+  const bye=()=>closePeek();
+  const esc=e=>{ if(e.key==='Escape')closePeek(); };
+  const down=e=>{
+    const hit=e.target&&e.target.closest?e.target.closest('.gr-item'):null;
+    PEEK_SKIP=(hit===el);
+    if(PEEK_SKIP)setTimeout(()=>{PEEK_SKIP=false},400);  /* لو ما تبعها click */
+    closePeek();
+  };
+  /* التمرير يُلتقط في مرحلة الالتقاط عشان يشمل تمرير الشبكة الأفقي */
+  window.addEventListener('scroll',bye,{capture:true,passive:true});
+  window.addEventListener('resize',bye);
+  document.addEventListener('pointerdown',down);
+  document.addEventListener('keydown',esc);
+  PEEK_OFF=()=>{
+    window.removeEventListener('scroll',bye,{capture:true});
+    window.removeEventListener('resize',bye);
+    document.removeEventListener('pointerdown',down);
+    document.removeEventListener('keydown',esc);
+  };
+}
 
 function renderSchedule(){
   renderCrn();   /* لو اللوحة مفتوحة، تتحدث مع كل إضافة أو حذف */
