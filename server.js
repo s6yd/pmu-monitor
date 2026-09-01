@@ -1774,6 +1774,100 @@ async function adminStorage() {
   };
 }
 
+/* --- ما رُفع فعلاً ---
+   الأرقام تقول «٩٠٠ ك.ب» ولا تقول هل الميزة مستعملة. هذي تعرض المحتوى
+   نفسه: صور وملفات وملاحظات، ومع كل واحد حالته مشارك أو خاص. */
+async function adminUploads() {
+  const [ph, ev] = await Promise.all([
+    sbAll('course_photos',
+      { query: '?select=id,kind,filename,size_kb,shared,crn,term,on_date,created_at,user_id,note' }),
+    sbAll('course_events',
+      { query: '?select=id,kind,title,note,note_shared,shared,crn,term,on_date,created_at,user_id' })
+  ]);
+  const cut = (u) => String(u || '').slice(0, 8);
+  const items = [];
+  (Array.isArray(ph) ? ph : []).forEach(r => items.push({
+    id: r.id, type: r.kind === 'file' ? 'file' : 'photo',
+    title: r.filename || null, size_kb: r.size_kb || null,
+    shared: !!r.shared, crn: r.crn, term: r.term,
+    on_date: r.on_date, at: r.created_at, user: cut(r.user_id),
+    note: r.note || null
+  }));
+  /* الملاحظة وحدها هي المحتوى الذي يكتبه الطالب في الموعد — الموعد بلا
+     ملاحظة تاريخ مجرّد لا يفيد في قياس الاستعمال. */
+  (Array.isArray(ev) ? ev : []).filter(r => r.note).forEach(r => items.push({
+    id: r.id, type: 'note', title: r.title || r.kind,
+    size_kb: null, shared: !!r.note_shared, crn: r.crn, term: r.term,
+    on_date: r.on_date, at: r.created_at, user: cut(r.user_id),
+    note: r.note
+  }));
+  items.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+  const n = t => items.filter(x => x.type === t).length;
+  const s = t => items.filter(x => x.type === t && x.shared).length;
+  return {
+    items: items.slice(0, 300),
+    total: items.length,
+    counts: { photo: n('photo'), file: n('file'), note: n('note') },
+    sharedCounts: { photo: s('photo'), file: s('file'), note: s('note') },
+    users: new Set(items.map(x => x.user)).size
+  };
+}
+
+/* --- الأحجام الحقيقية من Storage ---
+   size_kb أُضيف بعد أول الرفعات، فالقديمة تُقدَّر بالمتوسط ويبقى الرقم
+   تقريبياً للأبد. هذي تقرأ الأحجام الفعلية مرة واحدة وتملأ العمود،
+   وبعدها الحساب دقيق بلا استعلام على Storage في كل مرة. */
+async function adminStorageSync() {
+  if (!SB_URL || !SB_SERVICE_KEY)
+    return { ok: false, error: 'إعدادات Supabase ناقصة', checked: 0, updated: 0, missing: 0 };
+  const rows = await sbAll('course_photos', { query: '?select=id,path,size_kb' })
+    .catch(() => null);
+  if (!Array.isArray(rows))
+    return { ok: false, error: 'تعذّرت قراءة الجدول', checked: 0, updated: 0, missing: 0 };
+  const need = rows.filter(r => !r.size_kb && r.path);
+  if (!need.length) return { ok: true, checked: 0, updated: 0, missing: 0 };
+
+  /* الملفات موزّعة على مجلد لكل طالب، فنسرد كل مجلد على حدة */
+  const folders = [...new Set(need.map(r => String(r.path).split('/')[0]))];
+  const sizes = new Map();
+  for (const f of folders) {
+    const body = JSON.stringify({ prefix: f, limit: 1000 });
+    const res = await new Promise(resolve => {
+      const u = new URL(`${SB_URL}/storage/v1/object/list/course-photos`);
+      const rq = https.request({
+        hostname: u.hostname, path: u.pathname, method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+          apikey: SB_SERVICE_KEY,
+          Authorization: `Bearer ${SB_SERVICE_KEY}`
+        }
+      }, r => {
+        let d = '';
+        r.on('data', c => d += c);
+        r.on('end', () => { try { resolve(JSON.parse(d)) } catch (e) { resolve(null) } });
+      });
+      rq.on('error', () => resolve(null));
+      rq.write(body); rq.end();
+    });
+    if (Array.isArray(res)) res.forEach(o => {
+      const kb = o && o.metadata && o.metadata.size
+        ? Math.max(1, Math.round(o.metadata.size / 1024)) : 0;
+      if (kb) sizes.set(f + '/' + o.name, kb);
+    });
+  }
+
+  let updated = 0;
+  for (const r of need) {
+    const kb = sizes.get(r.path);
+    if (!kb) continue;
+    const ok = await sb('PATCH', 'course_photos',
+      { query: `?id=eq.${r.id}`, body: { size_kb: kb } }).catch(() => null);
+    if (ok !== null) updated++;
+  }
+  return { ok: true, checked: need.length, updated, missing: need.length - updated };
+}
+
 /* --- بلاغات المحتوى المشترك ---
    البلاغ لا يخفي شيئاً تلقائياً: طالبان يقدران يحجبان محتوى سليماً بالإساءة.
    يصل هنا وينبّهني، وأنا أقرّر. */
@@ -4012,6 +4106,9 @@ const server = http.createServer(async (req, res) => {
       if (act === 'feedback') return send(200, { feedback: await adminFeedback() });
       if (act === 'reports')  return send(200, { reports: await adminReports() });
       if (act === 'storage')  return send(200, await adminStorage());
+      if (act === 'uploads')  return send(200, await adminUploads());
+      if (act === 'storage-sync' && req.method === 'POST')
+        return send(200, await adminStorageSync());
       if (act === 'user')     return send(200, await adminUserDetail(parsed.query.id || ''));
       if (act === 'tickets')  return send(200, { tickets: await adminTickets(parsed.query.status) });
       if (act === 'broadcast-status') return send(200, BROADCAST);
