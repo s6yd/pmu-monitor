@@ -726,6 +726,22 @@ font-size:11.5px;color:var(--text3)}
 .gap-row::before,.gap-row::after{content:'';flex:1;height:1px;background:var(--border)}
 .gap-row.has-now{color:var(--open);font-weight:700}
 .gap-row.has-now::before,.gap-row.has-now::after{background:var(--open);opacity:.45}
+/* ── اليوم النموذجي للزائر ──
+   شفافية خفيفة ومنع الضغط: واضح أنه عرض لا جدوله، بلا أن يفقد جماله. */
+.demo-wrap{margin-top:4px}
+.demo-head{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+.demo-t{font-size:13.5px;font-weight:700;flex:1;min-width:0}
+.demo-tag{font-size:10.5px;font-weight:700;color:var(--accent2);
+background:rgba(61,111,255,.12);border-radius:20px;padding:2px 9px;flex-shrink:0}
+.demo-body{opacity:.72;pointer-events:none;user-select:none;
+-webkit-mask-image:linear-gradient(to bottom,#000 72%,transparent);
+mask-image:linear-gradient(to bottom,#000 72%,transparent)}
+.demo-cta{margin-top:-14px;text-align:center;position:relative}
+.demo-s{font-size:12.5px;color:var(--text2);line-height:1.8;margin-bottom:12px}
+.demo-btn{background:var(--accent);color:#fff;border:none;border-radius:12px;
+padding:12px 26px;font-size:13.5px;font-weight:700;font-family:var(--sans);
+cursor:pointer;box-shadow:0 8px 22px rgba(61,111,255,.28)}
+.demo-btn:active{opacity:.85}
 /* خط «الآن» — يتحرك بين البطاقات مع مرور اليوم */
 .now-mark{display:flex;align-items:center;gap:8px;padding:1px 4px}
 .now-mark::after{content:'';flex:1;height:2px;border-radius:2px;
@@ -5748,6 +5764,47 @@ function viewSwitch(){
   </div>`;
 }
 
+/* ═══ يوم نموذجي للزائر بلا جدول ═══
+   الصفحة الفاضية تطرد الزائر قبل أن يفهم الميزة. هذا يعرض له يوماً
+   حقيقي الشكل — بطاقة جارية بشريط يمشي، وفراغ، وقادمة بعدّاد — مرسوماً
+   بنفس دوال الرسم لا بصورة، فيبقى مطابقاً للواجهة مهما تغيّرت. */
+function demoDay(){
+  const now=11*60+40;                       /* لحظة ثابتة تُظهر أحسن حالة */
+  const mk=(code,title,room,doc,s,e)=>({
+    c:{crn:'demo-'+code,courseCode:code,courseTitle:title,section:'101',
+       room,instructor:doc},
+    t:{start:s,end:e}});
+  const day=[
+    mk('MEEN 3301','Thermodynamics','M-COE - G022','Dr. Khalid',9*60,9*60+50),
+    mk('GENG 2311','Contemporary Issues','GZONE - G037','Dr. Sara',11*60,12*60+15),
+    mk('MATH 2411','Differential Equations','M-CORE - F051','Dr. Omar',14*60,15*60+15)
+  ];
+  const prog=Math.round((now-day[1].t.start)/(day[1].t.end-day[1].t.start)*100);
+  const rows=
+    slotCard(day[0].c,day[0].t,'past',t('tdDone'))+
+    gapRow(day[1].t.start-day[0].t.end,null)+
+    slotCard(day[1].c,day[1].t,'now',
+      `${t('tdEndsIn')} ${fmtLeft(day[1].t.end-now,0)}`,prog)+
+    gapRow(day[2].t.start-day[1].t.end,null)+
+    slotCard(day[2].c,day[2].t,'next',
+      `${t('tdStartsIn')} ${fmtLeft(day[2].t.start-now,0)}`);
+  return `<div class="demo-wrap">
+    <div class="demo-head">
+      <div class="demo-t">${t('tdDemoT')}</div>
+      <span class="demo-tag">${t('tdDemoTag')}</span>
+    </div>
+    <div class="demo-body">
+      <div class="day-block"><div class="day-head">
+        <span>${t('days')[ksaNow().day]}</span><span>1 ${t('tdOf')} 3 ${t('tdDoneN')}</span>
+      </div><div class="day-body">${rows}</div></div>
+    </div>
+    <div class="demo-cta">
+      <div class="demo-s">${t('tdNeedSchedS')}</div>
+      <button class="demo-btn" onclick="switchTab('search')">${t('tdNeedSchedBtn')}</button>
+    </div>
+  </div>`;
+}
+
 let TODAY_HTML='', TODAY_SCROLLED=false;
 function renderToday(){
   const box=document.getElementById('todayBody');
@@ -5762,12 +5819,7 @@ function renderToday(){
   /* التبويب مفتوح للجميع، فالحالتان الناقصتان تُشرحان هنا بدل أن يقف
      الطالب أمام صفحة فاضية ما يدري ليش هي فاضية. */
   if(!schedule||!schedule.length){
-    html+=`<div class="state-box">
-      <div class="state-icon">🌤️</div>
-      <div class="state-t">${t('tdNeedSchedT')}</div>
-      <div class="state-s">${t('tdNeedSchedS')}</div>
-      <button class="btn" onclick="switchTab('search')">${t('tdNeedSchedBtn')}</button>
-    </div>`;
+    html+=demoDay();
     if(html!==TODAY_HTML&&!CS_OPEN){ box.innerHTML=html; TODAY_HTML=html }
     return;
   }
@@ -8247,6 +8299,7 @@ tdNoToday:'☕ ما عندك محاضرات اليوم',tdNoAny:'ما في مح�
 tdEndsIn:'⏳ تنتهي بعد',tdStartsIn:'⏰ بعد',tdDone:'✓ خلصت',tdOf:'من',tdDoneN:'خلصت',
 tdGap:'فراغ',
 tdNeedSchedT:'يومك يبدأ من جدولك',
+tdDemoT:'كذا بيصير شكل يومك',tdDemoTag:'مثال',
 tdNeedSchedS:'أضف موادك وبيطلع لك هنا يومك بالترتيب: وش الجاي، كم باقي عليه، ووين فراغاتك.',
 tdNeedSchedBtn:'🔍 روح للبحث',
 tdGuestNote:'أنت تتصفّح بلا حساب — يومك وأسبوعك يشتغلان، لكن الغياب والمواعيد والصور تحتاج حساباً.',
@@ -8350,6 +8403,7 @@ tdNoToday:'☕ No classes today',tdNoAny:'No classes in your schedule',
 tdEndsIn:'⏳ Ends in',tdStartsIn:'⏰ In',tdDone:'✓ Done',tdOf:'of',tdDoneN:'done',
 tdGap:'break',
 tdNeedSchedT:'Your day starts with your schedule',
+tdDemoT:'This is how your day will look',tdDemoTag:'Example',
 tdNeedSchedS:'Add your courses and your day appears here in order: what is next, how long until it, and where your gaps are.',
 tdNeedSchedBtn:'🔍 Go to search',
 tdGuestNote:'You are browsing without an account — your day and week work, but absences, deadlines and photos need one.',
