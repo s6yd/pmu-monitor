@@ -1807,6 +1807,35 @@ function sbStorage(method, path, body) {
   });
 }
 
+/* --- اختبار Pushover لطالب ---
+   Postgres ما يقدر يرسل HTTP، وانتظار فتح شعبة حقيقية اختبار سيئ:
+   لو ما وصل شيء، ما تدري هل الربط مكسور أو ما انفتحت شعبة أصلاً.
+   هذي تفصل السؤالين. */
+async function adminPushTest(email) {
+  if (!PUSHOVER_ON) return { ok: false, error: 'Pushover معطّل على السيرفر' };
+  const e = String(email || '').trim().toLowerCase();
+  if (!e) return { ok: false, error: 'اكتب البريد' };
+  const rows = await sbAll('profiles', {
+    query: `?email=eq.${encodeURIComponent(e)}&select=id,email,pushover_key,telegram_chat_id`
+  }).catch(() => null);
+  if (!Array.isArray(rows) || !rows.length)
+    return { ok: false, error: 'ما لقيت حساباً بهذا البريد' };
+  const p = rows[0];
+  const key = (p.pushover_key || '').trim();
+  if (!key) return { ok: false, error: 'الحساب موجود لكن بلا مفتاح Pushover' };
+
+  const sent = await pushover('🔔 تجربة من جدولك',
+    'وصلك هذا؟ إذاً الربط شغّال وبتوصلك إشعارات الشُعب.',
+    { priority: 1, sound: 'pushover', user: key });
+  return {
+    ok: !!sent, email: p.email,
+    telegram: !!p.telegram_chat_id,
+    /* لا نُظهر المفتاح كاملاً في رد اللوحة */
+    keyTail: '…' + key.slice(-6),
+    error: sent ? null : 'Pushover رفض الإرسال — المفتاح غالباً خاطئ'
+  };
+}
+
 /* --- ما رُفع فعلاً ---
    الأرقام تقول «٩٠٠ ك.ب» ولا تقول هل الميزة مستعملة. هذي تعرض المحتوى
    نفسه: صور وملفات وملاحظات، ومع كل واحد حالته مشارك أو خاص. */
@@ -4158,6 +4187,10 @@ const server = http.createServer(async (req, res) => {
       if (act === 'reports')  return send(200, { reports: await adminReports() });
       if (act === 'storage')  return send(200, await adminStorage());
       if (act === 'uploads')  return send(200, await adminUploads());
+      if (act === 'push-test' && req.method === 'POST') {
+        const b = await readBody(req);
+        return send(200, await adminPushTest(b && b.email));
+      }
       if (act === 'storage-sync' && req.method === 'POST')
         return send(200, await adminStorageSync());
       if (act === 'user')     return send(200, await adminUserDetail(parsed.query.id || ''));

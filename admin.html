@@ -634,6 +634,16 @@ function renderStorage(){
       <span>⚠️ ${S.estimated} صورة حجمها مقدَّر — رُفعت قبل تسجيل الأحجام</span></div>`:''}
     ${S.estimated?`<button class="btn" id="stgSyncBtn" onclick="syncSizes()"
       style="margin-top:8px">📐 احسب الأحجام الحقيقية</button>`:''}
+    <div class="row" style="margin-top:10px">
+      <div class="row-head"><b>🔔 تجربة Pushover</b></div>
+      <div class="row-meta"><span>يرسل إشعاراً تجريبياً لمن ربط مفتاحه</span></div>
+      <div class="row-acts">
+        <input id="poEmail" placeholder="بريد الطالب" style="flex:1;min-width:150px;
+          background:var(--bg);border:1px solid var(--border2);border-radius:9px;
+          padding:8px 11px;color:var(--text);font-family:var(--sans);font-size:12px">
+        <button class="mini go" onclick="pushTest()">أرسل</button>
+      </div>
+    </div>
     ${S.top&&S.top.length?`<div class="row" style="margin-top:10px">
       <div class="row-head"><b>أكثر الطلاب استهلاكاً</b></div>
       ${S.top.map(x=>`<div class="row-meta"><span>${x.user}…</span>
@@ -657,6 +667,18 @@ async function syncSizes(){
     toast(e.message,'err');
     if(b){ b.disabled=false; b.textContent='📐 احسب الأحجام الحقيقية' }
   }
+}
+
+async function pushTest(){
+  const el=document.getElementById('poEmail');
+  const email=(el&&el.value||'').trim();
+  if(!email){ toast('اكتب البريد','err'); return }
+  try{
+    const r=await api('push-test',{body:{email}});
+    if(r.ok)toast(`أُرسل إلى ${r.email} · مفتاح ${r.keyTail}` +
+      (r.telegram?'':' · ⚠️ ما ربط تلقرام فما بتوصله إشعارات الشُعب'),'ok');
+    else toast(r.error||'ما انرسل','err');
+  }catch(e){ toast(e.message,'err') }
 }
 
 /* ══════════ ما رُفع فعلاً ══════════
