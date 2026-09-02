@@ -69,7 +69,8 @@ function pushover(title, message, opts) {
   return new Promise(resolve => {
     try {
       const fields = {
-        token: PUSHOVER_TOKEN, user: PUSHOVER_USER,
+        /* o.user = مفتاح مستلم آخر. بدونه يذهب كل شيء إليك أنت. */
+        token: PUSHOVER_TOKEN, user: String(o.user || PUSHOVER_USER).trim(),
         title: String(title || 'جدولك').slice(0, 250),
         message: String(message || '').slice(0, 1024),
         priority: String(pr)
@@ -1003,7 +1004,7 @@ async function runMonitorCycle() {
     for (let i = 0; i < userIds.length; i += 100) {
       const chunk = userIds.slice(i, i + 100).map(u => `"${u}"`).join(',');
       const rows = await sb('GET', 'profiles', {
-        query: `?id=in.(${chunk})&select=id,telegram_chat_id,is_pro,subscription_expires_at`
+        query: `?id=in.(${chunk})&select=id,telegram_chat_id,is_pro,subscription_expires_at,pushover_key`
       });
       (Array.isArray(rows) ? rows : []).forEach(p => { profiles[p.id] = p; });
     }
@@ -1056,17 +1057,21 @@ async function runMonitorCycle() {
       if (r && r.ok) { notified.push(m.id); followups.push(m.id); }
       else OPS.tgFails++;
 
-      /* لو المستلم أنت، نرسل نسخة على Pushover كمان — إشعار أقوى
-         ما يفوتك. الطلاب ما يتأثرون: الشرط عليك وحدك. */
-      if (PUSHOVER_ON && ADMIN_CHAT_ID &&
-          String(p.telegram_chat_id) === String(ADMIN_CHAT_ID)) {
+      /* Pushover: لك أنت دائماً، ولأي طالب سجّل مفتاحه في ملفه.
+         تيليغرام يُكتم بسهولة، والأولوية 2 تعيد التنبيه حتى يضغط
+         «تأكيد» بنفسه — وهذا المطلوب لشعبة تُفتح وتُسكّر في دقائق. */
+      const isAdmin = ADMIN_CHAT_ID &&
+        String(p.telegram_chat_id) === String(ADMIN_CHAT_ID);
+      const poKey = (p.pushover_key || '').trim();
+      if (PUSHOVER_ON && (isAdmin || poKey)) {
         pushover(`${closedNew || isNew ? '🆕' : '🟢'} ${live.courseCode} §${live.section}`,
           `${live.courseTitle}\nCRN ${live.crn}\n` +
           `${live.courseDate} · ${live.courseTiming}\n` +
           `${live.instructor || '—'} · ${live.room || '—'}`,
           /* الشعبة المغلقة الجديدة خبر لا طارئ */
-          closedNew ? { priority: 0, sound: 'pushover' }
-                    : { priority: 2, sound: 'siren', retry: 30, expire: 1800 }).catch(() => {});
+          closedNew ? { priority: 0, sound: 'pushover', user: poKey || undefined }
+                    : { priority: 2, sound: 'siren', retry: 30, expire: 1800,
+                        user: poKey || undefined }).catch(() => {});
       }
       await new Promise(r2 => setTimeout(r2, 700));   // تهدئة بين الدفعات
     });
