@@ -1824,9 +1824,13 @@ async function adminPushTest(email) {
   const key = (p.pushover_key || '').trim();
   if (!key) return { ok: false, error: 'الحساب موجود لكن بلا مفتاح Pushover' };
 
+  /* أولوية 2 بنفس إعدادات إشعار الشعبة الحقيقي — بروفة لا تشبيه.
+     اختبار بأولوية أقل يمرّ ثم يفشل الحقيقي، فلا يثبت شيئاً. */
   const sent = await pushover('🔔 تجربة من جدولك',
-    'وصلك هذا؟ إذاً الربط شغّال وبتوصلك إشعارات الشُعب.',
-    { priority: 1, sound: 'pushover', user: key });
+    'هذي تجربة بنفس قوة إشعار فتح الشعبة.\n' +
+    'اضغط «تأكيد» في Pushover عشان توقف التكرار.\n\n' +
+    'ما صفّر وجوالك صامت؟ فعّل Critical Alerts من إعدادات التطبيق.',
+    { priority: 2, sound: 'siren', retry: 30, expire: 300, user: key });
   return {
     ok: !!sent, email: p.email,
     telegram: !!p.telegram_chat_id,
