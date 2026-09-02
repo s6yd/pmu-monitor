@@ -4582,8 +4582,11 @@ function renderSchedule(){
    BETA_EMAILS غير فاضية = التبويب محصور بمن فيها. */
 const BETA_EMAILS=[];
 function isBeta(){
-  if(!USER)return false;                  /* التبويب يعتمد على جدول محفوظ */
+  /* التبويب لم يعد محصوراً بمن سجّل دخوله: الزائر يبني جدوله محلياً مثل
+     ما يفعل في «جدولي» و«خطتي»، فحجب يومه عنه بلا سبب. الحالات الناقصة
+     (بلا جدول، بلا حساب) تُشرح داخل التبويب لا بإخفائه. */
   if(!BETA_EMAILS.length)return true;
+  if(!USER)return false;
   const e=(USER.email||'').toLowerCase().trim();
   return !!e && BETA_EMAILS.includes(e);
 }
@@ -5755,6 +5758,24 @@ function renderToday(){
   const next=mine.find(x=>x.t.start>n.min);
   const hol=todayHoliday(n.date);
   let html=viewSwitch();
+
+  /* التبويب مفتوح للجميع، فالحالتان الناقصتان تُشرحان هنا بدل أن يقف
+     الطالب أمام صفحة فاضية ما يدري ليش هي فاضية. */
+  if(!schedule||!schedule.length){
+    html+=`<div class="state-box">
+      <div class="state-icon">🌤️</div>
+      <div class="state-t">${t('tdNeedSchedT')}</div>
+      <div class="state-s">${t('tdNeedSchedS')}</div>
+      <button class="btn" onclick="switchTab('search')">${t('tdNeedSchedBtn')}</button>
+    </div>`;
+    if(html!==TODAY_HTML&&!CS_OPEN){ box.innerHTML=html; TODAY_HTML=html }
+    return;
+  }
+  /* الغياب والمواعيد والصور تُكتب في الحساب — الزائر يرى يومه كاملاً
+     ويُدعى للدخول مرة واحدة فوق، لا عند كل زر يضغطه فيفشل. */
+  if(!USER)html+=`<div class="tg-bar" style="margin-bottom:10px">
+    <span>${t('tdGuestNote')}</span>
+    <button onclick="handleAuth()">${t('tdGuestBtn')}</button></div>`;
 
   if(VIEW==='week'){
     html+=renderWeek();
@@ -8224,7 +8245,12 @@ errSave:'ما انحفظ — جرّب مرة ثانية',errDel:'ما انحذف
 tdTab:'☀️ اليوم',tdDay:'اليوم',tdWeek:'الأسبوع',
 tdNoToday:'☕ ما عندك محاضرات اليوم',tdNoAny:'ما في محاضرات في جدولك',
 tdEndsIn:'⏳ تنتهي بعد',tdStartsIn:'⏰ بعد',tdDone:'✓ خلصت',tdOf:'من',tdDoneN:'خلصت',
-tdGap:'فراغ',wkFrom:'من',wkTo:'إلى',
+tdGap:'فراغ',
+tdNeedSchedT:'يومك يبدأ من جدولك',
+tdNeedSchedS:'أضف موادك وبيطلع لك هنا يومك بالترتيب: وش الجاي، كم باقي عليه، ووين فراغاتك.',
+tdNeedSchedBtn:'🔍 روح للبحث',
+tdGuestNote:'أنت تتصفّح بلا حساب — يومك وأسبوعك يشتغلان، لكن الغياب والمواعيد والصور تحتاج حساباً.',
+tdGuestBtn:'دخول',wkFrom:'من',wkTo:'إلى',
 tdMin:'دقيقة',tdHr:'ساعة',tdAnd:'و',tdM:'د',
 tdToday:'اليوم',tdTomorrow:'بكرة',tdIn2:'بعد يومين',tdInN:'بعد',tdDays:'أيام',
 tdAgo:'قبل',tdDay1:'يوم',
@@ -8322,7 +8348,12 @@ crnCopy:'copy',crnCopyAll:'📋 Copy all numbers',
 crnHint2:'Tap any number to copy it alone. They are printed with the schedule too.',tdTab:'☀️ Today',tdDay:'Today',tdWeek:'Week',
 tdNoToday:'☕ No classes today',tdNoAny:'No classes in your schedule',
 tdEndsIn:'⏳ Ends in',tdStartsIn:'⏰ In',tdDone:'✓ Done',tdOf:'of',tdDoneN:'done',
-tdGap:'break',wkFrom:'from',wkTo:'to',
+tdGap:'break',
+tdNeedSchedT:'Your day starts with your schedule',
+tdNeedSchedS:'Add your courses and your day appears here in order: what is next, how long until it, and where your gaps are.',
+tdNeedSchedBtn:'🔍 Go to search',
+tdGuestNote:'You are browsing without an account — your day and week work, but absences, deadlines and photos need one.',
+tdGuestBtn:'Sign in',wkFrom:'from',wkTo:'to',
 tdMin:'min',tdHr:'h',tdAnd:'',tdM:'m',
 tdToday:'Today',tdTomorrow:'Tomorrow',tdIn2:'In 2 days',tdInN:'In',tdDays:'days',
 tdAgo:'',tdDay1:'days ago',
