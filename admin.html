@@ -687,7 +687,15 @@ async function roomsProbe(){
   try{
     ROOMS=await api('rooms-probe');
     renderRooms();
-    if(!ROOMS.ok)toast(ROOMS.error||'فشل','err');
+    if(!ROOMS.ok){
+      toast(ROOMS.error||'فشل','err');
+      const b=document.getElementById('rpBody');
+      if(b)b.innerHTML=`<div class="row" style="margin-top:8px">
+        <div class="row-meta"><span>⚠️ ${esc(ROOMS.error||'فشل')}</span></div>
+        ${ROOMS.cacheKeys?`<div class="row-meta"><span>الكاش: ${
+          ROOMS.cacheKeys.length?esc(ROOMS.cacheKeys.join(' · ')):'فاضٍ'}</span></div>`:''}
+      </div>`;
+    }
   }catch(e){ toast(e.message,'err') }
   if(btn){ btn.disabled=false; btn.textContent='🚪 افحص القاعات' }
 }
@@ -695,7 +703,9 @@ function renderRooms(){
   const box=document.getElementById('rpBody');
   if(!box||!ROOMS||!ROOMS.ok)return;
   const R=ROOMS;
-  box.innerHTML=`<div class="kpis">
+  box.innerHTML=`${R.source?`<div class="row-meta" style="margin-bottom:8px">
+      <span>المصدر: ${esc(R.source)}</span></div>`:''}
+    <div class="kpis">
       <div class="kpi"><div class="kpi-val">${R.totalRooms}</div>
         <div class="kpi-label">قاعة مميّزة</div></div>
       <div class="kpi"><div class="kpi-val">${R.totalSessions}</div>

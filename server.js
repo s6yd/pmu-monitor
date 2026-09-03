@@ -1805,9 +1805,34 @@ const roomPrefix = r => {
 };
 
 async function adminRoomsProbe() {
-  const courses = await getCourses(ACTIVE_TERM, 'ALL', 'ALL').catch(() => null);
-  if (!Array.isArray(courses) || !courses.length)
-    return { ok: false, error: 'ما قدرت أجيب قائمة المواد' };
+  /* getCourses ترجع {courses, cached, age} لا مصفوفة — وابتلاع الخطأ
+     برسالة عامة يُخفي السبب. نمرّره كما هو. */
+  let res = null, why = null;
+  try { res = await getCourses(ACTIVE_TERM, 'ALL', 'ALL'); }
+  catch (e) { why = e && e.message ? e.message : String(e); }
+
+  let courses = res && Array.isArray(res.courses) ? res.courses
+              : Array.isArray(res) ? res : null;
+  let source = courses ? (res && res.cached ? 'الكاش' : 'سحبة جديدة') : null;
+
+  /* فشل السحب؟ نجرّب أي تركيبة مخزَّنة لنفس الترم قبل ما نستسلم —
+     البحث عند الطلاب يملأ الكاش بـ M1 و F1 حتى لو ALL/ALL تعثّرت. */
+  if (!courses || !courses.length) {
+    const keys = [...coursesCache.keys()].filter(k => k.startsWith(ACTIVE_TERM + '|'));
+    let best = null;
+    keys.forEach(k => {
+      const h = coursesCache.get(k);
+      if (h && Array.isArray(h.courses) &&
+          (!best || h.courses.length > best.courses.length)) best = { key: k, ...h };
+    });
+    if (best) { courses = best.courses; source = 'كاش ' + best.key; }
+  }
+
+  if (!courses || !courses.length)
+    return { ok: false,
+             error: why ? ('تعذّر جلب المواد: ' + why)
+                        : 'قائمة المواد رجعت فاضية — جرّب بحثاً في الموقع أولاً ليمتلئ الكاش',
+             cacheKeys: [...coursesCache.keys()] };
 
   const byPrefix = {};          /* البادئة → {sessions, rooms:Set, M, F, null} */
   const rooms = new Map();      /* اسم القاعة → [{day,start,end,gender}] */
@@ -1858,7 +1883,7 @@ async function adminRoomsProbe() {
     .sort((a, b) => b.sessions - a.sessions);
 
   return {
-    ok: true, term: ACTIVE_TERM,
+    ok: true, term: ACTIVE_TERM, source,
     totalCourses: courses.length,
     totalRooms: rooms.size,
     totalSessions: [...rooms.values()].reduce((n, s) => n + s.length, 0),
