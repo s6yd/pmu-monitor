@@ -1796,99 +1796,130 @@ function roomTime(s) {
   const start = t(m[1]), end = t(m[2]);
   return end > start ? { start, end } : null;
 }
-const roomPrefix = r => {
+/* اسم القاعة: «M-COBA - G034» = جنس M · مبنى COBA · رقم G034
+   و«GZONE - G036» بلا حرف جنس، فالمنطقة نفسها هي المبنى. */
+function roomParts(r) {
   const s = String(r || '').trim();
-  if (!s) return '(فارغ)';
-  if (/^(TBA|TBD|ONLINE|N\/A)/i.test(s)) return s.toUpperCase().split(/[\s-]/)[0];
-  const head = s.split(/\s*-\s*/)[0].trim();
-  return head || '(فارغ)';
-};
+  if (!s) return null;
+  if (/^(TBA|TBD|ONLINE|N\/A)/i.test(s)) return null;
+  const parts = s.split(/\s+-\s+/);
+  const zone = (parts[0] || '').trim().toUpperCase();
+  const code = (parts.slice(1).join(' - ') || '').trim();
+  const m = zone.match(/^([MF])-(.+)$/);
+  return { zone, code,
+           building: m ? m[2] : zone,
+           genderLetter: m ? m[1] : null,
+           odd: !code || !zone };
+}
 
 async function adminRoomsProbe() {
-  /* getCourses ترجع {courses, cached, age} لا مصفوفة — وابتلاع الخطأ
-     برسالة عامة يُخفي السبب. نمرّره كما هو. */
-  let res = null, why = null;
-  try { res = await getCourses(ACTIVE_TERM, 'ALL', 'ALL'); }
-  catch (e) { why = e && e.message ? e.message : String(e); }
+  /* سحبتان منفصلتان بدل ALL: مع M1 و F1 تفرض tagGender الجنس من فلتر
+     الجامعة نفسها، بدل أن تخمّنه من رقم الشعبة. الفرق ليس تجميلياً —
+     التخمين صنّف ٢٨ جلسة طلاب داخل مباني الطالبات، وترك ٤٢ مجهولة. */
+  const pull = async (g) => {
+    try {
+      const r = await getCourses(ACTIVE_TERM, 'ALL', g);
+      const list = r && Array.isArray(r.courses) ? r.courses : Array.isArray(r) ? r : null;
+      return { list, cached: !!(r && r.cached), err: null };
+    } catch (e) { return { list: null, cached: false, err: e && e.message ? e.message : String(e) }; }
+  };
+  const [mRes, fRes] = await Promise.all([pull('M1'), pull('F1')]);
 
-  let courses = res && Array.isArray(res.courses) ? res.courses
-              : Array.isArray(res) ? res : null;
-  let source = courses ? (res && res.cached ? 'الكاش' : 'سحبة جديدة') : null;
+  const courses = [];
+  const seen = new Set();
+  const pushAll = (list, g) => (list || []).forEach(c => {
+    /* نفس الشعبة قد تجي في السحبتين — نمنع العدّ المزدوج */
+    const k = [c.crn, c.section, c.courseDate, c.courseTiming, c.room].join('|');
+    if (seen.has(k)) return;
+    seen.add(k);
+    courses.push({ ...c, gender: g });      /* الجنس من المصدر لا من التخمين */
+  });
+  pushAll(mRes.list, 'M');
+  pushAll(fRes.list, 'F');
 
-  /* فشل السحب؟ نجرّب أي تركيبة مخزَّنة لنفس الترم قبل ما نستسلم —
-     البحث عند الطلاب يملأ الكاش بـ M1 و F1 حتى لو ALL/ALL تعثّرت. */
-  if (!courses || !courses.length) {
-    const keys = [...coursesCache.keys()].filter(k => k.startsWith(ACTIVE_TERM + '|'));
-    let best = null;
-    keys.forEach(k => {
-      const h = coursesCache.get(k);
-      if (h && Array.isArray(h.courses) &&
-          (!best || h.courses.length > best.courses.length)) best = { key: k, ...h };
-    });
-    if (best) { courses = best.courses; source = 'كاش ' + best.key; }
-  }
-
-  if (!courses || !courses.length)
+  if (!courses.length)
     return { ok: false,
-             error: why ? ('تعذّر جلب المواد: ' + why)
-                        : 'قائمة المواد رجعت فاضية — جرّب بحثاً في الموقع أولاً ليمتلئ الكاش',
+             error: (mRes.err || fRes.err)
+               ? ('تعذّر جلب المواد: ' + (mRes.err || fRes.err))
+               : 'القائمتان رجعتا فاضيتين',
              cacheKeys: [...coursesCache.keys()] };
 
-  const byPrefix = {};          /* البادئة → {sessions, rooms:Set, M, F, null} */
-  const rooms = new Map();      /* اسم القاعة → [{day,start,end,gender}] */
-  const odd = { noRoom: 0, noTime: 0, tba: 0, noDays: 0 };
+  const source = `طلاب ${(mRes.list || []).length}${mRes.cached ? ' (كاش)' : ''}` +
+                 ` · طالبات ${(fRes.list || []).length}${fRes.cached ? ' (كاش)' : ''}`;
+  const missing = [];
+  if (!mRes.list || !mRes.list.length) missing.push('قائمة الطلاب فاضية');
+  if (!fRes.list || !fRes.list.length) missing.push('قائمة الطالبات فاضية');
+
+  const byGender = {};        /* M/F → قاعات وجلسات */
+  const byBuilding = {};      /* المبنى → قاعات، جلسات، جنس */
+  const rooms = new Map();    /* اسم القاعة → [{day,start,end,gender,building}] */
+  const odd = { noRoom: 0, noTime: 0, tba: 0, noDays: 0, badName: 0 };
+  const oddNames = new Set();
 
   courses.forEach(c => {
-    const room = String(c.room || '').trim();
+    const raw = String(c.room || '').trim();
     const tm = roomTime(c.courseTiming);
     const days = roomDays(c.courseDate);
-    if (!room) { odd.noRoom++; return; }
-    if (/^(TBA|TBD|ONLINE|N\/A)/i.test(room)) { odd.tba++; return; }
+    if (!raw) { odd.noRoom++; return; }
+    if (/^(TBA|TBD|ONLINE|N\/A)/i.test(raw)) { odd.tba++; return; }
     if (!tm) { odd.noTime++; return; }
     if (!days.length) { odd.noDays++; return; }
+    const pr = roomParts(raw);
+    if (!pr) { odd.tba++; return; }
+    if (pr.odd) { odd.badName++; if (oddNames.size < 10) oddNames.add(raw); }
 
-    const pf = roomPrefix(room);
-    const b = byPrefix[pf] = byPrefix[pf] ||
-      { sessions: 0, rooms: new Set(), M: 0, F: 0, unknown: 0 };
-    b.sessions += days.length;
-    b.rooms.add(room);
-    if (c.gender === 'M') b.M++; else if (c.gender === 'F') b.F++; else b.unknown++;
+    const g = c.gender === 'F' ? 'F' : 'M';
+    const bg = byGender[g] = byGender[g] || { rooms: new Set(), sessions: 0 };
+    bg.rooms.add(raw); bg.sessions += days.length;
 
-    if (!rooms.has(room)) rooms.set(room, []);
-    days.forEach(d => rooms.get(room).push(
-      { day: d, start: tm.start, end: tm.end, gender: c.gender || null }));
+    const bb = byBuilding[pr.building] = byBuilding[pr.building] ||
+      { rooms: new Set(), sessions: 0, M: 0, F: 0, zones: new Set() };
+    bb.rooms.add(raw); bb.sessions += days.length; bb[g] += days.length;
+    bb.zones.add(pr.zone);
+
+    if (!rooms.has(raw)) rooms.set(raw, []);
+    days.forEach(d => rooms.get(raw).push(
+      { day: d, start: tm.start, end: tm.end, gender: g, building: pr.building }));
   });
 
-  /* عيّنة: الأحد 10:00–11:00 — كم قاعة «ما فيها محاضرة» */
+  /* عيّنة: الأحد 10:00–11:00، مفصولة بالجنس — هذا ما سيراه الطالب فعلاً */
   const sample = { day: 'U', from: 600, to: 660 };
-  let freeAtSample = 0;
+  const free = { M: 0, F: 0 };
+  const total = { M: 0, F: 0 };
   rooms.forEach(slots => {
-    const busy = slots.some(s => s.day === sample.day &&
-      s.start < sample.to && s.end > sample.from);
-    if (!busy) freeAtSample++;
+    const g = slots.some(x => x.gender === 'F') && !slots.some(x => x.gender === 'M')
+      ? 'F' : slots.some(x => x.gender === 'M') && !slots.some(x => x.gender === 'F')
+      ? 'M' : 'X';
+    if (g === 'X') return;                 /* قاعة ظهرت للجنسين — نستبعدها من العيّنة */
+    total[g]++;
+    const busy = slots.some(x => x.day === sample.day &&
+      x.start < sample.to && x.end > sample.from);
+    if (!busy) free[g]++;
   });
 
-  /* أكثر القاعات ازدحاماً — دليل أنها قاعات حقيقية لا مخازن */
+  const buildings = Object.entries(byBuilding).map(([building, v]) => ({
+    building, rooms: v.rooms.size, sessions: v.sessions,
+    M: v.M, F: v.F, zones: [...v.zones].join(' · '),
+    verdict: v.M && v.F ? 'مختلط' : v.M ? 'طلاب' : 'طالبات'
+  })).sort((a, b) => b.rooms - a.rooms);
+
   const busiest = [...rooms.entries()]
     .map(([r, s]) => ({ room: r, sessions: s.length }))
     .sort((a, b) => b.sessions - a.sessions).slice(0, 8);
 
-  const prefixes = Object.entries(byPrefix)
-    .map(([prefix, v]) => ({
-      prefix, rooms: v.rooms.size, sessions: v.sessions,
-      M: v.M, F: v.F, unknown: v.unknown,
-      /* الحكم: خالص للطلاب أم للطالبات أم مختلط */
-      verdict: v.M && v.F ? 'مختلط' : v.M ? 'طلاب' : v.F ? 'طالبات' : 'غير معروف'
-    }))
-    .sort((a, b) => b.sessions - a.sessions);
-
   return {
-    ok: true, term: ACTIVE_TERM, source,
+    ok: true, term: ACTIVE_TERM, source, missing,
     totalCourses: courses.length,
     totalRooms: rooms.size,
-    totalSessions: [...rooms.values()].reduce((n, s) => n + s.length, 0),
-    prefixes, odd, busiest,
-    sample: { label: 'الأحد ١٠:٠٠–١١:٠٠', free: freeAtSample, of: rooms.size }
+    totalSessions: [...rooms.values()].reduce((n, x) => n + x.length, 0),
+    genders: ['M', 'F'].map(g => ({
+      gender: g === 'M' ? 'طلاب' : 'طالبات',
+      rooms: byGender[g] ? byGender[g].rooms.size : 0,
+      sessions: byGender[g] ? byGender[g].sessions : 0,
+      freeAtSample: free[g], ofRooms: total[g]
+    })),
+    buildings, odd, oddNames: [...oddNames], busiest,
+    sample: { label: 'الأحد ١٠:٠٠–١١:٠٠' }
   };
 }
 

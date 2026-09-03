@@ -705,22 +705,28 @@ function renderRooms(){
   const R=ROOMS;
   box.innerHTML=`${R.source?`<div class="row-meta" style="margin-bottom:8px">
       <span>المصدر: ${esc(R.source)}</span></div>`:''}
+    ${R.missing&&R.missing.length?`<div class="row"><div class="row-meta">
+      <span>⚠️ ${R.missing.map(esc).join(' · ')}</span></div></div>`:''}
     <div class="kpis">
       <div class="kpi"><div class="kpi-val">${R.totalRooms}</div>
         <div class="kpi-label">قاعة مميّزة</div></div>
       <div class="kpi"><div class="kpi-val">${R.totalSessions}</div>
         <div class="kpi-label">جلسة أسبوعية</div></div>
-      <div class="kpi"><div class="kpi-val">${R.sample.free}</div>
-        <div class="kpi-label">فاضية ${esc(R.sample.label)}</div></div>
     </div>
-    <div class="sec-title" style="margin-top:12px">البادئات — هل تدل على الجنس؟</div>
-    ${R.prefixes.map(p=>`<div class="row" style="margin-top:7px">
-      <div class="row-head"><b>${esc(p.prefix)}</b>
-        <span class="pill ${p.verdict==='مختلط'?'soon':'on'}">${p.verdict}</span></div>
+    <div class="sec-title" style="margin-top:12px">فاضية ${esc(R.sample.label)}</div>
+    ${R.genders.map(g=>`<div class="row" style="margin-top:7px">
+      <div class="row-head"><b>${esc(g.gender)}</b>
+        <span class="pill on">${g.freeAtSample} من ${g.ofRooms}</span></div>
+      <div class="row-meta"><span>${g.rooms} قاعة · ${g.sessions} جلسة</span></div>
+    </div>`).join('')}
+    <div class="sec-title" style="margin-top:12px">المباني</div>
+    ${R.buildings.map(b=>`<div class="row" style="margin-top:7px">
+      <div class="row-head"><b>${esc(b.building)}</b>
+        <span class="pill ${b.verdict==='مختلط'?'soon':'on'}">${b.verdict}</span></div>
       <div class="row-meta">
-        <span>${p.rooms} قاعة · ${p.sessions} جلسة</span>
-        <span>طلاب ${p.M} · طالبات ${p.F}${p.unknown?' · مجهول '+p.unknown:''}</span>
-      </div></div>`).join('')}
+        <span>${b.rooms} قاعة · ${b.sessions} جلسة</span>
+        <span>${esc(b.zones)}</span></div>
+    </div>`).join('')}
     <div class="sec-title" style="margin-top:12px">أكثر القاعات ازدحاماً</div>
     <div class="row">${R.busiest.map(b=>
       `<div class="row-meta"><span>${esc(b.room)}</span>
@@ -729,7 +735,10 @@ function renderRooms(){
     <div class="row"><div class="row-meta">
       <span>بلا قاعة ${R.odd.noRoom}</span><span>TBA/أونلاين ${R.odd.tba}</span>
       <span>بلا وقت ${R.odd.noTime}</span><span>بلا أيام ${R.odd.noDays}</span>
-    </div></div>`;
+      <span>اسم غريب ${R.odd.badName}</span></div>
+      ${R.oddNames&&R.oddNames.length?`<div class="row-meta">
+        <span>${R.oddNames.map(esc).join(' · ')}</span></div>`:''}
+    </div>`;
 }
 
 async function pushTest(){
