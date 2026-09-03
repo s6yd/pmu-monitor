@@ -1852,6 +1852,7 @@ async function adminRoomsProbe() {
 
   const byGender = {};        /* M/F → قاعات وجلسات */
   const byBuilding = {};      /* المبنى → قاعات، جلسات، جنس */
+  const byZone = {};          /* المنطقة (M-CORE, GZONE) → نفسها */
   const rooms = new Map();    /* اسم القاعة → [{day,start,end,gender,building}] */
   const odd = { noRoom: 0, noTime: 0, tba: 0, noDays: 0, badName: 0 };
   const oddNames = new Set();
@@ -1877,6 +1878,13 @@ async function adminRoomsProbe() {
     bb.rooms.add(raw); bb.sessions += days.length; bb[g] += days.length;
     bb.zones.add(pr.zone);
 
+    /* المنطقة هي وحدة الفصل الحقيقية: M-CORE و F-CORE جناحان في مبنى
+       واحد. وGZONE بلا حرف جنس — توزيعها هو ما يحسم كيف نعاملها. */
+    const bz = byZone[pr.zone] = byZone[pr.zone] ||
+      { rooms: new Set(), sessions: 0, M: 0, F: 0,
+        building: pr.building, letter: pr.genderLetter };
+    bz.rooms.add(raw); bz.sessions += days.length; bz[g] += days.length;
+
     if (!rooms.has(raw)) rooms.set(raw, []);
     days.forEach(d => rooms.get(raw).push(
       { day: d, start: tm.start, end: tm.end, gender: g, building: pr.building }));
@@ -1896,6 +1904,18 @@ async function adminRoomsProbe() {
       x.start < sample.to && x.end > sample.from);
     if (!busy) free[g]++;
   });
+
+  const zones = Object.entries(byZone).map(([zone, v]) => {
+    const tot = v.M + v.F;
+    const share = tot ? Math.round(v.F / tot * 100) : 0;   /* نسبة الطالبات */
+    return {
+      zone, building: v.building, letter: v.letter,
+      rooms: v.rooms.size, sessions: v.sessions, M: v.M, F: v.F,
+      femalePct: share,
+      verdict: v.letter === 'M' ? 'طلاب' : v.letter === 'F' ? 'طالبات'
+             : share >= 90 ? 'طالبات فعلياً' : share <= 10 ? 'طلاب فعلياً' : 'مشتركة'
+    };
+  }).sort((a, b) => b.sessions - a.sessions);
 
   const buildings = Object.entries(byBuilding).map(([building, v]) => ({
     building, rooms: v.rooms.size, sessions: v.sessions,
@@ -1918,7 +1938,7 @@ async function adminRoomsProbe() {
       sessions: byGender[g] ? byGender[g].sessions : 0,
       freeAtSample: free[g], ofRooms: total[g]
     })),
-    buildings, odd, oddNames: [...oddNames], busiest,
+    zones, buildings, odd, oddNames: [...oddNames], busiest,
     sample: { label: 'الأحد ١٠:٠٠–١١:٠٠' }
   };
 }
