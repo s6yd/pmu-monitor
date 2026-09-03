@@ -1779,6 +1779,94 @@ async function adminStorage() {
   };
 }
 
+/* --- استطلاع القاعات ---
+   قبل بناء ميزة «القاعات الفاضية» لازم نعرف: كم قاعة، وهل بادئة الاسم
+   تدل على الجنس فعلاً، وهل GZONE مشترك. قراءة فقط بلا أي أثر على الطلاب.
+
+   الوقت بالدقائق والتقاطع بالدقيقة لا بخانات ساعية: محاضرة 8:00-8:50
+   في تقسيم ساعي تجعل القاعة مشغولة الساعة كاملة وهي فاضية عشر دقائق. */
+function roomDays(s) {
+  return String(s || '').toUpperCase().split('').filter(c => 'UMTWRFS'.includes(c));
+}
+function roomTime(s) {
+  const m = String(s || '').match(/(\d{3,4})\s*[-–]\s*(\d{3,4})/);
+  if (!m) return null;
+  const t = x => { x = x.padStart(4, '0');
+    return parseInt(x.slice(0, 2), 10) * 60 + parseInt(x.slice(2), 10); };
+  const start = t(m[1]), end = t(m[2]);
+  return end > start ? { start, end } : null;
+}
+const roomPrefix = r => {
+  const s = String(r || '').trim();
+  if (!s) return '(فارغ)';
+  if (/^(TBA|TBD|ONLINE|N\/A)/i.test(s)) return s.toUpperCase().split(/[\s-]/)[0];
+  const head = s.split(/\s*-\s*/)[0].trim();
+  return head || '(فارغ)';
+};
+
+async function adminRoomsProbe() {
+  const courses = await getCourses(ACTIVE_TERM, 'ALL', 'ALL').catch(() => null);
+  if (!Array.isArray(courses) || !courses.length)
+    return { ok: false, error: 'ما قدرت أجيب قائمة المواد' };
+
+  const byPrefix = {};          /* البادئة → {sessions, rooms:Set, M, F, null} */
+  const rooms = new Map();      /* اسم القاعة → [{day,start,end,gender}] */
+  const odd = { noRoom: 0, noTime: 0, tba: 0, noDays: 0 };
+
+  courses.forEach(c => {
+    const room = String(c.room || '').trim();
+    const tm = roomTime(c.courseTiming);
+    const days = roomDays(c.courseDate);
+    if (!room) { odd.noRoom++; return; }
+    if (/^(TBA|TBD|ONLINE|N\/A)/i.test(room)) { odd.tba++; return; }
+    if (!tm) { odd.noTime++; return; }
+    if (!days.length) { odd.noDays++; return; }
+
+    const pf = roomPrefix(room);
+    const b = byPrefix[pf] = byPrefix[pf] ||
+      { sessions: 0, rooms: new Set(), M: 0, F: 0, unknown: 0 };
+    b.sessions += days.length;
+    b.rooms.add(room);
+    if (c.gender === 'M') b.M++; else if (c.gender === 'F') b.F++; else b.unknown++;
+
+    if (!rooms.has(room)) rooms.set(room, []);
+    days.forEach(d => rooms.get(room).push(
+      { day: d, start: tm.start, end: tm.end, gender: c.gender || null }));
+  });
+
+  /* عيّنة: الأحد 10:00–11:00 — كم قاعة «ما فيها محاضرة» */
+  const sample = { day: 'U', from: 600, to: 660 };
+  let freeAtSample = 0;
+  rooms.forEach(slots => {
+    const busy = slots.some(s => s.day === sample.day &&
+      s.start < sample.to && s.end > sample.from);
+    if (!busy) freeAtSample++;
+  });
+
+  /* أكثر القاعات ازدحاماً — دليل أنها قاعات حقيقية لا مخازن */
+  const busiest = [...rooms.entries()]
+    .map(([r, s]) => ({ room: r, sessions: s.length }))
+    .sort((a, b) => b.sessions - a.sessions).slice(0, 8);
+
+  const prefixes = Object.entries(byPrefix)
+    .map(([prefix, v]) => ({
+      prefix, rooms: v.rooms.size, sessions: v.sessions,
+      M: v.M, F: v.F, unknown: v.unknown,
+      /* الحكم: خالص للطلاب أم للطالبات أم مختلط */
+      verdict: v.M && v.F ? 'مختلط' : v.M ? 'طلاب' : v.F ? 'طالبات' : 'غير معروف'
+    }))
+    .sort((a, b) => b.sessions - a.sessions);
+
+  return {
+    ok: true, term: ACTIVE_TERM,
+    totalCourses: courses.length,
+    totalRooms: rooms.size,
+    totalSessions: [...rooms.values()].reduce((n, s) => n + s.length, 0),
+    prefixes, odd, busiest,
+    sample: { label: 'الأحد ١٠:٠٠–١١:٠٠', free: freeAtSample, of: rooms.size }
+  };
+}
+
 /* --- نداء Storage REST ---
    sb() تخاطب /rest/v1 لجداول القاعدة، والتخزين مسار آخر تماماً. */
 function sbStorage(method, path, body) {
@@ -4191,6 +4279,7 @@ const server = http.createServer(async (req, res) => {
       if (act === 'reports')  return send(200, { reports: await adminReports() });
       if (act === 'storage')  return send(200, await adminStorage());
       if (act === 'uploads')  return send(200, await adminUploads());
+      if (act === 'rooms-probe') return send(200, await adminRoomsProbe());
       if (act === 'push-test' && req.method === 'POST') {
         const b = await readBody(req);
         return send(200, await adminPushTest(b && b.email));
