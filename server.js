@@ -1779,6 +1779,98 @@ async function adminStorage() {
   };
 }
 
+/* ═══ فهرس القاعات ═══
+   يُبنى من سحبتي M1 و F1 (الجنس من الجامعة لا من التخمين)، ويُخزَّن
+   في الذاكرة. القاعات لا تتغيّر خلال اليوم، فالبناء مرة كل ساعة يكفي.
+
+   الفلترة بالمنطقة لا بالقاعة: قياس البيانات أظهر أن M-COE فيها ١٠٪
+   جلسات طالبات و F-LRC فيها ١٩٪ جلسات طلاب — استعمال متبادل في أوقات
+   مختلفة. اقتراح قاعة من منطقة الجنس الآخر مخاطرة لا تستحق. */
+let ROOM_INDEX = null;
+const ROOM_TTL = 60 * 60 * 1000;
+
+async function buildRoomIndex(force) {
+  if (ROOM_INDEX && !force && Date.now() - ROOM_INDEX.at < ROOM_TTL) return ROOM_INDEX;
+
+  const pull = async (g) => {
+    try {
+      const r = await getCourses(ACTIVE_TERM, 'ALL', g);
+      return r && Array.isArray(r.courses) ? r.courses : Array.isArray(r) ? r : [];
+    } catch (e) { return []; }
+  };
+  const [mList, fList] = await Promise.all([pull('M1'), pull('F1')]);
+  if (!mList.length && !fList.length) return null;
+
+  const rooms = new Map();      /* الاسم → {zone, building, slots, M, F} */
+  const seen = new Set();
+  const add = (list, g) => list.forEach(c => {
+    const k = [c.crn, c.section, c.courseDate, c.courseTiming, c.room].join('|');
+    if (seen.has(k)) return;
+    seen.add(k);
+    const raw = String(c.room || '').trim();
+    const pr = roomParts(raw);
+    const tm = roomTime(c.courseTiming);
+    const days = roomDays(c.courseDate);
+    if (!pr || pr.odd || !tm || !days.length) return;
+    if (!rooms.has(raw))
+      rooms.set(raw, { zone: pr.zone, building: pr.building, code: pr.code,
+                       slots: [], M: 0, F: 0 });
+    const r = rooms.get(raw);
+    r[g] += days.length;
+    days.forEach(d => r.slots.push({ day: d, start: tm.start, end: tm.end }));
+  });
+  add(mList, 'M');
+  add(fList, 'F');
+
+  /* جنس المنطقة: الحرف يحسم، وبلا حرف نأخذ الأغلبية الساحقة (٩٠٪).
+     GZONE قياساً: ٧٩٩ طالبات مقابل ٢ — أي ١٠٠٪ عملياً. */
+  const zone = {};
+  rooms.forEach(r => {
+    const z = zone[r.zone] = zone[r.zone] || { M: 0, F: 0, letter: null };
+    z.M += r.M; z.F += r.F;
+    const m = r.zone.match(/^([MF])-/);
+    if (m) z.letter = m[1];
+  });
+  Object.values(zone).forEach(z => {
+    if (z.letter) { z.gender = z.letter; return; }
+    const tot = z.M + z.F;
+    const pct = tot ? z.F / tot : 0;
+    z.gender = pct >= 0.9 ? 'F' : pct <= 0.1 ? 'M' : null;   /* null = مشتركة */
+  });
+  rooms.forEach(r => { r.gender = zone[r.zone] ? zone[r.zone].gender : null; });
+
+  ROOM_INDEX = { at: Date.now(), rooms, zones: zone, term: ACTIVE_TERM };
+  return ROOM_INDEX;
+}
+
+/* القاعات التي لا محاضرة فيها خلال النافذة.
+   التقاطع بالدقيقة لا بخانات ساعية: محاضرة 8:00–8:50 تترك 8:50–9:00
+   فاضية، وأي تقسيم ساعي يخسر هذي الفجوة. */
+function freeRooms(idx, { day, from, to, gender, near, limit }) {
+  const out = [];
+  idx.rooms.forEach((r, name) => {
+    if (gender && r.gender !== gender) return;      /* المشتركة تُستبعد */
+    const sameDay = r.slots.filter(s => s.day === day);
+    if (r.slots.length === 0) return;               /* قاعة غير مستعملة أصلاً */
+    const busy = sameDay.some(s => s.start < to && s.end > from);
+    if (busy) return;
+    /* حتى متى تبقى فاضية: أول محاضرة تبدأ بعد بداية النافذة */
+    const next = sameDay.filter(s => s.start >= from)
+      .sort((a, b) => a.start - b.start)[0];
+    out.push({
+      room: name, building: r.building, zone: r.zone,
+      freeUntil: next ? next.start : null,
+      sameBuilding: !!(near && r.building === near)
+    });
+  });
+  /* الترتيب: مبنى محاضرته أولاً — أقل مشي — ثم الأطول فراغاً */
+  out.sort((a, b) =>
+    (b.sameBuilding - a.sameBuilding) ||
+    ((b.freeUntil === null ? 1e9 : b.freeUntil) - (a.freeUntil === null ? 1e9 : a.freeUntil)) ||
+    a.room.localeCompare(b.room));
+  return { total: out.length, rooms: limit ? out.slice(0, limit) : out };
+}
+
 /* --- استطلاع القاعات ---
    قبل بناء ميزة «القاعات الفاضية» لازم نعرف: كم قاعة، وهل بادئة الاسم
    تدل على الجنس فعلاً، وهل GZONE مشترك. قراءة فقط بلا أي أثر على الطلاب.
@@ -4772,6 +4864,49 @@ const server = http.createServer(async (req, res) => {
       activeHours: [activeFrom(), activeTo()],
       windows: MONITOR_WINDOWS
     }));
+    return;
+  }
+
+  /* القاعات الفاضية */
+  if (parsed.pathname === '/api/rooms') {
+    const rl = rateHit(clientIP(req));
+    if (!rl.ok) {
+      OPS.rateLimited = (OPS.rateLimited || 0) + 1;
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Retry-After', String(rl.retry));
+      res.writeHead(429);
+      res.end(JSON.stringify({ ok: false, error: 'طلبات كثيرة — جرّب بعد شوي' }));
+      return;
+    }
+    const q = parsed.query || {};
+    const day = String(q.day || '').toUpperCase();
+    const from = parseInt(q.from, 10), to = parseInt(q.to, 10);
+    const gender = q.gender === 'F' ? 'F' : q.gender === 'M' ? 'M' : null;
+    const near = q.near ? String(q.near).toUpperCase() : null;
+    const limit = q.all === '1' ? 0 : Math.min(20, parseInt(q.limit, 10) || 5);
+
+    res.setHeader('Content-Type', 'application/json');
+    if (!'UMTWRFS'.includes(day) || day.length !== 1 ||
+        !Number.isFinite(from) || !Number.isFinite(to) ||
+        from < 0 || to > 1440 || to <= from) {
+      res.writeHead(400);
+      res.end(JSON.stringify({ ok: false, error: 'وسائط ناقصة أو غير صحيحة' }));
+      return;
+    }
+    try {
+      const idx = await buildRoomIndex();
+      if (!idx) { res.writeHead(503);
+        res.end(JSON.stringify({ ok: false, error: 'قائمة المواد غير متاحة الآن' })); return; }
+      const r = freeRooms(idx, { day, from, to, gender, near, limit });
+      res.setHeader('Cache-Control', 'public, max-age=300');
+      res.writeHead(200);
+      res.end(JSON.stringify({ ok: true, day, from, to, gender, near,
+                               total: r.total, rooms: r.rooms,
+                               builtAt: idx.at }));
+    } catch (e) {
+      res.writeHead(500);
+      res.end(JSON.stringify({ ok: false, error: 'خطأ في حساب القاعات' }));
+    }
     return;
   }
 
