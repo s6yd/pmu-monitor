@@ -749,6 +749,28 @@ color:var(--text2);border-radius:11px;padding:11px;font-size:12.5px;
 font-weight:600;font-family:var(--sans);cursor:pointer;margin-top:6px}
 .rm-empty{font-size:12.5px;color:var(--text3);text-align:center;padding:24px 8px;line-height:1.8}
 
+.rm-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.rm-days{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:12px}
+.rm-day{background:var(--bg);border:1px solid var(--border);color:var(--text2);
+border-radius:10px;padding:9px 2px;font-size:12px;font-weight:600;
+font-family:var(--sans);cursor:pointer}
+.rm-day.on{background:rgba(61,111,255,.12);border-color:var(--accent);color:var(--accent2)}
+.rm-times{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:14px}
+.rm-times label{display:flex;flex-direction:column;gap:5px;
+font-size:11.5px;color:var(--text3)}
+.rm-times input{background:var(--bg);border:1px solid var(--border2);color:var(--text);
+border-radius:10px;padding:10px;font-size:14px;font-family:var(--mono);
+direction:ltr;unicode-bidi:isolate}
+.rm-go{width:100%}
+/* سطر واحد لا بطاقة: من لا يحتاجها يتجاوزها بلا أن تأخذ من مساحة يومه. */
+.rm-card{display:flex;align-items:center;gap:9px;cursor:pointer;
+background:var(--card);border:1px solid var(--border);border-radius:11px;
+padding:9px 13px;margin-bottom:10px;-webkit-tap-highlight-color:transparent}
+.rm-card:active{opacity:.8}
+.rm-card-ic{font-size:15px;line-height:1;flex-shrink:0}
+.rm-card-t{font-size:12.5px;font-weight:600;color:var(--text2)}
+.rm-card-go{margin-inline-start:auto;color:var(--text3);font-size:15px;flex-shrink:0}
+
 /* ── اليوم النموذجي للزائر ──
    شفافية خفيفة ومنع الضغط: واضح أنه عرض لا جدوله، بلا أن يفقد جماله. */
 .demo-wrap{margin-top:4px}
@@ -1923,9 +1945,9 @@ sems:[
 {c:'GEEN 1211',n:'Intro to Engineering',h:2,p:[]}]},
 
 {id:'F2',label:'Freshman — الترم الثاني',hrs:17,courses:[
-{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
-{c:'UNIV 1212',n:'Critical Thinking & Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking & Problem Solving',h:2,p:[]},
 {c:'MATH 1423',n:'Calculus II',h:4,p:['MATH 1422']},
 {c:'CHEM 1421',n:'Chemistry for Engineers I',h:4,p:[]},
 {c:'GEEN 2311',n:'Engineering Mechanics I: Statics',h:3,p:['PHYS 1421']}]},
@@ -1944,7 +1966,7 @@ sems:[
 {c:'GEEN 2313',n:'Thermodynamics I',h:3,p:['MATH 1423','CHEM 1421']},
 {c:'MATH 2332',n:'Ordinary Differential Equations',h:3,p:['MATH 1324']},
 {c:'MEEN 2313',n:'Solid Mechanics',h:3,p:['GEEN 2311']},
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]},
 {c:'COMM 2312',n:'Technical & Professional Communication',h:3,p:['COMM 2311']}]},
 
 {id:'J1',label:'Junior — الترم الأول',hrs:18,courses:[
@@ -1954,7 +1976,7 @@ sems:[
 {c:'MEEN 3101',n:'Machine Shop Practice and Safety',h:1,p:['MEEN 2313']},
 {c:'MEEN 3322',n:'Thermodynamics II',h:3,p:['GEEN 2313']},
 {c:'MEEN 3391',n:'Design Of Mechanisms',h:3,p:['MEEN 2312']},
-{c:'ALIS 2211',n:'Linguistic Comm. Skills',h:2,p:['ALIS 1212']}]},
+{c:'ALIS 2211',n:'Linguistic Comm. Skills',h:2,p:[]}]},
 
 {id:'J2',label:'Junior — الترم الثاني',hrs:16,courses:[
 {c:'GEEN 3314',n:'Electric Circuits and Electronics',h:3,p:['PHYS 1422'],min:60},
@@ -1976,7 +1998,7 @@ sems:[
 {c:'ELEC 1',n:'ME Technical Elective 1',h:3,p:[],el:1}]},
 
 {id:'R2',label:'Senior — الترم الثاني',hrs:14,courses:[
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]},
 {c:'MEEN 4311',n:'Principles of HVAC',h:3,p:['MEEN 3322','MEEN 3333']},
 {c:'MEEN 4397',n:'ME Senior Design II',h:3,p:['GEEN 4311','MEEN 4396']},
 {c:'ELEC 3',n:'Social Science Elective',h:3,p:[],el:1},
@@ -2004,10 +2026,10 @@ sems:[
 {c:'GEEN 1211',n:'Intro to Engineering',h:2,p:[]}]},
 
 {id:'F2',label:'Freshman — الترم الثاني',hrs:17,courses:[
-{c:'PHED 1112',n:'Healthy Behaviors & Management',h:1,p:['PHED 1111']},
+{c:'PHED 1112',n:'Healthy Behaviors & Management',h:1,p:[]},
 {c:'GEEN 2311',n:'Engineering Mechanics I: Statics',h:3,p:['PHYS 1421']},
 {c:'COMM 1322',n:'Written Communication',h:3,p:['COMM 1321']},
-{c:'UNIV 1212',n:'Critical Thinking',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking',h:2,p:[]},
 {c:'MATH 1423',n:'Calculus II',h:4,p:['MATH 1422']},
 {c:'CHEM 1421',n:'Chemistry for Engineers I',h:4,p:[]}]},
 
@@ -2074,24 +2096,24 @@ COSC:{name:'Computer Science',ar:'علوم الحاسب',total:137,tech:{},sems:
 {c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]}]},
 
 {id:'F2',hrs:19,courses:[
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
-{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:[]},
 {c:'PHYS 1421',n:'Physics for Engineers I',h:4,p:[]},
 {c:'GEIT 1412',n:'Computer Science II',h:4,p:['GEIT 1411']},
 {c:'MATH 1423',n:'Calculus II',h:4,p:['MATH 1422']}]},
 
 {id:'S1',hrs:19,courses:[
-{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:[]},
 {c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:['UNIV 1212']},
 {c:'PHYS 1422',n:'Physics for Engineers II',h:4,p:['PHYS 1421','MATH 1422']},
 {c:'MATH 1324',n:'Calculus III',h:3,p:['MATH 1423']},
 {c:'GEIT 2421',n:'Data Structures',h:4,p:['GEIT 1412']},
 {c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
-{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]}]},
 
 {id:'S2',hrs:17,courses:[
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]},
 {c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
 {c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
 {c:'GEIT 2331',n:'Mathematical Reasoning & Algorithmic Thinking',h:3,p:['GEIT 1412']},
@@ -2141,24 +2163,24 @@ COEN:{name:'Computer Engineering',ar:'هندسة الحاسب',total:135,tech:{}
 {c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]}]},
 
 {id:'F2',hrs:19,courses:[
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
-{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:[]},
 {c:'PHYS 1421',n:'Physics for Engineers I',h:4,p:[]},
 {c:'GEIT 1412',n:'Computer Science II',h:4,p:['GEIT 1411']},
 {c:'MATH 1423',n:'Calculus II',h:4,p:['MATH 1422']}]},
 
 {id:'S1',hrs:19,courses:[
-{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:[]},
 {c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:['UNIV 1212']},
 {c:'PHYS 1422',n:'Physics for Engineers II',h:4,p:['PHYS 1421','MATH 1422']},
 {c:'MATH 1324',n:'Calculus III',h:3,p:['MATH 1423']},
 {c:'GEIT 2421',n:'Data Structures',h:4,p:['GEIT 1412']},
 {c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
-{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]}]},
 
 {id:'S2',hrs:18,courses:[
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]},
 {c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
 {c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
 {c:'GEIT 2331',n:'Mathematical Reasoning & Algorithmic Thinking',h:3,p:['GEIT 1412']},
@@ -2207,24 +2229,24 @@ SOEN:{name:'Software Engineering',ar:'هندسة البرمجيات',total:132,t
 {c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]}]},
 
 {id:'F2',hrs:19,courses:[
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
-{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:[]},
 {c:'MATH 1423',n:'Calculus II',h:4,p:['MATH 1422']},
 {c:'GEIT 1412',n:'Computer Science II',h:4,p:['GEIT 1411']},
 {c:'PHYS 1421',n:'Physics for Engineers I',h:4,p:[]}]},
 
 {id:'S1',hrs:19,courses:[
-{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:[]},
 {c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:['UNIV 1212']},
 {c:'PHYS 1422',n:'Physics for Engineers II',h:4,p:['PHYS 1421','MATH 1422']},
 {c:'MATH 1324',n:'Calculus III',h:3,p:['MATH 1423']},
 {c:'GEIT 2421',n:'Data Structures',h:4,p:['GEIT 1412']},
 {c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
-{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]}]},
 
 {id:'S2',hrs:17,courses:[
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]},
 {c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
 {c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
 {c:'GEIT 2331',n:'Mathematical Reasoning & Algorithmic Thinking',h:3,p:['GEIT 1412']},
@@ -2274,16 +2296,16 @@ CSEC:{name:'Cybersecurity',ar:'الأمن السيبراني',total:133,tech:{},
 {c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]}]},
 
 {id:'F2',hrs:18,courses:[
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
-{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:[]},
 {c:'MATH 1313',n:'Statistical Methods',h:3,p:[]},
 {c:'GEIT 1412',n:'Computer Science II',h:4,p:['GEIT 1411']},
-{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]},
 {c:'CSEC E1',n:'Social Science Elective I',h:3,p:[],el:1}]},
 
 {id:'S1',hrs:18,courses:[
-{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:[]},
 {c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:['UNIV 1212']},
 {c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
 {c:'GEIT 2421',n:'Data Structures',h:4,p:['GEIT 1412']},
@@ -2292,7 +2314,7 @@ CSEC:{name:'Cybersecurity',ar:'الأمن السيبراني',total:133,tech:{},
 {c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']}]},
 
 {id:'S2',hrs:17,courses:[
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]},
 {c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
 {c:'GEIT 2331',n:'Mathematical Reasoning & Algorithmic Thinking',h:3,p:['GEIT 1412']},
 {c:'CSEC 2331',n:'Digital Forensics',h:3,p:['GEIT 2291']},
@@ -2339,24 +2361,24 @@ AINT:{name:'Artificial Intelligence',ar:'الذكاء الاصطناعي',total:
 {c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]}]},
 
 {id:'F2',hrs:19,courses:[
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
-{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:[]},
 {c:'PHYS 1421',n:'Physics for Engineers I',h:4,p:[]},
 {c:'GEIT 1412',n:'Computer Science II',h:4,p:['GEIT 1411']},
 {c:'MATH 1423',n:'Calculus II',h:4,p:['MATH 1422']}]},
 
 {id:'S1',hrs:18,courses:[
-{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:[]},
 {c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:['UNIV 1212']},
 {c:'PHYS 1422',n:'Physics for Engineers II',h:4,p:['PHYS 1421','MATH 1422']},
 {c:'GEIT 2291',n:'Professional Ethics',h:2,p:[]},
 {c:'GEIT 2421',n:'Data Structures',h:4,p:['GEIT 1412']},
 {c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
-{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]}]},
 
 {id:'S2',hrs:19,courses:[
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]},
 {c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
 {c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
 {c:'GEIT 2331',n:'Mathematical Reasoning & Algorithmic Thinking',h:3,p:['GEIT 1412']},
@@ -2405,15 +2427,15 @@ ITAP:{name:'Information Technology',ar:'تقنية المعلومات',total:132
 {c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]}]},
 
 {id:'F2',hrs:15,courses:[
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
-{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:[]},
 {c:'MATH 1312',n:'Calculus for Business',h:3,p:['MATH 1311']},
 {c:'GEIT 1412',n:'Computer Science II',h:4,p:['GEIT 1411']},
-{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]}]},
 
 {id:'S1',hrs:18,courses:[
-{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:[]},
 {c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:['UNIV 1212']},
 {c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
 {c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
@@ -2422,7 +2444,7 @@ ITAP:{name:'Information Technology',ar:'تقنية المعلومات',total:132
 {c:'ITAP E1',n:'Social Science Elective I',h:3,p:[],el:1}]},
 
 {id:'S2',hrs:17,courses:[
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]},
 {c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
 {c:'ITAP 2312',n:'Web Programming',h:3,p:['GEIT 1411']},
 {c:'GEIT 2291',n:'Professional Ethics',h:2,p:[]},
@@ -2471,9 +2493,9 @@ CVEN:{name:'Civil Engineering',ar:'الهندسة المدنية',total:139,tech
 {c:'GEEN 1211',n:'Intro to Engineering',h:2,p:[]}]},
 
 {id:'F2',hrs:17,courses:[
-{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
-{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:[]},
 {c:'MATH 1423',n:'Calculus II',h:4,p:['MATH 1422']},
 {c:'CHEM 1421',n:'Chemistry for Engineers I',h:4,p:[]},
 {c:'GEEN 2311',n:'Engineering Mechanics I: Statics',h:3,p:['PHYS 1421']}]},
@@ -2493,7 +2515,7 @@ CVEN:{name:'Civil Engineering',ar:'الهندسة المدنية',total:139,tech
 {c:'MATH 2332',n:'Ordinary Differential Equations',h:3,p:['MATH 1324']},
 {c:'MEEN 2313',n:'Solid Mechanics',h:3,p:['GEEN 2311','MATH 1324']},
 {c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']}]},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]}]},
 
 {id:'J1',hrs:17,courses:[
 {c:'ASSE 3211',n:'Learning Outcome Assessment II',h:2,p:['ASSE 2111']},
@@ -2509,7 +2531,7 @@ CVEN:{name:'Civil Engineering',ar:'الهندسة المدنية',total:139,tech
 {c:'CVEN 3343',n:'Engineering Probability & Statistics',h:3,p:['MATH 1324']},
 {c:'CVEN 3312',n:'Reinforced Concrete Design',h:3,p:['CVEN 3311']},
 {c:'CVEN 3344',n:'Sustainable Engineering',h:3,p:['CVEN 3322']},
-{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']}]},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:[]}]},
 
 {id:'SU',hrs:3,courses:[
 {c:'CVEN 3301',n:'Internship',h:3,p:[]}]},
@@ -2523,7 +2545,7 @@ CVEN:{name:'Civil Engineering',ar:'الهندسة المدنية',total:139,tech
 {c:'CVEN E1',n:'CE Technical Elective I',h:3,p:[],el:1}]},
 
 {id:'R2',hrs:14,courses:[
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]},
 {c:'CVEN 4314',n:'Construction Management',h:3,p:['GEEN 4311']},
 {c:'CVEN 4397',n:'Civil Engineering Senior Design II',h:3,p:['CVEN 4396','GEEN 4311']},
 {c:'CVEN E2',n:'CE Technical Elective II',h:3,p:[],el:1},
@@ -2543,7 +2565,7 @@ CHEN:{name:'Chemical Engineering',ar:'الهندسة الكيميائية',total
 {c:'ALIS 1211',n:'Arabic and Islamic Studies',h:2,p:[]},
 {c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
-{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:[]},
 {c:'MATH 1423',n:'Calculus II',h:4,p:['MATH 1422']},
 {c:'CHEM 1422',n:'Chemistry for Engineers II',h:4,p:['CHEM 1421']},
 {c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]}]},
@@ -2562,13 +2584,13 @@ CHEN:{name:'Chemical Engineering',ar:'الهندسة الكيميائية',total
 {c:'GEEN 2313',n:'Thermodynamics I',h:3,p:['MATH 1324','CHEM 1421']},
 {c:'MATH 2332',n:'Ordinary Differential Equations',h:3,p:['MATH 1324']},
 {c:'PHYS 1422',n:'Physics for Engineers II',h:4,p:['PHYS 1421','MATH 1422']},
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]},
 {c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']}]},
 
 {id:'J1',hrs:16,courses:[
 {c:'GEEN 3314',n:'Electric Circuits and Electronics',h:3,p:['PHYS 1422']},
 {c:'GEEN 3311',n:'Intro to Fluid Mechanics',h:3,p:['GEEN 2313']},
-{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:[]},
 {c:'CHEN 3313',n:'Biology',h:3,p:['CHEN 2391']},
 {c:'CHEN 3315',n:'Physical Chemistry',h:3,p:['CHEM 1422']},
 {c:'ASSE 3211',n:'Learning Outcome Assessment II',h:2,p:['ASSE 2111']}]},
@@ -2592,7 +2614,7 @@ CHEN:{name:'Chemical Engineering',ar:'الهندسة الكيميائية',total
 {c:'CHEN E2',n:'Chem Technical Elective I',h:3,p:[],el:1}]},
 
 {id:'R2',hrs:15,courses:[
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]},
 {c:'CHEN 4422',n:'Plant Design',h:4,p:['CHEN 4320']},
 {c:'CHEN 4397',n:'Chemical Eng. Senior Design II',h:3,p:['CHEN 4396']},
 {c:'GEEN 4311',n:'Engineering Economy',h:3,p:[]},
@@ -2612,7 +2634,7 @@ EEEN:{name:'Electrical Engineering',ar:'الهندسة الكهربائية',tot
 {c:'EEEN E1',n:'Social Science Elective',h:3,p:[],el:1},
 {c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
-{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:[]},
 {c:'MATH 1423',n:'Calculus II',h:4,p:['MATH 1422']},
 {c:'PHYS 1422',n:'Physics for Engineers II',h:4,p:['PHYS 1421','MATH 1422']}]},
 
@@ -2625,7 +2647,7 @@ EEEN:{name:'Electrical Engineering',ar:'الهندسة الكهربائية',tot
 {c:'GEEN 2211',n:'Engineering Computing',h:2,p:['MATH 1423']}]},
 
 {id:'S2',hrs:16,courses:[
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]},
 {c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
 {c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:['UNIV 1212']},
 {c:'GEEN 2310',n:'Applied Linear Algebra for Engineers',h:3,p:[]},
@@ -2638,7 +2660,7 @@ EEEN:{name:'Electrical Engineering',ar:'الهندسة الكهربائية',tot
 {c:'EEEN 3361',n:'Electromagnetic Fields & Waves',h:3,p:['EEEN 2411']},
 {c:'EEEN 3421',n:'Electronics I',h:4,p:['EEEN 2411']},
 {c:'EEEN 3331',n:'Digital Systems',h:3,p:['EEEN 2411']},
-{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']}]},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:[]}]},
 
 {id:'J2',hrs:18,courses:[
 {c:'EEEN 3422',n:'Electronics II',h:4,p:['EEEN 3421']},
@@ -2662,8 +2684,8 @@ EEEN:{name:'Electrical Engineering',ar:'الهندسة الكهربائية',tot
 {c:'EEEN 4451',n:'Automatic Control Systems',h:4,p:['EEEN 3341','EEEN 3331']},
 {c:'EEEN E3',n:'EE Technical Elective II',h:3,p:[],el:1},
 {c:'EEEN 4424',n:'Power Electronics',h:4,p:['EEEN 3422']},
-{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']},
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']}]}
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]}]}
 ]},
 
 ARCH:{name:'Architecture',ar:'العمارة',total:163,tech:{},sems:[
@@ -2678,7 +2700,7 @@ ARCH:{name:'Architecture',ar:'العمارة',total:163,tech:{},sems:[
 {c:'ARCH E1',n:'Social Science Elective I',h:3,p:[],el:1},
 {c:'ALIS 1211',n:'Introduction to Islamic Culture',h:2,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
-{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:[]},
 {c:'COAD 1313',n:'Design Studio II — Fundamentals',h:3,p:['COAD 1311','COAD 1312']},
 {c:'COAD 1314',n:'Construction Documents and Detail Drawings',h:3,p:['COAD 1311']}]},
 
@@ -2706,7 +2728,7 @@ ARCH:{name:'Architecture',ar:'العمارة',total:163,tech:{},sems:[
 {c:'ARCH 3523',n:'Design Studio V — Architectural Design',h:5,p:['ARCH 2422']}]},
 
 {id:'J2',hrs:16,courses:[
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]},
 {c:'ARCH 3343',n:'Principles of Structural Systems',h:3,p:['ARCH 2342']},
 {c:'COAD 3342',n:'Built World Design History and Theory II',h:3,p:['COAD 3341']},
 {c:'COAD 3322',n:'Building Codes and Universal Design',h:3,p:['ARCH 2342']},
@@ -2730,15 +2752,15 @@ ARCH:{name:'Architecture',ar:'العمارة',total:163,tech:{},sems:[
 {c:'ARCH 4365',n:'Internship',h:3,p:[]}]},
 
 {id:'T1',hrs:15,courses:[
-{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:[]},
 {c:'ARCH E3',n:'Social Science Elective II',h:3,p:[],el:1},
 {c:'CHEM 1411',n:'Introductory Chemistry',h:4,p:[]},
 {c:'ARCH E4',n:'Professional Elective II',h:3,p:[],el:1},
 {c:'ARCH 5327',n:'Design Studio IX — Capstone Programming',h:3,p:['ARCH 4365','ARCH 4526']}]},
 
 {id:'T2',hrs:15,courses:[
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
-{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]},
 {c:'ARCH 5363',n:'Professional Practice and Ethics',h:3,p:['ARCH 4526']},
 {c:'ARCH E5',n:'Professional Elective III',h:3,p:[],el:1},
 {c:'ARCH 5628',n:'Design Studio X — Architectural Capstone',h:6,p:['ARCH 5327']}]}
@@ -2755,9 +2777,9 @@ IDES:{name:'Interior Design',ar:'التصميم الداخلي',total:126,tech:{
 
 {id:'F2',hrs:15,courses:[
 {c:'IDES E1',n:'Social Science Elective I',h:3,p:[],el:1},
-{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
-{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:[]},
 {c:'COAD 1313',n:'Design Studio II — Fundamentals',h:3,p:['COAD 1311','COAD 1312']},
 {c:'COAD 1314',n:'Construction Documents and Detail Drawings',h:3,p:['COAD 1311']}]},
 
@@ -2786,7 +2808,7 @@ IDES:{name:'Interior Design',ar:'التصميم الداخلي',total:126,tech:{
 {c:'IDES 3331',n:'Interior Lighting',h:3,p:['IDES 2332']}]},
 
 {id:'J2',hrs:15,courses:[
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]},
 {c:'IDES 3412',n:'Interior Design VI — Hospitality Studio',h:4,p:['IDES 3411']},
 {c:'COAD 3342',n:'Built World Design History and Theory II',h:3,p:['COAD 3341']},
 {c:'COAD 3322',n:'Building Codes and Universal Design',h:3,p:['IDES 3321']},
@@ -2796,14 +2818,14 @@ IDES:{name:'Interior Design',ar:'التصميم الداخلي',total:126,tech:{
 {c:'IDES 3338',n:'Internship',h:3,p:[]}]},
 
 {id:'R1',hrs:14,courses:[
-{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:[]},
 {c:'IDES E3',n:'Natural & Physical Science Elective II',h:4,p:[],el:1},
 {c:'IDES 4112',n:'Capstone Project Research / Pre-Design',h:1,p:['IDES 3338','IDES 3412']},
 {c:'IDES 4337',n:'Sustainable Design',h:3,p:['IDES 3321']},
 {c:'IDES 4425',n:'Interior Design VII — Healthcare Studio',h:4,p:['IDES 3412']}]},
 
 {id:'R2',hrs:15,courses:[
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]},
 {c:'IDES E4',n:'Social Science Elective II',h:3,p:[],el:1},
 {c:'IDES 4413',n:'Interior Design Capstone Project Studio',h:4,p:['IDES 4112','IDES 4425']},
 {c:'IDES 4343',n:'Professional Practices',h:3,p:['IDES 4112']},
@@ -2821,7 +2843,7 @@ GDES:{name:'Graphic Design',ar:'التصميم الجرافيكي',total:125,tec
 
 {id:'F2',hrs:15,courses:[
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
-{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]},
 {c:'UNIV 1211',n:'Prof. Development and Competencies',h:2,p:[]},
 {c:'GDES 1312',n:'Digital Imaging',h:3,p:['GDES 1311']},
 {c:'GDES 1322',n:'3D Design',h:3,p:['GDES 1321']},
@@ -2829,7 +2851,7 @@ GDES:{name:'Graphic Design',ar:'التصميم الجرافيكي',total:125,tec
 
 {id:'S1',hrs:15,courses:[
 {c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
-{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:[]},
 {c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
 {c:'GDES 2311',n:'Typography I',h:3,p:['GDES 1321']},
 {c:'GDES 2321',n:'Illustration',h:3,p:['GDES 1322']},
@@ -2844,7 +2866,7 @@ GDES:{name:'Graphic Design',ar:'التصميم الجرافيكي',total:125,tec
 {c:'GDES 2332',n:'Design Thinking',h:3,p:['GDES 2331']}]},
 
 {id:'J1',hrs:16,courses:[
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]},
 {c:'GDES 3311',n:'Typography II',h:3,p:['GDES 2311']},
 {c:'GDES 3321',n:'Brand Identity',h:3,p:['GDES 2311','GDES 2321']},
 {c:'GDES 3331',n:'Interaction I',h:3,p:['GDES 2312','GDES 2322','GDES 2332']},
@@ -2852,7 +2874,7 @@ GDES:{name:'Graphic Design',ar:'التصميم الجرافيكي',total:125,tec
 {c:'GDES E1',n:'Social Science Elective I',h:3,p:[],el:1}]},
 
 {id:'J2',hrs:15,courses:[
-{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:[]},
 {c:'GDES 3312',n:'Information Design',h:3,p:['GDES 3311','GDES 3321','GDES 3331']},
 {c:'GDES 3322',n:'Motion Design',h:3,p:['GDES 3311','GDES 3321','GDES 3331']},
 {c:'GDES 3332',n:'Interaction II',h:3,p:['GDES 3331']},
@@ -2863,7 +2885,7 @@ GDES:{name:'Graphic Design',ar:'التصميم الجرافيكي',total:125,tec
 
 {id:'R1',hrs:14,courses:[
 {c:'GDES E3',n:'Social Science Elective II',h:3,p:[],el:1},
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]},
 {c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:['UNIV 1212']},
 {c:'GDES 4112',n:'Capstone Project Research',h:1,p:['GDES 3331','GDES 3332']},
 {c:'GDES 4321',n:'Advanced Graphic Design',h:3,p:['GDES 3312','GDES 3322','GDES 3332']},
@@ -2886,24 +2908,24 @@ ACCT:{name:'Accounting',ar:'المحاسبة',total:128,tech:{},sems:[
 {c:'ACCT E1',n:'Social Science Elective',h:3,p:[],el:1}]},
 
 {id:'F2',hrs:15,courses:[
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
-{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:[]},
 {c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]},
 {c:'MATH 1312',n:'Calculus for Business',h:3,p:['MATH 1311']},
 {c:'ACCT E2',n:'Natural Science Elective',h:4,p:[],el:1}]},
 
 {id:'S1',hrs:16,courses:[
-{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:[]},
 {c:'ACCT 2311',n:'Fundamentals of Financial Accounting',h:3,p:[]},
 {c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
 {c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
 {c:'ECON 1311',n:'Introduction to Macroeconomics',h:3,p:[]},
 {c:'MISY 2311',n:'Introduction to Management Information Systems',h:3,p:[]},
-{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]}]},
 
 {id:'S2',hrs:17,courses:[
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]},
 {c:'ACCT 2321',n:'Managerial Accounting',h:3,p:['ACCT 2311']},
 {c:'BUSI 2311',n:'Principles of Management',h:3,p:[]},
 {c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
@@ -2953,24 +2975,24 @@ BUSI:{name:'Business Administration',ar:'إدارة الأعمال',total:125,te
 {c:'BUSI E1',n:'Social Science Elective',h:3,p:[],el:1}]},
 
 {id:'F2',hrs:15,courses:[
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
-{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:[]},
 {c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]},
 {c:'MATH 1312',n:'Calculus for Business',h:3,p:['MATH 1311']},
 {c:'BUSI E2',n:'Natural Science Elective',h:4,p:[],el:1}]},
 
 {id:'S1',hrs:16,courses:[
-{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:[]},
 {c:'ACCT 2311',n:'Fundamentals of Financial Accounting',h:3,p:[]},
 {c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
 {c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
 {c:'ECON 1311',n:'Introduction to Macroeconomics',h:3,p:[]},
 {c:'MISY 2311',n:'Introduction to Management Information Systems',h:3,p:[]},
-{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]}]},
 
 {id:'S2',hrs:17,courses:[
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]},
 {c:'ACCT 2321',n:'Managerial Accounting',h:3,p:['ACCT 2311']},
 {c:'BUSI 2311',n:'Principles of Management',h:3,p:[]},
 {c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
@@ -3019,24 +3041,24 @@ FINA:{name:'Finance',ar:'التمويل',total:125,tech:{},sems:[
 {c:'FINA E1',n:'Social Science Elective',h:3,p:[],el:1}]},
 
 {id:'F2',hrs:15,courses:[
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
-{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:[]},
 {c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]},
 {c:'MATH 1312',n:'Calculus for Business',h:3,p:['MATH 1311']},
 {c:'FINA E2',n:'Natural Science Elective',h:4,p:[],el:1}]},
 
 {id:'S1',hrs:16,courses:[
-{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:[]},
 {c:'ACCT 2311',n:'Fundamentals of Financial Accounting',h:3,p:[]},
 {c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
 {c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
 {c:'ECON 1311',n:'Introduction to Macroeconomics',h:3,p:[]},
 {c:'MISY 2311',n:'Introduction to Management Information Systems',h:3,p:[]},
-{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]}]},
 
 {id:'S2',hrs:17,courses:[
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]},
 {c:'ACCT 2321',n:'Managerial Accounting',h:3,p:['ACCT 2311']},
 {c:'BUSI 2311',n:'Principles of Management',h:3,p:[]},
 {c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
@@ -3085,24 +3107,24 @@ MISY:{name:'Management Information Systems',ar:'نظم المعلومات الإ
 {c:'MISY E1',n:'Social Science Elective',h:3,p:[],el:1}]},
 
 {id:'F2',hrs:15,courses:[
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
-{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:[]},
 {c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]},
 {c:'MATH 1312',n:'Calculus for Business',h:3,p:['MATH 1311']},
 {c:'MISY E2',n:'Natural Science Elective',h:4,p:[],el:1}]},
 
 {id:'S1',hrs:16,courses:[
-{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:[]},
 {c:'ACCT 2311',n:'Fundamentals of Financial Accounting',h:3,p:[]},
 {c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
 {c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
 {c:'ECON 1311',n:'Introduction to Macroeconomics',h:3,p:[]},
 {c:'MISY 2311',n:'Introduction to Management Information Systems',h:3,p:[]},
-{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]}]},
 
 {id:'S2',hrs:17,courses:[
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]},
 {c:'BUSI 2311',n:'Principles of Management',h:3,p:[]},
 {c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
 {c:'MISY 2312',n:'Introduction to Programming for MIS',h:3,p:['MISY 2311']},
@@ -3151,24 +3173,24 @@ HRMT:{name:'Human Resource Management',ar:'إدارة الموارد البشر�
 {c:'HRMT E1',n:'Social Science Elective',h:3,p:[],el:1}]},
 
 {id:'F2',hrs:15,courses:[
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
-{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:[]},
 {c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]},
 {c:'MATH 1312',n:'Calculus for Business',h:3,p:['MATH 1311']},
 {c:'HRMT E2',n:'Natural Science Elective',h:4,p:[],el:1}]},
 
 {id:'S1',hrs:16,courses:[
-{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:[]},
 {c:'ACCT 2311',n:'Fundamentals of Financial Accounting',h:3,p:[]},
 {c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
 {c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
 {c:'ECON 1311',n:'Introduction to Macroeconomics',h:3,p:[]},
 {c:'MISY 2311',n:'Introduction to Management Information Systems',h:3,p:[]},
-{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]}]},
 
 {id:'S2',hrs:17,courses:[
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]},
 {c:'ACCT 2321',n:'Managerial Accounting',h:3,p:['ACCT 2311']},
 {c:'BUSI 2311',n:'Principles of Management',h:3,p:[]},
 {c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
@@ -3218,25 +3240,25 @@ MKDM:{name:'Marketing & Digital Media',ar:'التسويق والإعلام ال�
 {c:'MKDM E1',n:'Social Science Elective',h:3,p:[],el:1}]},
 
 {id:'F2',hrs:15,courses:[
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
 {c:'MATH 1312',n:'Calculus for Business',h:3,p:['MATH 1311']},
 {c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]},
-{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:[]},
 {c:'MKDM E2',n:'Natural Science Elective',h:4,p:[],el:1}]},
 
 {id:'S1',hrs:16,courses:[
-{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:[]},
 {c:'ACCT 2311',n:'Fundamentals of Financial Accounting',h:3,p:[]},
 {c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
 {c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
 {c:'ECON 1311',n:'Introduction to Macroeconomics',h:3,p:[]},
 {c:'MISY 2311',n:'Introduction to Management Information Systems',h:3,p:[]},
-{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]}]},
 
 {id:'S2',hrs:17,courses:[
 {c:'ACCT 2321',n:'Managerial Accounting',h:3,p:['ACCT 2311']},
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]},
 {c:'BUSI 2311',n:'Principles of Management',h:3,p:[]},
 {c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
 {c:'ECON 1312',n:'Introduction to Microeconomics',h:3,p:[]},
@@ -3286,16 +3308,16 @@ LAWB:{name:'Law',ar:'القانون',total:138,tech:{},sems:[
 {c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]}]},
 
 {id:'F2',hrs:17,courses:[
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
-{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:[]},
 {c:'MATH 1313',n:'Statistical Methods',h:3,p:[]},
 {c:'LAWB 1311',n:'Usul Al-Fiqh',h:3,p:[]},
 {c:'LAWB 1322',n:'Sources of Obligation',h:3,p:['LAWB 1321']},
-{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]}]},
 
 {id:'S1',hrs:16,courses:[
-{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:[]},
 {c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:['UNIV 1212']},
 {c:'LAWB 2323',n:'Provisions of Obligation',h:3,p:['LAWB 1322']},
 {c:'LAWC 2311',n:'Global Legal Systems',h:3,p:['LAWB 1321']},
@@ -3303,7 +3325,7 @@ LAWB:{name:'Law',ar:'القانون',total:138,tech:{},sems:[
 {c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']}]},
 
 {id:'S2',hrs:17,courses:[
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]},
 {c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
 {c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
 {c:'LAWB 2331',n:'Constitutional Law',h:3,p:['LAWB 1321']},
@@ -4762,6 +4784,17 @@ function gapRow(mins,n,win){
     ${btn}</div>`;
 }
 
+/* البطاقة تحت مبدّل اليوم/الأسبوع مباشرة: كانت أسفل الصفحة فلا يصلها
+   أحد. هنا تقع عليها العين قبل الجدول، وتظهر في العرضين ومع الجدول
+   الفاضي — وهي الشيء الوحيد المفيد لمن ما عنده محاضرات اليوم. */
+function roomsCard(){
+  return `<div class="rm-card" id="rmCard" onclick="openRoomsPicker()">
+    <span class="rm-card-ic">🚪</span>
+    <span class="rm-card-t">${t('rmCardT')}</span>
+    <span class="rm-card-go">‹</span>
+  </div>`;
+}
+
 /* ═══ القاعات الفاضية ═══
    جنس الطالب يُستنتج من مناطق قاعاته: M-* طلاب، وغيرها طالبات.
    لا نسأله ولا نخزّن الجنس — سياسة الخصوصية تقول نجمع الحد الأدنى،
@@ -4787,11 +4820,66 @@ function myBuilding(crn){
 let RM_STATE=null;
 async function openRooms(from,to,day,near){
   const g=myGender();
-  RM_STATE={from,to,day,near,gender:g,all:false};
+  RM_STATE={from,to,day,near,gender:g,all:false,pick:false};
   document.getElementById('rmOv').classList.add('open');
   renderRoomsSheet(true);
   await loadRooms();
 }
+
+/* مدخل حر: يفتح اللوح بمنتقي يوم ووقت بدل نتائج جاهزة. لازم لأن
+   الفراغ لا يوجد كل يوم — ومن ما عنده محاضرات اليوم لا يرى الزر أصلاً. */
+const RM_DAYS=['U','M','T','W','R'];
+function openRoomsPicker(){
+  const n=ksaNow();
+  const from=Math.min(23*60,Math.floor(n.min/30)*30);
+  /* الجمعة والسبت ليسا يومي دراسة — البحث فيهما يرجّع كل القاعات
+     «فاضية» وهي نتيجة صحيحة حسابياً ومضلّلة تماماً. نبدأ بأقرب يوم دراسي. */
+  const order=['U','M','T','W','R','F','S'];
+  let day=n.day;
+  if(!RM_DAYS.includes(day)){
+    const i=order.indexOf(day);
+    for(let k=1;k<=7;k++){
+      const c=order[(i+k)%7];
+      if(RM_DAYS.includes(c)){ day=c; break }
+    }
+  }
+  RM_STATE={ day, from, to:Math.min(24*60,from+60),
+             gender:myGender(), all:false, pick:true, near:null };
+  document.getElementById('rmOv').classList.add('open');
+  renderRoomsSheet(false);
+}
+/* القرب بلا سياق فراغ: نأخذ مبنى أقرب محاضرة له في اليوم المختار،
+   فالسؤال الحقيقي «وين أذاكر قبل محاضرتي». وبلا محاضرة يسقط الترتيب. */
+function nearFor(day,from){
+  const list=(schedule||[]).map(c=>({c,t:parseTime(c.courseTiming),
+      d:parseDays(c.courseDate)}))
+    .filter(x=>x.t&&x.d.includes(day))
+    .sort((a,b)=>a.t.start-b.t.start);
+  if(!list.length)return '';
+  const next=list.find(x=>x.t.start>=from)||list[list.length-1];
+  return myBuilding(next.c.crn);
+}
+function setRmDay(d){ if(RM_STATE){ RM_STATE.day=d; renderRoomsSheet(false) } }
+function setRmTime(which,val){
+  if(!RM_STATE)return;
+  const m=String(val||'').match(/^(\d{1,2}):(\d{2})$/);
+  if(!m)return;
+  const mins=(+m[1])*60+(+m[2]);
+  if(which==='from'){
+    RM_STATE.from=mins;
+    if(RM_STATE.to<=mins)RM_STATE.to=Math.min(24*60,mins+60);
+  } else RM_STATE.to=mins;
+  renderRoomsSheet(false);
+}
+async function runRoomSearch(){
+  if(!RM_STATE)return;
+  if(RM_STATE.to<=RM_STATE.from){ showToast(t('rmBadWin'),'warn'); return }
+  RM_STATE.pick=false; RM_STATE.all=false;
+  RM_STATE.near=nearFor(RM_STATE.day,RM_STATE.from);
+  renderRoomsSheet(true);
+  await loadRooms();
+}
+function backToPicker(){ if(RM_STATE){ RM_STATE.pick=true; renderRoomsSheet(false) } }
 function closeRooms(){
   document.getElementById('rmOv').classList.remove('open');
   RM_STATE=null;
@@ -4823,14 +4911,34 @@ function renderRoomsSheet(loading){
   const box=document.getElementById('rmSheet');
   if(!box||!RM_STATE)return;
   const st=RM_STATE;
-  const head=`<div class="cs-head">
-      <span>${t('rmTitle')}</span>
-      <button class="cs-x" onclick="closeRooms()">✕</button>
+  /* نفس ترويسة لوح المادة: guide-grip/head/close معرَّفة ومجرَّبة.
+     كنت أستعمل cs-head و cs-x وهما غير موجودتين في الملف. */
+  const head=`<div class="guide-grip"></div>
+    <div class="guide-head">
+      <h2>${t('rmTitle')}</h2>
+      <button class="guide-close" onclick="closeRooms()">✕</button>
     </div>
     <div class="rm-sub"><span class="ltr">${fmtTime(st.from)}–${fmtTime(st.to)}</span>
       · ${t('days')[st.day]||''}</div>
-    <button class="rm-gen" onclick="flipRoomGender()">${
-      st.gender==='F'?t('rmFemale'):t('rmMale')} ▾</button>`;
+    <div class="rm-bar">
+      <button class="rm-gen" onclick="flipRoomGender()">${
+        st.gender==='F'?t('rmFemale'):t('rmMale')} ▾</button>
+      ${st.pick?'':`<button class="rm-gen" onclick="backToPicker()">${t('rmChange')}</button>`}
+    </div>`;
+  if(st.pick){
+    const days=RM_DAYS;
+    box.innerHTML=head+
+      `<div class="rm-days">${days.map(d=>`<button class="rm-day${
+        st.day===d?' on':''}" onclick="setRmDay('${d}')">${t('days')[d]}</button>`).join('')}</div>
+      <div class="rm-times">
+        <label>${t('rmFrom')}<input type="time" value="${fmtTime(st.from)}"
+          onchange="setRmTime('from',this.value)"></label>
+        <label>${t('rmTo')}<input type="time" value="${fmtTime(st.to)}"
+          onchange="setRmTime('to',this.value)"></label>
+      </div>
+      <button class="demo-btn rm-go" onclick="runRoomSearch()">${t('rmSearch')}</button>`;
+    return;
+  }
   if(loading){ box.innerHTML=head+`<div class="spinner"></div>`; return }
   if(st.err){ box.innerHTML=head+`<div class="rm-empty">${escapeHtml(st.err)}</div>`; return }
   const d=st.data;
@@ -5937,7 +6045,7 @@ function renderToday(){
   const running=mine.find(x=>x.t.start<=n.min&&n.min<x.t.end);
   const next=mine.find(x=>x.t.start>n.min);
   const hol=todayHoliday(n.date);
-  let html=viewSwitch();
+  let html=viewSwitch()+roomsCard();
 
   /* التبويب مفتوح للجميع، فالحالتان الناقصتان تُشرحان هنا بدل أن يقف
      الطالب أمام صفحة فاضية ما يدري ليش هي فاضية. */
@@ -8423,7 +8531,10 @@ tdTab:'☀️ اليوم',tdDay:'اليوم',tdWeek:'الأسبوع',
 tdNoToday:'☕ ما عندك محاضرات اليوم',tdNoAny:'ما في محاضرات في جدولك',
 tdEndsIn:'⏳ تنتهي بعد',tdStartsIn:'⏰ بعد',tdDone:'✓ خلصت',tdOf:'من',tdDoneN:'خلصت',
 tdGap:'فراغ',
-rmGapBtn:'🚪 قاعة فاضية',rmTitle:'قاعات ما فيها محاضرة',
+rmGapBtn:'🚪 قاعة فاضية',
+rmCardT:'قاعة فاضية',
+rmFrom:'من',rmTo:'إلى',rmSearch:'🔍 دوّر',rmChange:'غيّر الوقت',
+rmBadWin:'وقت النهاية لازم يكون بعد البداية',rmTitle:'قاعات ما فيها محاضرة',
 rmMale:'قاعات الطلاب',rmFemale:'قاعات الطالبات',
 rmNear:'قريبة',rmQuiet:'ما فيها محاضرات اليوم',
 rmUntil:'فاضية حتى',rmAllDay:'فاضية لآخر اليوم',
@@ -8534,7 +8645,10 @@ crnHint2:'Tap any number to copy it alone. They are printed with the schedule to
 tdNoToday:'☕ No classes today',tdNoAny:'No classes in your schedule',
 tdEndsIn:'⏳ Ends in',tdStartsIn:'⏰ In',tdDone:'✓ Done',tdOf:'of',tdDoneN:'done',
 tdGap:'break',
-rmGapBtn:'🚪 Free room',rmTitle:'Rooms with no class',
+rmGapBtn:'🚪 Free room',
+rmCardT:'Free room',
+rmFrom:'From',rmTo:'To',rmSearch:'🔍 Search',rmChange:'Change time',
+rmBadWin:'End time must be after the start',rmTitle:'Rooms with no class',
 rmMale:'Male rooms',rmFemale:'Female rooms',
 rmNear:'Nearby',rmQuiet:'No classes today',
 rmUntil:'Free until',rmAllDay:'Free all day',
