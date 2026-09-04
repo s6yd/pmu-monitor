@@ -243,12 +243,41 @@ function wants(profile, key) {
   return !!(p.on && p[key]);
 }
 
+/* ═══ المواعيد الأكاديمية ═══
+   التنبيه يمشي على آخر يوم في المدى لا أوّله. «فترة الحذف» تبدأ ٦ سبتمبر
+   وآخر يوم بدون رسوم ١٠، والتنبيه عن البداية أوهم الطلاب أن الموعد بعد
+   يومين وهو بعد ستة. والتاريخ صار داخل النص عشان يفضح نفسه لو انحرف. */
+const acadDeadline = a => a.e || a.s;
+
+/* مفتاح ثابت يربط الموافقة بالموعد نفسه لا بترتيبه في المصفوفة */
+const acadRef = a => `${a.t}|${a.s}|${a.e || ''}`;
+
+const AR_MONTHS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+                   'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+function acadDateAr(iso) {
+  const p = String(iso || '').split('-');
+  if (p.length !== 3) return String(iso || '');
+  const m = AR_MONTHS[Number(p[1]) - 1];
+  return m ? `${Number(p[2])} ${m}` : String(iso || '');
+}
+
+function acadText(a) {
+  return `🗓️ بعد يومين: ${a.ar}\nالموعد: ${acadDateAr(acadDeadline(a))}`;
+}
+
+/* المواعيد الحرجة فقط — الإجازات وبداية الدراسة لا تستاهل تنبيهاً */
+function acadDue(acadCal, target) {
+  return (acadCal || []).filter(a =>
+    (a.t === 'warn' || a.t === 'add') && acadDeadline(a) === target);
+}
+
 /* ═══ بناء رسائل اليوم ═══
    دالة نقية: تأخذ الحالة وترجّع الرسائل. الإرسال منفصل عنها عشان
    نقدر نختبر المنطق بلا شبكة ولا قاعدة. */
 function buildNotifications(state) {
   const { today, profiles, schedules, events, absences, acadCal, sharedCounts } = state;
   const target = dayShift(today, NOTIF_LEAD);
+  const approved = new Set(state.acadApproved || []);
   const out = [];
 
   /* من يدرس أي CRN — نحتاجها للغياب و«أكّده زملاؤك» */
@@ -315,12 +344,12 @@ function buildNotifications(state) {
       }
     }
 
-    /* 4) موعد أكاديمي */
+    /* 4) موعد أكاديمي — نصّ واحد يصل الطلاب جميعاً، فهو بثّ لا تنبيه شخصي.
+       لا يخرج إلا بموافقة صريحة وصلت تيليغرام قبل موعده بيوم كامل. */
     if (wants(prof, 'acad')) {
-      for (const a of (acadCal || [])) {
-        if (a.s !== target) continue;
-        if (a.t !== 'warn' && a.t !== 'add') continue;  /* المواعيد الحرجة فقط */
-        lines.push({ kind: 'acad', text: `🗓️ بعد يومين: ${a.ar}` });
+      for (const a of acadDue(acadCal, target)) {
+        if (!approved.has(acadRef(a))) continue;
+        lines.push({ kind: 'acad', text: acadText(a) });
       }
     }
 
@@ -333,11 +362,62 @@ function buildNotifications(state) {
 /* ═══ الدورة ═══ */
 let NOTIF_LAST = null;                    /* آخر يوم أُرسل فيه — يمنع التكرار */
 
+/* ═══ حجز اليوم ═══
+   NOTIF_LAST في الذاكرة وحدها ما كفت: إعادة تشغيل Render الساعة الخامسة
+   تصفّرها فتُرسل الدورة مرتين، وخدمتا Render تقرآن قاعدة واحدة فترسلان
+   معاً. الصف الفريد (اليوم + 'run') يجعل أول من يصل هو الوحيد.
+   يرجّع 'ok' أو 'taken' أو 'error' — والفرق بين الأخيرين مهم:
+   المحجوز لا يُعاد، والمعطوب يُعاد بعد عشر دقائق. */
+async function claimNotifDay(date) {
+  let r;
+  try {
+    r = await sb('POST', 'notif_approvals', {
+      body: { send_date: date, kind: 'run', ref: '', body: '', status: 'sent' },
+      prefer: 'return=minimal'
+    });
+  } catch (e) { return 'error' }
+  if (r && r.code) return String(r.code) === '23505' ? 'taken' : 'error';
+  return 'ok';
+}
+
+/* ═══ الموافقة المسبقة ═══
+   يُعرض تنبيه الغد الآن، فيبقى أمامك يوم كامل. ما لم تضغط «انشره»
+   قبل الخامسة لا يخرج أصلاً. */
+async function prepareAcadApprovals(sendDate) {
+  if (!ADMIN_CHAT_ID) return;
+  for (const a of acadDue(ACAD_CAL_SERVER, dayShift(sendDate, NOTIF_LEAD))) {
+    const text = acadText(a);
+    let r;
+    try {
+      r = await sb('POST', 'notif_approvals', {
+        body: { send_date: sendDate, kind: 'acad', ref: acadRef(a),
+                body: text, status: 'pending' },
+        prefer: 'return=representation'
+      });
+    } catch (e) { continue }
+    const row = Array.isArray(r) && r[0] ? r[0] : null;
+    if (!row) continue;                   /* معروض من قبل، أو تعذّر الإدراج */
+    await sendMsg(ADMIN_CHAT_ID,
+      `🔒 <b>تنبيه عام ينتظر موافقتك</b>\n\n` +
+      `يخرج ${sendDate} الساعة ٥ العصر لكل من ربط تيليغرام.\n\n` +
+      `<pre>${esc(text)}</pre>\n` +
+      `بلا موافقة ما يخرج.`,
+      kb([[btn('✅ انشره', `nok:${row.id}`), btn('🚫 لا ترسله', `nno:${row.id}`)]]));
+  }
+}
+
 async function notifyTick() {
   if (!SB_URL || !SB_SERVICE_KEY) return;
+  /* نسخة الاختبار تخدم الموقع فقط. كان الحارس موصوفاً في التعليق أعلى
+     SITE_ENV ومفقوداً هنا، فأرسلت الخدمتان تنبيهين متطابقين للطلاب. */
+  if (SITE_ENV !== 'prod') return;
   const { date, hour } = ksaParts();
   if (hour !== NOTIF_HOUR) return;
   if (NOTIF_LAST === date) return;        /* أُرسلت اليوم */
+
+  const claim = await claimNotifDay(date);
+  if (claim === 'taken') { NOTIF_LAST = date; return; }
+  if (claim !== 'ok') return;             /* عطل شبكة — نعاود بعد عشر دقائق */
   NOTIF_LAST = date;
 
   try {
@@ -369,9 +449,20 @@ async function notifyTick() {
       allowed_abs: absAllowedFor(r.course_date)
     }));
 
+    /* موافقات اليوم — البثّ لا يخرج بلا واحدة */
+    let aps = [];
+    try {
+      const rows = await sb('GET', 'notif_approvals', {
+        query: `?send_date=eq.${encodeURIComponent(date)}&kind=eq.acad` +
+               `&select=id,ref,body,status`
+      });
+      if (Array.isArray(rows)) aps = rows;
+    } catch (e) { /* بلا موافقات = بلا بثّ، وهو الاتجاه الآمن */ }
+
     const msgs = buildNotifications({
       today: date, profiles, schedules: withMax, events, absences,
-      acadCal: ACAD_CAL_SERVER, sharedCounts: Object.values(cnt)
+      acadCal: ACAD_CAL_SERVER, sharedCounts: Object.values(cnt),
+      acadApproved: aps.filter(r => r.status === 'approved').map(r => r.ref)
     });
 
     let sent = 0, evIds = [];
@@ -391,6 +482,30 @@ async function notifyTick() {
         query: `?id=in.(${evIds.join(',')})`,
         body: { notified_on: date }, prefer: 'return=minimal'
       }).catch(() => {});
+
+    /* نغلق صفوف اليوم: المعتمد صار مرسلاً، والمعلّق فات موعده */
+    const okIds = aps.filter(r => r.status === 'approved').map(r => r.id);
+    const late = aps.filter(r => r.status === 'pending');
+    if (okIds.length)
+      await sb('PATCH', 'notif_approvals', {
+        query: `?id=in.(${okIds.join(',')})`,
+        body: { status: 'sent', decided_at: new Date().toISOString() },
+        prefer: 'return=minimal'
+      }).catch(() => {});
+    if (late.length) {
+      await sb('PATCH', 'notif_approvals', {
+        query: `?id=in.(${late.map(r => r.id).join(',')})`,
+        body: { status: 'expired' }, prefer: 'return=minimal'
+      }).catch(() => {});
+      if (ADMIN_CHAT_ID)
+        await sendMsg(ADMIN_CHAT_ID,
+          `⏭️ <b>ما خرج — بلا موافقة</b>\n\n` +
+          late.map(r => '• ' + esc(String(r.body || '').split('\n')[0])).join('\n') +
+          `\n\nترسله يدوياً بـ <code>/broadcast</code> لو تبي.`).catch(() => {});
+    }
+
+    /* تنبيه الغد يُعرض الآن — يبقى أمامك يوم كامل قبل موعده */
+    await prepareAcadApprovals(dayShift(date, 1)).catch(() => {});
 
     if (sent) {
       console.log(`تنبيهات جدولك: ${sent} رسالة`);
@@ -1129,6 +1244,10 @@ async function handleCallback(cq) {
   const ack = (text) => tg('answerCallbackQuery',
     { callback_query_id: cq.id, text: text || '', show_alert: false }).catch(() => {});
 
+  /* قرار البثّ العام — للإدارة وحدها */
+  const am = data.match(/^n(ok|no):(\d+)$/);
+  if (am && chatId) return acadDecision(cq, ack, chatId, am[1], am[2]);
+
   const mm = data.match(/^(stop|keep):(\d+)$/);
   if (!mm || !chatId) return ack();
   const action = mm[1], rowId = mm[2];
@@ -1169,6 +1288,33 @@ async function handleCallback(cq) {
   await ack('أوقفت المراقبة');
   return editMsg(cq, `🔕 <b>أوقفت المراقبة</b>\n\n${label}\n\n` +
     `ترجّعها أي وقت من الجرس في الموقع.`);
+}
+
+/* ═══ اعتماد التنبيه العام أو إلغاؤه ═══
+   الشرط `status=eq.pending` في الرابط يمنع ضغطتين متتاليتين من قلب القرار،
+   ونتحقق أن صفاً رجع فعلاً — الكتابة التي تحجبها RLS ترجع بلا خطأ. */
+async function acadDecision(cq, ack, chatId, act, rowId) {
+  if (!ADMIN_CHAT_ID || String(chatId) !== String(ADMIN_CHAT_ID)) return ack();
+  const rows = await sb('GET', 'notif_approvals', {
+    query: `?id=eq.${rowId}&select=id,send_date,body,status&limit=1`
+  }).catch(() => []);
+  const row = Array.isArray(rows) && rows[0] ? rows[0] : null;
+  if (!row) return ack('ما لقيت الطلب');
+  if (row.status !== 'pending') {
+    await ack('محسوم من قبل');
+    return editMsg(cq, `الحالة الآن: <b>${esc(row.status)}</b>\n\n<pre>${esc(row.body)}</pre>`);
+  }
+  const status = act === 'ok' ? 'approved' : 'rejected';
+  const upd = await sb('PATCH', 'notif_approvals', {
+    query: `?id=eq.${rowId}&status=eq.pending`,
+    body: { status, decided_at: new Date().toISOString() },
+    prefer: 'return=representation'
+  }).catch(() => null);
+  if (!Array.isArray(upd) || !upd.length) return ack('ما تمّ — أعد المحاولة');
+  await ack(status === 'approved' ? 'معتمد' : 'ملغى');
+  return editMsg(cq, (status === 'approved'
+    ? `✅ <b>معتمد</b> — يخرج ${esc(row.send_date)} الساعة ٥ العصر.`
+    : `🚫 <b>ملغى</b> — ما بيخرج.`) + `\n\n<pre>${esc(row.body)}</pre>`);
 }
 
 function editMsg(cq, text) {
@@ -1321,6 +1467,23 @@ async function handleTelegramUpdate(update) {
         `<code>#u${chatId}</code>`);
     }
     return sendMsg(chatId, '✅ وصلتنا رسالتك، شكراً لك 🙏');
+  }
+
+  /* ═══ /notif — التنبيهات العامة المعلّقة ═══
+     مخرج لو ضاعت رسالة العرض بين المحادثات */
+  if (isAdmin && text.trim() === '/notif') {
+    const rows = await sb('GET', 'notif_approvals', {
+      query: `?kind=eq.acad&status=eq.pending&select=id,send_date,body` +
+             `&order=send_date.asc&limit=20`
+    }).catch(() => []);
+    const list = Array.isArray(rows) ? rows : [];
+    if (!list.length) return sendMsg(chatId, '📭 ما فيه تنبيه عام معلّق.');
+    for (const r of list)
+      await sendMsg(chatId,
+        `🔒 <b>ينتظر موافقتك</b> — يخرج ${esc(r.send_date)} الساعة ٥ العصر.\n\n` +
+        `<pre>${esc(r.body)}</pre>`,
+        kb([[btn('✅ انشره', `nok:${r.id}`), btn('🚫 لا ترسله', `nno:${r.id}`)]]));
+    return;
   }
 
   /* ═══ /broadcast <النص> — بث لكل من ربط تيليغرام ═══ */
