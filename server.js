@@ -1860,12 +1860,16 @@ function freeRooms(idx, { day, from, to, gender, near, limit }) {
     out.push({
       room: name, building: r.building, zone: r.zone,
       freeUntil: next ? next.start : null,
+      /* فيها محاضرة أخرى اليوم = مفتوحة يقيناً. القاعة الخالية طوال
+         اليوم قد تكون مقفلة، فلا تتصدّر رغم أن فراغها أطول. */
+      usedToday: sameDay.length > 0,
       sameBuilding: !!(near && r.building === near)
     });
   });
-  /* الترتيب: مبنى محاضرته أولاً — أقل مشي — ثم الأطول فراغاً */
+  /* الترتيب: مبنى محاضرته (أقل مشي) ← مفتوحة اليوم ← الأطول فراغاً */
   out.sort((a, b) =>
     (b.sameBuilding - a.sameBuilding) ||
+    (b.usedToday - a.usedToday) ||
     ((b.freeUntil === null ? 1e9 : b.freeUntil) - (a.freeUntil === null ? 1e9 : a.freeUntil)) ||
     a.room.localeCompare(b.room));
   return { total: out.length, rooms: limit ? out.slice(0, limit) : out };
