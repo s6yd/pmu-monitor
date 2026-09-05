@@ -1498,6 +1498,31 @@ async function stopWatcher(id){
   }catch(e){ toast(e.message,'err') }
 }
 
+/* ═══ إنهاء موسم المراقبة ═══
+   بعد آخر يوم تسجيل تبقى مئات الصفوف التي لا يستطيع أحد التصرف بها.
+   نعدّ أولاً ونعرض الرقم، ثم نحذف الكل برسالة واحدة لكل طالب. */
+async function endSeason(){
+  let pre;
+  try{ pre=await api('monitor-season-end') }
+  catch(e){ return toast(e.message,'err') }
+  if(!pre.total) return toast('ما فيه مراقبات أصلاً','ok');
+
+  const breakdown=(pre.terms||[])
+    .map(t=>`  ${t.term}: ${t.rows} مراقبة · ${t.students} طالباً`).join('\n');
+  if(!confirm(`إنهاء موسم المراقبة؟\n\n`+
+    `${pre.total} مراقبة · ${pre.students} طالباً\n${breakdown}\n\n`+
+    `تُحذف كلها، ويوصل كل طالب رسالة واحدة تجمع مواده.\n`+
+    `ما فيه تراجع.`))return;
+
+  const note=prompt('سطر إضافي في الرسالة (اتركه فاضياً لو ما تبي):','')||'';
+  try{
+    const r=await api('monitor-season-end',{body:{notify:true,note}});
+    toast(`أوقفنا ${r.stopped} مراقبة لـ${r.students} طالباً · `+
+          `الرسائل تنطلق ويوصلك تقرير`,'ok');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
 async function askWatcher(id){
   const h=prompt('كم ساعة مهلة قبل الإيقاف التلقائي؟',24);
   if(h===null)return;
@@ -2133,6 +2158,7 @@ function renderMons(){
     </div>
     <div class="row-meta" style="margin:8px 0">
       ${btn('watchers','الأكثر طلباً')}${btn('open','المفتوحة أولاً')}${btn('notified','الأكثر تنبيهاً')}
+      <button class="mini no" onclick="endSeason()">🔕 إنهاء الموسم</button>
     </div>
     <div id="monList"></div>`;
   renderMonList();

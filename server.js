@@ -4661,6 +4661,103 @@ const server = http.createServer(async (req, res) => {
         return send(200, { last: SCHED_SYNC.last });
       }
 
+      /* ═══ إنهاء موسم المراقبة ═══
+         نهاية التسجيل تترك مئات الصفوف الميتة، وإيقافها صفاً صفاً غير عملي.
+         و«رسالة لكل صف» تعني خمس رسائل لطالب واحد — وطالب يكتم البوت
+         يخسر معه تنبيهات المراقبة كلها، فالرسالة الزائدة أغلى مما تبدو.
+         لذلك رسالة واحدة لكل طالب تجمع مواده.
+         GET = عدّ قبل القرار · POST = تنفيذ. */
+      if (act === 'monitor-season-end') {
+        const all = await sbAll('monitored_courses', { query: '?select=*' });
+
+        if (req.method !== 'POST') {
+          const by = {};
+          all.forEach(r => {
+            const t = String(r.term || '—');
+            if (!by[t]) by[t] = { term: t, rows: 0, users: new Set() };
+            by[t].rows++; by[t].users.add(r.user_id);
+          });
+          return send(200, {
+            total: all.length,
+            students: new Set(all.map(r => r.user_id)).size,
+            terms: Object.values(by)
+              .map(x => ({ term: x.term, rows: x.rows, students: x.users.size }))
+              .sort((a, b) => b.rows - a.rows)
+          });
+        }
+
+        const b = await readBody(req);
+        const term = b.term ? String(b.term).trim() : '';
+        const rows = term ? all.filter(r => String(r.term || '') === term) : all;
+        if (!rows.length) return send(200, { ok: true, stopped: 0, students: 0 });
+
+        const byUser = {};
+        rows.forEach(r => { (byUser[r.user_id] = byUser[r.user_id] || []).push(r) });
+        const students = Object.keys(byUser).length;
+
+        /* حدثاً واحداً لا ٥٧٧: كل صفّ حدثاً يعني ٥٧٧ كتابة، ويلوّث سجل
+           «لماذا أوقف الطلاب المراقبة» بقرار إداري ليس قرار طالب.
+           نحتفظ بوسيط العمر لأنه المعلومة الوحيدة التي تضيع. */
+        const lived = rows
+          .map(r => r.created_at
+            ? Math.round((Date.now() - new Date(r.created_at).getTime()) / 60000) : null)
+          .filter(x => Number.isFinite(x)).sort((x, y) => x - y);
+        logEvent('season-end', {
+          at: Date.now(), term: term || 'all', rows: rows.length, students,
+          medianLivedMin: lived.length ? lived[Math.floor(lived.length / 2)] : null
+        });
+
+        /* الحذف أولاً — الرسالة تقول «أوقفنا»، فلا تُرسل قبل أن تصير صحيحة */
+        const ids = rows.map(r => r.id);
+        for (let i = 0; i < ids.length; i += 100) {
+          await sb('DELETE', 'monitored_courses', {
+            query: `?id=in.(${ids.slice(i, i + 100).join(',')})`,
+            prefer: 'return=minimal'
+          });
+        }
+        console.log(`season-end: أوقفنا ${rows.length} مراقبة لـ${students} طالباً`);
+
+        if (!b.notify)
+          return send(200, { ok: true, stopped: rows.length, students, notified: 0 });
+
+        /* بالخلفية: مئة رسالة تتجاوز مهلة الطلب، والتقرير يوصلك تيليغرام */
+        (async () => {
+          let sent = 0, failed = 0;
+          const uids = Object.keys(byUser);
+          const chat = {};
+          for (let i = 0; i < uids.length; i += 100) {
+            const part = uids.slice(i, i + 100).map(u => `"${u}"`).join(',');
+            const ps = await sb('GET', 'profiles', {
+              query: `?id=in.(${part})&select=id,telegram_chat_id`
+            }).catch(() => []);
+            (Array.isArray(ps) ? ps : []).forEach(p => { chat[p.id] = p.telegram_chat_id });
+          }
+          const note = String(b.note || '').trim();
+          await inBatches(uids, 20, async (uid) => {
+            if (!chat[uid]) return;
+            const lines = byUser[uid].map(r => '• ' + esc(r.course_code || 'مادة') +
+              (r.scope === 'course' ? ' · كل الشعب'
+                                    : (r.crn ? ' · CRN ' + esc(r.crn) : '')));
+            const res = await sendMsg(chat[uid],
+              `🔕 <b>انتهى التسجيل — أوقفنا مراقباتك</b>\n\n` +
+              lines.slice(0, 15).join('\n') +
+              (lines.length > 15 ? `\n<i>و${lines.length - 15} غيرها</i>` : '') +
+              (note ? `\n\n${esc(note)}` : '') +
+              `\n\nترجّعها من الجرس في الموقع عند تسجيل الترم القادم.`);
+            if (res && res.ok) sent++; else failed++;
+            await new Promise(x => setTimeout(x, 700));
+          });
+          if (ADMIN_CHAT_ID) sendMsg(ADMIN_CHAT_ID,
+            `🔕 <b>انتهى موسم المراقبة</b>\n\n` +
+            `أُوقفت: ${rows.length} مراقبة\n` +
+            `طلاب: ${students}\n` +
+            `✅ وصلت: ${sent}\n⚠️ فشلت: ${failed}` +
+            (failed ? `\n\n<i>الفشل غالباً طلاب حظروا البوت.</i>` : '')).catch(() => {});
+        })();
+
+        return send(200, { ok: true, stopped: rows.length, students, notifying: true });
+      }
+
       if (act === 'monitor-row') {
         if (req.method !== 'POST') return send(405, { error: 'POST فقط' });
         const b = await readBody(req);
