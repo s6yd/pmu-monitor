@@ -2196,8 +2196,11 @@ function monSetSort(v){ MON_SORT=v; renderMons() }
 
 function renderMons(){
   const box=document.getElementById('monsBody');
+  /* بطاقة الموسم قبل الخروج المبكر: كانت تختفي بعد إنهاء الموسم بالضبط،
+     وهي اللحظة التي تحتاج فيها فتح النافذة أو تبديل الترم. */
   if(!MONS.length){
-    box.innerHTML=`<div class="empty"><div class="empty-icon">📡</div>
+    box.innerHTML=`${seasonCard()}
+      <div class="empty"><div class="empty-icon">📡</div>
       <div class="empty-t">ما في مواد مراقبة</div>
       <div class="empty-s">أول ما يراقب أحد مادة بتظهر هنا</div></div>`;
     return;
