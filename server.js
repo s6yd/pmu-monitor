@@ -40,7 +40,13 @@ const ADMIN_TOKEN = (process.env.ADMIN_TOKEN || '').trim();   // كلمة سر �
 const FREE_BETA = (process.env.FREE_BETA || 'true').trim() !== 'false';
 /* ترم التسجيل النشط — المزامنة والإشعارات تقتصر عليه وحده.
    من متغيّر بيئة عشان تغيّره من Render بلا نشر كل ترم جديد. */
-const ACTIVE_TERM = (process.env.ACTIVE_TERM || '202710').trim();
+const ACTIVE_TERM_ENV = (process.env.ACTIVE_TERM || '202710').trim();
+
+/* الترم النشط: متغيّر Render هو الأساس، واللوحة تتقدّم عليه ويُحفظ في
+   app_state فيصمد بعد النشر. بدونه كل تبديل ترم يحتاج تعديل متغيّر
+   وإعادة نشر — وهذا آخر ما تحتاجه في يوم فتح التسجيل. */
+let TERM_OVERRIDE = null;
+const activeTerm = () => TERM_OVERRIDE || ACTIVE_TERM_ENV;
 
 /* معرّف محادثتك في تيليغرام — يوصلك عليه كل رأي جديد فوراً.
    تجيبه بإرسال /whoami للبوت، ثم تحطه في Render باسم ADMIN_CHAT_ID */
@@ -421,7 +427,7 @@ async function notifyTick() {
   NOTIF_LAST = date;
 
   try {
-    const term = ACTIVE_TERM;
+    const term = activeTerm();
     const [profiles, schedules, events, absences] = await Promise.all([
       sbAll('profiles', { query: '?select=id,telegram_chat_id,notif_prefs' }),
       sbAll('user_schedule', {
@@ -664,8 +670,12 @@ async function saveState() {
       confirmPurged: CONFIRM_STAT.purged,
       /* مفاتيح اللوحة: بدونها يرجع كل شي للوضع التلقائي بعد كل نشر،
          فيشتغل التسخين وأنت مطفّيه أو ترجع المراقبة وأنت موقّفها. */
+      /* النافذة والساعات والترم كانت تضيع مع كل نشر فيرجع الجرس يفتح
+         بعد ما أقفلته، والترم يرجع لقيمة Render. */
       toggles: { ttlOverride: TTL_OVERRIDE, monitorPaused: MONITOR_PAUSED,
-                 prewarmOn: PREWARM_ON, finalsOn: FINALS_ON },
+                 prewarmOn: PREWARM_ON, finalsOn: FINALS_ON,
+                 termOverride: TERM_OVERRIDE, windowOverride: WINDOW_OVERRIDE,
+                 hoursOverride: HOURS_OVERRIDE },
       ops: { searches: OPS.searches, feedback: OPS.feedback,
              pmuFails: OPS.pmuFails, tgFails: OPS.tgFails,
              searchesCached: OPS.searchesCached, searchStale: OPS.searchStale,
@@ -695,6 +705,9 @@ async function restoreState() {
   if ('ttlOverride' in g) TTL_OVERRIDE = g.ttlOverride || null;
   if ('monitorPaused' in g) MONITOR_PAUSED = !!g.monitorPaused;
   if ('prewarmOn' in g) PREWARM_ON = !!g.prewarmOn;
+  if ('termOverride' in g) TERM_OVERRIDE = g.termOverride || null;
+  if ('windowOverride' in g) WINDOW_OVERRIDE = g.windowOverride || null;
+  if ('hoursOverride' in g) HOURS_OVERRIDE = g.hoursOverride || null;
   /* FINALS_ENABLED=off في Render مفتاح قتل على مستوى النشر — يغلب المحفوظ.
      غير ذلك، ما ضبطته من اللوحة هو الأصح. */
   if ('finalsOn' in g && (process.env.FINALS_ENABLED || '').trim() !== 'off')
@@ -705,7 +718,10 @@ async function restoreState() {
   console.log('استعادة المفاتيح: المراقبة ' + (MONITOR_PAUSED ? 'موقوفة' : 'شغالة') +
     ' · التسخين ' + (PREWARM_ON ? 'مفعّل' : 'مطفأ') +
     ' · الصلاحية ' + (TTL_OVERRIDE ? TTL_OVERRIDE + ' د يدوي' : 'تلقائية') +
-    ' · النهائيات ' + (FINALS_ON ? 'معروضة' : 'موقوفة'));
+    ' · النهائيات ' + (FINALS_ON ? 'معروضة' : 'موقوفة') +
+    ' · الترم ' + activeTerm() + (TERM_OVERRIDE ? ' (يدوي)' : '') +
+    ' · النافذة ' + (WINDOW_OVERRIDE
+      ? WINDOW_OVERRIDE.from + '←' + WINDOW_OVERRIDE.to + ' يدوية' : 'من التقويم'));
 }
 
 const sendMsg = async (chatId, text, markup) => {
@@ -945,11 +961,20 @@ async function runMonitorCycle() {
     stat.followups = await sendFollowups().catch(() => 0);
     stat.expired = await dropExpired().catch(() => 0);
 
-    const monitors = await sb('GET', 'monitored_courses', { query: '?select=*' });
-    if (!Array.isArray(monitors) || !monitors.length) return;
+    const allMons = await sb('GET', 'monitored_courses', { query: '?select=*' });
+    if (!Array.isArray(allMons) || !allMons.length) return;
 
-    /* ── 1. سحبة واحدة لكل ترم ── */
-    const terms = [...new Set(monitors.map(m => m.term || '202630'))];
+    /* الترم النشط وحده. صف واحد بترم آخر كان يضيف سحبة كاملة من موقع
+       الجامعة في كل دورة، والأخطر: في الموسم القادم كانت الدورة تسحب
+       الترم المنتهي — الجامعة تُبقيه منشوراً — فينبّه الطالب عن شعبة
+       في ترم انتهى. ولا نحذف الصفوف هنا: الحذف قرار من اللوحة لا آلي. */
+    const TERM = activeTerm();
+    const monitors = allMons.filter(m => String(m.term || '') === TERM);
+    stat.otherTerm = allMons.length - monitors.length;
+    if (!monitors.length) return;
+
+    /* ── 1. سحبة واحدة، للترم النشط ── */
+    const terms = [TERM];
     const snapshot = {};
     for (const term of terms) {
       try {
@@ -1957,7 +1982,7 @@ async function buildRoomIndex(force) {
 
   const pull = async (g) => {
     try {
-      const r = await getCourses(ACTIVE_TERM, 'ALL', g);
+      const r = await getCourses(activeTerm(), 'ALL', g);
       return r && Array.isArray(r.courses) ? r.courses : Array.isArray(r) ? r : [];
     } catch (e) { return []; }
   };
@@ -2002,7 +2027,7 @@ async function buildRoomIndex(force) {
   });
   rooms.forEach(r => { r.gender = zone[r.zone] ? zone[r.zone].gender : null; });
 
-  ROOM_INDEX = { at: Date.now(), rooms, zones: zone, term: ACTIVE_TERM };
+  ROOM_INDEX = { at: Date.now(), rooms, zones: zone, term: activeTerm() };
   return ROOM_INDEX;
 }
 
@@ -2077,7 +2102,7 @@ async function adminRoomsProbe() {
      التخمين صنّف ٢٨ جلسة طلاب داخل مباني الطالبات، وترك ٤٢ مجهولة. */
   const pull = async (g) => {
     try {
-      const r = await getCourses(ACTIVE_TERM, 'ALL', g);
+      const r = await getCourses(activeTerm(), 'ALL', g);
       const list = r && Array.isArray(r.courses) ? r.courses : Array.isArray(r) ? r : null;
       return { list, cached: !!(r && r.cached), err: null };
     } catch (e) { return { list: null, cached: false, err: e && e.message ? e.message : String(e) }; }
@@ -2187,7 +2212,7 @@ async function adminRoomsProbe() {
     .sort((a, b) => b.sessions - a.sessions).slice(0, 8);
 
   return {
-    ok: true, term: ACTIVE_TERM, source, missing,
+    ok: true, term: activeTerm(), source, missing,
     totalCourses: courses.length,
     totalRooms: rooms.size,
     totalSessions: [...rooms.values()].reduce((n, x) => n + x.length, 0),
@@ -3080,6 +3105,13 @@ async function adminHealth() {
       hoursTo: activeTo(),
       hoursCustom: !!HOURS_OVERRIDE,
       windowCustom: !!WINDOW_OVERRIDE,
+      activeTerm: activeTerm(),
+      termCustom: !!TERM_OVERRIDE,
+      termEnv: ACTIVE_TERM_ENV,
+      canWatch: MONITOR_ENABLED && !MONITOR_PAUSED && !!currentWindow(),
+      currentWindow: currentWindow(),
+      otherTermRows: (OPS.cycles.length
+        ? (OPS.cycles[OPS.cycles.length - 1].otherTerm || 0) : 0),
       riyadhHour: riyadhHour(),
       riyadhTime: riyadhTime(),
       riyadhDate: riyadhDate(),
@@ -3126,7 +3158,7 @@ async function adminHealth() {
       feedN: (SCHED_SYNC.last && SCHED_SYNC.last.feedN) || null,
       feedPeak: (SCHED_SYNC.last && SCHED_SYNC.last.feedPeak) || null,
       feedFloor: FEED_FLOOR,
-      activeTerm: ACTIVE_TERM,
+      activeTerm: activeTerm(),
       skippedTerms: SCHED_SYNC.skippedTerms || 0,
       feedRejected: (SCHED_SYNC.last && SCHED_SYNC.last.feedRejected) || null,
       crnRejected: (SCHED_SYNC.last && SCHED_SYNC.last.crnRejected) || 0,
@@ -3711,7 +3743,7 @@ async function syncSchedules(term, courses, force) {
      المزامنة تربط بالـCRN، فلو انطلقت لترم غير النشط كتبت دكتور مادة
      على مادة أخرى وأرسلت «تغيّر في جدولك» عن شيء ما تغيّر.
      البحث يبقى حراً في كل الترمات — التصحيح والإشعارات وحدها محصورة. */
-  if (String(term).trim() !== ACTIVE_TERM) {
+  if (String(term).trim() !== activeTerm()) {
     SCHED_SYNC.skippedTerms = (SCHED_SYNC.skippedTerms || 0) + 1;
     return null;
   }
@@ -4818,6 +4850,24 @@ const server = http.createServer(async (req, res) => {
         return send(400, { error: 'action لازم تكون stop أو ask' });
       }
 
+      if (act === 'term-set') {
+        if (req.method === 'POST') {
+          const b = await readBody(req);
+          if (b.reset) TERM_OVERRIDE = null;
+          else {
+            const t = String(b.term || '').trim();
+            if (!/^\d{6}$/.test(t))
+              return send(400, { error: 'الترم ست خانات مثل 202720' });
+            if (!['10', '20', '30'].includes(t.slice(4)))
+              return send(400, { error: 'آخر خانتين: 10 خريف · 20 ربيع · 30 صيف' });
+            TERM_OVERRIDE = (t === ACTIVE_TERM_ENV) ? null : t;
+          }
+          await saveState().catch(() => {});
+        }
+        return send(200, { term: activeTerm(), env: ACTIVE_TERM_ENV,
+                           custom: !!TERM_OVERRIDE });
+      }
+
       if (act === 'monitor-hours') {
         if (req.method === 'POST') {
           const b = await readBody(req);
@@ -4829,6 +4879,7 @@ const server = http.createServer(async (req, res) => {
               HOURS_OVERRIDE = { from: f, to: t };
             else return send(400, { error: 'ساعات غير صالحة — لازم "من" أصغر من "إلى"' });
           }
+          await saveState().catch(() => {});
         }
         return send(200, { from: activeFrom(), to: activeTo(),
                            custom: !!HOURS_OVERRIDE, state: monitorState() });
@@ -4847,6 +4898,7 @@ const server = http.createServer(async (req, res) => {
             WINDOW_OVERRIDE = { from: String(b.from), to: String(b.to),
                                 ar: String(b.ar || 'نافذة يدوية من اللوحة') };
           }
+          await saveState().catch(() => {});
         }
         return send(200, { window: WINDOW_OVERRIDE, custom: !!WINDOW_OVERRIDE,
                            current: currentWindow(), next: nextWindow(),
@@ -5117,6 +5169,12 @@ const server = http.createServer(async (req, res) => {
     res.end(JSON.stringify({
       active: st.active, reason: st.reason,
       env: SITE_ENV, freeBeta: FREE_BETA,
+      /* الجرس شيء و«المراقبة تدور الآن» شيء آخر: الدورة تنام بعد منتصف
+         الليل، وهذا ما يعني منع الطالب من ضبط مراقبة الصباح. الجرس
+         يُقفل بانتهاء نافذة التسجيل فقط، أو بإيقافك اليدوي. */
+      term: activeTerm(),
+      canWatch: MONITOR_ENABLED && !MONITOR_PAUSED && !!currentWindow(),
+      window: currentWindow(),
       /* بصمة النسخة المخدومة الآن. المثبَّت على الشاشة الرئيسية قد يعيش
          أياماً بلا إعادة تحميل، فيقارن الصفحة المحمّلة عنده بهذي
          ويعرض «فيه تحديث» بدل ما يظل على نسخة قديمة بصمت. */
@@ -5453,7 +5511,7 @@ server.listen(PORT, () => {
   for (const sig of ['SIGTERM', 'SIGINT'])
     process.on(sig, () => { saveState().catch(() => {}).finally(() => process.exit(0)); });
   const st = monitorState();
-  console.log(`env=${SITE_ENV} | freeBeta=${FREE_BETA} | ترم المزامنة=${ACTIVE_TERM}` +
+  console.log(`env=${SITE_ENV} | freeBeta=${FREE_BETA} | ترم المزامنة=${activeTerm()}` +
               ` | monitor: ${st.reason} — ${st.ar}`);
   /* أول دورة بعد 20-60 ثانية عشوائياً، ثم جدولة ذكية */
   setTimeout(async () => {
