@@ -7260,17 +7260,73 @@ async function syncSchedChanges(){
   return true;
 }
 
-/* نسخة الصفحة المحمّلة — تُقارن ببصمة السيرفر عند كل رجوع */
+/* ═══ نسخة الصفحة ═══
+   النسخة المثبَّتة على الشاشة الرئيسية تعيش أياماً بلا إعادة تحميل: iOS
+   يعلّقها في الذاكرة ويرجّعها كما هي. فالطالب يفتح الموقع في المتصفح
+   ويشوف الجديد، ويفتح الأيقونة فيشوف نسخة من الأسبوع الماضي.
+   وكانت الرسالة تقول «اسحب لتحديث الصفحة» — وما فيه سحب للتحديث أصلاً.
+   فنعيد التحميل بأنفسنا بدل ما نطلب منه. */
 let BUILD_SEEN=null, BUILD_NAG=false;
-function checkBuild(st){
-  if(!st||!st.build)return;
-  if(!BUILD_SEEN){ BUILD_SEEN=st.build; return; }
-  if(st.build===BUILD_SEEN||BUILD_NAG)return;
-  BUILD_NAG=true;
-  const ar=LANG==='ar';
-  showToast(ar?'فيه تحديث للموقع — اسحب لتحديث الصفحة'
-               :'A new version is available — pull to refresh','ok');
+
+/* كتابة معلّقة = تعديل الطالب لم يصل القاعدة بعد. إعادة التحميل تضيّعه. */
+function pendingWrites(){
+  try{ return Object.values(_saveQ).some(x=>x&&(x.running||x.pending)) }
+  catch(e){ return false }
 }
+
+function checkBuild(st){
+  if(!st||!st.build)return false;
+  if(!BUILD_SEEN){ BUILD_SEEN=st.build; return false }
+  if(st.build===BUILD_SEEN)return false;
+  const ar=LANG==='ar';
+
+  if(pendingWrites()){
+    if(!BUILD_NAG){
+      BUILD_NAG=true;
+      showToast(ar?'فيه تحديث — نحفظ تعديلاتك أول'
+                  :'Update available — saving your changes first','ok');
+    }
+    return false;
+  }
+
+  /* حزام ضد حلقة إعادة تحميل: لو أعدنا التحميل للتو ما نعيدها.
+     محفوظ في التخزين لأن المتغيّر يضيع مع كل تحميل. */
+  const last=Number(load('pmu_build_reload',0))||0;
+  if(Date.now()-last<120000){
+    if(!BUILD_NAG){
+      BUILD_NAG=true;
+      showToast(ar?'فيه تحديث للموقع — أغلق الصفحة وافتحها'
+                  :'A new version is available — close and reopen','ok');
+    }
+    return false;
+  }
+
+  save('pmu_build_reload',Date.now());
+  showToast(ar?'ينزل تحديث للموقع…':'Updating…','ok');
+  setTimeout(()=>{ try{ location.reload() }catch(e){} },700);
+  return true;
+}
+
+/* البصمة تُفحص عند كل رجوع للصفحة، سواء كان الطالب مسجّلاً أو لا —
+   resumeSync تتوقف عند غير المسجّل، وتحديث النسخة يخص الجميع. */
+let BUILD_CHECKING=false;
+async function checkBuildNow(){
+  if(BUILD_CHECKING)return;
+  if(document.visibilityState&&document.visibilityState!=='visible')return;
+  BUILD_CHECKING=true;
+  try{
+    const st=await (await fetch(API_BASE+'/api/monitor-status',
+                                {cache:'no-store'})).json();
+    MON_STATE=st;
+    checkBuild(st);
+  }catch(e){ /* شبكة متعثّرة لحظة الفتح — نتركها للمرة القادمة */ }
+  finally{ BUILD_CHECKING=false }
+}
+
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible')checkBuildNow();
+});
+window.addEventListener('focus',()=>checkBuildNow());
 
 let RESUME_AT=0, RESUMING=false;
 async function resumeSync(){
@@ -7298,7 +7354,9 @@ async function resumeSync(){
 }
 
 /* iOS يرجّع الصفحة من الذاكرة عند الرجوع للخلف بلا visibilitychange */
-window.addEventListener('pageshow',e=>{ if(e.persisted)resumeSync() });
+window.addEventListener('pageshow',e=>{
+  if(e.persisted){ resumeSync(); checkBuildNow(); }
+});
 
 async function refreshProfile(){
   if(!USER)return false;
