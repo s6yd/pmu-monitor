@@ -280,10 +280,14 @@ function acadDue(acadCal, target) {
 /* ═══ بناء رسائل اليوم ═══
    دالة نقية: تأخذ الحالة وترجّع الرسائل. الإرسال منفصل عنها عشان
    نقدر نختبر المنطق بلا شبكة ولا قاعدة. */
+/* مفتاح الدفتر: طالب + نوع + مرجع. يمنع تكرار التنبيه نفسه كل يوم. */
+const sentKey = (uid, kind, ref) => `${uid}|${kind}|${ref}`;
+
 function buildNotifications(state) {
   const { today, profiles, schedules, events, absences, acadCal, sharedCounts } = state;
   const target = dayShift(today, NOTIF_LEAD);
   const approved = new Set(state.acadApproved || []);
+  const sent = new Set(state.sentRefs || []);
   const out = [];
 
   /* من يدرس أي CRN — نحتاجها للغياب و«أكّده زملاؤك» */
@@ -324,8 +328,12 @@ function buildNotifications(state) {
         const has = (events || []).some(e => e.user_id === uid &&
           String(e.crn) === String(s.crn) && e.kind === s.kind && e.on_date === s.on_date);
         if (has) continue;                              /* عندك أصلاً */
+        /* نفس علّة الغياب: الشرط يبقى صحيحاً كل يوم حتى يضيف الطالب
+           الموعد أو يمضي تاريخه، فكان يتكرر يومياً. مرة واحدة تكفي. */
+        const ref = `${s.crn}:${s.kind}:${s.on_date}`;
+        if (sent.has(sentKey(uid, 'confirmed', ref))) continue;
         lines.push({
-          kind: 'confirmed',
+          kind: 'confirmed', ref,
           text: `✅ ${s.n} من شعبتك حدّدوا ${NOTIF_KIND_AR[s.kind] || 'موعداً'}\n` +
                 `${c.course_code} · ${s.on_date}`
         });
@@ -342,8 +350,13 @@ function buildNotifications(state) {
         if (!max || used !== max - 1) continue;         /* بقي واحد بالضبط */
         if (seen[c.crn]) continue;
         seen[c.crn] = 1;
+        /* «بقي واحد» شرط يبقى صحيحاً كل يوم حتى نهاية الترم، فكان
+           التنبيه يخرج يومياً بلا نهاية. الدفتر يجعله مرة واحدة لكل
+           (شعبة · عدد الغيابات) — ولو حذف الطالب غياباً ثم أعاده لا يتكرر. */
+        const ref = `${c.crn}:${used}`;
+        if (sent.has(sentKey(uid, 'absence', ref))) continue;
         lines.push({
-          kind: 'absence',
+          kind: 'absence', ref,
           text: `⚠️ باقي لك غياب واحد في ${c.course_code}\n` +
                 `${used} من ${max} — الغياب الجاي حرمان`
         });
@@ -465,22 +478,44 @@ async function notifyTick() {
       if (Array.isArray(rows)) aps = rows;
     } catch (e) { /* بلا موافقات = بلا بثّ، وهو الاتجاه الآمن */ }
 
+    /* دفتر ما أُرسل سابقاً — في القاعدة لا في الذاكرة، فإعادة النشر
+       ما تعيد التنبيهات على الطلاب. */
+    let sentRefs = [];
+    try {
+      const rows = await sbAll('notif_sent', { query: '?select=user_id,kind,ref' });
+      if (Array.isArray(rows))
+        sentRefs = rows.map(r => sentKey(r.user_id, r.kind, r.ref));
+    } catch (e) { /* تعذّرت القراءة: نكمل بلا دفتر، ونقبل تكراراً نادراً */ }
+
     const msgs = buildNotifications({
       today: date, profiles, schedules: withMax, events, absences,
       acadCal: ACAD_CAL_SERVER, sharedCounts: Object.values(cnt),
-      acadApproved: aps.filter(r => r.status === 'approved').map(r => r.ref)
+      acadApproved: aps.filter(r => r.status === 'approved').map(r => r.ref),
+      sentRefs
     });
 
-    let sent = 0, evIds = [];
+    let sent = 0, evIds = [], ledger = [];
     for (const m of msgs) {
       const body = m.lines.map(l => l.text).join('\n\n');
       const r = await sendMsg(m.chat_id, `🔔 تنبيهات جدولك\n\n${body}`);
       if (r && r.ok) {
         sent++;
-        m.lines.forEach(l => { if (l.kind === 'event' && l.id) evIds.push(l.id) });
+        m.lines.forEach(l => {
+          if (l.kind === 'event' && l.id) evIds.push(l.id);
+          /* نسجّل بعد النجاح فقط: فشل الإرسال يجب أن يُعاد غداً */
+          if (l.ref) ledger.push({ user_id: m.user_id, kind: l.kind,
+                                   ref: l.ref, sent_on: date });
+        });
       }
       await new Promise(r2 => setTimeout(r2, 120));   /* حدود تيليغرام */
     }
+
+    /* merge-duplicates: الصف موجود أصلاً يعني أُرسل من قبل، وهذا مقبول */
+    for (let i = 0; i < ledger.length; i += 100)
+      await sb('POST', 'notif_sent', {
+        body: ledger.slice(i, i + 100),
+        prefer: 'resolution=merge-duplicates,return=minimal'
+      }).catch(() => {});
 
     /* نعلّم المرسَل حتى لا يتكرر لو أُعيد تشغيل السيرفر */
     if (evIds.length)
@@ -3211,7 +3246,7 @@ async function adminHealth() {
       intervalMin: ms.intervalMin,
       dataTtlMin: Math.round(coursesTTL() / 60000),
       window: ms.window ? ms.window.ar : null,
-      nextWindow: MONITOR_WINDOWS.find(w => riyadhDate() < w.from) || null,
+      nextWindow: nextWindow(),   /* عبر windowList — يحترم النافذة اليدوية */
       riyadhHour: riyadhHour()
     },
 
@@ -3479,7 +3514,7 @@ function ttlReason() {
                   ar: `داخل نافذة "${w.ar}" — الجدول يتغيّر لحظياً` };
   const nx = nextWindow();
   if (nearWindow()) {
-    const near = MONITOR_WINDOWS.find(x =>
+    const near = windowList().find(x =>
       riyadhDate() >= dayShift(x.from, -NEAR_DAYS) && riyadhDate() <= dayShift(x.to, NEAR_DAYS));
     return { tier: 'near', ttlMin: 60,
              ar: `ضمن ${NEAR_DAYS} أيام من نافذة "${near ? near.ar : ''}" ` +
@@ -4221,10 +4256,13 @@ function nextWindow() {
 const dayShift = (iso, n) =>
   new Date(Date.parse(iso + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
 
-/* هل نحن خلال أسبوع قبل نافذة تسجيل أو أسبوع بعدها؟ */
+/* هل نحن خلال أسبوع قبل نافذة تسجيل أو أسبوع بعدها؟
+   windowList لا MONITOR_WINDOWS: كانت تقرأ التقويم المكتوب في الكود
+   وتتجاهل النافذة اليدوية، فتقفل النافذة من اللوحة ويظل الكاش يتصرّف
+   كأن الموسم قائم — وتقرأ في اللوحة «ضمن ٧ أيام من نافذة» بعد انتهائها. */
 function nearWindow() {
   const d = riyadhDate();
-  return MONITOR_WINDOWS.some(w =>
+  return windowList().some(w =>
     d >= dayShift(w.from, -NEAR_DAYS) && d <= dayShift(w.to, NEAR_DAYS));
 }
 
