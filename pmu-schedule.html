@@ -1480,7 +1480,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
           <option value="202620">Spring Semester 2025/2026</option>
           <option value="202610">Fall Semester 2025/2026</option>
         </select>
-        <div class="term-hint" id="termHint"></div>
+        <div class="term-hint hide" id="termHint"></div>
       </div>
       <div class="row2">
         <div>
@@ -6247,11 +6247,14 @@ function termHint(){
   const v=(document.getElementById('term')||{}).value;
   const ar=LANG==='ar';
   if(v!==activeTermCode()){ el.className='term-hint hide'; return }
-  el.className='term-hint';
+  /* النص أولاً ثم الإظهار: لو تعثّر شيء بينهما ما يظهر صندوق فاضٍ.
+     والصنف في HTML يبدأ hide لنفس السبب — قبلها كان يظهر فاضياً
+     إذا ما وصلت الدالة أصلاً. */
   el.textContent=regOpen()
     ? (ar ? '✅ هذا الترم المفتوح للتسجيل — ابنِ جدولك منه'
           : '✅ Registration is open for this term — build your schedule from it')
     : (ar ? 'هذا الترم الحالي' : 'This is the current term');
+  el.className='term-hint';
 }
 
 /* الترتيب: الأحدث أولاً. كانت القائمة بترتيب عشوائي في الـHTML،
