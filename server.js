@@ -45,6 +45,20 @@ const ACTIVE_TERM_ENV = (process.env.ACTIVE_TERM || '202710').trim();
 /* الترم النشط: متغيّر Render هو الأساس، واللوحة تتقدّم عليه ويُحفظ في
    app_state فيصمد بعد النشر. بدونه كل تبديل ترم يحتاج تعديل متغيّر
    وإعادة نشر — وهذا آخر ما تحتاجه في يوم فتح التسجيل. */
+/* ═══ اشتراك Pushover ═══
+   الرابط من متغيّر Render لا من الكود — بدونه الميزة مطفأة تماماً،
+   وهذا مفتاح القتل الأول. والوضع مفتاح ثانٍ يُبدَّل من اللوحة:
+     off  — ما يشوفها أحد، ولا يخرج الرابط في أي رد
+     link — لمن يفتح ‎?pushover=1‎ فقط (للتجربة بحساب غيرك)
+     pro  — للمشتركين
+     all  — للجميع
+   السبب: التجربة ٣٠ يوماً تبدأ لحظة الاشتراك، فتفعيلها قبل موسم
+   التسجيل يحرق المدة على الفاضي. */
+const PUSHOVER_SUBSCRIBE_URL = (process.env.PUSHOVER_SUBSCRIBE_URL || '').trim();
+let PUSHOVER_MODE = 'off';
+const PUSHOVER_MODES = ['off', 'link', 'pro', 'all'];
+const pushoverOn = () => !!PUSHOVER_SUBSCRIBE_URL && PUSHOVER_MODE !== 'off';
+
 let TERM_OVERRIDE = null;
 const activeTerm = () => TERM_OVERRIDE || ACTIVE_TERM_ENV;
 
@@ -713,7 +727,7 @@ async function saveState() {
       toggles: { ttlOverride: TTL_OVERRIDE, monitorPaused: MONITOR_PAUSED,
                  prewarmOn: PREWARM_ON, finalsOn: FINALS_ON,
                  termOverride: TERM_OVERRIDE, windowOverride: WINDOW_OVERRIDE,
-                 hoursOverride: HOURS_OVERRIDE },
+                 hoursOverride: HOURS_OVERRIDE, pushoverMode: PUSHOVER_MODE },
       ops: { searches: OPS.searches, feedback: OPS.feedback,
              pmuFails: OPS.pmuFails, tgFails: OPS.tgFails,
              searchesCached: OPS.searchesCached, searchStale: OPS.searchStale,
@@ -743,6 +757,8 @@ async function restoreState() {
   if ('ttlOverride' in g) TTL_OVERRIDE = g.ttlOverride || null;
   if ('monitorPaused' in g) MONITOR_PAUSED = !!g.monitorPaused;
   if ('prewarmOn' in g) PREWARM_ON = !!g.prewarmOn;
+  if ('pushoverMode' in g && PUSHOVER_MODES.includes(g.pushoverMode))
+    PUSHOVER_MODE = g.pushoverMode;
   if ('termOverride' in g) TERM_OVERRIDE = g.termOverride || null;
   if ('windowOverride' in g) WINDOW_OVERRIDE = g.windowOverride || null;
   if ('hoursOverride' in g) HOURS_OVERRIDE = g.hoursOverride || null;
@@ -3178,6 +3194,8 @@ async function adminHealth() {
       hoursTo: activeTo(),
       hoursCustom: !!HOURS_OVERRIDE,
       windowCustom: !!WINDOW_OVERRIDE,
+      pushoverMode: PUSHOVER_MODE,
+      pushoverReady: !!PUSHOVER_SUBSCRIBE_URL,
       activeTerm: activeTerm(),
       termCustom: !!TERM_OVERRIDE,
       termEnv: ACTIVE_TERM_ENV,
@@ -4979,6 +4997,21 @@ const server = http.createServer(async (req, res) => {
         return send(400, { error: 'action لازم تكون stop أو ask' });
       }
 
+      if (act === 'pushover-mode') {
+        if (req.method === 'POST') {
+          const b = await readBody(req);
+          const m = String(b.mode || '').trim();
+          if (!PUSHOVER_MODES.includes(m))
+            return send(400, { error: 'الوضع: ' + PUSHOVER_MODES.join(' أو ') });
+          PUSHOVER_MODE = m;
+          await saveState().catch(() => {});
+        }
+        return send(200, {
+          mode: PUSHOVER_MODE, url: PUSHOVER_SUBSCRIBE_URL || null,
+          ready: !!PUSHOVER_SUBSCRIBE_URL, modes: PUSHOVER_MODES
+        });
+      }
+
       if (act === 'term-set') {
         if (req.method === 'POST') {
           const b = await readBody(req);
@@ -5304,6 +5337,9 @@ const server = http.createServer(async (req, res) => {
       term: activeTerm(),
       canWatch: MONITOR_ENABLED && !MONITOR_PAUSED && !!currentWindow(),
       window: currentWindow(),
+      /* مطفأة = لا وجود للحقل أصلاً، فلا رابط يتسرّب في رد عام */
+      pushover: pushoverOn()
+        ? { mode: PUSHOVER_MODE, url: PUSHOVER_SUBSCRIBE_URL } : null,
       /* بصمة النسخة المخدومة الآن. المثبَّت على الشاشة الرئيسية قد يعيش
          أياماً بلا إعادة تحميل، فيقارن الصفحة المحمّلة عنده بهذي
          ويعرض «فيه تحديث» بدل ما يظل على نسخة قديمة بصمت. */

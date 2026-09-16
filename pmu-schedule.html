@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="ar" dir="rtl" class="auth-pending">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -118,6 +118,10 @@ font-size:12px;font-weight:600;font-family:var(--sans);cursor:pointer;white-spac
 .sync-note{display:none;align-items:center;gap:10px;background:rgba(61,111,255,.08);
 border:1px solid var(--border2);border-radius:13px;padding:12px 14px;margin-bottom:14px;font-size:12.5px;color:var(--text2);line-height:1.6}
 .sync-note.visible{display:flex}
+/* قبل ما تُقرأ الجلسة نخفي كل ما يعلن حالة الدخول — الفراغ أصدق
+   من إعلان خاطئ يرتدّ بعد ثانية. */
+html.auth-pending .auth-btn{visibility:hidden}
+html.auth-pending .sync-note{display:none !important}
 .sync-note b{color:var(--text)}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
 
@@ -1669,8 +1673,8 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     </div>
   </div>
 
-  <div class="tap-tip" data-i18n-html="tapTip">
-    👆 <b>اضغط أي مادة</b> عشان تشوف شعبها وأوقاتها في ترم التسجيل القادم
+  <div class="tap-tip" id="tapTip">
+    👆 <b>اضغط أي مادة</b> عشان تشوف شعبها وأوقاتها في الترم الحالي
   </div>
 
   <div class="suggest-card">
@@ -1759,6 +1763,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     <div class="sc-title" data-i18n="ntTitle">تنبيهات جدولك</div>
     <div class="sc-sub" data-i18n="ntSub">تصلك على تيليغرام الساعة ٥ العصر</div>
     <div id="notifList"></div>
+    <div id="poRow"></div>
   </div>
 
   <div class="set-card">
@@ -6174,6 +6179,10 @@ let MON_STATE=null;
 async function loadMonitorState(){
   try{ MON_STATE=await (await fetch(API_BASE+'/api/monitor-status')).json(); }
   catch(e){ MON_STATE=null; }
+  poCheckUnlock();
+  poHandleReturn().catch(()=>{});
+  try{ syncTermSelect() }catch(e){}
+  try{ syncPlanHint() }catch(e){}
   /* أول قراءة تثبّت بصمة النسخة المحمّلة، وما بعدها يقارن بها */
   try{ checkBuild(MON_STATE) }catch(e){}
   const eb=document.getElementById('envBar');
@@ -6223,20 +6232,42 @@ async function sendFeedback(){
   }catch(e){ showToast(t('fbFail')+' — '+e.message,'err'); }
   finally{ btn.disabled=false; }
 }
-/* الترم اللي يسجّل فيه الطالب قريباً — نأخذه من نوافذ التقويم */
-const UPCOMING_TERM='202710';
+/* الترم النشط يجي من السيرفر لا من ثابت في الكود.
+   كان مكتوباً '202710' فبقي يقول «ترم التسجيل القادم» بعد ما صار
+   الترم الحالي وانتهى تسجيله. */
+function activeTermCode(){
+  const st=MON_STATE||{};
+  return st.term||'202710';
+}
+function regOpen(){ return !!(MON_STATE&&MON_STATE.canWatch) }
+
 function termHint(){
   const el=document.getElementById('termHint');
   if(!el)return;
   const v=(document.getElementById('term')||{}).value;
-  if(v===UPCOMING_TERM){
-    el.className='term-hint';
-    el.textContent=LANG==='ar'
-      ? '✅ هذا ترم التسجيل القادم — ابنِ جدولك منه'
-      : '✅ This is the upcoming registration term — build your schedule from it';
-  }else{
-    el.className='term-hint hide';
-  }
+  const ar=LANG==='ar';
+  if(v!==activeTermCode()){ el.className='term-hint hide'; return }
+  el.className='term-hint';
+  el.textContent=regOpen()
+    ? (ar ? '✅ هذا الترم المفتوح للتسجيل — ابنِ جدولك منه'
+          : '✅ Registration is open for this term — build your schedule from it')
+    : (ar ? 'هذا الترم الحالي' : 'This is the current term');
+}
+
+/* الترتيب: الأحدث أولاً. كانت القائمة بترتيب عشوائي في الـHTML،
+   والمحدَّد ثابتاً في الكود بدل ما يتبع الترم النشط. */
+function syncTermSelect(){
+  const sel=document.getElementById('term');
+  if(!sel)return;
+  const opts=[...sel.options].sort((a,b)=>Number(b.value)-Number(a.value));
+  const cur=sel.value;
+  sel.innerHTML='';
+  opts.forEach(o=>sel.appendChild(o));
+  const act=activeTermCode();
+  sel.value=[...sel.options].some(o=>o.value===cur)&&cur!=='202710'
+    ? cur
+    : ([...sel.options].some(o=>o.value===act)?act:sel.options[0].value);
+  termHint();
 }
 
 function updateFbCount(){
@@ -7625,6 +7656,131 @@ async function setNotif(key,val){
   PROFILE=Object.assign({},PROFILE,{notif_prefs:next});
   renderSettings();
 }
+/* ═══ التنبيه الطارئ عبر Pushover ═══
+   تيليغرام يُكتم بسهولة، وهذي تعيد التنبيه حتى يؤكّده الطالب بنفسه.
+   مخفية افتراضياً: تجربة Pushover ٣٠ يوماً تبدأ لحظة الاشتراك، فتفعيلها
+   خارج موسم التسجيل يحرقها على الفاضي.
+   الأوضاع من السيرفر: off لا أحد · link لمن فتح ‎?pushover=1‎ ·
+   pro للمشتركين · all للجميع. */
+const PO_UNLOCK='jdw_po_unlock', PO_NONCE='jdw_po_nonce';
+
+function poConf(){ return (MON_STATE&&MON_STATE.pushover)||null }
+
+function poVisible(){
+  const c=poConf();
+  if(!c||!c.url)return false;
+  if(c.mode==='all')return true;
+  if(c.mode==='pro')return !!(typeof isPro==='function'&&isPro());
+  if(c.mode==='link'){
+    try{ return localStorage.getItem(PO_UNLOCK)==='1' }catch(e){ return false }
+  }
+  return false;
+}
+
+/* ‎?pushover=1‎ يفتحها لهذا الجهاز وحده — رابط تعطيه لمن تجرّب معه */
+function poCheckUnlock(){
+  try{
+    const q=new URLSearchParams(location.search);
+    if(q.get('pushover')==='1'){
+      localStorage.setItem(PO_UNLOCK,'1');
+      q.delete('pushover');
+      history.replaceState({},'',location.pathname+(q.toString()?'?'+q:''));
+    }
+  }catch(e){}
+}
+
+function poStart(){
+  const c=poConf();
+  if(!c||!c.url)return;
+  /* رمز عشوائي نتحقق منه عند الرجوع. بدونه يقدر أحد يفتح للطالب رابط
+     العودة بمفتاح يملكه هو، فتروح إشعارات الطالب الخاصة له. */
+  let n='';
+  try{
+    const a=new Uint8Array(16); crypto.getRandomValues(a);
+    n=[...a].map(x=>x.toString(16).padStart(2,'0')).join('');
+    localStorage.setItem(PO_NONCE,n);
+  }catch(e){ showToast(LANG==='ar'?'ما ضبطت — جرّب مرة ثانية':'Failed — try again','err'); return }
+  const base=location.origin+'/';
+  const ok=base+'?rand='+n;
+  location.href=c.url+'?success='+encodeURIComponent(ok)+
+                '&failure='+encodeURIComponent(base);
+}
+
+/* الرجوع من Pushover: نتحقق من الرمز، نخزّن المفتاح، وننظّف الرابط */
+async function poHandleReturn(){
+  let q;
+  try{ q=new URLSearchParams(location.search) }catch(e){ return }
+  const key=q.get('pushover_user_key');
+  const unsub=q.get('pushover_unsubscribed')==='1';
+  if(key===null&&!unsub)return;
+
+  const clean=()=>{
+    ['rand','pushover_user_key','pushover_unsubscribed',
+     'pushover_unsubscribed_user_key'].forEach(k=>q.delete(k));
+    try{ history.replaceState({},'',location.pathname+(q.toString()?'?'+q:'')) }catch(e){}
+  };
+
+  let saved='';
+  try{ saved=localStorage.getItem(PO_NONCE)||'' }catch(e){}
+  try{ localStorage.removeItem(PO_NONCE) }catch(e){}   /* مرة واحدة دائماً */
+
+  if(!saved||q.get('rand')!==saved){
+    clean();
+    showToast(LANG==='ar'?'الرابط ما هو من عندك — ألغينا الربط'
+                         :'Link did not originate here — cancelled','err');
+    return;
+  }
+  if(!USER){ clean(); return }
+
+  const val=unsub?null:(key||null);
+  const {error}=await sb.from('profiles').update({pushover_key:val}).eq('id',USER.id);
+  clean();
+  if(error){ showToast(LANG==='ar'?'ما ضبطت — جرّب مرة ثانية':'Failed — try again','err'); return }
+  PROFILE=Object.assign({},PROFILE,{pushover_key:val});
+  showToast(val?(LANG==='ar'?'🔔 التنبيه الطارئ شغّال':'🔔 Urgent alerts on')
+                :(LANG==='ar'?'أوقفنا التنبيه الطارئ':'Urgent alerts off'));
+  renderSettings();
+}
+
+/* نفس علّة بطاقة الترم: النص كان يعد بترم قادم وهو الحالي.
+   خرج من جدول الترجمة عمداً لأن صيغته تتبدّل مع حالة التسجيل. */
+function syncPlanHint(){
+  const el=document.getElementById('tapTip');
+  if(!el)return;
+  const ar=LANG==='ar';
+  el.innerHTML=ar
+    ? '👆 <b>اضغط أي مادة</b> عشان تشوف شعبها وأوقاتها'+
+      (regOpen()?' في ترم التسجيل القادم':' في الترم الحالي')
+    : '👆 <b>Tap any course</b> to see its sections and times'+
+      (regOpen()?' for the upcoming registration term':' for the current term');
+}
+
+function renderPushover(){
+  const box=document.getElementById('poRow');
+  if(!box)return;
+  if(!poVisible()){ box.innerHTML=''; return }
+  const ar=LANG==='ar';
+  const on=!!(PROFILE&&PROFILE.pushover_key);
+  box.innerHTML=`<div class="nt-row">
+    <div class="nt-txt">
+      <b>${ar?'تنبيه طارئ عند فتح الشعبة':'Urgent alert when a section opens'}</b>
+      <span>${on
+        ? (ar?'شغّال — يعيد التنبيه حتى تأكّده بنفسك.<br>'+
+              'عشان يتجاوز الكتم ووضع «عدم الإزعاج»: افتح تطبيق Pushover ← '+
+              'Settings ← فعّل <b>Critical Alerts for high-priority</b> و'+
+              '<b>Critical Alerts for emergency</b>، واضبط <b>Volume for Critical Alerts</b>. '+
+              'هذا إعداد في جهازك ما نقدر نضبطه عنك.'
+             :'On — repeats until you acknowledge it.<br>'+
+              'To bypass mute and Do Not Disturb, open Pushover ← Settings and enable '+
+              '<b>Critical Alerts</b> for high-priority and emergency.')
+        : (ar?'عبر تطبيق Pushover. مجاني ٣٠ يوماً من لحظة الاشتراك، وبعدها شراء مرة واحدة لو حبيت. تنبيهات تيليغرام تستمر في كل الأحوال.'
+             :'Via the Pushover app. Free for 30 days, one-time purchase after that. Telegram alerts continue regardless.')}</span>
+    </div>
+    <button class="btn-sm${on?' ghost':''}" onclick="poStart()">${
+      on?(ar?'إدارة':'Manage'):(ar?'تفعيل':'Enable')}</button>
+  </div>`;
+}
+
 function renderNotif(){
   const card=document.getElementById('notifCard');
   if(!card)return;
@@ -7642,6 +7798,7 @@ function renderNotif(){
   document.getElementById('notifList').innerHTML=
     row('on',t('ntAll'),t('ntAllSub'),p.on)
     +NOTIF_KEYS.map(([k,tk,dk])=>row(k,t(tk),t(dk),p.on&&p[k],!p.on)).join('');
+  renderPushover();
 }
 
 function renderTgAndMon(ar){
@@ -9300,6 +9457,9 @@ async function handleAuth(){
 }
 
 function setAuthUI(){
+  /* الجلسة انقرأت — نسمح بإظهار حالة الدخول */
+  if(typeof AUTH_READY!=='undefined'&&AUTH_READY)
+    document.documentElement.classList.remove('auth-pending');
   const b=document.getElementById('authBtn');
   const note=document.getElementById('syncNote');
   if(USER){
@@ -9431,6 +9591,10 @@ async function writeSchedule(){
 }
 
 async function pushSchedule(){ return saveQueue('schedule',writeSchedule) }
+
+/* لو ما وصل سكربت Supabase أصلاً، نكشف الزر بعد ثلاث ثوانٍ بدل ما
+   يبقى الطالب أمام رأس صفحة ناقص */
+setTimeout(()=>document.documentElement.classList.remove('auth-pending'),3000);
 
 /* بدء الجلسة */
 (async function initAuth(){

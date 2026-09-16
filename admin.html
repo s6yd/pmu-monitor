@@ -1517,6 +1517,10 @@ function seasonCard(){
       <b>${w?`<span class="mono ltr">${esc(w.from)} → ${esc(w.to)}</span>`
            :'<span style="color:var(--text3)">مغلقة</span>'}${
         h.windowCustom?' <span style="color:var(--warn,#f59e0b)">يدوية</span>':''}</b></div>
+    <div class="kv"><span>التنبيه الطارئ (Pushover)</span>
+      <b>${h.pushoverReady
+        ? `${esc(h.pushoverMode||'off')}${h.pushoverMode==='off'?' — مخفيّ':''}`
+        : '<span style="color:var(--text3)">الرابط غير مضبوط في Render</span>'}</b></div>
     <div class="kv"><span>الجرس عند الطلاب</span>
       <b style="color:${open?'var(--open)':'var(--close)'}">${open?'مفتوح':'مقفول'}</b></div>
     <div class="gauge-sub">
@@ -1527,7 +1531,23 @@ function seasonCard(){
       <button class="mini" onclick="setWindow()">تعديل النافذة</button>
       <button class="mini no" onclick="closeWindowNow()">إقفال الجرس الآن</button>
       <button class="mini" onclick="resetWindow()">رجوع للتقويم</button>
+      <button class="mini" onclick="setPushover()">وضع Pushover</button>
     </div></div>`;
+}
+
+/* off لا أحد · link لمن يفتح ?pushover=1 · pro للمشتركين · all للجميع */
+async function setPushover(){
+  const cur=((HEALTH&&HEALTH.monitorInfo)||{}).pushoverMode||'off';
+  const m=prompt('وضع Pushover — off / link / pro / all\n\n'+
+    'off: ما يشوفه أحد\nlink: لمن تعطيه رابط ?pushover=1\n'+
+    'pro: للمشتركين\nall: للجميع',cur);
+  if(m===null||m.trim()===cur)return;
+  try{
+    const r=await api('pushover-mode',{body:{mode:m.trim()}});
+    if(!r.ready)toast('الوضع '+r.mode+' — لكن PUSHOVER_SUBSCRIBE_URL ناقص في Render','err');
+    else toast('وضع Pushover صار '+r.mode,'ok');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
 }
 
 async function setTerm(){
