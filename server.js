@@ -285,6 +285,9 @@ const sentKey = (uid, kind, ref) => `${uid}|${kind}|${ref}`;
 
 function buildNotifications(state) {
   const { today, profiles, schedules, events, absences, acadCal, sharedCounts } = state;
+  /* الترم جزء من كل مرجع: أرقام الشعب تتكرر بين الترمات، فصف قديم
+     من ترم ماضٍ كان بيسكّت تنبيهاً مشروعاً في الترم الجديد بصمت. */
+  const term = String(state.term || '');
   const target = dayShift(today, NOTIF_LEAD);
   const approved = new Set(state.acadApproved || []);
   const sent = new Set(state.sentRefs || []);
@@ -330,7 +333,7 @@ function buildNotifications(state) {
         if (has) continue;                              /* عندك أصلاً */
         /* نفس علّة الغياب: الشرط يبقى صحيحاً كل يوم حتى يضيف الطالب
            الموعد أو يمضي تاريخه، فكان يتكرر يومياً. مرة واحدة تكفي. */
-        const ref = `${s.crn}:${s.kind}:${s.on_date}`;
+        const ref = `${term}:${s.crn}:${s.kind}:${s.on_date}`;
         if (sent.has(sentKey(uid, 'confirmed', ref))) continue;
         lines.push({
           kind: 'confirmed', ref,
@@ -353,7 +356,7 @@ function buildNotifications(state) {
         /* «بقي واحد» شرط يبقى صحيحاً كل يوم حتى نهاية الترم، فكان
            التنبيه يخرج يومياً بلا نهاية. الدفتر يجعله مرة واحدة لكل
            (شعبة · عدد الغيابات) — ولو حذف الطالب غياباً ثم أعاده لا يتكرر. */
-        const ref = `${c.crn}:${used}`;
+        const ref = `${term}:${c.crn}:${used}`;
         if (sent.has(sentKey(uid, 'absence', ref))) continue;
         lines.push({
           kind: 'absence', ref,
@@ -491,7 +494,7 @@ async function notifyTick() {
       today: date, profiles, schedules: withMax, events, absences,
       acadCal: ACAD_CAL_SERVER, sharedCounts: Object.values(cnt),
       acadApproved: aps.filter(r => r.status === 'approved').map(r => r.ref),
-      sentRefs
+      sentRefs, term
     });
 
     let sent = 0, evIds = [], ledger = [];
@@ -1011,43 +1014,76 @@ async function runMonitorCycle() {
     /* ── 1. سحبة واحدة، للترم النشط ── */
     const terms = [TERM];
     const snapshot = {};
+    let fetchFailed = false, partial = false;
     for (const term of terms) {
-      try {
-        const html = await fetchPMUData(term, 'ALL', 'ALL');
-        /* نوسم الجنس هنا أيضاً — الكاش يخدم البحث مباشرة */
-        const parsed = tagGender(parseHTML(html), 'ALL');
+      const snap = await fetchTermSnapshot(term);
+
+      if (snap.courses) {
+        const parsed = snap.courses;
         /* parseHTML ما تضع الترم في المادة، و byCourse يبني مفتاحه من
            c.term — فكان يطلع '|PHYS 1422' بدل '202710|PHYS 1422' ولا
            يتطابق أبداً، فتتعطّل مراقبة المادة كاملة بصمت. نوسمه هنا. */
         parsed.forEach(c => { c.term = term; snapshot[term + ':' + c.crn] = c; });
+        if (snap.guessed) stat.guessedGender = true;
 
-        /* نفس البيانات اللي سحبناها للمراقبة هي اللي يحتاجها البحث،
-           فنغذّي بها كاش البحث بدل ما نسحبها مرة ثانية.
-           يقلّل الطلبات على موقع الجامعة، ويخلي الطالب يلقى النتيجة جاهزة. */
-        const ck = `${term}|ALL|ALL`;
-        const prev = coursesCache.get(ck);
-        coursesCache.set(ck, {
-          at: Date.now(),
-          lastHit: (prev && prev.lastHit) || 0,   /* ما نوهم التسخين إنها مطلوبة */
-          courses: parsed
-        });
-        while (coursesCache.size > 40)
-          coursesCache.delete(coursesCache.keys().next().value);
-        OPS.cacheFromMonitor = (OPS.cacheFromMonitor || 0) + 1;
+        if (snap.partial) {
+          /* نصف جدول: يكفي لمراقبة شعبة بعينها — حضورها حقيقة مقيسة —
+             ولا يكفي للكاش ولا للمزامنة ولا لمقارنة شعب المادة، لأن
+             الغائب يبدو محذوفاً ثم يعود «جديداً» فينهال الطالب بإشعارات
+             كاذبة، والمزامنة تشطب نصف الجدول كأنه اختفى من الجامعة. */
+          partial = true;
+          fetchFailed = true;            /* نعاود قريباً لنكمل الناقص */
+          stat.partial = parsed.length;
+          console.log(`cycle: نصف الجدول فقط (${parsed.length} شعبة) — ` +
+                      `بلا كاش ولا مزامنة ولا مقارنة مواد`);
+        } else {
+          /* نفس البيانات اللي سحبناها للمراقبة هي اللي يحتاجها البحث،
+             فنغذّي بها كاش البحث بدل ما نسحبها مرة ثانية.
+             يقلّل الطلبات على موقع الجامعة، ويخلي الطالب يلقى النتيجة جاهزة. */
+          const ck = `${term}|ALL|ALL`;
+          const prev = coursesCache.get(ck);
+          coursesCache.set(ck, {
+            at: Date.now(),
+            lastHit: (prev && prev.lastHit) || 0,  /* ما نوهم التسخين إنها مطلوبة */
+            courses: parsed
+          });
+          while (coursesCache.size > 40)
+            coursesCache.delete(coursesCache.keys().next().value);
+          OPS.cacheFromMonitor = (OPS.cacheFromMonitor || 0) + 1;
 
-        /* المزامنة كانت مربوطة بسحبة getCourses. وبما إن المراقبة صارت
-           تعبّي الكاش، ما عادت تنطلق من هناك — فنطلقها من هنا.
-           الحارس الزمني داخل syncSchedules يمنع الكتابة المتكررة. */
-        syncSchedules(term, parsed).catch(() => {});
-      } catch (e) {
-        OPS.pmuFails++;
-        console.log('fetch fail', term, e.message);
-        alert('pmu', 'موقع الجامعة ما يستجيب',
-          `فشل سحب بيانات الترم ${term}.\nالسبب: ${e.message}\n\n` +
-          `المراقبة والبحث بيتأثرون. لو تكرر كثير، تحقق إذا السيرفر محجوب.`);
+          /* المزامنة كانت مربوطة بسحبة getCourses. وبما إن المراقبة صارت
+             تعبّي الكاش، ما عادت تنطلق من هناك — فنطلقها من هنا.
+             الحارس الزمني داخل syncSchedules يمنع الكتابة المتكررة. */
+          syncSchedules(term, parsed).catch(() => {});
+        }
+      } else {
+        fetchFailed = true;
+
+        /* نسخة حديثة في الذاكرة خير من لا شيء. مصدرها بحث طالب نجح
+           أو دورة سابقة، وسقف العمر يمنع إشعاراً عن شعبة أُغلقت. */
+        const hit = coursesCache.get(`${term}|ALL|ALL`);
+        const age = hit ? Date.now() - hit.at : Infinity;
+        if (hit && age <= CYCLE_CACHE_MAX && hit.courses && hit.courses.length) {
+          hit.courses.forEach(c => {
+            const cc = Object.assign({}, c, { term });
+            snapshot[term + ':' + cc.crn] = cc;
+          });
+          stat.fromCache = Math.round(age / 1000);
+          console.log(`cycle: نسخة من الكاش عمرها ${stat.fromCache} ثانية`);
+        } else {
+          alert('pmu', 'موقع الجامعة ما يستجيب',
+            `فشل سحب بيانات الترم ${term} — الطلبات الثلاثة كلها.\n\n` +
+            `وما فيه نسخة حديثة في الذاكرة نرجع لها.\n` +
+            `المراقبة والبحث بيتأثرون. لو تكرر كثير، تحقق إذا السيرفر محجوب.`);
+        }
       }
-      await new Promise(r => setTimeout(r, 1500));
     }
+
+    /* فشل الجلب يقصّر الفاصل القادم، حتى لو أنقذنا الدورة بالكاش —
+       فالنسخة ستشيخ، والمطلوب بيانات طازجة لا تكرار القديمة. */
+    CYCLE_RETRIES = fetchFailed
+      ? Math.min(CYCLE_RETRIES + 1, CYCLE_RETRY_MAX + 1)
+      : 0;
 
     const now = new Date().toISOString();
 
@@ -1102,7 +1138,9 @@ async function runMonitorCycle() {
        أول دورة لأي صف جديد نسجّل الحالة فقط بلا إشعار، عشان ما ننهال
        على الطالب بكل الشعب المفتوحة أصلاً وقت ما فعّل المراقبة. */
     const courseStateUpdates = [];   // {id, state}
-    for (const m of courseMons) {
+    /* بنصف جدول، شعب الجنس الغائب تُقرأ كأنها اختفت، ثم تعود في الدورة
+       التالية كأنها «نزلت جديدة». نتخطّى المقارنة كلها ولا نكتب الحالة. */
+    for (const m of (partial ? [] : courseMons)) {
       const term = m.term || '202630';
       const list = byCourse[term + '|' + normCode(m.course_code)] || [];
       if (!list.length) continue;
@@ -3178,6 +3216,7 @@ async function adminHealth() {
     ttlChoices: TTL_CHOICES,
     ttlLimits: { min: TTL_MIN_ALLOWED, max: TTL_MAX_ALLOWED },
     monitorJitterPct: Math.round(JITTER * 100),
+    cycleRetries: CYCLE_RETRIES,
     schedSync: {
       last: SCHED_SYNC.last,
       lastChange: SCHED_SYNC.lastChange,
@@ -3771,6 +3810,43 @@ function tagGender(courses, gender) {
   return courses;
 }
 
+/* ═══ سحب جدول الترم ═══
+   سحبتان منفصلتان M1 و F1 بدل سحبة ALL واحدة، لسببين:
+   • الرد أصغر فينجح حين يتعثّر الطلب الكبير — وهذا ما نشوفه في الذروة،
+     الطلب الشامل يسقط والمحدَّد ينجح.
+   • الجنس يصير معلوماً من الفلتر لا مخمَّناً من رقم الشعبة. التخمين
+     خاطئ، ويتسرّب للبحث لأن هذي السحبة تغذّي كاشه.
+   نصف الجدول أخطر من لا شيء لبعض الأغراض — شعب الجنس الغائب تبدو
+   مختفية ثم «جديدة» في الدورة التالية — فنرفع partial ليحترس النداء. */
+async function fetchTermSnapshot(term) {
+  const parts = [];
+  for (const g of ['M1', 'F1']) {
+    try {
+      const rows = tagGender(parseHTML(await fetchPMUData(term, 'ALL', g)), g);
+      if (!rows.length) throw new Error('رد بلا صفوف');
+      parts.push(rows);
+    } catch (e) {
+      OPS.pmuFails++;
+      console.log(`fetch fail ${term} ${g}: ${e.message}`);
+    }
+    await new Promise(r => setTimeout(r, 1500));
+  }
+  if (parts.length === 2) return { courses: parts[0].concat(parts[1]), partial: false };
+  if (parts.length === 1) return { courses: parts[0], partial: true };
+
+  /* سقطت الاثنتان — نجرّب الطلب الشامل مرة أخيرة. الجنس فيه مخمَّن،
+     لكنه أفضل من دورة عمياء تماماً. */
+  try {
+    const rows = tagGender(parseHTML(await fetchPMUData(term, 'ALL', 'ALL')), 'ALL');
+    if (rows.length) return { courses: rows, partial: false, guessed: true };
+    throw new Error('رد بلا صفوف');
+  } catch (e) {
+    OPS.pmuFails++;
+    console.log(`fetch fail ${term} ALL: ${e.message}`);
+  }
+  return { courses: null, partial: false };
+}
+
 async function syncSchedules(term, courses, force) {
   /* ═══ ترم واحد فقط ═══
      الجامعة تعيد استخدام أرقام CRN بين الترمات، فصفّ طالب من ترم قديم
@@ -4219,6 +4295,15 @@ let WINDOW_OVERRIDE = null;       // {from:'YYYY-MM-DD', to:'YYYY-MM-DD', ar}
 const activeFrom = () => HOURS_OVERRIDE ? HOURS_OVERRIDE.from : ACTIVE_FROM_DEFAULT;
 const activeTo   = () => HOURS_OVERRIDE ? HOURS_OVERRIDE.to   : ACTIVE_TO_DEFAULT;
 
+/* ═══ التعافي من فشل الجلب ═══
+   موقع الجامعة يتعثّر أحياناً في الذروة. كانت الدورة ترجع صفر اليدين
+   وتنتظر فاصلها كاملاً — خمس دقائق عمياء في أكثر الأوقات حساسية،
+   وبحث طالب ناجح بعدها بدقيقتين يملأ الكاش والدورة لا تقرأه أصلاً. */
+const CYCLE_CACHE_MAX  = 3 * 60 * 1000;  /* أقصى عمر نسخة نقبلها للمقارنة */
+const CYCLE_RETRY_WAIT = 60 * 1000;      /* نعاود بعد دقيقة لا بعد الفاصل */
+const CYCLE_RETRY_MAX  = 3;              /* وبعد ثلاث محاولات نهدأ */
+let CYCLE_RETRIES = 0;
+
 const INTERVAL_PEAK = 5 * 60 * 1000;    // داخل نافذة التسجيل
 const JITTER        = 0.25;             // ±25% تفادياً لنمط منتظم تماماً
 
@@ -4374,6 +4459,12 @@ function nextDelay() {
   const st = monitorState();
 
   if (st.reason === 'disabled') return 60 * 60 * 1000;
+
+  /* بعد فشل جلب، نعاود بعد دقيقة بدل الفاصل الكامل — بحد ثلاث محاولات
+     حتى لا نطرق باب الجامعة كل دقيقة وهي ساقطة. يُحسب قبل حارس
+     الساعات عمداً: الفشل داخل الموسم وحده يهم. */
+  if (st.active && CYCLE_RETRIES > 0 && CYCLE_RETRIES <= CYCLE_RETRY_MAX)
+    return CYCLE_RETRY_WAIT * (1 + Math.random() * 0.3);
 
   /* خارج الموسم: نفحص مرة كل ساعة فقط إذا بدأت نافذة جديدة */
   if (st.reason === 'offseason') return 60 * 60 * 1000 * (1 + Math.random() * 0.2);
