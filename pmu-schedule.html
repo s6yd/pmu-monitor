@@ -3661,7 +3661,7 @@ function activeTermCode(){
    2) صفوف الجدول المحلية ما تحمل حقل term (سبق أن كسر هذا مراقبة المادة
       كاملة)، فنعتمد على الترم المعروض لا على حقل غير موجود. */
 function inSchedule(code){
-  if(activeTermCode()!==UPCOMING_TERM)return false;
+  if(activeTermCode()!==serverTerm())return false;
   if(!Array.isArray(schedule))return false;
   return schedule.some(c=>c.courseCode===code);
 }
@@ -6061,7 +6061,9 @@ function renderToday(){
   }
   /* الغياب والمواعيد والصور تُكتب في الحساب — الزائر يرى يومه كاملاً
      ويُدعى للدخول مرة واحدة فوق، لا عند كل زر يضغطه فيفشل. */
-  if(!USER)html+=`<div class="tg-bar" style="margin-bottom:10px">
+  /* ما نحكم إنه زائر قبل ما تُقرأ الجلسة */
+  const authPending=document.documentElement.classList.contains('auth-pending');
+  if(!USER&&!authPending)html+=`<div class="tg-bar" style="margin-bottom:10px">
     <span>${t('tdGuestNote')}</span>
     <button onclick="handleAuth()">${t('tdGuestBtn')}</button></div>`;
 
@@ -6235,7 +6237,7 @@ async function sendFeedback(){
 /* الترم النشط يجي من السيرفر لا من ثابت في الكود.
    كان مكتوباً '202710' فبقي يقول «ترم التسجيل القادم» بعد ما صار
    الترم الحالي وانتهى تسجيله. */
-function activeTermCode(){
+function serverTerm(){
   const st=MON_STATE||{};
   return st.term||'202710';
 }
@@ -6246,7 +6248,7 @@ function termHint(){
   if(!el)return;
   const v=(document.getElementById('term')||{}).value;
   const ar=LANG==='ar';
-  if(v!==activeTermCode()){ el.className='term-hint hide'; return }
+  if(v!==serverTerm()){ el.className='term-hint hide'; return }
   /* النص أولاً ثم الإظهار: لو تعثّر شيء بينهما ما يظهر صندوق فاضٍ.
      والصنف في HTML يبدأ hide لنفس السبب — قبلها كان يظهر فاضياً
      إذا ما وصلت الدالة أصلاً. */
@@ -6266,7 +6268,7 @@ function syncTermSelect(){
   const cur=sel.value;
   sel.innerHTML='';
   opts.forEach(o=>sel.appendChild(o));
-  const act=activeTermCode();
+  const act=serverTerm();
   sel.value=[...sel.options].some(o=>o.value===cur)&&cur!=='202710'
     ? cur
     : ([...sel.options].some(o=>o.value===act)?act:sel.options[0].value);
@@ -6912,16 +6914,8 @@ function syncMajorSelect(){
   if(el.value!==v)el.value=v;
 }
 
-function goPickMajor(){
-  switchTab('set');
-  setTimeout(()=>{
-    const el=document.getElementById('majorSelect');
-    if(el){
-      el.scrollIntoView({behavior:'smooth',block:'center'});
-      el.focus();
-    }
-  },120);
-}
+/* goPickMajor كانت معرّفة مرتين، والثانية (قرب ٨١٧٠) هي اللي تغلب دائماً —
+   هذي كانت كوداً ميتاً. حُذفت. */
 
 function renderPlan(){
   applyGpaHidden();
@@ -8105,7 +8099,7 @@ async function loadInstructors(force){
       const ctrl=new AbortController();
       const timer=setTimeout(()=>ctrl.abort(),30000);
       try{
-        const r=await fetch(`${API}?term=${UPCOMING_TERM}&college=ALL&gender=ALL`,
+        const r=await fetch(`${API}?term=${serverTerm()}&college=ALL&gender=ALL`,
                             {signal:ctrl.signal});
         const d=await r.json();
         if(d && d.success){
@@ -8317,8 +8311,8 @@ function searchIn(query, note){
   const gen =document.getElementById('gender');
 
   /* نجبر الخيارات على ترم التسجيل القادم + الكل، مهما كان اختياره السابق */
-  const changed = term.value!==UPCOMING_TERM || col.value!=='ALL' || gen.value!=='ALL';
-  term.value=UPCOMING_TERM; col.value='ALL'; gen.value='ALL';
+  const changed = term.value!==serverTerm() || col.value!=='ALL' || gen.value!=='ALL';
+  term.value=serverTerm(); col.value='ALL'; gen.value='ALL';
   termHint();
 
   resetTabScroll('search');
@@ -9062,7 +9056,12 @@ function toggleTheme(){
   THEME = THEME==='auto' ? 'light' : THEME==='light' ? 'dark' : 'auto';
   save('pmu_theme',THEME);
   applyTheme();
-  if(THEME==='auto')showToast(LANG==='ar'?'الثيم يتبع إعداد جهازك':'Theme follows your device');
+  const ar=LANG==='ar';
+  showToast(THEME==='auto'
+    ? (ar?'🌗 تلقائي — يتبع إعداد جوالك':'🌗 Auto — follows your device')
+    : THEME==='light'
+      ? (ar?'☀️ فاتح دائماً — اضغط مرة ثانية للغامق':'☀️ Always light — tap again for dark')
+      : (ar?'🌙 غامق دائماً — اضغط مرة ثانية ليتبع جوالك':'🌙 Always dark — tap again to follow your device'));
 }
 
 /* لو غيّر الطالب إعداد جهازه والموقع مفتوح، يتغيّر معه فوراً */
@@ -9558,6 +9557,13 @@ async function pullCloud(){
     else if(prof&&prof.major===MAJOR&&hasAltPlan(MAJOR)) applyMajor(MAJOR,true,false);
     else if(prof&&!prof.major&&MAJOR!=='MEEN') pushProfile();
 
+    /* تخصص في الحساب = اختيار فعلي منه، مهما طابق القيمة الافتراضية */
+    if(prof&&prof.major&&PLANS[prof.major]&&!majorChosen()){
+      save('pmu_major',prof.major);
+      const ms=document.getElementById('majorSelect');
+      if(ms)ms.value=prof.major;
+    }
+
     if(cc&&cc.length){
       completed=cc.map(r=>r.course_code);
       grades={};cc.forEach(r=>{if(r.grade)grades[r.course_code]=r.grade});
@@ -9657,6 +9663,11 @@ async function pushSchedule(){ return saveQueue('schedule',writeSchedule) }
    يبقى الطالب أمام رأس صفحة ناقص */
 setTimeout(()=>document.documentElement.classList.remove('auth-pending'),3000);
 
+/* «اليوم» تُرسم مبكراً — نعيد رسمها أول ما تتضح حالة الدخول */
+function redrawTodayAfterAuth(){
+  try{ if(CUR_TAB==='today'){ TODAY_HTML=''; renderToday() } }catch(e){}
+}
+
 /* بدء الجلسة */
 (async function initAuth(){
   /* اعرض أي خطأ راجع من جوجل */
@@ -9676,11 +9687,12 @@ setTimeout(()=>document.documentElement.classList.remove('auth-pending'),3000);
   USER=session?session.user:null;
   AUTH_READY=true;
   setAuthUI();
-  if(USER){await pullCloud();setAuthUI();renderPlan();
+  redrawTodayAfterAuth();
+  if(USER){await pullCloud();setAuthUI();renderPlan();redrawTodayAfterAuth();
     if(document.getElementById('pageSched').classList.contains('active'))renderSchedule();}
   sb.auth.onAuthStateChange(async(ev,sess)=>{
     const was=!!USER;USER=sess?sess.user:null;
-    if(USER&&!was){await pullCloud();setAuthUI();renderPlan();}
+    if(USER&&!was){await pullCloud();setAuthUI();renderPlan();redrawTodayAfterAuth();}
   });
 })();
 
