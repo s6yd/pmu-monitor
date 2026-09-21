@@ -175,12 +175,22 @@ function sb(method, table, { query = '', body = null, prefer = '' } = {}) {
    نطلب صفحة صفحة بترتيب ثابت على id، ونقف عند أول صفحة ناقصة. */
 const SB_PAGE = 1000;
 const SB_PAGE_MAX = 100;                 /* حارس: 100 ألف صف كحد أقصى */
-async function sbAll(table, { query = '', order = 'id', pageSize = SB_PAGE } = {}) {
+/* order: اسم عمود (يُضاف له .asc) أو ترتيب جاهز فيه نقطة مثل
+   'user_id.asc,kind.asc,ref.asc' للجداول بمفتاح مركّب بلا id.
+   strict: الخطأ يُرمى بنصّه بدل ما يُقرأ كـ«جدول فاضٍ». بدونه كان
+   ترتيبٌ بعمود غير موجود يرجّع [] بصمت — وهذا بالضبط ما كرّر
+   تحذيرات الغياب يومياً: notif_sent بلا عمود id. */
+async function sbAll(table, { query = '', order = 'id', pageSize = SB_PAGE, strict = false } = {}) {
   const out = [];
+  const ord = String(order).includes('.') ? order : `${order}.asc`;
   for (let page = 0; page < SB_PAGE_MAX; page++) {
-    const q = `${query}&order=${order}.asc&limit=${pageSize}&offset=${page * pageSize}`;
+    const q = `${query}&order=${ord}&limit=${pageSize}&offset=${page * pageSize}`;
     const rows = await sb('GET', table, { query: q });
-    if (!Array.isArray(rows)) break;
+    if (!Array.isArray(rows)) {
+      if (strict)
+        throw new Error(`${table}: ${(rows && (rows.message || rows.code)) || 'رد غير متوقع'}`);
+      break;
+    }
     for (const r of rows) out.push(r);
     if (rows.length < pageSize) return out;   /* صفحة ناقصة = النهاية */
   }
@@ -305,6 +315,9 @@ function buildNotifications(state) {
   const target = dayShift(today, NOTIF_LEAD);
   const approved = new Set(state.acadApproved || []);
   const sent = new Set(state.sentRefs || []);
+  /* الغياب و«أكّده زملاؤك» شرطهما يبقى صحيحاً أياماً، فبلا دفتر يتكرران
+     يومياً. نتخطّاهما حين يتعذّر الدفتر، ويبقى الموعد والبثّ كما هما. */
+  const ledgerOk = state.ledgerOk !== false;
   const out = [];
 
   /* من يدرس أي CRN — نحتاجها للغياب و«أكّده زملاؤك» */
@@ -336,7 +349,7 @@ function buildNotifications(state) {
     }
 
     /* 2) موعد أكّده ثلاثة من الشعبة وما هو عندك */
-    if (wants(prof, 'confirmed')) {
+    if (ledgerOk && wants(prof, 'confirmed')) {
       for (const s of (sharedCounts || [])) {
         if (s.n < NOTIF_CONFIRM_MIN) continue;
         if (s.on_date <= today) continue;               /* مضى */
@@ -358,7 +371,7 @@ function buildNotifications(state) {
     }
 
     /* 3) قرب الحرمان */
-    if (wants(prof, 'absence')) {
+    if (ledgerOk && wants(prof, 'absence')) {
       const seen = {};
       for (const c of mine) {
         const used = (absences || []).filter(a =>
@@ -497,18 +510,32 @@ async function notifyTick() {
 
     /* دفتر ما أُرسل سابقاً — في القاعدة لا في الذاكرة، فإعادة النشر
        ما تعيد التنبيهات على الطلاب. */
-    let sentRefs = [];
+    let sentRefs = [], ledgerOk = true;
     try {
-      const rows = await sbAll('notif_sent', { query: '?select=user_id,kind,ref' });
-      if (Array.isArray(rows))
-        sentRefs = rows.map(r => sentKey(r.user_id, r.kind, r.ref));
-    } catch (e) { /* تعذّرت القراءة: نكمل بلا دفتر، ونقبل تكراراً نادراً */ }
+      /* الجدول بمفتاح مركّب بلا id — نرتّب بالمفتاح نفسه، وبصرامة:
+         أي خطأ يُرمى بنصّه بدل ما يبدو دفتراً فاضياً. */
+      const rows = await sbAll('notif_sent', {
+        query: '?select=user_id,kind,ref',
+        order: 'user_id.asc,kind.asc,ref.asc',
+        strict: true
+      });
+      sentRefs = rows.map(r => sentKey(r.user_id, r.kind, r.ref));
+    } catch (e) {
+      /* كان هنا «نكمل بلا دفتر ونقبل تكراراً نادراً». لكن الدفتر المعطوب
+         لا يسبّب تكراراً نادراً — يسبّب تكراراً يومياً دائماً. فنغلق:
+         نتخطّى الأنواع التي تعتمد عليه، وننبّهك بالسبب الحقيقي. */
+      ledgerOk = false;
+      alert('ledger', 'دفتر التنبيهات لا يعمل',
+        `قراءة notif_sent فشلت: ${e.message}\n\n` +
+        `أوقفنا تحذيرات الغياب و«أكّده زملاؤك» اليوم حتى لا تتكرر على الطلاب.\n` +
+        `لو الرسالة «does not exist»، شغّل SQL إنشاء الجدول.`);
+    }
 
     const msgs = buildNotifications({
       today: date, profiles, schedules: withMax, events, absences,
       acadCal: ACAD_CAL_SERVER, sharedCounts: Object.values(cnt),
       acadApproved: aps.filter(r => r.status === 'approved').map(r => r.ref),
-      sentRefs, term
+      sentRefs, term, ledgerOk
     });
 
     let sent = 0, evIds = [], ledger = [];
@@ -527,12 +554,25 @@ async function notifyTick() {
       await new Promise(r2 => setTimeout(r2, 120));   /* حدود تيليغرام */
     }
 
-    /* merge-duplicates: الصف موجود أصلاً يعني أُرسل من قبل، وهذا مقبول */
-    for (let i = 0; i < ledger.length; i += 100)
-      await sb('POST', 'notif_sent', {
-        body: ledger.slice(i, i + 100),
-        prefer: 'resolution=merge-duplicates,return=minimal'
-      }).catch(() => {});
+    /* merge-duplicates: الصف موجود أصلاً يعني أُرسل من قبل، وهذا مقبول.
+       و .catch وحدها ما تكفي: sb ترجع كائن الخطأ ولا ترمي، فكانت الكتابة
+       الفاشلة تُبتلع وتعود نفس الرسالة غداً. */
+    let ledgerErr = null;
+    for (let i = 0; i < ledger.length; i += 100) {
+      let r;
+      try {
+        r = await sb('POST', 'notif_sent', {
+          body: ledger.slice(i, i + 100),
+          prefer: 'resolution=merge-duplicates,return=minimal'
+        });
+      } catch (e) { r = { message: e.message } }
+      if (r && !Array.isArray(r) && (r.code || r.message))
+        ledgerErr = r.message || r.code;
+    }
+    if (ledgerErr)
+      alert('ledger-write', 'تسجيل التنبيهات المرسلة فشل',
+        `الكتابة في notif_sent رجعت: ${ledgerErr}\n\n` +
+        `اللي انرسل اليوم بيتكرر بكرة حتى يُصلح.`);
 
     /* نعلّم المرسَل حتى لا يتكرر لو أُعيد تشغيل السيرفر */
     if (evIds.length)
@@ -566,8 +606,9 @@ async function notifyTick() {
     await prepareAcadApprovals(dayShift(date, 1)).catch(() => {});
 
     if (sent) {
-      console.log(`تنبيهات جدولك: ${sent} رسالة`);
-      logEvent('notify', { sent, at: Date.now() });
+      console.log(`تنبيهات جدولك: ${sent} رسالة · env=${SITE_ENV}`);
+      logEvent('notify', { sent, at: Date.now(), env: SITE_ENV,
+                           build: PAGE ? PAGE.etag : null, ledgerOk });
     }
   } catch (e) {
     console.log('notifyTick: ' + e.message);
