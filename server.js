@@ -6,6 +6,14 @@ const path = require('path');
 const crypto = require('crypto');
 const zlib = require('zlib');
 
+/* ═══ بيانات الخطط — نفس الملف للسيرفر والصفحة ═══
+   PLANS · PLAN_ALT · REG_CAL · GUIDE كانت مضمّنة في pmu-schedule.html،
+   فالسيرفر ما يقدر يقرأها والصفحة وحدها تعرفها. الآن في shared/plans.js:
+   السيرفر يأخذها هنا بـrequire، ويخدم الملف نفسه بايت ببايت على
+   /plans.js — فما فيه نسختان تختلفان، نفس ما عُولج التقويم في
+   /calendar.js بعد ما اختلفت نسخة الصفحة عن نسخة السيرفر. */
+const PLANS_DATA = require('./shared/plans.js');
+
 /* ═══ صفحة الموقع: تُقرأ وتُضغط مرة وحدة عند تشغيل السيرفر ═══
    قبل كذا كنا نقرأها من القرص مع كل زيارة (300KB لكل طالب).
    الآن تُحفظ في الذاكرة مضغوطة (~60KB) مع ETag.
@@ -711,6 +719,32 @@ function calAsset() {
       .update(js).digest('hex').slice(0, 16) + '"' };
   }
   return CAL_ASSET;
+}
+
+/* ═══ ما يُخدم من بيانات الخطط ═══
+   نقرأ بايتات الملف لا نعيد توليدها، فالمخدوم هو المقروء حرفياً.
+   (الـrequire نفسه في أعلى الملف — لا تضعه هنا: هذي المنطقة تقتطعها
+   اختبارات التقويم والتنبيهات وتشغّلها في vm بلا require.) */
+let PLANS_ASSET = null;
+function plansAsset() {
+  if (!PLANS_ASSET) {
+    const raw = fs.readFileSync(path.join(__dirname, 'shared', 'plans.js'));
+    PLANS_ASSET = {
+      raw,
+      gz: zlib.gzipSync(raw, { level: 9 }),
+      etag: '"' + crypto.createHash('sha1').update(raw).digest('hex').slice(0, 16) + '"',
+    };
+  }
+  return PLANS_ASSET;
+}
+
+/* بصمة البناء = الصفحة + الخطط. النسخة المثبّتة على الشاشة الرئيسية في
+   iOS تقارن هذي البصمة؛ لو ما شملت الخطط، تعديل خطة ما يوصل الطالب
+   المثبِّت أبداً لأن الصفحة نفسها ما تغيّرت. */
+function buildTag() {
+  if (!PAGE) return null;
+  return '"' + crypto.createHash('sha1')
+    .update(PAGE.etag + '|' + plansAsset().etag).digest('hex').slice(0, 16) + '"';
 }
 
 /* حدود الترم الذي يقع فيه اليوم — نفس منطق termBounds في الواجهة حرفياً:
@@ -6125,8 +6159,10 @@ const server = http.createServer(async (req, res) => {
         ? { mode: PUSHOVER_MODE, url: PUSHOVER_SUBSCRIBE_URL } : null,
       /* بصمة النسخة المخدومة الآن. المثبَّت على الشاشة الرئيسية قد يعيش
          أياماً بلا إعادة تحميل، فيقارن الصفحة المحمّلة عنده بهذي
-         ويعرض «فيه تحديث» بدل ما يظل على نسخة قديمة بصمت. */
-      build: PAGE ? PAGE.etag : null,
+         ويعرض «فيه تحديث» بدل ما يظل على نسخة قديمة بصمت.
+         تشمل بصمة الخطط: الخطط صارت ملفاً منفصلاً، فتعديل خطة لا يغيّر
+         الصفحة — وبلا هذا ما يوصل المثبِّت تحديث خطة أبداً. */
+      build: buildTag(),
       next: st.next || nextWindow(),
       dataTtlMin: Math.round(coursesTTL() / 60000),
       ar: st.ar, en: st.en,
@@ -6216,6 +6252,25 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(304); res.end(); return;
     }
     res.writeHead(200); res.end(cal.js); return;
+  }
+
+  /* بيانات الخطط — الملف نفسه اللي يأخذه السيرفر بـrequire، بايت ببايت.
+     مسار واحد ثابت: ما نخدم أي ملف آخر من shared/ ولا نقبل اسماً من
+     الرابط، فما فيه أي احتمال تسلّل مسار. */
+  if (parsed.pathname === '/plans.js') {
+    const a = plansAsset();
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('ETag', a.etag);
+    res.setHeader('Vary', 'Accept-Encoding');
+    if ((req.headers['if-none-match'] || '') === a.etag) {
+      res.writeHead(304); res.end(); return;
+    }
+    if (/\bgzip\b/.test(req.headers['accept-encoding'] || '')) {
+      res.setHeader('Content-Encoding', 'gzip');
+      res.writeHead(200); res.end(a.gz); return;
+    }
+    res.writeHead(200); res.end(a.raw); return;
   }
 
   /* تشغيل دورة فحص يدوياً (للاختبار) */
@@ -6439,6 +6494,11 @@ async function confirmTick() {
 
 server.listen(PORT, () => {
   console.log('Jadwalik running on ' + PORT);
+  /* نشر بخطط ناقصة يكسر تبويب خطتي لكل الطلاب، والعطل يظهر في المتصفح
+     لا في السجل. سطر واحد عند الإقلاع يكشفه فوراً. */
+  console.log(`plans: ${Object.keys(PLANS_DATA.PLANS).length} تخصص · `
+    + `${(plansAsset().raw.length / 1024).toFixed(0)}KB → gzip `
+    + `${(plansAsset().gz.length / 1024).toFixed(0)}KB · ${plansAsset().etag}`);
   console.log('pushover: ' + (PUSHOVER_ON
     ? `مفعّل (token ${PUSHOVER_TOKEN.length} حرف · user ${PUSHOVER_USER.length} حرف)`
     : 'معطّل — المتغيران ناقصان'));
