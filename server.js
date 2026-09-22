@@ -37,10 +37,169 @@ const ADMIN_TOKEN = (process.env.ADMIN_TOKEN || '').trim();   // كلمة سر �
 
 /* فترة تجريبية مجانية: كل من ربط تيليغرام يستلم الإشعارات بدون اشتراك.
    لإيقافها لاحقاً: FREE_BETA=false في متغيرات Render. */
-const FREE_BETA = (process.env.FREE_BETA || 'true').trim() !== 'false';
+let FREE_BETA = (process.env.FREE_BETA || 'true').trim() !== 'false';
+
+/* ═══ من يستحق الميزات ═══
+   كان هذا الفحص مكتوباً خمس مرات بصيغ متقاربة — واحدة تنسى is_pro
+   والثانية تنسى الفترة المجانية. الآن دالتان فقط:
+   isActive  — مشترك فعلاً (دائم أو اشتراك ساري). للعرض والإحصاء.
+   hasAccess — يستحق الميزات الآن: الفترة المجانية أو مشترك. للقرار. */
+function isActive(p) {
+  return !!(p && (p.is_pro ||
+    (p.subscription_expires_at && new Date(p.subscription_expires_at) > new Date())));
+}
+function hasAccess(p) { return FREE_BETA || isActive(p) }
+
+/* ═══ الاشتراك: الأسعار والرصيد ═══
+   كل المبالغ بالهللة — البوابات تحسب بها، والأعداد الصحيحة بلا كسور.
+   الأسعار من اللوحة وتُحفظ في app_state؛ هذي القيم الافتراضية فقط. */
+const PRICING_DEFAULT = Object.freeze({
+  termHalalas: 1900,            /* اشتراك الترم */
+  pushoverHalalas: 1000,        /* إضافة التنبيه الطارئ */
+  friendDiscountHalalas: 300,   /* خصم الصديق على أول شراء */
+  referrerCreditHalalas: 500,   /* رصيد الداعي لما يدفع صديقه */
+  reviewsCreditHalalas: 500,    /* رصيد طلب التقييم المقبول */
+  reviewsNeeded: 5,             /* تقييمات لطلب الرصيد */
+  creditTerms: 2,               /* صلاحية الرصيد: ترمان بعد ترم المنح */
+  lateDays: 3,                  /* آخر أيام النافذة: الشراء للترم الجاي */
+  freeMonitors: 2,              /* مراقبات المجاني */
+  freeSchedules: 1              /* جداول المجاني */
+});
+let PRICING = Object.assign({}, PRICING_DEFAULT);
+
+/* القيود تحمي من خطأ الإدخال ومن التحايل. أهمها قيد الداعي: رصيده أقل
+   مما يدفعه صديقه، وإلا صار إنشاء حسابات وهمية ودعوتها مربحاً — وهذا
+   الشرط هو اللي يخلّي «الدعوات بلا حد» آمنة. */
+function validatePricing(p) {
+  const int = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
+  if (!p || typeof p !== 'object') return 'قيم غير صالحة';
+  if (!int(p.termHalalas, 100, 100000)) return 'سعر الترم بين ١ و١٠٠٠ ريال';
+  if (!int(p.pushoverHalalas, 0, 100000)) return 'سعر التنبيه الطارئ غير صالح';
+  if (!int(p.friendDiscountHalalas, 0, p.termHalalas - 1))
+    return 'خصم الصديق لازم أقل من سعر الترم';
+  if (!int(p.referrerCreditHalalas, 0, p.termHalalas - p.friendDiscountHalalas - 1))
+    return 'رصيد الداعي لازم أقل مما يدفعه الصديق — وإلا تصير الحسابات الوهمية مربحة';
+  if (!int(p.reviewsCreditHalalas, 0, p.termHalalas)) return 'رصيد التقييمات ما يتجاوز سعر الترم';
+  if (!int(p.reviewsNeeded, 1, 20)) return 'عدد التقييمات بين ١ و٢٠';
+  if (!int(p.creditTerms, 1, 6)) return 'صلاحية الرصيد بين ترم و٦ ترمات';
+  if (!int(p.lateDays, 0, 14)) return 'أيام الشراء المتأخر بين ٠ و١٤';
+  if (!int(p.freeMonitors, 0, 20)) return 'مراقبات المجاني بين ٠ و٢٠';
+  if (!int(p.freeSchedules, 1, 3)) return 'جداول المجاني بين ١ و٣';
+  return null;
+}
+
+/* الترم التالي: 202710 ← 202720 ← 202730 ← 202810 */
+function nextTerm(t) {
+  const y = Number(String(t).slice(0, 4)), k = String(t).slice(4);
+  return k === '10' ? `${y}20` : k === '20' ? `${y}30` : `${y + 1}10`;
+}
+
+/* نهاية الترم: من التقويم إن وُجد، وإلا تقدير. التقويم يغطي سنة واحدة،
+   والرصيد يمتد أحياناً لما بعدها. */
+function termEndApprox(t) {
+  const exact = (typeof termEndISO === 'function') ? termEndISO(t) : null;
+  if (exact) return exact;
+  const y = Number(String(t).slice(0, 4)), k = String(t).slice(4);
+  if (k === '10') return `${y - 1}-12-31T20:59:59.000Z`;
+  if (k === '20') return `${y}-06-15T20:59:59.000Z`;
+  return `${y}-08-20T20:59:59.000Z`;
+}
+
+/* الرصيد صالح لباقي ترم المنح والترمين اللي بعده — فالطالب اللي يتخطّى
+   الصيفي ما يخسر رصيده قبل الترم الأول. */
+function creditExpiryISO(fromTerm, terms) {
+  let t = String(fromTerm);
+  const n = Number.isInteger(terms) ? terms : PRICING.creditTerms;
+  for (let i = 0; i < n; i++) t = nextTerm(t);
+  return termEndApprox(t);
+}
+
+/* الرصيد المتاح من سجل الحركات: الأقرب انتهاءً يُصرف أول، والمنتهي ما
+   يُحسب، والمنح بعد صرفٍ ما يغطيه. نقارن بالأرقام لا بالنصوص — القاعدة
+   ترجع «+00:00» ونحن نكتب «Z»، والمقارنة النصية بينهما تخطئ. */
+function creditBalance(rows, nowISO) {
+  const T = v => (v ? Date.parse(v) : NaN);
+  const now = T(nowISO) || Date.now();
+  const grants = (rows || []).filter(r => r.amount_halalas > 0)
+    .map(r => ({ left: r.amount_halalas, exp: T(r.expires_at), at: T(r.created_at) }))
+    .sort((a, b) => a.exp - b.exp);
+  const debits = (rows || []).filter(r => r.amount_halalas < 0)
+    .map(r => ({ need: -r.amount_halalas, at: T(r.created_at) }))
+    .sort((a, b) => a.at - b.at);
+  let overdraft = 0;
+  for (const d of debits) {
+    let need = d.need;
+    for (const g of grants) {
+      if (need <= 0) break;
+      if (g.left <= 0 || g.at > d.at || g.exp <= d.at) continue;
+      const take = Math.min(g.left, need);
+      g.left -= take; need -= take;
+    }
+    overdraft += need;
+  }
+  const live = grants.filter(g => g.left > 0 && g.exp > now);
+  return {
+    available: live.reduce((x, g) => x + g.left, 0),
+    expired: grants.filter(g => g.left > 0 && g.exp <= now).reduce((x, g) => x + g.left, 0),
+    nextExpiry: live.length ? new Date(live[0].exp).toISOString() : null,
+    overdraft
+  };
+}
+/* ═══ نهاية كتلة الاشتراك ═══ */
+
+/* نهاية الترم = آخر يوم نهائيات في التقويم، ٢٣:٥٩ بتوقيت الرياض.
+   الاشتراك يسري حتى نهاية الاختبارات — يغطي كل تسجيل يقع داخله. */
+function termEndISO(term) {
+  const ex = ACAD_CAL.find(e => e.t === 'exam' && e.term === String(term));
+  if (!ex) return null;
+  return (ex.e || ex.s) + 'T20:59:59.000Z';
+}
 /* ترم التسجيل النشط — المزامنة والإشعارات تقتصر عليه وحده.
    من متغيّر بيئة عشان تغيّره من Render بلا نشر كل ترم جديد. */
-const ACTIVE_TERM = (process.env.ACTIVE_TERM || '202710').trim();
+const ACTIVE_TERM_ENV = (process.env.ACTIVE_TERM || '202710').trim();
+
+/* الترم النشط: متغيّر Render هو الأساس، واللوحة تتقدّم عليه ويُحفظ في
+   app_state فيصمد بعد النشر. بدونه كل تبديل ترم يحتاج تعديل متغيّر
+   وإعادة نشر — وهذا آخر ما تحتاجه في يوم فتح التسجيل. */
+/* ═══ اشتراك Pushover ═══
+   الرابط من متغيّر Render لا من الكود — بدونه الميزة مطفأة تماماً،
+   وهذا مفتاح القتل الأول. والوضع مفتاح ثانٍ يُبدَّل من اللوحة:
+     off  — ما يشوفها أحد، ولا يخرج الرابط في أي رد
+     link — لمن يفتح ‎?pushover=1‎ فقط (للتجربة بحساب غيرك)
+     addon — لمن اشترى إضافة التنبيه الطارئ (كانت «pro» وتفتحه لكل مشترك —
+             والتنبيه الطارئ إضافة بسعرها لا جزء من اشتراك الترم)
+     all   — للجميع
+   السبب: التجربة ٣٠ يوماً تبدأ لحظة الاشتراك، فتفعيلها قبل موسم
+   التسجيل يحرق المدة على الفاضي. */
+const PUSHOVER_SUBSCRIBE_URL = (process.env.PUSHOVER_SUBSCRIBE_URL || '').trim();
+let PUSHOVER_MODE = 'off';
+const PUSHOVER_MODES = ['off', 'link', 'addon', 'all'];
+
+/* الإضافة سارية: دائم من اللوحة أو pushover_until في المستقبل */
+function hasPushoverAddon(p) {
+  return !!(p && (p.is_pro ||
+    (p.pushover_until && new Date(p.pushover_until) > new Date())));
+}
+/* من يستلم التنبيه الطارئ فعلاً — القرار هنا لا في الصفحة. كان أي طالب
+   ربط مفتاحه يستلم مهما كان الوضع، حتى «off». */
+function pushoverAllowed(p) {
+  if (!p || !String(p.pushover_key || '').trim()) return false;
+  if (PUSHOVER_MODE === 'off') return false;
+  if (PUSHOVER_MODE === 'addon') return hasPushoverAddon(p);
+  return true;                                    /* link · all */
+}
+const pushoverOn = () => !!PUSHOVER_SUBSCRIBE_URL && PUSHOVER_MODE !== 'off';
+
+let TERM_OVERRIDE = null;
+const activeTerm = () => TERM_OVERRIDE || ACTIVE_TERM_ENV;
+
+/* ترم التسجيل: ترم النافذة المفتوحة، وإلا ترم الدراسة. المراقبة والجرس
+   يتبعانه، والجداول واليوم يتبعان activeTerm. تُعرَّف كدالة لأن
+   currentWindow تُعرَّف لاحقاً في الملف. */
+function regTerm() {
+  const w = (typeof currentWindow === 'function') ? currentWindow() : null;
+  return (w && w.term) || activeTerm();
+}
 
 /* معرّف محادثتك في تيليغرام — يوصلك عليه كل رأي جديد فوراً.
    تجيبه بإرسال /whoami للبوت، ثم تحطه في Render باسم ADMIN_CHAT_ID */
@@ -69,7 +228,8 @@ function pushover(title, message, opts) {
   return new Promise(resolve => {
     try {
       const fields = {
-        token: PUSHOVER_TOKEN, user: PUSHOVER_USER,
+        /* o.user = مفتاح مستلم آخر. بدونه يذهب كل شيء إليك أنت. */
+        token: PUSHOVER_TOKEN, user: String(o.user || PUSHOVER_USER).trim(),
         title: String(title || 'جدولك').slice(0, 250),
         message: String(message || '').slice(0, 1024),
         priority: String(pr)
@@ -148,18 +308,333 @@ function sb(method, table, { query = '', body = null, prefer = '' } = {}) {
   });
 }
 
+/* ═══ هوية الطالب — نقاط /api/me ═══
+   الصفحة ترسل رمز جلستها من Supabase، ونسأل Supabase عن صاحبه. لا نثق
+   بأي معرّف يرسله المتصفح — الرمز وحده يثبت من هو. ونخزّن الجواب دقيقة
+   حتى ما نسأل Supabase مع كل طلب. */
+const AUTH_CACHE = new Map();
+function sbAuthUser(token) {
+  return new Promise(resolve => {
+    if (!token || token.length < 20 || token.length > 4096) return resolve(null);
+    const hit = AUTH_CACHE.get(token);
+    if (hit && hit.until > Date.now()) return resolve(hit.user);
+    let u;
+    try { u = new URL(`${SB_URL}/auth/v1/user`) } catch (e) { return resolve(null) }
+    const req = https.request({ hostname: u.hostname, path: u.pathname, method: 'GET',
+      headers: { apikey: SB_SERVICE_KEY, Authorization: `Bearer ${token}` } }, res => {
+      let out = '';
+      res.on('data', c => out += c);
+      res.on('end', () => {
+        let j = null; try { j = JSON.parse(out) } catch (e) {}
+        const user = (res.statusCode === 200 && j && j.id) ? { id: j.id, email: j.email || '' } : null;
+        if (user) {
+          if (AUTH_CACHE.size > 1000) AUTH_CACHE.clear();
+          AUTH_CACHE.set(token, { user, until: Date.now() + 60000 });
+        }
+        resolve(user);
+      });
+    });
+    req.on('error', () => resolve(null));
+    req.setTimeout(8000, () => { req.destroy(); resolve(null) });
+    req.end();
+  });
+}
+function bearerOf(req) {
+  const h = String(req.headers['authorization'] || '');
+  return h.startsWith('Bearer ') ? h.slice(7).trim() : '';
+}
+
+/* كود الدعوة: ستة من أبجدية بلا حروف ملتبسة (لا O ولا 0 ولا I ولا 1 ولا L) —
+   الطالب يقرأه لصاحبه بصوت فما يلتبس */
+const INVITE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const INVITE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/;
+function newInviteCode() {
+  const b = crypto.randomBytes(6);
+  let out = '';
+  for (let i = 0; i < 6; i++) out += INVITE_ALPHABET[b[i] % INVITE_ALPHABET.length];
+  return out;
+}
+
+/* يُنشأ عند أول حاجة. الشرط invite_code=is.null يمنع طلبين متوازيين من
+   الكتابة فوق بعض، والتصادم النادر (23505) يعيد المحاولة بكود ثانٍ. */
+async function ensureInviteCode(uid, current) {
+  if (current && INVITE_RE.test(current)) return current;
+  const id = encodeURIComponent(uid);
+  for (let i = 0; i < 5; i++) {
+    const r = await sb('PATCH', 'profiles', {
+      query: `?id=eq.${id}&invite_code=is.null`,
+      body: { invite_code: newInviteCode() },
+      prefer: 'return=representation'
+    }).catch(e => ({ message: e.message }));
+    if (Array.isArray(r) && r.length) return r[0].invite_code;
+    if (Array.isArray(r)) {
+      /* ما فيه صف بلا كود — طلب موازٍ سبقنا. نقرأ ما كتبه */
+      const p = await sb('GET', 'profiles', { query: `?id=eq.${id}&select=invite_code` }).catch(() => null);
+      return (Array.isArray(p) && p[0] && p[0].invite_code) || null;
+    }
+    if (r && r.code === '23505') continue;
+    return null;
+  }
+  return null;
+}
+
+/* حساب الطالب: اشتراكه ورصيده ودعوته — لبطاقة «اشتراكي» */
+async function meAccount(uid) {
+  const id = encodeURIComponent(uid);
+  const [prof, led, refs] = await Promise.all([
+    sb('GET', 'profiles', {
+      query: `?id=eq.${id}&select=id,is_pro,subscription_expires_at,pushover_until,invite_code` }),
+    sb('GET', 'credit_ledger', {
+      query: `?user_id=eq.${id}&select=amount_halalas,expires_at,created_at` }).catch(() => []),
+    sb('GET', 'referrals', { query: `?referrer_id=eq.${id}&select=id` }).catch(() => [])
+  ]);
+  const p = Array.isArray(prof) && prof[0];
+  if (!p) return { ok: false, error: 'الحساب غير موجود' };
+  const code = await ensureInviteCode(uid, p.invite_code);
+  const bal = creditBalance(Array.isArray(led) ? led : []);
+  return {
+    ok: true,
+    active: isActive(p),
+    expires: p.subscription_expires_at || null,
+    pushoverUntil: p.pushover_until || null,
+    credit: { available: bal.available, nextExpiry: bal.nextExpiry },
+    invite: { code, paidFriends: Array.isArray(refs) ? refs.length : 0 }
+  };
+}
+
+/* السعر يُحسب هنا وحده. ورقة الباقات تعرض ما يرجعه — فما فيه معادلتان
+   تختلفان، ولما تجي البوابة تدفع نفس الرقم اللي شافه الطالب.
+   كود الصديق: أول شراء فقط، ولا كودك أنت. */
+async function meQuote(uid, { pushover, ref }) {
+  const id = encodeURIComponent(uid);
+  const [prof, led, paid, invited] = await Promise.all([
+    sb('GET', 'profiles', {
+      query: `?id=eq.${id}&select=id,is_pro,subscription_expires_at,pushover_until,invite_code` }),
+    sb('GET', 'credit_ledger', {
+      query: `?user_id=eq.${id}&select=amount_halalas,expires_at,created_at` }).catch(() => []),
+    sb('GET', 'subscriptions', {
+      query: `?user_id=eq.${id}&status=eq.paid&select=id&limit=1` }).catch(() => []),
+    sb('GET', 'referrals', { query: `?invited_id=eq.${id}&select=id&limit=1` }).catch(() => [])
+  ]);
+  const p = Array.isArray(prof) && prof[0];
+  if (!p) return { ok: false, error: 'الحساب غير موجود' };
+
+  const includesTerm = !isActive(p);
+  const poActive = !!(p.pushover_until && new Date(p.pushover_until) > new Date());
+  const wantPo = !!pushover && !poActive;
+  const base = includesTerm ? PRICING.termHalalas : 0;
+  const po = wantPo ? PRICING.pushoverHalalas : 0;
+
+  let refState = null, discount = 0;
+  const code = String(ref || '').toUpperCase().trim();
+  if (code) {
+    if (!INVITE_RE.test(code)) refState = 'unknown';
+    else if (p.invite_code === code) refState = 'own';
+    else if (!includesTerm || (Array.isArray(paid) && paid.length) ||
+             (Array.isArray(invited) && invited.length)) refState = 'used';
+    else {
+      const owner = await sb('GET', 'profiles', {
+        query: `?invite_code=eq.${code}&select=id&limit=1` }).catch(() => []);
+      if (Array.isArray(owner) && owner.length) { refState = 'ok'; discount = PRICING.friendDiscountHalalas }
+      else refState = 'unknown';
+    }
+  }
+
+  const bal = creditBalance(Array.isArray(led) ? led : []);
+  const before = base + po - discount;
+  const credit = Math.max(0, Math.min(bal.available, before));
+  return { ok: true, includesTerm, pushover: wantPo, base, po, discount, credit,
+           amount: before - credit, ref: refState, creditAvailable: bal.available,
+           termEnd: termEndApprox(regTerm()) };
+}
+
+/* ═══ رصيد تقييم الدكاترة ═══
+   الطالب يقيّم N دكاترة ← يرسل طلباً ← تراجعه في اللوحة ← تقبل أو ترفض
+   بسبب. القاعدة تفرض: طلب معلّق واحد، مقبول واحد بالترم، الرفض بسبب،
+   وكل (طالب · دكتور) يُحتسب مرة للأبد — حتى لو حذف تقييمه وأعاده. */
+async function reviewCreditState(uid) {
+  const id = encodeURIComponent(uid);
+  const term = activeTerm();
+  const [revs, pairs, reqs] = await Promise.all([
+    sb('GET', 'instructor_reviews', {
+      query: `?user_id=eq.${id}&select=instructor_name,hidden,created_at&order=created_at.asc` }),
+    sb('GET', 'review_credit_pairs', { query: `?user_id=eq.${id}&select=instructor_name` })
+      .catch(() => []),
+    sb('GET', 'review_requests', {
+      query: `?user_id=eq.${id}&select=id,term,status,admin_note,instructors,created_at,decided_at` +
+             `&order=created_at.desc&limit=20` }).catch(() => [])
+  ]);
+  if (!Array.isArray(revs)) throw new Error('تعذّر قراءة التقييمات');
+  const used = new Set((Array.isArray(pairs) ? pairs : []).map(p => p.instructor_name));
+  const R = Array.isArray(reqs) ? reqs : [];
+  const pending = R.find(r => r.status === 'pending') || null;
+  const inPending = new Set(pending ? (pending.instructors || []) : []);
+  /* الأقدم أول — التقييمات اللي انكتبت قبل ما يكون فيه مقابل أصدقها */
+  const eligible = revs
+    .filter(r => r.instructor_name && !r.hidden && !used.has(r.instructor_name) &&
+                 !inPending.has(r.instructor_name))
+    .map(r => r.instructor_name);
+  const latest = R[0] || null;
+  return {
+    ok: true, open: !FREE_BETA, term,
+    needed: PRICING.reviewsNeeded, creditHalalas: PRICING.reviewsCreditHalalas,
+    eligibleCount: eligible.length, eligible,
+    pending: !!pending,
+    approvedThisTerm: R.some(r => r.status === 'approved' && r.term === term),
+    latest: latest && { status: latest.status, note: latest.admin_note || null,
+                        at: latest.decided_at || latest.created_at }
+  };
+}
+
+async function submitReviewCredit(uid) {
+  if (FREE_BETA) return { ok: false, error: 'تنفتح مع إطلاق الاشتراك' };
+  const st = await reviewCreditState(uid);
+  if (st.pending) return { ok: false, error: 'عندك طلب قيد المراجعة' };
+  if (st.approvedThisTerm) return { ok: false, error: 'انقبل لك طلب هذا الترم — الجاي في الترم القادم' };
+  if (st.eligibleCount < st.needed)
+    return { ok: false, error: `باقي ${st.needed - st.eligibleCount} ${st.needed - st.eligibleCount === 1 ? 'تقييم' : 'تقييمات'}` };
+  const pick = st.eligible.slice(0, st.needed);
+  const r = await sb('POST', 'review_requests', {
+    body: { user_id: uid, term: st.term, instructors: pick },
+    prefer: 'return=representation'
+  }).catch(e => ({ message: e.message }));
+  if (Array.isArray(r) && r.length) {
+    sendMsg(ADMIN_CHAT_ID, `⭐ <b>طلب رصيد تقييم جديد</b>\n\n${pick.length} تقييمات بانتظارك في تبويب التقييمات.`)
+      .catch(() => {});
+    return { ok: true, id: r[0].id };
+  }
+  /* الفهرس الجزئي يمنع طلبين معلّقين حتى لو وصلا في نفس اللحظة */
+  if (r && r.code === '23505') return { ok: false, error: 'عندك طلب قيد المراجعة' };
+  return { ok: false, error: (r && r.message) || 'ما انرسل' };
+}
+
+/* طابور اللوحة: كل طلب بصاحبه وتقييماته كاملة */
+async function adminReviewRequests(status) {
+  const st = ['pending', 'approved', 'rejected'].includes(status) ? status : 'pending';
+  const reqs = await sb('GET', 'review_requests', {
+    query: `?status=eq.${st}&select=*&order=created_at.asc&limit=200` });
+  if (!Array.isArray(reqs)) return { ok: false, error: (reqs && reqs.message) || 'تعذّر' };
+  const uids = [...new Set(reqs.map(r => r.user_id))];
+  if (!uids.length) return { ok: true, requests: [] };
+  const inList = uids.map(u => `"${u}"`).join(',');
+  const [profs, revs] = await Promise.all([
+    sb('GET', 'profiles', { query: `?id=in.(${inList})&select=id,name,email` }),
+    sbAll('instructor_reviews', { query: `?user_id=in.(${inList})&select=*` })
+  ]);
+  const P = {};
+  (Array.isArray(profs) ? profs : []).forEach(p => { P[p.id] = p });
+  const byUser = {};
+  (Array.isArray(revs) ? revs : []).forEach(v => { (byUser[v.user_id] = byUser[v.user_id] || []).push(v) });
+  return {
+    ok: true,
+    requests: reqs.map(r => ({
+      id: r.id, userId: r.user_id, term: r.term, status: r.status, note: r.admin_note || null,
+      createdAt: r.created_at, decidedAt: r.decided_at,
+      name: (P[r.user_id] || {}).name || '—', email: (P[r.user_id] || {}).email || '—',
+      /* تقييم حذفه صاحبه بعد الإرسال يظهر «محذوف» — سبب واضح للرفض */
+      reviews: (r.instructors || []).map(n => {
+        const v = (byUser[r.user_id] || []).find(x => x.instructor_name === n);
+        return v ? { instructor: n, rating: Number(v.rating) || 0, course: v.course_code || '',
+                     comment: v.comment || '', tags: v.tags || [], hidden: !!v.hidden,
+                     createdAt: v.created_at, reports: Number(v.reports) || 0 }
+                 : { instructor: n, missing: true };
+      })
+    }))
+  };
+}
+
+async function adminDecideReviewRequest(id, decision, note) {
+  const rid = Number(id);
+  if (!Number.isInteger(rid) || rid <= 0) return { ok: false, error: 'طلب غير صالح' };
+  const why = String(note || '').trim().slice(0, 500);
+  const cur = await sb('GET', 'review_requests', { query: `?id=eq.${rid}&select=*` });
+  const q = Array.isArray(cur) && cur[0];
+  if (!q) return { ok: false, error: 'الطلب غير موجود' };
+  if (q.status !== 'pending') return { ok: false, error: 'انحسم من قبل' };
+  const prof = await sb('GET', 'profiles', {
+    query: `?id=eq.${encodeURIComponent(q.user_id)}&select=telegram_chat_id` }).catch(() => []);
+  const chat = Array.isArray(prof) && prof[0] && prof[0].telegram_chat_id;
+  const now = new Date().toISOString();
+
+  if (decision === 'reject') {
+    if (why.length < 3) return { ok: false, error: 'سبب الرفض إلزامي — يوصل الطالب' };
+    const r = await sb('PATCH', 'review_requests', {
+      query: `?id=eq.${rid}&status=eq.pending`,
+      body: { status: 'rejected', admin_note: why, decided_at: now },
+      prefer: 'return=representation'
+    }).catch(e => ({ message: e.message }));
+    if (!Array.isArray(r) || !r.length) return { ok: false, error: (r && r.message) || 'انحسم من قبل' };
+    if (chat) sendMsg(chat, `⭐ <b>طلب رصيد التقييم ما انقبل</b>\n\n${esc(why)}\n\n` +
+                            `عدّل تقييماتك من «تقييماتي» وأرسلها من جديد.`).catch(() => {});
+    return { ok: true, status: 'rejected' };
+  }
+  if (decision !== 'approve') return { ok: false, error: 'قرار غير معروف' };
+
+  /* ١) الحالة أولاً بشرط «معلّق»: قبولان متزامنان ما ينجحان معاً،
+     والفهرس الجزئي يرفض قبولاً ثانياً لنفس الترم */
+  const up = await sb('PATCH', 'review_requests', {
+    query: `?id=eq.${rid}&status=eq.pending`,
+    body: { status: 'approved', admin_note: why || null, decided_at: now },
+    prefer: 'return=representation'
+  }).catch(e => ({ message: e.message }));
+  if (!Array.isArray(up) || !up.length) {
+    if (up && up.code === '23505') return { ok: false, error: 'انقبل له طلب هذا الترم من قبل' };
+    return { ok: false, error: (up && up.message) || 'انحسم من قبل' };
+  }
+
+  /* ٢) الأزواج — المفتاح الأساسي يرفض أي دكتور انحسب له من قبل.
+     لو رُفضت نرجّع الطلب معلّقاً ونقول ليش */
+  const pairs = (q.instructors || []).map(n => ({ user_id: q.user_id, instructor_name: n, request_id: rid }));
+  const pr = await sb('POST', 'review_credit_pairs', { body: pairs, prefer: 'return=representation' })
+    .catch(e => ({ message: e.message }));
+  if (!Array.isArray(pr) || pr.length !== pairs.length) {
+    await sb('PATCH', 'review_requests', {
+      query: `?id=eq.${rid}`, body: { status: 'pending', decided_at: null, admin_note: null }
+    }).catch(() => {});
+    return { ok: false, error: 'بعض الدكاترة انحسبوا له من قبل — ' + ((pr && pr.message) || '') };
+  }
+
+  /* ٣) الرصيد. لو تعثّر بعد ما انقبل الطلب، نقولها صريحة بدل ما نسكت */
+  const amt = PRICING.reviewsCreditHalalas;
+  if (amt > 0) {
+    const cr = await sb('POST', 'credit_ledger', {
+      body: { user_id: q.user_id, amount_halalas: amt, reason: 'reviews', ref: `review_request:${rid}`,
+              note: `${pairs.length} تقييمات`, created_by: 'admin', expires_at: creditExpiryISO(activeTerm()) },
+      prefer: 'return=representation'
+    }).catch(e => ({ message: e.message }));
+    if (!Array.isArray(cr) || !cr.length)
+      return { ok: true, status: 'approved',
+               warning: 'انقبل، لكن الرصيد ما انضاف — أضفه يدوياً من درج الطالب: ' + ((cr && cr.message) || '') };
+    await sb('PATCH', 'review_requests', { query: `?id=eq.${rid}`, body: { credit_id: cr[0].id } }).catch(() => {});
+  }
+  if (chat) sendMsg(chat, `⭐ <b>انقبلت تقييماتك — شكراً!</b>\n\n` +
+    (amt > 0 ? `نزل لك ${amt / 100} ريال رصيد، ينخصم تلقائياً من اشتراكك الجاي.` : 'شكراً على مساهمتك.'))
+    .catch(() => {});
+  return { ok: true, status: 'approved' };
+}
+
 /* ============ سحبة على صفحات ============
    Supabase يقصّ أي رد عند سقف الصفوف (1000 افتراضياً) ويرجع 200 بلا تحذير.
    فالجدول اللي تجاوز الألف يُفحص جزئياً والباقي يُهمل بصمت.
    نطلب صفحة صفحة بترتيب ثابت على id، ونقف عند أول صفحة ناقصة. */
 const SB_PAGE = 1000;
 const SB_PAGE_MAX = 100;                 /* حارس: 100 ألف صف كحد أقصى */
-async function sbAll(table, { query = '', order = 'id', pageSize = SB_PAGE } = {}) {
+/* order: اسم عمود (يُضاف له .asc) أو ترتيب جاهز فيه نقطة مثل
+   'user_id.asc,kind.asc,ref.asc' للجداول بمفتاح مركّب بلا id.
+   strict: الخطأ يُرمى بنصّه بدل ما يُقرأ كـ«جدول فاضٍ». بدونه كان
+   ترتيبٌ بعمود غير موجود يرجّع [] بصمت — وهذا بالضبط ما كرّر
+   تحذيرات الغياب يومياً: notif_sent بلا عمود id. */
+async function sbAll(table, { query = '', order = 'id', pageSize = SB_PAGE, strict = false } = {}) {
   const out = [];
+  const ord = String(order).includes('.') ? order : `${order}.asc`;
   for (let page = 0; page < SB_PAGE_MAX; page++) {
-    const q = `${query}&order=${order}.asc&limit=${pageSize}&offset=${page * pageSize}`;
+    const q = `${query}&order=${ord}&limit=${pageSize}&offset=${page * pageSize}`;
     const rows = await sb('GET', table, { query: q });
-    if (!Array.isArray(rows)) break;
+    if (!Array.isArray(rows)) {
+      if (strict)
+        throw new Error(`${table}: ${(rows && (rows.message || rows.code)) || 'رد غير متوقع'}`);
+      break;
+    }
     for (const r of rows) out.push(r);
     if (rows.length < pageSize) return out;   /* صفحة ناقصة = النهاية */
   }
@@ -181,30 +656,89 @@ const NOTIF_KIND_AR = { quiz: '📝 كويز', hw: '📄 واجب', project: '�
                         midterm: '📕 اختبار فصلي', other: '📌 موعد' };
 
 
-/* التقويم على السيرفر — المواعيد الحرجة فقط. نسخة مصغّرة من ACAD_CAL في
-   الواجهة، وهذا تكرار مقصود لكنه دَيْن: أي تعديل هناك لازم ينعكس هنا.
-   الأصح لاحقاً أن يُقرأ من جدول في Supabase وتقرأه الجهتان. */
-const ACAD_CAL_SERVER = [
-  { s: '2026-08-30', t: 'start', ar: 'بداية الدراسة' },
-  { s: '2026-09-06', e: '2026-09-10', t: 'add', ar: 'فترة الحذف (آخر يوم بدون رسوم)' },
-  { s: '2026-09-23', e: '2026-09-26', t: 'off', ar: 'إجازة اليوم الوطني' },
-  { s: '2026-11-05', t: 'warn', ar: 'آخر يوم للانسحاب بتقدير W' },
-  { s: '2026-11-22', e: '2026-11-24', t: 'off', ar: 'إجازة منتصف الترم' },
-  { s: '2026-12-20', e: '2026-12-30', t: 'exam', ar: 'الاختبارات النهائية' }
+/* ═══ التقويم الأكاديمي 2026/2027 — المصدر الوحيد ═══
+   المرجع: تقويم عمادة القبول والتسجيل المعتمد. كان هنا نسخة مصغّرة
+   فيها الترم الأول وحده، ونسخة كاملة ثانية في الواجهة — فمن ١٧ يناير
+   كانت تحذيرات الحرمان بتنحسب على أيام الترم الأول. الآن نسخة واحدة:
+   السيرفر يستعملها، والواجهة تقرأها من /calendar.js.
+   term: الترم الذي يخصّه الحدث — نحتاجه لنهاية الاشتراك لاحقاً.
+   t: reg تسجيل · start بداية · add حذف وإضافة · off إجازة ·
+      warn موعد حرج · exam نهائيات · note ملاحظة */
+const ACAD_CAL = [
+  /* ── الترم الأول ── */
+  { term: '202710', s: '2026-08-23', e: '2026-08-27', t: 'reg',   ar: 'فترة التسجيل', en: 'Registration period' },
+  { term: '202710', s: '2026-08-30', t: 'start', ar: 'بداية الدراسة — الترم الأول', en: 'Classes begin — Fall' },
+  { term: '202710', s: '2026-08-30', e: '2026-09-03', t: 'add', ar: 'التسجيل المتأخر والحذف والإضافة', en: 'Late registration & Add/Drop' },
+  { term: '202710', s: '2026-09-06', e: '2026-09-10', t: 'add', ar: 'فترة الحذف فقط (آخر يوم بدون رسوم)', en: 'Drop only (last day without charge)' },
+  { term: '202710', s: '2026-09-23', e: '2026-09-26', t: 'off',  ar: 'إجازة اليوم الوطني', en: 'National Day holiday' },
+  { term: '202710', s: '2026-11-05', t: 'warn', ar: 'آخر يوم للانسحاب بتقدير W', en: 'Last day to withdraw with "W"' },
+  { term: '202710', s: '2026-11-22', e: '2026-11-24', t: 'off',  ar: 'إجازة منتصف الترم', en: 'Mid-term break' },
+  { term: '202710', s: '2026-12-17', t: 'warn', ar: 'آخر يوم للانسحاب بـ WP/WF وتغيير التخصص', en: 'Last day for WP/WF & major change' },
+  { term: '202710', s: '2026-12-20', e: '2026-12-30', t: 'exam', ar: 'الاختبارات النهائية', en: 'Final exams' },
+  { term: '202710', s: '2027-01-03', e: '2027-01-16', t: 'off',  ar: 'إجازة منتصف السنة', en: 'Mid-year break' },
+  { term: '202710', s: '2027-01-15', t: 'note', ar: 'آخر يوم للتظلم على الدرجات', en: 'Last day for grade appeal' },
+  /* ── الترم الثاني ── */
+  { term: '202720', s: '2027-01-10', e: '2027-01-14', t: 'reg',   ar: 'فترة التسجيل', en: 'Registration period' },
+  { term: '202720', s: '2027-01-17', t: 'start', ar: 'بداية الدراسة — الترم الثاني', en: 'Classes begin — Spring' },
+  { term: '202720', s: '2027-01-17', e: '2027-01-21', t: 'add', ar: 'التسجيل المتأخر والحذف والإضافة', en: 'Late registration & Add/Drop' },
+  { term: '202720', s: '2027-01-28', t: 'add',  ar: 'آخر يوم للحذف بدون رسوم', en: 'Last day to drop without charge' },
+  { term: '202720', s: '2027-02-19', e: '2027-02-22', t: 'off',  ar: 'إجازة يوم التأسيس', en: 'Founding Day holiday' },
+  { term: '202720', s: '2027-02-28', e: '2027-03-13', t: 'off',  ar: 'إجازة عيد الفطر', en: 'Eid Al-Fitr holiday' },
+  { term: '202720', s: '2027-04-08', t: 'warn', ar: 'آخر يوم للانسحاب بتقدير W', en: 'Last day to withdraw with "W"' },
+  { term: '202730', s: '2027-04-11', e: '2027-04-15', t: 'reg',   ar: 'التسجيل المبكر للصيفي', en: 'Early registration — Summer' },
+  { term: '202720', s: '2027-05-11', e: '2027-05-22', t: 'off',  ar: 'إجازة عيد الأضحى', en: 'Eid Al-Adha holiday' },
+  { term: '202720', s: '2027-05-27', t: 'warn', ar: 'آخر يوم للانسحاب بـ WP/WF وتغيير التخصص', en: 'Last day for WP/WF & major change' },
+  { term: '202720', s: '2027-05-30', e: '2027-06-09', t: 'exam', ar: 'الاختبارات النهائية', en: 'Final exams' },
+  { term: '202720', s: '2027-06-25', t: 'note', ar: 'آخر يوم للتظلم على الدرجات', en: 'Last day for grade appeal' },
+  /* ── الصيفي ── */
+  { term: '202730', s: '2027-06-15', e: '2027-06-19', t: 'reg',   ar: 'تأكيد التسجيل للمسجّلين مسبقاً', en: 'Registration confirmation' },
+  { term: '202730', s: '2027-06-20', t: 'start', ar: 'بداية الدراسة — الصيفي', en: 'Classes begin — Summer' },
+  { term: '202730', s: '2027-06-20', e: '2027-06-22', t: 'add', ar: 'التسجيل المتأخر والحذف والإضافة', en: 'Late registration & Add/Drop' },
+  { term: '202730', s: '2027-07-22', t: 'warn', ar: 'آخر يوم للانسحاب بتقدير W', en: 'Last day to withdraw with "W"' },
+  { term: '202730', s: '2027-08-12', t: 'warn', ar: 'آخر يوم للانسحاب بـ WP/WF وتغيير التخصص', en: 'Last day for WP/WF & major change' },
+  { term: '202730', s: '2027-08-15', e: '2027-08-17', t: 'exam', ar: 'الاختبارات النهائية', en: 'Final exams' },
+  { term: '202810', s: '2027-08-29', t: 'start', ar: 'بداية الترم الأول 2027/2028', en: 'Fall 2027/2028 begins' }
 ];
 
-/* حد الغياب: 15% من محاضرات الجلسة، معدودة بين بداية الدراسة وأول يوم
-   نهائيات ناقص الإجازات — نفس قاعدة الواجهة بالضبط. */
+/* ما تخدمه الواجهة: سكربت صغير يعرّف window.ACAD_CAL قبل كود الصفحة.
+   بصمة من المحتوى، فأي تعديل هنا يصل الطلاب مع أول تحميل.
+   يُبنى عند أول طلب لا عند التحميل — تبقى هذي المنطقة بلا اعتماديات. */
+let CAL_ASSET = null;
+function calAsset() {
+  if (!CAL_ASSET) {
+    const js = 'window.ACAD_CAL=' + JSON.stringify(ACAD_CAL) + ';';
+    CAL_ASSET = { js, etag: '"' + crypto.createHash('sha1')
+      .update(js).digest('hex').slice(0, 16) + '"' };
+  }
+  return CAL_ASSET;
+}
+
+/* حدود الترم الذي يقع فيه اليوم — نفس منطق termBounds في الواجهة حرفياً:
+   آخر «بداية دراسة» حتى اليوم، وأول نهائيات بعدها. وبعد بداية النهائيات
+   الترم انتهى، فلا عدّاد غياب لترم منقضٍ. */
+function termBoundsSrv(today) {
+  let start = null;
+  for (const e of ACAD_CAL)
+    if (e.t === 'start' && e.s <= today && (!start || e.s > start)) start = e.s;
+  if (!start) for (const e of ACAD_CAL) { if (e.t === 'start') { start = e.s; break } }
+  let end = null;
+  for (const e of ACAD_CAL)
+    if (e.t === 'exam' && e.s > start && (!end || e.s < end)) end = e.s;
+  if (start && end && today >= end) return null;
+  return start && end ? { start, end } : null;
+}
+
+/* حد الغياب: 15% من محاضرات الجلسة في الترم الحالي، ناقص الإجازات.
+   كانت تأخذ «أول بداية دراسة» في القائمة — أي الترم الأول دائماً. */
 const WD_LETTER_SRV = ['U', 'M', 'T', 'W', 'R', 'F', 'S'];
-function absAllowedFor(courseDate) {
+function absAllowedFor(courseDate, today) {
   const days = String(courseDate || '').toUpperCase().split('')
     .filter(c => 'UMTWRFS'.includes(c));
   if (!days.length) return 0;
-  const start = ACAD_CAL_SERVER.find(e => e.t === 'start');
-  const exam = ACAD_CAL_SERVER.find(e => e.t === 'exam');
-  if (!start || !exam) return 0;
+  const b = termBoundsSrv(today || riyadhNow().toISOString().slice(0, 10));
+  if (!b) return 0;
   const off = new Set();
-  ACAD_CAL_SERVER.filter(e => e.t === 'off').forEach(e => {
+  ACAD_CAL.filter(e => e.t === 'off').forEach(e => {
     let d = new Date(e.s + 'T00:00:00Z');
     const last = new Date((e.e || e.s) + 'T00:00:00Z');
     let g = 0;
@@ -214,8 +748,8 @@ function absAllowedFor(courseDate) {
     }
   });
   let n = 0, g = 0;
-  let d = new Date(start.s + 'T00:00:00Z');
-  const end = new Date(exam.s + 'T00:00:00Z');
+  let d = new Date(b.start + 'T00:00:00Z');
+  const end = new Date(b.end + 'T00:00:00Z');
   while (d < end && g++ < 400) {
     const iso = d.toISOString().slice(0, 10);
     if (days.includes(WD_LETTER_SRV[d.getUTCDay()]) && !off.has(iso)) n++;
@@ -242,12 +776,51 @@ function wants(profile, key) {
   return !!(p.on && p[key]);
 }
 
+/* ═══ المواعيد الأكاديمية ═══
+   التنبيه يمشي على آخر يوم في المدى لا أوّله. «فترة الحذف» تبدأ ٦ سبتمبر
+   وآخر يوم بدون رسوم ١٠، والتنبيه عن البداية أوهم الطلاب أن الموعد بعد
+   يومين وهو بعد ستة. والتاريخ صار داخل النص عشان يفضح نفسه لو انحرف. */
+const acadDeadline = a => a.e || a.s;
+
+/* مفتاح ثابت يربط الموافقة بالموعد نفسه لا بترتيبه في المصفوفة */
+const acadRef = a => `${a.t}|${a.s}|${a.e || ''}`;
+
+const AR_MONTHS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+                   'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+function acadDateAr(iso) {
+  const p = String(iso || '').split('-');
+  if (p.length !== 3) return String(iso || '');
+  const m = AR_MONTHS[Number(p[1]) - 1];
+  return m ? `${Number(p[2])} ${m}` : String(iso || '');
+}
+
+function acadText(a) {
+  return `🗓️ بعد يومين: ${a.ar}\nالموعد: ${acadDateAr(acadDeadline(a))}`;
+}
+
+/* المواعيد الحرجة فقط — الإجازات وبداية الدراسة لا تستاهل تنبيهاً */
+function acadDue(acadCal, target) {
+  return (acadCal || []).filter(a =>
+    (a.t === 'warn' || a.t === 'add') && acadDeadline(a) === target);
+}
+
 /* ═══ بناء رسائل اليوم ═══
    دالة نقية: تأخذ الحالة وترجّع الرسائل. الإرسال منفصل عنها عشان
    نقدر نختبر المنطق بلا شبكة ولا قاعدة. */
+/* مفتاح الدفتر: طالب + نوع + مرجع. يمنع تكرار التنبيه نفسه كل يوم. */
+const sentKey = (uid, kind, ref) => `${uid}|${kind}|${ref}`;
+
 function buildNotifications(state) {
   const { today, profiles, schedules, events, absences, acadCal, sharedCounts } = state;
+  /* الترم جزء من كل مرجع: أرقام الشعب تتكرر بين الترمات، فصف قديم
+     من ترم ماضٍ كان بيسكّت تنبيهاً مشروعاً في الترم الجديد بصمت. */
+  const term = String(state.term || '');
   const target = dayShift(today, NOTIF_LEAD);
+  const approved = new Set(state.acadApproved || []);
+  const sent = new Set(state.sentRefs || []);
+  /* الغياب و«أكّده زملاؤك» شرطهما يبقى صحيحاً أياماً، فبلا دفتر يتكرران
+     يومياً. نتخطّاهما حين يتعذّر الدفتر، ويبقى الموعد والبثّ كما هما. */
+  const ledgerOk = state.ledgerOk !== false;
   const out = [];
 
   /* من يدرس أي CRN — نحتاجها للغياب و«أكّده زملاؤك» */
@@ -279,7 +852,7 @@ function buildNotifications(state) {
     }
 
     /* 2) موعد أكّده ثلاثة من الشعبة وما هو عندك */
-    if (wants(prof, 'confirmed')) {
+    if (ledgerOk && wants(prof, 'confirmed')) {
       for (const s of (sharedCounts || [])) {
         if (s.n < NOTIF_CONFIRM_MIN) continue;
         if (s.on_date <= today) continue;               /* مضى */
@@ -288,8 +861,12 @@ function buildNotifications(state) {
         const has = (events || []).some(e => e.user_id === uid &&
           String(e.crn) === String(s.crn) && e.kind === s.kind && e.on_date === s.on_date);
         if (has) continue;                              /* عندك أصلاً */
+        /* نفس علّة الغياب: الشرط يبقى صحيحاً كل يوم حتى يضيف الطالب
+           الموعد أو يمضي تاريخه، فكان يتكرر يومياً. مرة واحدة تكفي. */
+        const ref = `${term}:${s.crn}:${s.kind}:${s.on_date}`;
+        if (sent.has(sentKey(uid, 'confirmed', ref))) continue;
         lines.push({
-          kind: 'confirmed',
+          kind: 'confirmed', ref,
           text: `✅ ${s.n} من شعبتك حدّدوا ${NOTIF_KIND_AR[s.kind] || 'موعداً'}\n` +
                 `${c.course_code} · ${s.on_date}`
         });
@@ -297,7 +874,7 @@ function buildNotifications(state) {
     }
 
     /* 3) قرب الحرمان */
-    if (wants(prof, 'absence')) {
+    if (ledgerOk && wants(prof, 'absence')) {
       const seen = {};
       for (const c of mine) {
         const used = (absences || []).filter(a =>
@@ -306,20 +883,25 @@ function buildNotifications(state) {
         if (!max || used !== max - 1) continue;         /* بقي واحد بالضبط */
         if (seen[c.crn]) continue;
         seen[c.crn] = 1;
+        /* «بقي واحد» شرط يبقى صحيحاً كل يوم حتى نهاية الترم، فكان
+           التنبيه يخرج يومياً بلا نهاية. الدفتر يجعله مرة واحدة لكل
+           (شعبة · عدد الغيابات) — ولو حذف الطالب غياباً ثم أعاده لا يتكرر. */
+        const ref = `${term}:${c.crn}:${used}`;
+        if (sent.has(sentKey(uid, 'absence', ref))) continue;
         lines.push({
-          kind: 'absence',
+          kind: 'absence', ref,
           text: `⚠️ باقي لك غياب واحد في ${c.course_code}\n` +
                 `${used} من ${max} — الغياب الجاي حرمان`
         });
       }
     }
 
-    /* 4) موعد أكاديمي */
+    /* 4) موعد أكاديمي — نصّ واحد يصل الطلاب جميعاً، فهو بثّ لا تنبيه شخصي.
+       لا يخرج إلا بموافقة صريحة وصلت تيليغرام قبل موعده بيوم كامل. */
     if (wants(prof, 'acad')) {
-      for (const a of (acadCal || [])) {
-        if (a.s !== target) continue;
-        if (a.t !== 'warn' && a.t !== 'add') continue;  /* المواعيد الحرجة فقط */
-        lines.push({ kind: 'acad', text: `🗓️ بعد يومين: ${a.ar}` });
+      for (const a of acadDue(acadCal, target)) {
+        if (!approved.has(acadRef(a))) continue;
+        lines.push({ kind: 'acad', text: acadText(a) });
       }
     }
 
@@ -332,15 +914,66 @@ function buildNotifications(state) {
 /* ═══ الدورة ═══ */
 let NOTIF_LAST = null;                    /* آخر يوم أُرسل فيه — يمنع التكرار */
 
+/* ═══ حجز اليوم ═══
+   NOTIF_LAST في الذاكرة وحدها ما كفت: إعادة تشغيل Render الساعة الخامسة
+   تصفّرها فتُرسل الدورة مرتين، وخدمتا Render تقرآن قاعدة واحدة فترسلان
+   معاً. الصف الفريد (اليوم + 'run') يجعل أول من يصل هو الوحيد.
+   يرجّع 'ok' أو 'taken' أو 'error' — والفرق بين الأخيرين مهم:
+   المحجوز لا يُعاد، والمعطوب يُعاد بعد عشر دقائق. */
+async function claimNotifDay(date) {
+  let r;
+  try {
+    r = await sb('POST', 'notif_approvals', {
+      body: { send_date: date, kind: 'run', ref: '', body: '', status: 'sent' },
+      prefer: 'return=minimal'
+    });
+  } catch (e) { return 'error' }
+  if (r && r.code) return String(r.code) === '23505' ? 'taken' : 'error';
+  return 'ok';
+}
+
+/* ═══ الموافقة المسبقة ═══
+   يُعرض تنبيه الغد الآن، فيبقى أمامك يوم كامل. ما لم تضغط «انشره»
+   قبل الخامسة لا يخرج أصلاً. */
+async function prepareAcadApprovals(sendDate) {
+  if (!ADMIN_CHAT_ID) return;
+  for (const a of acadDue(ACAD_CAL, dayShift(sendDate, NOTIF_LEAD))) {
+    const text = acadText(a);
+    let r;
+    try {
+      r = await sb('POST', 'notif_approvals', {
+        body: { send_date: sendDate, kind: 'acad', ref: acadRef(a),
+                body: text, status: 'pending' },
+        prefer: 'return=representation'
+      });
+    } catch (e) { continue }
+    const row = Array.isArray(r) && r[0] ? r[0] : null;
+    if (!row) continue;                   /* معروض من قبل، أو تعذّر الإدراج */
+    await sendMsg(ADMIN_CHAT_ID,
+      `🔒 <b>تنبيه عام ينتظر موافقتك</b>\n\n` +
+      `يخرج ${sendDate} الساعة ٥ العصر لكل من ربط تيليغرام.\n\n` +
+      `<pre>${esc(text)}</pre>\n` +
+      `بلا موافقة ما يخرج.`,
+      kb([[btn('✅ انشره', `nok:${row.id}`), btn('🚫 لا ترسله', `nno:${row.id}`)]]));
+  }
+}
+
 async function notifyTick() {
   if (!SB_URL || !SB_SERVICE_KEY) return;
+  /* نسخة الاختبار تخدم الموقع فقط. كان الحارس موصوفاً في التعليق أعلى
+     SITE_ENV ومفقوداً هنا، فأرسلت الخدمتان تنبيهين متطابقين للطلاب. */
+  if (SITE_ENV !== 'prod') return;
   const { date, hour } = ksaParts();
   if (hour !== NOTIF_HOUR) return;
   if (NOTIF_LAST === date) return;        /* أُرسلت اليوم */
+
+  const claim = await claimNotifDay(date);
+  if (claim === 'taken') { NOTIF_LAST = date; return; }
+  if (claim !== 'ok') return;             /* عطل شبكة — نعاود بعد عشر دقائق */
   NOTIF_LAST = date;
 
   try {
-    const term = ACTIVE_TERM;
+    const term = activeTerm();
     const [profiles, schedules, events, absences] = await Promise.all([
       sbAll('profiles', { query: '?select=id,telegram_chat_id,notif_prefs' }),
       sbAll('user_schedule', {
@@ -365,24 +998,84 @@ async function notifyTick() {
 
     /* حد الغياب لكل جلسة — يُحسب من أيامها كما في الواجهة */
     const withMax = schedules.map(r => Object.assign({}, r, {
-      allowed_abs: absAllowedFor(r.course_date)
+      allowed_abs: absAllowedFor(r.course_date, date)
     }));
+
+    /* موافقات اليوم — البثّ لا يخرج بلا واحدة */
+    let aps = [];
+    try {
+      const rows = await sb('GET', 'notif_approvals', {
+        query: `?send_date=eq.${encodeURIComponent(date)}&kind=eq.acad` +
+               `&select=id,ref,body,status`
+      });
+      if (Array.isArray(rows)) aps = rows;
+    } catch (e) { /* بلا موافقات = بلا بثّ، وهو الاتجاه الآمن */ }
+
+    /* دفتر ما أُرسل سابقاً — في القاعدة لا في الذاكرة، فإعادة النشر
+       ما تعيد التنبيهات على الطلاب. */
+    let sentRefs = [], ledgerOk = true;
+    try {
+      /* الجدول بمفتاح مركّب بلا id — نرتّب بالمفتاح نفسه، وبصرامة:
+         أي خطأ يُرمى بنصّه بدل ما يبدو دفتراً فاضياً. */
+      const rows = await sbAll('notif_sent', {
+        query: '?select=user_id,kind,ref',
+        order: 'user_id.asc,kind.asc,ref.asc',
+        strict: true
+      });
+      sentRefs = rows.map(r => sentKey(r.user_id, r.kind, r.ref));
+    } catch (e) {
+      /* كان هنا «نكمل بلا دفتر ونقبل تكراراً نادراً». لكن الدفتر المعطوب
+         لا يسبّب تكراراً نادراً — يسبّب تكراراً يومياً دائماً. فنغلق:
+         نتخطّى الأنواع التي تعتمد عليه، وننبّهك بالسبب الحقيقي. */
+      ledgerOk = false;
+      alert('ledger', 'دفتر التنبيهات لا يعمل',
+        `قراءة notif_sent فشلت: ${e.message}\n\n` +
+        `أوقفنا تحذيرات الغياب و«أكّده زملاؤك» اليوم حتى لا تتكرر على الطلاب.\n` +
+        `لو الرسالة «does not exist»، شغّل SQL إنشاء الجدول.`);
+    }
 
     const msgs = buildNotifications({
       today: date, profiles, schedules: withMax, events, absences,
-      acadCal: ACAD_CAL_SERVER, sharedCounts: Object.values(cnt)
+      acadCal: ACAD_CAL, sharedCounts: Object.values(cnt),
+      acadApproved: aps.filter(r => r.status === 'approved').map(r => r.ref),
+      sentRefs, term, ledgerOk
     });
 
-    let sent = 0, evIds = [];
+    let sent = 0, evIds = [], ledger = [];
     for (const m of msgs) {
       const body = m.lines.map(l => l.text).join('\n\n');
       const r = await sendMsg(m.chat_id, `🔔 تنبيهات جدولك\n\n${body}`);
       if (r && r.ok) {
         sent++;
-        m.lines.forEach(l => { if (l.kind === 'event' && l.id) evIds.push(l.id) });
+        m.lines.forEach(l => {
+          if (l.kind === 'event' && l.id) evIds.push(l.id);
+          /* نسجّل بعد النجاح فقط: فشل الإرسال يجب أن يُعاد غداً */
+          if (l.ref) ledger.push({ user_id: m.user_id, kind: l.kind,
+                                   ref: l.ref, sent_on: date });
+        });
       }
       await new Promise(r2 => setTimeout(r2, 120));   /* حدود تيليغرام */
     }
+
+    /* merge-duplicates: الصف موجود أصلاً يعني أُرسل من قبل، وهذا مقبول.
+       و .catch وحدها ما تكفي: sb ترجع كائن الخطأ ولا ترمي، فكانت الكتابة
+       الفاشلة تُبتلع وتعود نفس الرسالة غداً. */
+    let ledgerErr = null;
+    for (let i = 0; i < ledger.length; i += 100) {
+      let r;
+      try {
+        r = await sb('POST', 'notif_sent', {
+          body: ledger.slice(i, i + 100),
+          prefer: 'resolution=merge-duplicates,return=minimal'
+        });
+      } catch (e) { r = { message: e.message } }
+      if (r && !Array.isArray(r) && (r.code || r.message))
+        ledgerErr = r.message || r.code;
+    }
+    if (ledgerErr)
+      alert('ledger-write', 'تسجيل التنبيهات المرسلة فشل',
+        `الكتابة في notif_sent رجعت: ${ledgerErr}\n\n` +
+        `اللي انرسل اليوم بيتكرر بكرة حتى يُصلح.`);
 
     /* نعلّم المرسَل حتى لا يتكرر لو أُعيد تشغيل السيرفر */
     if (evIds.length)
@@ -391,9 +1084,34 @@ async function notifyTick() {
         body: { notified_on: date }, prefer: 'return=minimal'
       }).catch(() => {});
 
+    /* نغلق صفوف اليوم: المعتمد صار مرسلاً، والمعلّق فات موعده */
+    const okIds = aps.filter(r => r.status === 'approved').map(r => r.id);
+    const late = aps.filter(r => r.status === 'pending');
+    if (okIds.length)
+      await sb('PATCH', 'notif_approvals', {
+        query: `?id=in.(${okIds.join(',')})`,
+        body: { status: 'sent', decided_at: new Date().toISOString() },
+        prefer: 'return=minimal'
+      }).catch(() => {});
+    if (late.length) {
+      await sb('PATCH', 'notif_approvals', {
+        query: `?id=in.(${late.map(r => r.id).join(',')})`,
+        body: { status: 'expired' }, prefer: 'return=minimal'
+      }).catch(() => {});
+      if (ADMIN_CHAT_ID)
+        await sendMsg(ADMIN_CHAT_ID,
+          `⏭️ <b>ما خرج — بلا موافقة</b>\n\n` +
+          late.map(r => '• ' + esc(String(r.body || '').split('\n')[0])).join('\n') +
+          `\n\nترسله يدوياً بـ <code>/broadcast</code> لو تبي.`).catch(() => {});
+    }
+
+    /* تنبيه الغد يُعرض الآن — يبقى أمامك يوم كامل قبل موعده */
+    await prepareAcadApprovals(dayShift(date, 1)).catch(() => {});
+
     if (sent) {
-      console.log(`تنبيهات جدولك: ${sent} رسالة`);
-      logEvent('notify', { sent, at: Date.now() });
+      console.log(`تنبيهات جدولك: ${sent} رسالة · env=${SITE_ENV}`);
+      logEvent('notify', { sent, at: Date.now(), env: SITE_ENV,
+                           build: PAGE ? PAGE.etag : null, ledgerOk });
     }
   } catch (e) {
     console.log('notifyTick: ' + e.message);
@@ -535,11 +1253,18 @@ async function restoreEvents() {
               `${FLAP_LOG.length} رفّة`);
 }
 
+/* مفتاح الحالة لكل بيئة. الخدمتان في Render تتشاركان قاعدة واحدة، وكانتا
+   تكتبان نفس الصف «runtime» كل ٥ دقائق — فأي مفتاح تضبطه في لوحة dev
+   (الفترة المجانية · الأسعار · الترم · النافذة · وضع Pushover) كان يغلب
+   على الإنتاج مع أول إعادة تشغيل له. الإنتاج يبقى على «runtime» حتى ما
+   يضيع ما هو محفوظ، وغيره يأخذ اسمه. */
+const STATE_KEY = SITE_ENV === 'prod' ? 'runtime' : `runtime-${SITE_ENV}`;
+
 /* عدّادات وذروة التغذية — الذروة أهمها:
    بدونها يبدأ قاطع الدائرة أعمى بعد كل نشر ولا يحميه إلا الحد المطلق. */
 async function saveState() {
   const body = {
-    key: 'runtime',
+    key: STATE_KEY,
     value: {
       feedPeak: [...FEED_PEAK.entries()],
       totalUpdated: SCHED_SYNC.totalUpdated,
@@ -548,8 +1273,13 @@ async function saveState() {
       confirmPurged: CONFIRM_STAT.purged,
       /* مفاتيح اللوحة: بدونها يرجع كل شي للوضع التلقائي بعد كل نشر،
          فيشتغل التسخين وأنت مطفّيه أو ترجع المراقبة وأنت موقّفها. */
+      /* النافذة والساعات والترم كانت تضيع مع كل نشر فيرجع الجرس يفتح
+         بعد ما أقفلته، والترم يرجع لقيمة Render. */
       toggles: { ttlOverride: TTL_OVERRIDE, monitorPaused: MONITOR_PAUSED,
-                 prewarmOn: PREWARM_ON, finalsOn: FINALS_ON },
+                 prewarmOn: PREWARM_ON, finalsOn: FINALS_ON,
+                 termOverride: TERM_OVERRIDE, windowOverride: WINDOW_OVERRIDE,
+                 hoursOverride: HOURS_OVERRIDE, pushoverMode: PUSHOVER_MODE,
+                 freeBeta: FREE_BETA, pricing: PRICING },
       ops: { searches: OPS.searches, feedback: OPS.feedback,
              pmuFails: OPS.pmuFails, tgFails: OPS.tgFails,
              searchesCached: OPS.searchesCached, searchStale: OPS.searchStale,
@@ -564,7 +1294,7 @@ async function saveState() {
 
 async function restoreState() {
   const rows = await sb('GET', 'app_state', {
-    query: '?key=eq.runtime&select=value&limit=1'
+    query: `?key=eq.${encodeURIComponent(STATE_KEY)}&select=value&limit=1`
   }).catch(() => []);
   const v = Array.isArray(rows) && rows[0] ? rows[0].value : null;
   if (!v) { console.log('استعادة الحالة: ما فيه نسخة محفوظة بعد'); return; }
@@ -579,6 +1309,21 @@ async function restoreState() {
   if ('ttlOverride' in g) TTL_OVERRIDE = g.ttlOverride || null;
   if ('monitorPaused' in g) MONITOR_PAUSED = !!g.monitorPaused;
   if ('prewarmOn' in g) PREWARM_ON = !!g.prewarmOn;
+  if ('freeBeta' in g) FREE_BETA = !!g.freeBeta;
+  /* نبدأ من الافتراضي فالمفاتيح الجديدة تاخذ قيمتها، ونرفض المحفوظ
+     لو صار مخالفاً لقيد أُضيف بعد حفظه */
+  if (g.pricing && typeof g.pricing === 'object') {
+    const merged = Object.assign({}, PRICING_DEFAULT, g.pricing);
+    if (!validatePricing(merged)) PRICING = merged;
+  }
+  /* المحفوظ قبل التغيير اسمه pro — نقرأه addon */
+  if ('pushoverMode' in g) {
+    const m = g.pushoverMode === 'pro' ? 'addon' : g.pushoverMode;
+    if (PUSHOVER_MODES.includes(m)) PUSHOVER_MODE = m;
+  }
+  if ('termOverride' in g) TERM_OVERRIDE = g.termOverride || null;
+  if ('windowOverride' in g) WINDOW_OVERRIDE = g.windowOverride || null;
+  if ('hoursOverride' in g) HOURS_OVERRIDE = g.hoursOverride || null;
   /* FINALS_ENABLED=off في Render مفتاح قتل على مستوى النشر — يغلب المحفوظ.
      غير ذلك، ما ضبطته من اللوحة هو الأصح. */
   if ('finalsOn' in g && (process.env.FINALS_ENABLED || '').trim() !== 'off')
@@ -589,7 +1334,10 @@ async function restoreState() {
   console.log('استعادة المفاتيح: المراقبة ' + (MONITOR_PAUSED ? 'موقوفة' : 'شغالة') +
     ' · التسخين ' + (PREWARM_ON ? 'مفعّل' : 'مطفأ') +
     ' · الصلاحية ' + (TTL_OVERRIDE ? TTL_OVERRIDE + ' د يدوي' : 'تلقائية') +
-    ' · النهائيات ' + (FINALS_ON ? 'معروضة' : 'موقوفة'));
+    ' · النهائيات ' + (FINALS_ON ? 'معروضة' : 'موقوفة') +
+    ' · الترم ' + activeTerm() + (TERM_OVERRIDE ? ' (يدوي)' : '') +
+    ' · النافذة ' + (WINDOW_OVERRIDE
+      ? WINDOW_OVERRIDE.from + '←' + WINDOW_OVERRIDE.to + ' يدوية' : 'من التقويم'));
 }
 
 const sendMsg = async (chatId, text, markup) => {
@@ -829,49 +1577,94 @@ async function runMonitorCycle() {
     stat.followups = await sendFollowups().catch(() => 0);
     stat.expired = await dropExpired().catch(() => 0);
 
-    const monitors = await sb('GET', 'monitored_courses', { query: '?select=*' });
-    if (!Array.isArray(monitors) || !monitors.length) return;
+    /* sbAll لا sb: sb تقصّ عند ١٠٠٠ صف بلا خطأ — فالمراقبة رقم ١٠٠١ كانت
+       ما تنفحص أبداً، ولا أحد يدري. الموسم الماضي ٥٧٧ صفاً، والقادم أكثر. */
+    const allMons = await sbAll('monitored_courses', { query: '?select=*' });
+    if (!Array.isArray(allMons) || !allMons.length) return;
 
-    /* ── 1. سحبة واحدة لكل ترم ── */
-    const terms = [...new Set(monitors.map(m => m.term || '202630'))];
+    /* الترم النشط وحده. صف واحد بترم آخر كان يضيف سحبة كاملة من موقع
+       الجامعة في كل دورة، والأخطر: في الموسم القادم كانت الدورة تسحب
+       الترم المنتهي — الجامعة تُبقيه منشوراً — فينبّه الطالب عن شعبة
+       في ترم انتهى. ولا نحذف الصفوف هنا: الحذف قرار من اللوحة لا آلي. */
+    /* ترم النافذة لا ترم الدراسة — في أبريل يختلفان */
+    const TERM = regTerm();
+    const monitors = allMons.filter(m => String(m.term || '') === TERM);
+    stat.otherTerm = allMons.length - monitors.length;
+    if (!monitors.length) return;
+
+    /* ── 1. سحبة واحدة، للترم النشط ── */
+    const terms = [TERM];
     const snapshot = {};
+    let fetchFailed = false, partial = false;
     for (const term of terms) {
-      try {
-        const html = await fetchPMUData(term, 'ALL', 'ALL');
-        /* نوسم الجنس هنا أيضاً — الكاش يخدم البحث مباشرة */
-        const parsed = tagGender(parseHTML(html), 'ALL');
+      const snap = await fetchTermSnapshot(term);
+
+      if (snap.courses) {
+        const parsed = snap.courses;
         /* parseHTML ما تضع الترم في المادة، و byCourse يبني مفتاحه من
            c.term — فكان يطلع '|PHYS 1422' بدل '202710|PHYS 1422' ولا
            يتطابق أبداً، فتتعطّل مراقبة المادة كاملة بصمت. نوسمه هنا. */
         parsed.forEach(c => { c.term = term; snapshot[term + ':' + c.crn] = c; });
+        if (snap.guessed) stat.guessedGender = true;
 
-        /* نفس البيانات اللي سحبناها للمراقبة هي اللي يحتاجها البحث،
-           فنغذّي بها كاش البحث بدل ما نسحبها مرة ثانية.
-           يقلّل الطلبات على موقع الجامعة، ويخلي الطالب يلقى النتيجة جاهزة. */
-        const ck = `${term}|ALL|ALL`;
-        const prev = coursesCache.get(ck);
-        coursesCache.set(ck, {
-          at: Date.now(),
-          lastHit: (prev && prev.lastHit) || 0,   /* ما نوهم التسخين إنها مطلوبة */
-          courses: parsed
-        });
-        while (coursesCache.size > 40)
-          coursesCache.delete(coursesCache.keys().next().value);
-        OPS.cacheFromMonitor = (OPS.cacheFromMonitor || 0) + 1;
+        if (snap.partial) {
+          /* نصف جدول: يكفي لمراقبة شعبة بعينها — حضورها حقيقة مقيسة —
+             ولا يكفي للكاش ولا للمزامنة ولا لمقارنة شعب المادة، لأن
+             الغائب يبدو محذوفاً ثم يعود «جديداً» فينهال الطالب بإشعارات
+             كاذبة، والمزامنة تشطب نصف الجدول كأنه اختفى من الجامعة. */
+          partial = true;
+          fetchFailed = true;            /* نعاود قريباً لنكمل الناقص */
+          stat.partial = parsed.length;
+          console.log(`cycle: نصف الجدول فقط (${parsed.length} شعبة) — ` +
+                      `بلا كاش ولا مزامنة ولا مقارنة مواد`);
+        } else {
+          /* نفس البيانات اللي سحبناها للمراقبة هي اللي يحتاجها البحث،
+             فنغذّي بها كاش البحث بدل ما نسحبها مرة ثانية.
+             يقلّل الطلبات على موقع الجامعة، ويخلي الطالب يلقى النتيجة جاهزة. */
+          const ck = `${term}|ALL|ALL`;
+          const prev = coursesCache.get(ck);
+          coursesCache.set(ck, {
+            at: Date.now(),
+            lastHit: (prev && prev.lastHit) || 0,  /* ما نوهم التسخين إنها مطلوبة */
+            courses: parsed
+          });
+          while (coursesCache.size > 40)
+            coursesCache.delete(coursesCache.keys().next().value);
+          OPS.cacheFromMonitor = (OPS.cacheFromMonitor || 0) + 1;
 
-        /* المزامنة كانت مربوطة بسحبة getCourses. وبما إن المراقبة صارت
-           تعبّي الكاش، ما عادت تنطلق من هناك — فنطلقها من هنا.
-           الحارس الزمني داخل syncSchedules يمنع الكتابة المتكررة. */
-        syncSchedules(term, parsed).catch(() => {});
-      } catch (e) {
-        OPS.pmuFails++;
-        console.log('fetch fail', term, e.message);
-        alert('pmu', 'موقع الجامعة ما يستجيب',
-          `فشل سحب بيانات الترم ${term}.\nالسبب: ${e.message}\n\n` +
-          `المراقبة والبحث بيتأثرون. لو تكرر كثير، تحقق إذا السيرفر محجوب.`);
+          /* المزامنة كانت مربوطة بسحبة getCourses. وبما إن المراقبة صارت
+             تعبّي الكاش، ما عادت تنطلق من هناك — فنطلقها من هنا.
+             الحارس الزمني داخل syncSchedules يمنع الكتابة المتكررة. */
+          syncSchedules(term, parsed).catch(() => {});
+        }
+      } else {
+        fetchFailed = true;
+
+        /* نسخة حديثة في الذاكرة خير من لا شيء. مصدرها بحث طالب نجح
+           أو دورة سابقة، وسقف العمر يمنع إشعاراً عن شعبة أُغلقت. */
+        const hit = coursesCache.get(`${term}|ALL|ALL`);
+        const age = hit ? Date.now() - hit.at : Infinity;
+        if (hit && age <= CYCLE_CACHE_MAX && hit.courses && hit.courses.length) {
+          hit.courses.forEach(c => {
+            const cc = Object.assign({}, c, { term });
+            snapshot[term + ':' + cc.crn] = cc;
+          });
+          stat.fromCache = Math.round(age / 1000);
+          console.log(`cycle: نسخة من الكاش عمرها ${stat.fromCache} ثانية`);
+        } else {
+          alert('pmu', 'موقع الجامعة ما يستجيب',
+            `فشل سحب بيانات الترم ${term} — الطلبات الثلاثة كلها.\n\n` +
+            `وما فيه نسخة حديثة في الذاكرة نرجع لها.\n` +
+            `المراقبة والبحث بيتأثرون. لو تكرر كثير، تحقق إذا السيرفر محجوب.`);
+        }
       }
-      await new Promise(r => setTimeout(r, 1500));
     }
+
+    /* فشل الجلب يقصّر الفاصل القادم، حتى لو أنقذنا الدورة بالكاش —
+       فالنسخة ستشيخ، والمطلوب بيانات طازجة لا تكرار القديمة. */
+    CYCLE_RETRIES = fetchFailed
+      ? Math.min(CYCLE_RETRIES + 1, CYCLE_RETRY_MAX + 1)
+      : 0;
 
     const now = new Date().toISOString();
 
@@ -926,7 +1719,9 @@ async function runMonitorCycle() {
        أول دورة لأي صف جديد نسجّل الحالة فقط بلا إشعار، عشان ما ننهال
        على الطالب بكل الشعب المفتوحة أصلاً وقت ما فعّل المراقبة. */
     const courseStateUpdates = [];   // {id, state}
-    for (const m of courseMons) {
+    /* بنصف جدول، شعب الجنس الغائب تُقرأ كأنها اختفت، ثم تعود في الدورة
+       التالية كأنها «نزلت جديدة». نتخطّى المقارنة كلها ولا نكتب الحالة. */
+    for (const m of (partial ? [] : courseMons)) {
       const term = m.term || '202630';
       const list = byCourse[term + '|' + normCode(m.course_code)] || [];
       if (!list.length) continue;
@@ -1003,20 +1798,38 @@ async function runMonitorCycle() {
     for (let i = 0; i < userIds.length; i += 100) {
       const chunk = userIds.slice(i, i + 100).map(u => `"${u}"`).join(',');
       const rows = await sb('GET', 'profiles', {
-        query: `?id=in.(${chunk})&select=id,telegram_chat_id,is_pro,subscription_expires_at`
+        query: `?id=in.(${chunk})&select=id,telegram_chat_id,is_pro,subscription_expires_at,pushover_key,pushover_until`
       });
       (Array.isArray(rows) ? rows : []).forEach(p => { profiles[p.id] = p; });
     }
 
-    /* ── 5. من يستحق الإشعار فعلاً ── */
-    const nowMs = Date.now();
+    /* ── 5. من يستحق الإشعار فعلاً ──
+       المشترك (أو الفترة المجانية): كل مراقباته. غيره: أقدم N مراقبات شعبة
+       فقط، ومراقبة «كل الشعب» للمشتركين. الباقي متوقف لا محذوف — يرجع
+       يشتغل لو اشترك. والصفحة تكتب في القاعدة مباشرة، فأي أحد يتجاوز
+       الحد من أدوات المتصفح — لكن الدورة ما تخدم إلا حصّته. */
+    const freeOk = new Set();
+    {
+      const perUser = {};
+      monitors.forEach(m => {
+        if (m.scope !== 'course') (perUser[m.user_id] = perUser[m.user_id] || []).push(m);
+      });
+      Object.values(perUser).forEach(list => {
+        list.sort((a, b) => ((Date.parse(a.created_at) || 0) - (Date.parse(b.created_at) || 0))
+                            || (Number(a.id) - Number(b.id)));
+        list.slice(0, PRICING.freeMonitors).forEach(m => freeOk.add(m.id));
+      });
+    }
+    let withheld = 0;
     const sendList = toNotify.filter(({ m }) => {
       const p = profiles[m.user_id];
       if (!p || !p.telegram_chat_id) return false;
-      if (FREE_BETA) return true;          /* الفترة التجريبية: للجميع */
-      return p.is_pro ||
-        (p.subscription_expires_at && new Date(p.subscription_expires_at).getTime() > nowMs);
+      if (hasAccess(p)) return true;
+      if (m.scope !== 'course' && freeOk.has(m.id)) return true;
+      withheld++;
+      return false;
     });
+    if (withheld) console.log(`   الحصة المجانية: ${withheld} إشعار ما خرج (فوق الحد)`);
 
     /* ── 6. إرسال على دفعات متوازية ──
        تيليغرام يسمح بحوالي 30 رسالة/ثانية، فدفعات من 20 مع فاصل بسيط آمنة. */
@@ -1056,17 +1869,21 @@ async function runMonitorCycle() {
       if (r && r.ok) { notified.push(m.id); followups.push(m.id); }
       else OPS.tgFails++;
 
-      /* لو المستلم أنت، نرسل نسخة على Pushover كمان — إشعار أقوى
-         ما يفوتك. الطلاب ما يتأثرون: الشرط عليك وحدك. */
-      if (PUSHOVER_ON && ADMIN_CHAT_ID &&
-          String(p.telegram_chat_id) === String(ADMIN_CHAT_ID)) {
+      /* Pushover: لك أنت دائماً، ولأي طالب سجّل مفتاحه في ملفه.
+         تيليغرام يُكتم بسهولة، والأولوية 2 تعيد التنبيه حتى يضغط
+         «تأكيد» بنفسه — وهذا المطلوب لشعبة تُفتح وتُسكّر في دقائق. */
+      const isAdmin = ADMIN_CHAT_ID &&
+        String(p.telegram_chat_id) === String(ADMIN_CHAT_ID);
+      const poKey = (p.pushover_key || '').trim();
+      if (PUSHOVER_ON && (isAdmin || pushoverAllowed(p))) {
         pushover(`${closedNew || isNew ? '🆕' : '🟢'} ${live.courseCode} §${live.section}`,
           `${live.courseTitle}\nCRN ${live.crn}\n` +
           `${live.courseDate} · ${live.courseTiming}\n` +
           `${live.instructor || '—'} · ${live.room || '—'}`,
           /* الشعبة المغلقة الجديدة خبر لا طارئ */
-          closedNew ? { priority: 0, sound: 'pushover' }
-                    : { priority: 2, sound: 'siren', retry: 30, expire: 1800 }).catch(() => {});
+          closedNew ? { priority: 0, sound: 'pushover', user: poKey || undefined }
+                    : { priority: 2, sound: 'siren', retry: 30, expire: 1800,
+                        user: poKey || undefined }).catch(() => {});
       }
       await new Promise(r2 => setTimeout(r2, 700));   // تهدئة بين الدفعات
     });
@@ -1124,6 +1941,10 @@ async function handleCallback(cq) {
   const ack = (text) => tg('answerCallbackQuery',
     { callback_query_id: cq.id, text: text || '', show_alert: false }).catch(() => {});
 
+  /* قرار البثّ العام — للإدارة وحدها */
+  const am = data.match(/^n(ok|no):(\d+)$/);
+  if (am && chatId) return acadDecision(cq, ack, chatId, am[1], am[2]);
+
   const mm = data.match(/^(stop|keep):(\d+)$/);
   if (!mm || !chatId) return ack();
   const action = mm[1], rowId = mm[2];
@@ -1164,6 +1985,33 @@ async function handleCallback(cq) {
   await ack('أوقفت المراقبة');
   return editMsg(cq, `🔕 <b>أوقفت المراقبة</b>\n\n${label}\n\n` +
     `ترجّعها أي وقت من الجرس في الموقع.`);
+}
+
+/* ═══ اعتماد التنبيه العام أو إلغاؤه ═══
+   الشرط `status=eq.pending` في الرابط يمنع ضغطتين متتاليتين من قلب القرار،
+   ونتحقق أن صفاً رجع فعلاً — الكتابة التي تحجبها RLS ترجع بلا خطأ. */
+async function acadDecision(cq, ack, chatId, act, rowId) {
+  if (!ADMIN_CHAT_ID || String(chatId) !== String(ADMIN_CHAT_ID)) return ack();
+  const rows = await sb('GET', 'notif_approvals', {
+    query: `?id=eq.${rowId}&select=id,send_date,body,status&limit=1`
+  }).catch(() => []);
+  const row = Array.isArray(rows) && rows[0] ? rows[0] : null;
+  if (!row) return ack('ما لقيت الطلب');
+  if (row.status !== 'pending') {
+    await ack('محسوم من قبل');
+    return editMsg(cq, `الحالة الآن: <b>${esc(row.status)}</b>\n\n<pre>${esc(row.body)}</pre>`);
+  }
+  const status = act === 'ok' ? 'approved' : 'rejected';
+  const upd = await sb('PATCH', 'notif_approvals', {
+    query: `?id=eq.${rowId}&status=eq.pending`,
+    body: { status, decided_at: new Date().toISOString() },
+    prefer: 'return=representation'
+  }).catch(() => null);
+  if (!Array.isArray(upd) || !upd.length) return ack('ما تمّ — أعد المحاولة');
+  await ack(status === 'approved' ? 'معتمد' : 'ملغى');
+  return editMsg(cq, (status === 'approved'
+    ? `✅ <b>معتمد</b> — يخرج ${esc(row.send_date)} الساعة ٥ العصر.`
+    : `🚫 <b>ملغى</b> — ما بيخرج.`) + `\n\n<pre>${esc(row.body)}</pre>`);
 }
 
 function editMsg(cq, text) {
@@ -1316,6 +2164,23 @@ async function handleTelegramUpdate(update) {
         `<code>#u${chatId}</code>`);
     }
     return sendMsg(chatId, '✅ وصلتنا رسالتك، شكراً لك 🙏');
+  }
+
+  /* ═══ /notif — التنبيهات العامة المعلّقة ═══
+     مخرج لو ضاعت رسالة العرض بين المحادثات */
+  if (isAdmin && text.trim() === '/notif') {
+    const rows = await sb('GET', 'notif_approvals', {
+      query: `?kind=eq.acad&status=eq.pending&select=id,send_date,body` +
+             `&order=send_date.asc&limit=20`
+    }).catch(() => []);
+    const list = Array.isArray(rows) ? rows : [];
+    if (!list.length) return sendMsg(chatId, '📭 ما فيه تنبيه عام معلّق.');
+    for (const r of list)
+      await sendMsg(chatId,
+        `🔒 <b>ينتظر موافقتك</b> — يخرج ${esc(r.send_date)} الساعة ٥ العصر.\n\n` +
+        `<pre>${esc(r.body)}</pre>`,
+        kb([[btn('✅ انشره', `nok:${r.id}`), btn('🚫 لا ترسله', `nno:${r.id}`)]]));
+    return;
   }
 
   /* ═══ /broadcast <النص> — بث لكل من ربط تيليغرام ═══ */
@@ -1549,8 +2414,12 @@ async function handleTelegramUpdate(update) {
     const p = rows[0];
     const mons = await sb('GET', 'monitored_courses',
       { query: `?user_id=eq.${p.id}&select=course_code,section,scope,sections_state` });
-    const active = p.is_pro ||
-      (p.subscription_expires_at && new Date(p.subscription_expires_at) > new Date());
+    /* في الفترة المجانية «غير فعّال» كانت تخوّف طالباً عنده كل شي مفتوح */
+    const subLine = FREE_BETA ? '🎁 كل الميزات مفتوحة — فترة مجانية'
+      : isActive(p)
+        ? (p.subscription_expires_at
+            ? `✅ فعّال حتى ${String(p.subscription_expires_at).slice(0, 10)}` : '✅ فعّال')
+        : '❌ غير مشترك';
     /* مراقبة المادة كاملة تترك section فاضياً، فكانت تطبع «§null».
        اللوحة تعالجها صح — هذي وحدها كانت ناقصة. */
     const line = m => {
@@ -1564,7 +2433,7 @@ async function handleTelegramUpdate(update) {
     };
     return sendMsg(chatId,
       `📊 <b>حالتك</b>\n\n` +
-      `الاشتراك: ${active ? '✅ فعّال' : '❌ غير فعّال'}\n` +
+      `الاشتراك: ${subLine}\n` +
       `المواد المراقبة: ${mons.length}\n` +
       (mons.length ? '\n' + mons.map(line).join('\n') : ''));
   }
@@ -1692,12 +2561,21 @@ const clientIP = req =>
    /api/courses أغلى نقطة وأكثرها انكشافاً: كل طلب يعيد ١٨٠٠ مادة.
    الردّ مخزَّن مضغوطاً فالطلب الواحد زهيد، والخطر الحقيقي حلقة مجنونة
    أو ساحب بيانات يطلب عشرات المرات في الثانية.
-   الحدّ سخيّ عمداً — طلاب الحرم كلهم خلف عنوان واحد (NAT)، فحدّ ضيّق
-   يقفل الموقع على شعبة كاملة بدل ما يوقف ساحباً واحداً.
-   ٣٠٠ في الدقيقة: ما يبلغها إنسان، ويوقف الآلة عند ٥ طلبات في الثانية. */
+
+   الرقم مبنيّ على قياس الواجهة لا على تقدير:
+   • الكتابة في مربّع البحث تفلتر محلياً بلا أي طلب.
+   • quietRefresh يطلب كل ٩٠ ثانية = ٠٫٧ طلب/دقيقة للطالب الواحد.
+   • البحث اليدوي يضيف طلبين أو ثلاثة في الدقيقة للطالب النشط.
+   فالطالب النشط ≈ ٣ طلبات/دقيقة.
+
+   والطلاب لا يملكون عناوين مستقلة: شبكة الحرم خلف عنوان واحد، وشبكات
+   الجوال خلف CGNAT. فمئة طالب نشط في ذروة التسجيل قد يظهرون كعنوان
+   واحد يطلب ٣٠٠ في الدقيقة — أي أن حدّاً عند ٣٠٠ يقفل الموقع عليهم.
+   ١٢٠٠ (٢٠ في الثانية) يفصل بوضوح: لا يبلغه حشد بشري، ويوقف أي آلة
+   لأن الساحب يطلب مئات في الثانية لا عشرين. */
 const RATE = new Map();
 const RATE_WINDOW = 60 * 1000;
-const RATE_MAX = 300;
+const RATE_MAX = 1200;
 
 function rateHit(ip) {
   const now = Date.now();
@@ -1732,8 +2610,6 @@ function readBody(req) {
   });
 }
 
-const isActive = p => !!(p.is_pro ||
-  (p.subscription_expires_at && new Date(p.subscription_expires_at) > new Date()));
 
 /* --- حجم التخزين ---
    Supabase يحاسب على التخزين والتحميل معاً. الحجم محفوظ في size_kb
@@ -1763,6 +2639,439 @@ async function adminStorage() {
     week: rows.filter(r => r.created_at > day).length,
     top
   };
+}
+
+/* ═══ فهرس القاعات ═══
+   يُبنى من سحبتي M1 و F1 (الجنس من الجامعة لا من التخمين)، ويُخزَّن
+   في الذاكرة. القاعات لا تتغيّر خلال اليوم، فالبناء مرة كل ساعة يكفي.
+
+   الفلترة بالمنطقة لا بالقاعة: قياس البيانات أظهر أن M-COE فيها ١٠٪
+   جلسات طالبات و F-LRC فيها ١٩٪ جلسات طلاب — استعمال متبادل في أوقات
+   مختلفة. اقتراح قاعة من منطقة الجنس الآخر مخاطرة لا تستحق. */
+let ROOM_INDEX = null;
+const ROOM_TTL = 60 * 60 * 1000;
+
+async function buildRoomIndex(force) {
+  if (ROOM_INDEX && !force && Date.now() - ROOM_INDEX.at < ROOM_TTL) return ROOM_INDEX;
+
+  const pull = async (g) => {
+    try {
+      const r = await getCourses(activeTerm(), 'ALL', g);
+      return r && Array.isArray(r.courses) ? r.courses : Array.isArray(r) ? r : [];
+    } catch (e) { return []; }
+  };
+  const [mList, fList] = await Promise.all([pull('M1'), pull('F1')]);
+  if (!mList.length && !fList.length) return null;
+
+  const rooms = new Map();      /* الاسم → {zone, building, slots, M, F} */
+  const seen = new Set();
+  const add = (list, g) => list.forEach(c => {
+    const k = [c.crn, c.section, c.courseDate, c.courseTiming, c.room].join('|');
+    if (seen.has(k)) return;
+    seen.add(k);
+    const raw = String(c.room || '').trim();
+    const pr = roomParts(raw);
+    const tm = roomTime(c.courseTiming);
+    const days = roomDays(c.courseDate);
+    if (!pr || pr.odd || !tm || !days.length) return;
+    if (!rooms.has(raw))
+      rooms.set(raw, { zone: pr.zone, building: pr.building, code: pr.code,
+                       slots: [], M: 0, F: 0 });
+    const r = rooms.get(raw);
+    r[g] += days.length;
+    days.forEach(d => r.slots.push({ day: d, start: tm.start, end: tm.end }));
+  });
+  add(mList, 'M');
+  add(fList, 'F');
+
+  /* جنس المنطقة: الحرف يحسم، وبلا حرف نأخذ الأغلبية الساحقة (٩٠٪).
+     GZONE قياساً: ٧٩٩ طالبات مقابل ٢ — أي ١٠٠٪ عملياً. */
+  const zone = {};
+  rooms.forEach(r => {
+    const z = zone[r.zone] = zone[r.zone] || { M: 0, F: 0, letter: null };
+    z.M += r.M; z.F += r.F;
+    const m = r.zone.match(/^([MF])-/);
+    if (m) z.letter = m[1];
+  });
+  Object.values(zone).forEach(z => {
+    if (z.letter) { z.gender = z.letter; return; }
+    const tot = z.M + z.F;
+    const pct = tot ? z.F / tot : 0;
+    z.gender = pct >= 0.9 ? 'F' : pct <= 0.1 ? 'M' : null;   /* null = مشتركة */
+  });
+  rooms.forEach(r => { r.gender = zone[r.zone] ? zone[r.zone].gender : null; });
+
+  ROOM_INDEX = { at: Date.now(), rooms, zones: zone, term: activeTerm() };
+  return ROOM_INDEX;
+}
+
+/* القاعات التي لا محاضرة فيها خلال النافذة.
+   التقاطع بالدقيقة لا بخانات ساعية: محاضرة 8:00–8:50 تترك 8:50–9:00
+   فاضية، وأي تقسيم ساعي يخسر هذي الفجوة. */
+function freeRooms(idx, { day, from, to, gender, near, limit }) {
+  const out = [];
+  idx.rooms.forEach((r, name) => {
+    if (gender && r.gender !== gender) return;      /* المشتركة تُستبعد */
+    const sameDay = r.slots.filter(s => s.day === day);
+    if (r.slots.length === 0) return;               /* قاعة غير مستعملة أصلاً */
+    const busy = sameDay.some(s => s.start < to && s.end > from);
+    if (busy) return;
+    /* حتى متى تبقى فاضية: أول محاضرة تبدأ بعد بداية النافذة */
+    const next = sameDay.filter(s => s.start >= from)
+      .sort((a, b) => a.start - b.start)[0];
+    out.push({
+      room: name, building: r.building, zone: r.zone,
+      freeUntil: next ? next.start : null,
+      /* فيها محاضرة أخرى اليوم = مفتوحة يقيناً. القاعة الخالية طوال
+         اليوم قد تكون مقفلة، فلا تتصدّر رغم أن فراغها أطول. */
+      usedToday: sameDay.length > 0,
+      sameBuilding: !!(near && r.building === near)
+    });
+  });
+  /* الترتيب: مبنى محاضرته (أقل مشي) ← مفتوحة اليوم ← الأطول فراغاً */
+  out.sort((a, b) =>
+    (b.sameBuilding - a.sameBuilding) ||
+    (b.usedToday - a.usedToday) ||
+    ((b.freeUntil === null ? 1e9 : b.freeUntil) - (a.freeUntil === null ? 1e9 : a.freeUntil)) ||
+    a.room.localeCompare(b.room));
+  return { total: out.length, rooms: limit ? out.slice(0, limit) : out };
+}
+
+/* --- استطلاع القاعات ---
+   قبل بناء ميزة «القاعات الفاضية» لازم نعرف: كم قاعة، وهل بادئة الاسم
+   تدل على الجنس فعلاً، وهل GZONE مشترك. قراءة فقط بلا أي أثر على الطلاب.
+
+   الوقت بالدقائق والتقاطع بالدقيقة لا بخانات ساعية: محاضرة 8:00-8:50
+   في تقسيم ساعي تجعل القاعة مشغولة الساعة كاملة وهي فاضية عشر دقائق. */
+function roomDays(s) {
+  return String(s || '').toUpperCase().split('').filter(c => 'UMTWRFS'.includes(c));
+}
+function roomTime(s) {
+  const m = String(s || '').match(/(\d{3,4})\s*[-–]\s*(\d{3,4})/);
+  if (!m) return null;
+  const t = x => { x = x.padStart(4, '0');
+    return parseInt(x.slice(0, 2), 10) * 60 + parseInt(x.slice(2), 10); };
+  const start = t(m[1]), end = t(m[2]);
+  return end > start ? { start, end } : null;
+}
+/* اسم القاعة: «M-COBA - G034» = جنس M · مبنى COBA · رقم G034
+   و«GZONE - G036» بلا حرف جنس، فالمنطقة نفسها هي المبنى. */
+function roomParts(r) {
+  const s = String(r || '').trim();
+  if (!s) return null;
+  if (/^(TBA|TBD|ONLINE|N\/A)/i.test(s)) return null;
+  const parts = s.split(/\s+-\s+/);
+  const zone = (parts[0] || '').trim().toUpperCase();
+  const code = (parts.slice(1).join(' - ') || '').trim();
+  const m = zone.match(/^([MF])-(.+)$/);
+  return { zone, code,
+           building: m ? m[2] : zone,
+           genderLetter: m ? m[1] : null,
+           odd: !code || !zone };
+}
+
+async function adminRoomsProbe() {
+  /* سحبتان منفصلتان بدل ALL: مع M1 و F1 تفرض tagGender الجنس من فلتر
+     الجامعة نفسها، بدل أن تخمّنه من رقم الشعبة. الفرق ليس تجميلياً —
+     التخمين صنّف ٢٨ جلسة طلاب داخل مباني الطالبات، وترك ٤٢ مجهولة. */
+  const pull = async (g) => {
+    try {
+      const r = await getCourses(activeTerm(), 'ALL', g);
+      const list = r && Array.isArray(r.courses) ? r.courses : Array.isArray(r) ? r : null;
+      return { list, cached: !!(r && r.cached), err: null };
+    } catch (e) { return { list: null, cached: false, err: e && e.message ? e.message : String(e) }; }
+  };
+  const [mRes, fRes] = await Promise.all([pull('M1'), pull('F1')]);
+
+  const courses = [];
+  const seen = new Set();
+  const pushAll = (list, g) => (list || []).forEach(c => {
+    /* نفس الشعبة قد تجي في السحبتين — نمنع العدّ المزدوج */
+    const k = [c.crn, c.section, c.courseDate, c.courseTiming, c.room].join('|');
+    if (seen.has(k)) return;
+    seen.add(k);
+    courses.push({ ...c, gender: g });      /* الجنس من المصدر لا من التخمين */
+  });
+  pushAll(mRes.list, 'M');
+  pushAll(fRes.list, 'F');
+
+  if (!courses.length)
+    return { ok: false,
+             error: (mRes.err || fRes.err)
+               ? ('تعذّر جلب المواد: ' + (mRes.err || fRes.err))
+               : 'القائمتان رجعتا فاضيتين',
+             cacheKeys: [...coursesCache.keys()] };
+
+  const source = `طلاب ${(mRes.list || []).length}${mRes.cached ? ' (كاش)' : ''}` +
+                 ` · طالبات ${(fRes.list || []).length}${fRes.cached ? ' (كاش)' : ''}`;
+  const missing = [];
+  if (!mRes.list || !mRes.list.length) missing.push('قائمة الطلاب فاضية');
+  if (!fRes.list || !fRes.list.length) missing.push('قائمة الطالبات فاضية');
+
+  const byGender = {};        /* M/F → قاعات وجلسات */
+  const byBuilding = {};      /* المبنى → قاعات، جلسات، جنس */
+  const byZone = {};          /* المنطقة (M-CORE, GZONE) → نفسها */
+  const rooms = new Map();    /* اسم القاعة → [{day,start,end,gender,building}] */
+  const odd = { noRoom: 0, noTime: 0, tba: 0, noDays: 0, badName: 0 };
+  const oddNames = new Set();
+
+  courses.forEach(c => {
+    const raw = String(c.room || '').trim();
+    const tm = roomTime(c.courseTiming);
+    const days = roomDays(c.courseDate);
+    if (!raw) { odd.noRoom++; return; }
+    if (/^(TBA|TBD|ONLINE|N\/A)/i.test(raw)) { odd.tba++; return; }
+    if (!tm) { odd.noTime++; return; }
+    if (!days.length) { odd.noDays++; return; }
+    const pr = roomParts(raw);
+    if (!pr) { odd.tba++; return; }
+    if (pr.odd) { odd.badName++; if (oddNames.size < 10) oddNames.add(raw); }
+
+    const g = c.gender === 'F' ? 'F' : 'M';
+    const bg = byGender[g] = byGender[g] || { rooms: new Set(), sessions: 0 };
+    bg.rooms.add(raw); bg.sessions += days.length;
+
+    const bb = byBuilding[pr.building] = byBuilding[pr.building] ||
+      { rooms: new Set(), sessions: 0, M: 0, F: 0, zones: new Set() };
+    bb.rooms.add(raw); bb.sessions += days.length; bb[g] += days.length;
+    bb.zones.add(pr.zone);
+
+    /* المنطقة هي وحدة الفصل الحقيقية: M-CORE و F-CORE جناحان في مبنى
+       واحد. وGZONE بلا حرف جنس — توزيعها هو ما يحسم كيف نعاملها. */
+    const bz = byZone[pr.zone] = byZone[pr.zone] ||
+      { rooms: new Set(), sessions: 0, M: 0, F: 0,
+        building: pr.building, letter: pr.genderLetter };
+    bz.rooms.add(raw); bz.sessions += days.length; bz[g] += days.length;
+
+    if (!rooms.has(raw)) rooms.set(raw, []);
+    days.forEach(d => rooms.get(raw).push(
+      { day: d, start: tm.start, end: tm.end, gender: g, building: pr.building }));
+  });
+
+  /* عيّنة: الأحد 10:00–11:00، مفصولة بالجنس — هذا ما سيراه الطالب فعلاً */
+  const sample = { day: 'U', from: 600, to: 660 };
+  const free = { M: 0, F: 0 };
+  const total = { M: 0, F: 0 };
+  rooms.forEach(slots => {
+    const g = slots.some(x => x.gender === 'F') && !slots.some(x => x.gender === 'M')
+      ? 'F' : slots.some(x => x.gender === 'M') && !slots.some(x => x.gender === 'F')
+      ? 'M' : 'X';
+    if (g === 'X') return;                 /* قاعة ظهرت للجنسين — نستبعدها من العيّنة */
+    total[g]++;
+    const busy = slots.some(x => x.day === sample.day &&
+      x.start < sample.to && x.end > sample.from);
+    if (!busy) free[g]++;
+  });
+
+  const zones = Object.entries(byZone).map(([zone, v]) => {
+    const tot = v.M + v.F;
+    const share = tot ? Math.round(v.F / tot * 100) : 0;   /* نسبة الطالبات */
+    return {
+      zone, building: v.building, letter: v.letter,
+      rooms: v.rooms.size, sessions: v.sessions, M: v.M, F: v.F,
+      femalePct: share,
+      verdict: v.letter === 'M' ? 'طلاب' : v.letter === 'F' ? 'طالبات'
+             : share >= 90 ? 'طالبات فعلياً' : share <= 10 ? 'طلاب فعلياً' : 'مشتركة'
+    };
+  }).sort((a, b) => b.sessions - a.sessions);
+
+  const buildings = Object.entries(byBuilding).map(([building, v]) => ({
+    building, rooms: v.rooms.size, sessions: v.sessions,
+    M: v.M, F: v.F, zones: [...v.zones].join(' · '),
+    verdict: v.M && v.F ? 'مختلط' : v.M ? 'طلاب' : 'طالبات'
+  })).sort((a, b) => b.rooms - a.rooms);
+
+  const busiest = [...rooms.entries()]
+    .map(([r, s]) => ({ room: r, sessions: s.length }))
+    .sort((a, b) => b.sessions - a.sessions).slice(0, 8);
+
+  return {
+    ok: true, term: activeTerm(), source, missing,
+    totalCourses: courses.length,
+    totalRooms: rooms.size,
+    totalSessions: [...rooms.values()].reduce((n, x) => n + x.length, 0),
+    genders: ['M', 'F'].map(g => ({
+      gender: g === 'M' ? 'طلاب' : 'طالبات',
+      rooms: byGender[g] ? byGender[g].rooms.size : 0,
+      sessions: byGender[g] ? byGender[g].sessions : 0,
+      freeAtSample: free[g], ofRooms: total[g]
+    })),
+    zones, buildings, odd, oddNames: [...oddNames], busiest,
+    sample: { label: 'الأحد ١٠:٠٠–١١:٠٠' }
+  };
+}
+
+/* --- نداء Storage REST ---
+   sb() تخاطب /rest/v1 لجداول القاعدة، والتخزين مسار آخر تماماً. */
+function sbStorage(method, path, body) {
+  return new Promise(resolve => {
+    if (!SB_URL || !SB_SERVICE_KEY) return resolve(null);
+    const u = new URL(`${SB_URL}/storage/v1/object/${path}`);
+    const data = body ? JSON.stringify(body) : null;
+    const headers = {
+      apikey: SB_SERVICE_KEY,
+      Authorization: `Bearer ${SB_SERVICE_KEY}`
+    };
+    if (data) {
+      headers['Content-Type'] = 'application/json';
+      headers['Content-Length'] = Buffer.byteLength(data);
+    }
+    const rq = https.request(
+      { hostname: u.hostname, path: u.pathname + u.search, method, headers },
+      r => {
+        let d = '';
+        r.on('data', c => d += c);
+        r.on('end', () => { try { resolve(JSON.parse(d)) } catch (e) { resolve(null) } });
+      });
+    rq.on('error', () => resolve(null));
+    if (data) rq.write(data);
+    rq.end();
+  });
+}
+
+/* --- اختبار Pushover لطالب ---
+   Postgres ما يقدر يرسل HTTP، وانتظار فتح شعبة حقيقية اختبار سيئ:
+   لو ما وصل شيء، ما تدري هل الربط مكسور أو ما انفتحت شعبة أصلاً.
+   هذي تفصل السؤالين. */
+async function adminPushTest(email) {
+  if (!PUSHOVER_ON) return { ok: false, error: 'Pushover معطّل على السيرفر' };
+  const e = String(email || '').trim().toLowerCase();
+  if (!e) return { ok: false, error: 'اكتب البريد' };
+  const rows = await sbAll('profiles', {
+    query: `?email=eq.${encodeURIComponent(e)}&select=id,email,pushover_key,telegram_chat_id`
+  }).catch(() => null);
+  if (!Array.isArray(rows) || !rows.length)
+    return { ok: false, error: 'ما لقيت حساباً بهذا البريد' };
+  const p = rows[0];
+  const key = (p.pushover_key || '').trim();
+  if (!key) return { ok: false, error: 'الحساب موجود لكن بلا مفتاح Pushover' };
+
+  /* أولوية 2 بنفس إعدادات إشعار الشعبة الحقيقي — بروفة لا تشبيه.
+     اختبار بأولوية أقل يمرّ ثم يفشل الحقيقي، فلا يثبت شيئاً. */
+  const sent = await pushover('🔔 تجربة من جدولك',
+    'هذي تجربة بنفس قوة إشعار فتح الشعبة.\n' +
+    'اضغط «تأكيد» في Pushover عشان توقف التكرار.\n\n' +
+    'ما صفّر وجوالك صامت؟ فعّل Critical Alerts من إعدادات التطبيق.',
+    { priority: 2, sound: 'siren', retry: 30, expire: 300, user: key });
+  return {
+    ok: !!sent, email: p.email,
+    telegram: !!p.telegram_chat_id,
+    /* لا نُظهر المفتاح كاملاً في رد اللوحة */
+    keyTail: '…' + key.slice(-6),
+    error: sent ? null : 'Pushover رفض الإرسال — المفتاح غالباً خاطئ'
+  };
+}
+
+/* --- ما رُفع فعلاً ---
+   الأرقام تقول «٩٠٠ ك.ب» ولا تقول هل الميزة مستعملة. هذي تعرض المحتوى
+   نفسه: صور وملفات وملاحظات، ومع كل واحد حالته مشارك أو خاص. */
+async function adminUploads() {
+  const [ph, ev] = await Promise.all([
+    /* path لازم للتوقيع — بدونه ما فيه معاينة إطلاقاً */
+    sbAll('course_photos',
+      { query: '?select=id,kind,filename,size_kb,shared,crn,term,on_date,created_at,user_id,note,path' }),
+    /* course_events ما فيه title ولا shared — الموجود kind وnote وnote_shared.
+       طلب عمود غير موجود يُفشل الاستعلام كله فتجي القائمة فاضية. */
+    sbAll('course_events',
+      { query: '?select=id,kind,note,note_shared,crn,term,on_date,created_at,user_id' })
+  ]);
+  const cut = (u) => String(u || '').slice(0, 8);
+  /* الاستعلام الفاشل كان يظهر كصفر — لا فرق بين «ما رفع أحد» و«الاستعلام
+     انكسر». الآن نقولها صراحة، لأن الصفر الكاذب أضاع علينا جولتين. */
+  const errs = [];
+  if (!Array.isArray(ph)) errs.push('تعذّرت قراءة الصور والملفات');
+  if (!Array.isArray(ev)) errs.push('تعذّرت قراءة المواعيد');
+  const items = [];
+  (Array.isArray(ph) ? ph : []).forEach(r => items.push({
+    id: r.id, type: r.kind === 'file' ? 'file' : 'photo',
+    title: r.filename || null, size_kb: r.size_kb || null,
+    shared: !!r.shared, crn: r.crn, term: r.term,
+    on_date: r.on_date, at: r.created_at, user: cut(r.user_id),
+    note: r.note || null
+  }));
+  /* كل موعد محتوى كتبه الطالب، بملاحظة أو بلا. استبعاد ما لا ملاحظة له
+     كان يُخفي أكثرها — والعنوان وحده يقيس الاستعمال. */
+  const EV_AR = { quiz:'كويز', hw:'واجب', proj:'مشروع', mid:'ميدتيرم', final:'نهائي' };
+  (Array.isArray(ev) ? ev : []).forEach(r => items.push({
+    id: r.id, type: 'note',
+    title: r.note || EV_AR[r.kind] || r.kind || 'موعد',
+    size_kb: null, shared: !!r.note_shared,
+    crn: r.crn, term: r.term,
+    on_date: r.on_date, at: r.created_at, user: cut(r.user_id),
+    note: r.note || null, kind: r.kind || null
+  }));
+  items.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+
+  /* روابط موقّعة للمعاينة: بدونها ترى صفاً يقول «صورة» ولا ترى الصورة.
+     نوقّع أحدث ستين فقط — التوقيع نداء لكل ملف، والقائمة تطول. */
+  const withPath = (Array.isArray(ph) ? ph : []).filter(r => r.path).slice(0, 60);
+  if (withPath.length) {
+    const signed = await sbStorage('POST', 'sign/course-photos',
+      { expiresIn: 3600, paths: withPath.map(r => r.path) });
+    if (Array.isArray(signed)) {
+      const byPath = new Map();
+      signed.forEach(x => {
+        if (x && x.path && x.signedURL)
+          byPath.set(x.path, SB_URL + '/storage/v1' + x.signedURL);
+      });
+      const pathOf = new Map(withPath.map(r => [r.id, r.path]));
+      items.forEach(it => {
+        if (it.type === 'note') return;
+        const p = pathOf.get(it.id);
+        if (p && byPath.has(p)) it.url = byPath.get(p);
+      });
+    }
+  }
+  const n = t => items.filter(x => x.type === t).length;
+  const s = t => items.filter(x => x.type === t && x.shared).length;
+  return {
+    errors: errs,
+    items: items.slice(0, 300),
+    total: items.length,
+    counts: { photo: n('photo'), file: n('file'), note: n('note') },
+    sharedCounts: { photo: s('photo'), file: s('file'), note: s('note') },
+    users: new Set(items.map(x => x.user)).size
+  };
+}
+
+/* --- الأحجام الحقيقية من Storage ---
+   size_kb أُضيف بعد أول الرفعات، فالقديمة تُقدَّر بالمتوسط ويبقى الرقم
+   تقريبياً للأبد. هذي تقرأ الأحجام الفعلية مرة واحدة وتملأ العمود،
+   وبعدها الحساب دقيق بلا استعلام على Storage في كل مرة. */
+async function adminStorageSync() {
+  if (!SB_URL || !SB_SERVICE_KEY)
+    return { ok: false, error: 'إعدادات Supabase ناقصة', checked: 0, updated: 0, missing: 0 };
+  const rows = await sbAll('course_photos', { query: '?select=id,path,size_kb' })
+    .catch(() => null);
+  if (!Array.isArray(rows))
+    return { ok: false, error: 'تعذّرت قراءة الجدول', checked: 0, updated: 0, missing: 0 };
+  const need = rows.filter(r => !r.size_kb && r.path);
+  if (!need.length) return { ok: true, checked: 0, updated: 0, missing: 0 };
+
+  /* المسار «مستخدم/شعبة/ملف» — أي مجلدان لا واحد. سرد مجلد المستخدم
+     يرجّع أسماء المجلدات لا الملفات، فنسرد المجلد الأب الحقيقي. */
+  const folders = [...new Set(need.map(r =>
+    String(r.path).slice(0, String(r.path).lastIndexOf('/'))).filter(Boolean))];
+  const sizes = new Map();
+  for (const f of folders) {
+    const res = await sbStorage('POST', `list/course-photos`,
+      { prefix: f, limit: 1000 });
+    if (Array.isArray(res)) res.forEach(o => {
+      const kb = o && o.metadata && o.metadata.size
+        ? Math.max(1, Math.round(o.metadata.size / 1024)) : 0;
+      if (kb) sizes.set(f + '/' + o.name, kb);
+    });
+  }
+
+  let updated = 0;
+  for (const r of need) {
+    const kb = sizes.get(r.path);
+    if (!kb) continue;
+    const ok = await sb('PATCH', 'course_photos',
+      { query: `?id=eq.${r.id}`, body: { size_kb: kb } }).catch(() => null);
+    if (ok !== null) updated++;
+  }
+  return { ok: true, checked: need.length, updated, missing: need.length - updated };
 }
 
 /* --- بلاغات المحتوى المشترك ---
@@ -1812,7 +3121,7 @@ async function adminStats() {
   const [profiles, reviews, monitors, sched] = await Promise.all([
     sb('GET', 'profiles', { query: '?select=*' }),
     sb('GET', 'instructor_reviews', { query: '?select=*' }),
-    sb('GET', 'monitored_courses', { query: '?select=*' }),
+    sbAll('monitored_courses', { query: '?select=*' }),
     sbAll('user_schedule', { query: '?select=user_id' })
   ]);
   const P = Array.isArray(profiles) ? profiles : [];
@@ -1854,10 +3163,17 @@ async function adminStats() {
 
 /* --- قائمة المستخدمين --- */
 async function adminUsers() {
-  const P = await sb('GET', 'profiles', { query: '?select=*' });
-  const M = await sb('GET', 'monitored_courses', { query: '?select=user_id' });
+  /* sbAll لا sb: sb تقصّ عند ١٠٠٠ صف بلا خطأ، والمراقبة وحدها ٥٧٧ صفاً
+     في موسم واحد — الموسم القادم كانت الأعداد بتنقص بصمت */
+  const P = await sbAll('profiles', { query: '?select=*' });
+  const M = await sbAll('monitored_courses', { query: '?select=id,user_id' });
   const counts = {};
   (Array.isArray(M) ? M : []).forEach(m => { counts[m.user_id] = (counts[m.user_id] || 0) + 1; });
+  /* الرصيد: غياب الجدول ما يكسر قائمة الطلاب */
+  const L = await sbAll('credit_ledger', { query: '?select=user_id,amount_halalas,expires_at,created_at' })
+    .catch(() => []);
+  const byUser = {};
+  (Array.isArray(L) ? L : []).forEach(r => { (byUser[r.user_id] = byUser[r.user_id] || []).push(r) });
 
   return (Array.isArray(P) ? P : []).map(p => ({
     id: p.id,
@@ -1873,7 +3189,8 @@ async function adminUsers() {
     paidAt: p.paid_at || null,
     createdAt: p.created_at || null,
     telegram: p.telegram_username ? '@' + p.telegram_username : (p.telegram_chat_id ? '✓' : null),
-    monitors: counts[p.id] || 0
+    monitors: counts[p.id] || 0,
+    creditHalalas: byUser[p.id] ? creditBalance(byUser[p.id]).available : 0
   })).sort((a, b) => {
     const da = new Date(a.createdAt || a.paidAt || 0).getTime();
     const db = new Date(b.createdAt || b.paidAt || 0).getTime();
@@ -1908,7 +3225,7 @@ async function adminReviews() {
 
 /* --- المواد المراقبة، مجمّعة --- */
 async function adminMonitors() {
-  const M = await sb('GET', 'monitored_courses', { query: '?select=*' });
+  const M = await sbAll('monitored_courses', { query: '?select=*' });
   const list = Array.isArray(M) ? M : [];
   /* أسماء المراقِبين عشان تشوف مين يراقب وش */
   const uids = [...new Set(list.map(m => m.user_id).filter(Boolean))];
@@ -1947,29 +3264,116 @@ async function adminMonitors() {
   return Object.values(g).sort((a, b) => b.watchers - a.watchers);
 }
 
-/* --- تفعيل / تمديد اشتراك --- */
-async function adminGrant(userId, days) {
-  const rows = await sb('GET', 'profiles',
-    { query: `?id=eq.${encodeURIComponent(userId)}&select=subscription_expires_at` });
-  if (!rows || !rows.length) return { ok: false, error: 'المستخدم غير موجود' };
+/* --- تفعيل من اللوحة: حتى نهاية الترم الحالي ---
+   هدية أو تجربة أو إصلاح دفعة ما انفعّلت — لا طريقة دفع. لذلك ما يكتب
+   paid_at: كان يكتبه مع كل تفعيل فيُحسب الطالب «دافعاً» في الإحصاء.
+   وبدل «+سنة +شهر +أسبوع» تاريخ واحد: نهاية نهائيات الترم. */
+async function adminGrant(userId, note) {
+  const term = activeTerm();
+  const until = termEndISO(term);
+  if (!until) return { ok: false, error: `ما لقيت نهاية الترم ${term} في التقويم` };
+  const uid = encodeURIComponent(userId);
 
-  const cur = rows[0].subscription_expires_at ? new Date(rows[0].subscription_expires_at) : null;
-  const base = (cur && cur > new Date()) ? cur : new Date();   // يمدّد من تاريخ الانتهاء لو لسا فعّال
-  base.setDate(base.getDate() + Number(days));
+  /* الملف أولاً — هو اللي يفتح الميزات */
+  const r = await sb('PATCH', 'profiles', {
+    query: `?id=eq.${uid}`,
+    body: { subscription_expires_at: until },
+    prefer: 'return=representation'
+  }).catch(e => ({ message: e.message }));
+  /* كتابة تحجبها RLS أو معرّف غلط ترجع بلا خطأ وصفر صفوف */
+  if (!Array.isArray(r) || !r.length)
+    return { ok: false, error: (r && r.message) || 'المستخدم غير موجود' };
 
-  await sb('PATCH', 'profiles', {
-    query: `?id=eq.${encodeURIComponent(userId)}`,
-    body: { subscription_expires_at: base.toISOString(), paid_at: new Date().toISOString() }
-  });
-  return { ok: true, expires: base.toISOString() };
+  /* ثم السجل: صف «هدية» مرة واحدة لكل طالب وترم. يظهر في تاريخه ولا
+     يدخل الإيرادات — كان التفعيل اليدوي يختفي بلا أثر إلا تاريخاً. */
+  const have = await sb('GET', 'subscriptions', {
+    query: `?user_id=eq.${uid}&term=eq.${term}&status=eq.comp&select=id&limit=1`
+  }).catch(e => ({ message: e.message }));
+  if (!Array.isArray(have))
+    return { ok: true, expires: until, term,
+             warning: 'فعّال — لكن ما قدرنا نقرأ سجل الاشتراكات: ' + ((have && have.message) || '') };
+  if (!have.length) {
+    const ins = await sb('POST', 'subscriptions', {
+      body: { user_id: userId, term, status: 'comp', includes_term: true,
+              valid_until: until, note: String(note || '').trim().slice(0, 300) || 'هدية من اللوحة' },
+      prefer: 'return=representation'
+    }).catch(e => ({ message: e.message }));
+    if (!Array.isArray(ins) || !ins.length)
+      return { ok: true, expires: until, term,
+               warning: 'فعّال — لكن ما انسجل في السجل: ' + ((ins && ins.message) || '') };
+  }
+  return { ok: true, expires: until, term };
+}
+
+/* ═══ الإضافة من اللوحة: هدية أو تجربة ═══
+   حتى نهاية الترم، وصف «هدية» في السجل مثل تفعيل الترم. */
+async function adminGrantPushover(userId, on, note) {
+  const uid = encodeURIComponent(userId);
+  const term = activeTerm();
+  const until = on ? termEndISO(term) : new Date(Date.now() - 864e5).toISOString();
+  if (!until) return { ok: false, error: `ما لقيت نهاية الترم ${term} في التقويم` };
+  const r = await sb('PATCH', 'profiles', {
+    query: `?id=eq.${uid}`, body: { pushover_until: until }, prefer: 'return=representation'
+  }).catch(e => ({ message: e.message }));
+  if (!Array.isArray(r) || !r.length) return { ok: false, error: (r && r.message) || 'المستخدم غير موجود' };
+  if (!on) return { ok: true, until: null };
+  const have = await sb('GET', 'subscriptions', {
+    query: `?user_id=eq.${uid}&term=eq.${term}&status=eq.comp&pushover=eq.true&select=id&limit=1`
+  }).catch(() => null);
+  if (Array.isArray(have) && !have.length) {
+    const ins = await sb('POST', 'subscriptions', {
+      body: { user_id: userId, term, status: 'comp', includes_term: false, pushover: true,
+              valid_until: until, note: String(note || '').trim().slice(0, 300) || 'تنبيه طارئ — هدية من اللوحة' },
+      prefer: 'return=representation'
+    }).catch(e => ({ message: e.message }));
+    if (!Array.isArray(ins) || !ins.length)
+      return { ok: true, until, warning: 'فعّال — لكن ما انسجل في السجل: ' + ((ins && ins.message) || '') };
+  }
+  return { ok: true, until };
+}
+
+/* ═══ رصيد طالب — للوحة ═══ */
+async function adminCredit(userId) {
+  const rows = await sb('GET', 'credit_ledger', {
+    query: `?user_id=eq.${encodeURIComponent(userId)}&select=*&order=created_at.asc`
+  }).catch(e => ({ message: e.message }));
+  if (!Array.isArray(rows)) return { ok: false, error: (rows && rows.message) || 'تعذّر قراءة الرصيد' };
+  return { ok: true, balance: creditBalance(rows), rows };
+}
+
+/* منح أو سحب يدوي. السبب إلزامي — كل ريال في المحفظة لازم يُعرف ليش.
+   والسحب ما يتجاوز المتاح: رصيد سالب يعني دَيناً على الطالب. */
+async function adminCreditAdjust(userId, amountHalalas, note) {
+  const amt = Number(amountHalalas);
+  if (!Number.isInteger(amt) || amt === 0 || Math.abs(amt) > 100000)
+    return { ok: false, error: 'مبلغ غير صالح' };
+  const why = String(note || '').trim();
+  if (why.length < 3) return { ok: false, error: 'السبب إلزامي' };
+  if (amt < 0) {
+    const cur = await adminCredit(userId);
+    if (!cur.ok) return cur;
+    if (cur.balance.available < -amt)
+      return { ok: false, error: `المتاح ${cur.balance.available / 100} ريال فقط` };
+  }
+  const r = await sb('POST', 'credit_ledger', {
+    body: { user_id: userId, amount_halalas: amt, reason: 'admin', note: why.slice(0, 300),
+            created_by: 'admin', expires_at: amt > 0 ? creditExpiryISO(activeTerm()) : null },
+    prefer: 'return=representation'
+  }).catch(e => ({ message: e.message }));
+  if (!Array.isArray(r) || !r.length)
+    return { ok: false, error: (r && r.message) || 'ما انكتب' };
+  return { ok: true, row: r[0] };
 }
 
 /* --- إلغاء اشتراك --- */
 async function adminRevoke(userId) {
-  await sb('PATCH', 'profiles', {
+  const r = await sb('PATCH', 'profiles', {
     query: `?id=eq.${encodeURIComponent(userId)}`,
-    body: { is_pro: false, subscription_expires_at: new Date(Date.now() - 864e5).toISOString() }
-  });
+    body: { is_pro: false, subscription_expires_at: new Date(Date.now() - 864e5).toISOString() },
+    prefer: 'return=representation'
+  }).catch(e => ({ message: e.message }));
+  if (!Array.isArray(r) || !r.length)
+    return { ok: false, error: (r && r.message) || 'المستخدم غير موجود' };
   return { ok: true };
 }
 
@@ -2319,7 +3723,7 @@ async function adminHealth() {
   const pmuOk = last ? last.snapshot > 0 : null;
 
   /* ── الحمل ── */
-  const monitors = await sb('GET', 'monitored_courses', { query: '?select=id' })
+  const monitors = await sbAll('monitored_courses', { query: '?select=id' })
     .then(r => Array.isArray(r) ? r.length : 0).catch(() => 0);
 
   const mem = process.memoryUsage();
@@ -2456,6 +3860,9 @@ async function adminHealth() {
 
     env: SITE_ENV,
     freeBeta: FREE_BETA,
+    pricing: PRICING,
+    stateKey: STATE_KEY,
+    env: SITE_ENV,
     maintenance: MAINTENANCE,
     maintenanceMsg: MAINT_MSG,
     finalsOn: FINALS_ON,
@@ -2470,6 +3877,16 @@ async function adminHealth() {
       hoursTo: activeTo(),
       hoursCustom: !!HOURS_OVERRIDE,
       windowCustom: !!WINDOW_OVERRIDE,
+      pushoverMode: PUSHOVER_MODE,
+      pushoverReady: !!PUSHOVER_SUBSCRIBE_URL,
+      activeTerm: activeTerm(),
+      regTerm: regTerm(),
+      termCustom: !!TERM_OVERRIDE,
+      termEnv: ACTIVE_TERM_ENV,
+      canWatch: MONITOR_ENABLED && !MONITOR_PAUSED && !!currentWindow(),
+      currentWindow: currentWindow(),
+      otherTermRows: (OPS.cycles.length
+        ? (OPS.cycles[OPS.cycles.length - 1].otherTerm || 0) : 0),
       riyadhHour: riyadhHour(),
       riyadhTime: riyadhTime(),
       riyadhDate: riyadhDate(),
@@ -2501,6 +3918,7 @@ async function adminHealth() {
     ttlChoices: TTL_CHOICES,
     ttlLimits: { min: TTL_MIN_ALLOWED, max: TTL_MAX_ALLOWED },
     monitorJitterPct: Math.round(JITTER * 100),
+    cycleRetries: CYCLE_RETRIES,
     schedSync: {
       last: SCHED_SYNC.last,
       lastChange: SCHED_SYNC.lastChange,
@@ -2516,7 +3934,7 @@ async function adminHealth() {
       feedN: (SCHED_SYNC.last && SCHED_SYNC.last.feedN) || null,
       feedPeak: (SCHED_SYNC.last && SCHED_SYNC.last.feedPeak) || null,
       feedFloor: FEED_FLOOR,
-      activeTerm: ACTIVE_TERM,
+      activeTerm: activeTerm(),
       skippedTerms: SCHED_SYNC.skippedTerms || 0,
       feedRejected: (SCHED_SYNC.last && SCHED_SYNC.last.feedRejected) || null,
       crnRejected: (SCHED_SYNC.last && SCHED_SYNC.last.crnRejected) || 0,
@@ -2569,7 +3987,7 @@ async function adminHealth() {
       intervalMin: ms.intervalMin,
       dataTtlMin: Math.round(coursesTTL() / 60000),
       window: ms.window ? ms.window.ar : null,
-      nextWindow: MONITOR_WINDOWS.find(w => riyadhDate() < w.from) || null,
+      nextWindow: nextWindow(),   /* عبر windowList — يحترم النافذة اليدوية */
       riyadhHour: riyadhHour()
     },
 
@@ -2592,10 +4010,14 @@ function creditsFromCode(code) {
 
 async function adminUserDetail(userId) {
   const id = encodeURIComponent(userId);
-  const [prof, sched, done] = await Promise.all([
+  const [prof, sched, done, subs, led] = await Promise.all([
     sb('GET', 'profiles',          { query: `?id=eq.${id}&select=*` }),
     sb('GET', 'user_schedule',     { query: `?user_id=eq.${id}&select=*` }),
-    sb('GET', 'completed_courses', { query: `?user_id=eq.${id}&select=*` })
+    sb('GET', 'completed_courses', { query: `?user_id=eq.${id}&select=*` }),
+    sb('GET', 'subscriptions',     { query: `?user_id=eq.${id}&select=*&order=created_at.desc` })
+      .catch(() => []),
+    sb('GET', 'credit_ledger',     { query: `?user_id=eq.${id}&select=*&order=created_at.asc` })
+      .catch(() => [])
   ]);
   const p = (prof && prof[0]) || null;
   if (!p) return { ok: false, error: 'المستخدم غير موجود' };
@@ -2619,7 +4041,15 @@ async function adminUserDetail(userId) {
       planVer: (p.plan_ver === 'old') ? 'old' : 'new',
       isPro: !!p.is_pro, active: isActive(p),
       expires: p.subscription_expires_at || null,
+      pushoverUntil: p.pushover_until || null,
+      pushoverAddon: hasPushoverAddon(p),
+      pushoverLinked: !!String(p.pushover_key || '').trim(),
       telegram: p.telegram_username ? '@' + p.telegram_username : (p.telegram_chat_id ? '✓' : null)
+    },
+    subscriptions: Array.isArray(subs) ? subs : [],
+    credit: {
+      balance: creditBalance(Array.isArray(led) ? led : []),
+      rows: Array.isArray(led) ? led : []
     },
     gpa: hrs ? Number((pts / hrs).toFixed(2)) : null,
     gpaHours: hrs,
@@ -2837,7 +4267,7 @@ function ttlReason() {
                   ar: `داخل نافذة "${w.ar}" — الجدول يتغيّر لحظياً` };
   const nx = nextWindow();
   if (nearWindow()) {
-    const near = MONITOR_WINDOWS.find(x =>
+    const near = windowList().find(x =>
       riyadhDate() >= dayShift(x.from, -NEAR_DAYS) && riyadhDate() <= dayShift(x.to, NEAR_DAYS));
     return { tier: 'near', ttlMin: 60,
              ar: `ضمن ${NEAR_DAYS} أيام من نافذة "${near ? near.ar : ''}" ` +
@@ -3094,6 +4524,43 @@ function tagGender(courses, gender) {
   return courses;
 }
 
+/* ═══ سحب جدول الترم ═══
+   سحبتان منفصلتان M1 و F1 بدل سحبة ALL واحدة، لسببين:
+   • الرد أصغر فينجح حين يتعثّر الطلب الكبير — وهذا ما نشوفه في الذروة،
+     الطلب الشامل يسقط والمحدَّد ينجح.
+   • الجنس يصير معلوماً من الفلتر لا مخمَّناً من رقم الشعبة. التخمين
+     خاطئ، ويتسرّب للبحث لأن هذي السحبة تغذّي كاشه.
+   نصف الجدول أخطر من لا شيء لبعض الأغراض — شعب الجنس الغائب تبدو
+   مختفية ثم «جديدة» في الدورة التالية — فنرفع partial ليحترس النداء. */
+async function fetchTermSnapshot(term) {
+  const parts = [];
+  for (const g of ['M1', 'F1']) {
+    try {
+      const rows = tagGender(parseHTML(await fetchPMUData(term, 'ALL', g)), g);
+      if (!rows.length) throw new Error('رد بلا صفوف');
+      parts.push(rows);
+    } catch (e) {
+      OPS.pmuFails++;
+      console.log(`fetch fail ${term} ${g}: ${e.message}`);
+    }
+    await new Promise(r => setTimeout(r, 1500));
+  }
+  if (parts.length === 2) return { courses: parts[0].concat(parts[1]), partial: false };
+  if (parts.length === 1) return { courses: parts[0], partial: true };
+
+  /* سقطت الاثنتان — نجرّب الطلب الشامل مرة أخيرة. الجنس فيه مخمَّن،
+     لكنه أفضل من دورة عمياء تماماً. */
+  try {
+    const rows = tagGender(parseHTML(await fetchPMUData(term, 'ALL', 'ALL')), 'ALL');
+    if (rows.length) return { courses: rows, partial: false, guessed: true };
+    throw new Error('رد بلا صفوف');
+  } catch (e) {
+    OPS.pmuFails++;
+    console.log(`fetch fail ${term} ALL: ${e.message}`);
+  }
+  return { courses: null, partial: false };
+}
+
 async function syncSchedules(term, courses, force) {
   /* ═══ ترم واحد فقط ═══
      الجامعة تعيد استخدام أرقام CRN بين الترمات، فصفّ طالب من ترم قديم
@@ -3101,7 +4568,7 @@ async function syncSchedules(term, courses, force) {
      المزامنة تربط بالـCRN، فلو انطلقت لترم غير النشط كتبت دكتور مادة
      على مادة أخرى وأرسلت «تغيّر في جدولك» عن شيء ما تغيّر.
      البحث يبقى حراً في كل الترمات — التصحيح والإشعارات وحدها محصورة. */
-  if (String(term).trim() !== ACTIVE_TERM) {
+  if (String(term).trim() !== activeTerm()) {
     SCHED_SYNC.skippedTerms = (SCHED_SYNC.skippedTerms || 0) + 1;
     return null;
   }
@@ -3524,11 +4991,16 @@ async function getCourses(term, college, gender, force) {
    يقلّل الطلبات على موقع الجامعة بأكثر من 90% سنوياً. */
 
 /* نوافذ التسجيل من التقويم الأكاديمي المعتمد (تشمل يومين احتياط قبل وبعد) */
+/* من بداية التسجيل حتى آخر يوم إضافة — لا آخر يوم «حذف فقط».
+   بعد انتهاء الإضافة الطالب ما يقدر يسجّل شعبة، فإشعار «فتحت» بلا فائدة.
+   وكانت كلها تبدأ قبل التسجيل بيومين — والشعب كلها مفتوحة وقتها.
+   term: الترم الذي يُسجَّل فيه. في التسجيل المبكر للصيفي (أبريل) يختلف
+   عن ترم الدراسة: الطلاب يدرسون الثاني ويسجّلون الصيفي. */
 const MONITOR_WINDOWS = [
-  { from: '2026-08-23', to: '2026-09-10', ar: 'تسجيل الترم الأول' },
-  { from: '2027-01-08', to: '2027-01-28', ar: 'تسجيل الترم الثاني' },
-  { from: '2027-04-09', to: '2027-04-17', ar: 'التسجيل المبكر للصيفي' },
-  { from: '2027-06-13', to: '2027-06-22', ar: 'تسجيل الصيفي' }
+  { from: '2026-08-23', to: '2026-09-03', term: '202710', ar: 'تسجيل الترم الأول' },
+  { from: '2027-01-10', to: '2027-01-21', term: '202720', ar: 'تسجيل الترم الثاني' },
+  { from: '2027-04-11', to: '2027-04-15', term: '202730', ar: 'التسجيل المبكر للصيفي' },
+  { from: '2027-06-15', to: '2027-06-22', term: '202730', ar: 'تأكيد الصيفي والإضافة' }
 ];
 
 const ACTIVE_FROM_DEFAULT = 7;    // 7 صباحاً بتوقيت الرياض
@@ -3541,6 +5013,15 @@ let WINDOW_OVERRIDE = null;       // {from:'YYYY-MM-DD', to:'YYYY-MM-DD', ar}
 
 const activeFrom = () => HOURS_OVERRIDE ? HOURS_OVERRIDE.from : ACTIVE_FROM_DEFAULT;
 const activeTo   = () => HOURS_OVERRIDE ? HOURS_OVERRIDE.to   : ACTIVE_TO_DEFAULT;
+
+/* ═══ التعافي من فشل الجلب ═══
+   موقع الجامعة يتعثّر أحياناً في الذروة. كانت الدورة ترجع صفر اليدين
+   وتنتظر فاصلها كاملاً — خمس دقائق عمياء في أكثر الأوقات حساسية،
+   وبحث طالب ناجح بعدها بدقيقتين يملأ الكاش والدورة لا تقرأه أصلاً. */
+const CYCLE_CACHE_MAX  = 3 * 60 * 1000;  /* أقصى عمر نسخة نقبلها للمقارنة */
+const CYCLE_RETRY_WAIT = 60 * 1000;      /* نعاود بعد دقيقة لا بعد الفاصل */
+const CYCLE_RETRY_MAX  = 3;              /* وبعد ثلاث محاولات نهدأ */
+let CYCLE_RETRIES = 0;
 
 const INTERVAL_PEAK = 5 * 60 * 1000;    // داخل نافذة التسجيل
 const JITTER        = 0.25;             // ±25% تفادياً لنمط منتظم تماماً
@@ -3579,10 +5060,13 @@ function nextWindow() {
 const dayShift = (iso, n) =>
   new Date(Date.parse(iso + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
 
-/* هل نحن خلال أسبوع قبل نافذة تسجيل أو أسبوع بعدها؟ */
+/* هل نحن خلال أسبوع قبل نافذة تسجيل أو أسبوع بعدها؟
+   windowList لا MONITOR_WINDOWS: كانت تقرأ التقويم المكتوب في الكود
+   وتتجاهل النافذة اليدوية، فتقفل النافذة من اللوحة ويظل الكاش يتصرّف
+   كأن الموسم قائم — وتقرأ في اللوحة «ضمن ٧ أيام من نافذة» بعد انتهائها. */
 function nearWindow() {
   const d = riyadhDate();
-  return MONITOR_WINDOWS.some(w =>
+  return windowList().some(w =>
     d >= dayShift(w.from, -NEAR_DAYS) && d <= dayShift(w.to, NEAR_DAYS));
 }
 
@@ -3694,6 +5178,12 @@ function nextDelay() {
   const st = monitorState();
 
   if (st.reason === 'disabled') return 60 * 60 * 1000;
+
+  /* بعد فشل جلب، نعاود بعد دقيقة بدل الفاصل الكامل — بحد ثلاث محاولات
+     حتى لا نطرق باب الجامعة كل دقيقة وهي ساقطة. يُحسب قبل حارس
+     الساعات عمداً: الفشل داخل الموسم وحده يهم. */
+  if (st.active && CYCLE_RETRIES > 0 && CYCLE_RETRIES <= CYCLE_RETRY_MAX)
+    return CYCLE_RETRY_WAIT * (1 + Math.random() * 0.3);
 
   /* خارج الموسم: نفحص مرة كل ساعة فقط إذا بدأت نافذة جديدة */
   if (st.reason === 'offseason') return 60 * 60 * 1000 * (1 + Math.random() * 0.2);
@@ -4003,7 +5493,29 @@ const server = http.createServer(async (req, res) => {
       if (act === 'feedback') return send(200, { feedback: await adminFeedback() });
       if (act === 'reports')  return send(200, { reports: await adminReports() });
       if (act === 'storage')  return send(200, await adminStorage());
+      if (act === 'uploads')  return send(200, await adminUploads());
+      if (act === 'rooms-probe') return send(200, await adminRoomsProbe());
+      if (act === 'push-test' && req.method === 'POST') {
+        const b = await readBody(req);
+        return send(200, await adminPushTest(b && b.email));
+      }
+      if (act === 'storage-sync' && req.method === 'POST')
+        return send(200, await adminStorageSync());
       if (act === 'user')     return send(200, await adminUserDetail(parsed.query.id || ''));
+      if (act === 'credit')   return send(200, await adminCredit(parsed.query.id || ''));
+      if (act === 'review-requests')
+        return send(200, await adminReviewRequests(parsed.query.status || 'pending'));
+      if (act === 'pricing') {
+        if (req.method === 'POST') {
+          const b = await readBody(req);
+          const next = Object.assign({}, PRICING, b && b.pricing);
+          const err = validatePricing(next);
+          if (err) return send(400, { error: err });
+          PRICING = next;
+          await saveState().catch(() => {});
+        }
+        return send(200, { pricing: PRICING, defaults: PRICING_DEFAULT });
+      }
       if (act === 'tickets')  return send(200, { tickets: await adminTickets(parsed.query.status) });
       if (act === 'broadcast-status') return send(200, BROADCAST);
       if (act === 'messages') {
@@ -4041,6 +5553,103 @@ const server = http.createServer(async (req, res) => {
           return send(200, { ok: true, stat });
         }
         return send(200, { last: SCHED_SYNC.last });
+      }
+
+      /* ═══ إنهاء موسم المراقبة ═══
+         نهاية التسجيل تترك مئات الصفوف الميتة، وإيقافها صفاً صفاً غير عملي.
+         و«رسالة لكل صف» تعني خمس رسائل لطالب واحد — وطالب يكتم البوت
+         يخسر معه تنبيهات المراقبة كلها، فالرسالة الزائدة أغلى مما تبدو.
+         لذلك رسالة واحدة لكل طالب تجمع مواده.
+         GET = عدّ قبل القرار · POST = تنفيذ. */
+      if (act === 'monitor-season-end') {
+        const all = await sbAll('monitored_courses', { query: '?select=*' });
+
+        if (req.method !== 'POST') {
+          const by = {};
+          all.forEach(r => {
+            const t = String(r.term || '—');
+            if (!by[t]) by[t] = { term: t, rows: 0, users: new Set() };
+            by[t].rows++; by[t].users.add(r.user_id);
+          });
+          return send(200, {
+            total: all.length,
+            students: new Set(all.map(r => r.user_id)).size,
+            terms: Object.values(by)
+              .map(x => ({ term: x.term, rows: x.rows, students: x.users.size }))
+              .sort((a, b) => b.rows - a.rows)
+          });
+        }
+
+        const b = await readBody(req);
+        const term = b.term ? String(b.term).trim() : '';
+        const rows = term ? all.filter(r => String(r.term || '') === term) : all;
+        if (!rows.length) return send(200, { ok: true, stopped: 0, students: 0 });
+
+        const byUser = {};
+        rows.forEach(r => { (byUser[r.user_id] = byUser[r.user_id] || []).push(r) });
+        const students = Object.keys(byUser).length;
+
+        /* حدثاً واحداً لا ٥٧٧: كل صفّ حدثاً يعني ٥٧٧ كتابة، ويلوّث سجل
+           «لماذا أوقف الطلاب المراقبة» بقرار إداري ليس قرار طالب.
+           نحتفظ بوسيط العمر لأنه المعلومة الوحيدة التي تضيع. */
+        const lived = rows
+          .map(r => r.created_at
+            ? Math.round((Date.now() - new Date(r.created_at).getTime()) / 60000) : null)
+          .filter(x => Number.isFinite(x)).sort((x, y) => x - y);
+        logEvent('season-end', {
+          at: Date.now(), term: term || 'all', rows: rows.length, students,
+          medianLivedMin: lived.length ? lived[Math.floor(lived.length / 2)] : null
+        });
+
+        /* الحذف أولاً — الرسالة تقول «أوقفنا»، فلا تُرسل قبل أن تصير صحيحة */
+        const ids = rows.map(r => r.id);
+        for (let i = 0; i < ids.length; i += 100) {
+          await sb('DELETE', 'monitored_courses', {
+            query: `?id=in.(${ids.slice(i, i + 100).join(',')})`,
+            prefer: 'return=minimal'
+          });
+        }
+        console.log(`season-end: أوقفنا ${rows.length} مراقبة لـ${students} طالباً`);
+
+        if (!b.notify)
+          return send(200, { ok: true, stopped: rows.length, students, notified: 0 });
+
+        /* بالخلفية: مئة رسالة تتجاوز مهلة الطلب، والتقرير يوصلك تيليغرام */
+        (async () => {
+          let sent = 0, failed = 0;
+          const uids = Object.keys(byUser);
+          const chat = {};
+          for (let i = 0; i < uids.length; i += 100) {
+            const part = uids.slice(i, i + 100).map(u => `"${u}"`).join(',');
+            const ps = await sb('GET', 'profiles', {
+              query: `?id=in.(${part})&select=id,telegram_chat_id`
+            }).catch(() => []);
+            (Array.isArray(ps) ? ps : []).forEach(p => { chat[p.id] = p.telegram_chat_id });
+          }
+          const note = String(b.note || '').trim();
+          await inBatches(uids, 20, async (uid) => {
+            if (!chat[uid]) return;
+            const lines = byUser[uid].map(r => '• ' + esc(r.course_code || 'مادة') +
+              (r.scope === 'course' ? ' · كل الشعب'
+                                    : (r.crn ? ' · CRN ' + esc(r.crn) : '')));
+            const res = await sendMsg(chat[uid],
+              `🔕 <b>انتهى التسجيل — أوقفنا مراقباتك</b>\n\n` +
+              lines.slice(0, 15).join('\n') +
+              (lines.length > 15 ? `\n<i>و${lines.length - 15} غيرها</i>` : '') +
+              (note ? `\n\n${esc(note)}` : '') +
+              `\n\nترجّعها من الجرس في الموقع عند تسجيل الترم القادم.`);
+            if (res && res.ok) sent++; else failed++;
+            await new Promise(x => setTimeout(x, 700));
+          });
+          if (ADMIN_CHAT_ID) sendMsg(ADMIN_CHAT_ID,
+            `🔕 <b>انتهى موسم المراقبة</b>\n\n` +
+            `أُوقفت: ${rows.length} مراقبة\n` +
+            `طلاب: ${students}\n` +
+            `✅ وصلت: ${sent}\n⚠️ فشلت: ${failed}` +
+            (failed ? `\n\n<i>الفشل غالباً طلاب حظروا البوت.</i>` : '')).catch(() => {});
+        })();
+
+        return send(200, { ok: true, stopped: rows.length, students, notifying: true });
       }
 
       if (act === 'monitor-row') {
@@ -4103,6 +5712,39 @@ const server = http.createServer(async (req, res) => {
         return send(400, { error: 'action لازم تكون stop أو ask' });
       }
 
+      if (act === 'pushover-mode') {
+        if (req.method === 'POST') {
+          const b = await readBody(req);
+          const m = String(b.mode || '').trim();
+          if (!PUSHOVER_MODES.includes(m))
+            return send(400, { error: 'الوضع: ' + PUSHOVER_MODES.join(' أو ') });
+          PUSHOVER_MODE = m;
+          await saveState().catch(() => {});
+        }
+        return send(200, {
+          mode: PUSHOVER_MODE, url: PUSHOVER_SUBSCRIBE_URL || null,
+          ready: !!PUSHOVER_SUBSCRIBE_URL, modes: PUSHOVER_MODES
+        });
+      }
+
+      if (act === 'term-set') {
+        if (req.method === 'POST') {
+          const b = await readBody(req);
+          if (b.reset) TERM_OVERRIDE = null;
+          else {
+            const t = String(b.term || '').trim();
+            if (!/^\d{6}$/.test(t))
+              return send(400, { error: 'الترم ست خانات مثل 202720' });
+            if (!['10', '20', '30'].includes(t.slice(4)))
+              return send(400, { error: 'آخر خانتين: 10 خريف · 20 ربيع · 30 صيف' });
+            TERM_OVERRIDE = (t === ACTIVE_TERM_ENV) ? null : t;
+          }
+          await saveState().catch(() => {});
+        }
+        return send(200, { term: activeTerm(), env: ACTIVE_TERM_ENV,
+                           custom: !!TERM_OVERRIDE });
+      }
+
       if (act === 'monitor-hours') {
         if (req.method === 'POST') {
           const b = await readBody(req);
@@ -4114,6 +5756,7 @@ const server = http.createServer(async (req, res) => {
               HOURS_OVERRIDE = { from: f, to: t };
             else return send(400, { error: 'ساعات غير صالحة — لازم "من" أصغر من "إلى"' });
           }
+          await saveState().catch(() => {});
         }
         return send(200, { from: activeFrom(), to: activeTo(),
                            custom: !!HOURS_OVERRIDE, state: monitorState() });
@@ -4132,6 +5775,7 @@ const server = http.createServer(async (req, res) => {
             WINDOW_OVERRIDE = { from: String(b.from), to: String(b.to),
                                 ar: String(b.ar || 'نافذة يدوية من اللوحة') };
           }
+          await saveState().catch(() => {});
         }
         return send(200, { window: WINDOW_OVERRIDE, custom: !!WINDOW_OVERRIDE,
                            current: currentWindow(), next: nextWindow(),
@@ -4188,6 +5832,22 @@ const server = http.createServer(async (req, res) => {
                            reason: ttlReason() });
       }
 
+      /* يوم الإطلاق: مفتاح واحد بدل تعديل متغيّر في Render وإعادة نشر */
+      if (act === 'beta-toggle') {
+        if (req.method === 'POST') {
+          const b = await readBody(req);
+          const was = FREE_BETA;
+          FREE_BETA = !!b.on;
+          if (was !== FREE_BETA) {
+            await saveState().catch(() => {});
+            sendMsg(ADMIN_CHAT_ID, FREE_BETA
+              ? '🎁 <b>الفترة المجانية شغّالة</b>\n\nكل الميزات مفتوحة لكل مسجّل.'
+              : '💳 <b>الفترة المجانية انتهت</b>\n\nالميزات المدفوعة صارت للمشتركين فقط.').catch(() => {});
+          }
+        }
+        return send(200, { on: FREE_BETA });
+      }
+
       if (act === 'finals-toggle') {
         if (req.method === 'POST') {
           const b = await readBody(req);
@@ -4222,7 +5882,13 @@ const server = http.createServer(async (req, res) => {
 
       if (req.method === 'POST') {
         const b = await readBody(req);
-        if (act === 'grant')  return send(200, await adminGrant(b.userId, b.days || 365));
+        if (act === 'grant')  return send(200, await adminGrant(b.userId, b.note));
+        if (act === 'grant-pushover')
+          return send(200, await adminGrantPushover(b.userId, b.on !== false, b.note));
+        if (act === 'review-decide')
+          return send(200, await adminDecideReviewRequest(b.id, b.decision, b.note));
+        if (act === 'credit-adjust')
+          return send(200, await adminCreditAdjust(b.userId, b.amountHalalas, b.note));
         if (act === 'revoke') return send(200, await adminRevoke(b.userId));
         if (act === 'delete-review') return send(200, await adminDeleteReview(b));
         if (act === 'notify') return send(200, await adminNotify(b.userId, b.text || ''));
@@ -4393,6 +6059,39 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  /* حساب الطالب وسعره — برمز جلسته لا بمعرّف يرسله */
+  if (parsed.pathname === '/api/me/reviews-credit') {
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'no-store');
+    const user = await sbAuthUser(bearerOf(req));
+    if (!user) { res.writeHead(401); res.end(JSON.stringify({ error: 'سجّل دخول' })); return }
+    try {
+      const out = req.method === 'POST' ? await submitReviewCredit(user.id)
+                                        : await reviewCreditState(user.id);
+      res.writeHead(200); res.end(JSON.stringify(out));
+    } catch (e) {
+      res.writeHead(500); res.end(JSON.stringify({ error: 'تعذّر' }));
+    }
+    return;
+  }
+
+  if (parsed.pathname === '/api/me/account' || parsed.pathname === '/api/me/quote') {
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'no-store');
+    const user = await sbAuthUser(bearerOf(req));
+    if (!user) { res.writeHead(401); res.end(JSON.stringify({ error: 'سجّل دخول' })); return }
+    try {
+      const out = parsed.pathname === '/api/me/account'
+        ? await meAccount(user.id)
+        : await meQuote(user.id, { pushover: parsed.query.pushover === '1',
+                                   ref: parsed.query.ref || '' });
+      res.writeHead(out.ok ? 200 : 404); res.end(JSON.stringify(out));
+    } catch (e) {
+      res.writeHead(500); res.end(JSON.stringify({ error: 'تعذّر' }));
+    }
+    return;
+  }
+
   /* حالة المراقبة — يعرضها الموقع للطالب بشفافية */
   if (parsed.pathname === '/api/monitor-status') {
     res.setHeader('Content-Type', 'application/json');
@@ -4402,6 +6101,32 @@ const server = http.createServer(async (req, res) => {
     res.end(JSON.stringify({
       active: st.active, reason: st.reason,
       env: SITE_ENV, freeBeta: FREE_BETA,
+      /* الجرس شيء و«المراقبة تدور الآن» شيء آخر: الدورة تنام بعد منتصف
+         الليل، وهذا ما يعني منع الطالب من ضبط مراقبة الصباح. الجرس
+         يُقفل بانتهاء نافذة التسجيل فقط، أو بإيقافك اليدوي. */
+      term: activeTerm(),
+      regTerm: regTerm(),
+      /* ما تحتاجه ورقة الباقات وحدود المجاني. الشراء يغطي ترم التسجيل
+         وقت النافذة، وإلا ترم الدراسة */
+      plans: {
+        termHalalas: PRICING.termHalalas,
+        pushoverHalalas: PRICING.pushoverHalalas,
+        friendDiscountHalalas: PRICING.friendDiscountHalalas,
+        referrerCreditHalalas: PRICING.referrerCreditHalalas,
+        freeMonitors: PRICING.freeMonitors,
+        freeSchedules: PRICING.freeSchedules,
+        termEnd: termEndApprox(regTerm()),
+        pushoverOffered: !!PUSHOVER_SUBSCRIBE_URL
+      },
+      canWatch: MONITOR_ENABLED && !MONITOR_PAUSED && !!currentWindow(),
+      window: currentWindow(),
+      /* مطفأة = لا وجود للحقل أصلاً، فلا رابط يتسرّب في رد عام */
+      pushover: pushoverOn()
+        ? { mode: PUSHOVER_MODE, url: PUSHOVER_SUBSCRIBE_URL } : null,
+      /* بصمة النسخة المخدومة الآن. المثبَّت على الشاشة الرئيسية قد يعيش
+         أياماً بلا إعادة تحميل، فيقارن الصفحة المحمّلة عنده بهذي
+         ويعرض «فيه تحديث» بدل ما يظل على نسخة قديمة بصمت. */
+      build: PAGE ? PAGE.etag : null,
       next: st.next || nextWindow(),
       dataTtlMin: Math.round(coursesTTL() / 60000),
       ar: st.ar, en: st.en,
@@ -4409,6 +6134,49 @@ const server = http.createServer(async (req, res) => {
       activeHours: [activeFrom(), activeTo()],
       windows: MONITOR_WINDOWS
     }));
+    return;
+  }
+
+  /* القاعات الفاضية */
+  if (parsed.pathname === '/api/rooms') {
+    const rl = rateHit(clientIP(req));
+    if (!rl.ok) {
+      OPS.rateLimited = (OPS.rateLimited || 0) + 1;
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Retry-After', String(rl.retry));
+      res.writeHead(429);
+      res.end(JSON.stringify({ ok: false, error: 'طلبات كثيرة — جرّب بعد شوي' }));
+      return;
+    }
+    const q = parsed.query || {};
+    const day = String(q.day || '').toUpperCase();
+    const from = parseInt(q.from, 10), to = parseInt(q.to, 10);
+    const gender = q.gender === 'F' ? 'F' : q.gender === 'M' ? 'M' : null;
+    const near = q.near ? String(q.near).toUpperCase() : null;
+    const limit = q.all === '1' ? 0 : Math.min(20, parseInt(q.limit, 10) || 5);
+
+    res.setHeader('Content-Type', 'application/json');
+    if (!'UMTWRFS'.includes(day) || day.length !== 1 ||
+        !Number.isFinite(from) || !Number.isFinite(to) ||
+        from < 0 || to > 1440 || to <= from) {
+      res.writeHead(400);
+      res.end(JSON.stringify({ ok: false, error: 'وسائط ناقصة أو غير صحيحة' }));
+      return;
+    }
+    try {
+      const idx = await buildRoomIndex();
+      if (!idx) { res.writeHead(503);
+        res.end(JSON.stringify({ ok: false, error: 'قائمة المواد غير متاحة الآن' })); return; }
+      const r = freeRooms(idx, { day, from, to, gender, near, limit });
+      res.setHeader('Cache-Control', 'public, max-age=300');
+      res.writeHead(200);
+      res.end(JSON.stringify({ ok: true, day, from, to, gender, near,
+                               total: r.total, rooms: r.rooms,
+                               builtAt: idx.at }));
+    } catch (e) {
+      res.writeHead(500);
+      res.end(JSON.stringify({ ok: false, error: 'خطأ في حساب القاعات' }));
+    }
     return;
   }
 
@@ -4436,6 +6204,18 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ success: false, error: err.message, exams: [] }));
     }
     return;
+  }
+
+  /* التقويم للواجهة — مصدر واحد، والصفحة تتحقق منه مع كل زيارة */
+  if (parsed.pathname === '/calendar.js') {
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache');
+    const cal = calAsset();
+    res.setHeader('ETag', cal.etag);
+    if ((req.headers['if-none-match'] || '') === cal.etag) {
+      res.writeHead(304); res.end(); return;
+    }
+    res.writeHead(200); res.end(cal.js); return;
   }
 
   /* تشغيل دورة فحص يدوياً (للاختبار) */
@@ -4502,6 +6282,7 @@ const server = http.createServer(async (req, res) => {
       '<?xml version="1.0" encoding="UTF-8"?>\n' +
       '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
       ['https://jadwalik.com/', 'https://jadwalik.com/guide',
+       'https://jadwalik.com/about',
        'https://jadwalik.com/privacy', 'https://jadwalik.com/terms']
         .map(u => `  <url><loc>${u}</loc><lastmod>${today}</lastmod></url>\n`).join('') +
       '</urlset>\n');
@@ -4519,10 +6300,13 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  /* الصفحات القانونية — يطلبها قوقل وبوابات الدفع */
+  /* الصفحات القانونية والتعريفية — يطلبها قوقل وبوابات الدفع */
   if (parsed.pathname === '/privacy' || parsed.pathname === '/privacy.html' ||
-      parsed.pathname === '/terms'   || parsed.pathname === '/terms.html') {
-    const file = parsed.pathname.includes('privacy') ? 'privacy.html' : 'terms.html';
+      parsed.pathname === '/terms'   || parsed.pathname === '/terms.html'   ||
+      parsed.pathname === '/about'   || parsed.pathname === '/about.html') {
+    const file = parsed.pathname.includes('privacy') ? 'privacy.html'
+               : parsed.pathname.includes('about')   ? 'about.html'
+               : 'terms.html';
     try {
       const html = fs.readFileSync(path.join(__dirname, file), 'utf8');
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -4687,7 +6471,7 @@ server.listen(PORT, () => {
   for (const sig of ['SIGTERM', 'SIGINT'])
     process.on(sig, () => { saveState().catch(() => {}).finally(() => process.exit(0)); });
   const st = monitorState();
-  console.log(`env=${SITE_ENV} | freeBeta=${FREE_BETA} | ترم المزامنة=${ACTIVE_TERM}` +
+  console.log(`env=${SITE_ENV} | state=${STATE_KEY} | freeBeta=${FREE_BETA} | ترم المزامنة=${activeTerm()}` +
               ` | monitor: ${st.reason} — ${st.ar}`);
   /* أول دورة بعد 20-60 ثانية عشوائياً، ثم جدولة ذكية */
   setTimeout(async () => {

@@ -22,6 +22,9 @@ border-radius:9px;padding:7px 8px;font-size:12px;font-family:inherit}
 .ttl-b.go{background:var(--ok,#10b981);border-color:transparent;color:#fff}
 .ttl-hint{margin-top:8px;font-size:10.5px;color:var(--dim);line-height:1.7}
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+/* JetBrains Mono بلا حروف عربية، فالمتصفح كان يهبط لخط أحادي عام
+   يفكّك الكلمة ويباعد حروفها: «مـغـلـقـة». إضافة الخط العربي قبل
+   الاحتياطي تُبقي الأرقام واللاتينية كما هي وتصلح العربي. */
 :root{
 --bg:#080b12;--card:#131928;--border:#1e2740;--border2:#253050;
 --accent:#3d6fff;--accent2:#6b8fff;
@@ -29,7 +32,7 @@ border-radius:9px;padding:7px 8px;font-size:12px;font-family:inherit}
 --close:#f43f5e;--close-bg:rgba(244,63,94,.08);
 --warn:#f59e0b;--warn-bg:rgba(245,158,11,.1);
 --text:#e2e8f8;--text2:#8b96b8;--text3:#4a5580;
---mono:'JetBrains Mono',monospace;--sans:'IBM Plex Sans Arabic',sans-serif}
+--mono:'JetBrains Mono','IBM Plex Sans Arabic',monospace;--sans:'IBM Plex Sans Arabic',sans-serif}
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh}
 
@@ -72,10 +75,14 @@ display:grid;grid-template-columns:repeat(4,1fr)}
 .tab{background:none;border:none;color:var(--text3);font-family:var(--sans);
 font-size:12px;font-weight:600;padding:12px 2px;cursor:pointer;position:relative}
 .tab.active{color:var(--accent2)}
-.tabs6{grid-template-columns:repeat(7,1fr)}
+.tabs6{grid-template-columns:repeat(9,1fr)}
 .tabs6 .tab{font-size:11px;padding:11px 2px}
 .row.dim{opacity:.45}
 .tabs6 .tab{font-size:10.5px;padding:12px 1px}
+/* أي بيئة تتحكم فيها — مفاتيح dev ما تلمس الإنتاج، فلازم تعرف وين أنت */
+.env-badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:8px;margin-inline-start:6px;
+  background:rgba(245,158,11,.15);color:var(--warn,#f59e0b);border:1px solid rgba(245,158,11,.4)}
+.env-badge[hidden]{display:none}
 .tab-badge{display:none;position:absolute;top:6px;inset-inline-end:3px;
 background:var(--accent);color:#fff;font-size:9px;font-family:var(--mono);
 padding:1px 5px;border-radius:20px;line-height:1.5}
@@ -134,6 +141,17 @@ font-size:12px;color:var(--text3)}
 .mon-erow input{background:var(--bg);border:1px solid var(--border);border-radius:9px;
 color:var(--text);font-family:inherit;font-size:12.5px;padding:7px 9px;width:82px}
 .mon-erow input[type=date]{width:132px}
+/* محرر الأسعار — ريال للعرض، هللة في السيرفر */
+.price-grid{display:grid;grid-template-columns:1fr auto;gap:8px 10px;align-items:center;
+  font-size:12.5px;margin-top:10px}
+.price-grid label{color:var(--text2)}
+.price-grid input{width:78px;background:var(--bg);border:1px solid var(--border);border-radius:9px;
+  color:var(--text);padding:7px 9px;font-family:var(--mono);text-align:center;direction:ltr}
+.cr-row{display:flex;justify-content:space-between;gap:10px;padding:7px 0;
+  border-bottom:1px solid var(--border);font-size:12px}
+.cr-row:last-child{border-bottom:none}
+.cr-plus{color:var(--open);font-family:var(--mono);direction:ltr;unicode-bidi:isolate}
+.cr-minus{color:var(--close);font-family:var(--mono);direction:ltr;unicode-bidi:isolate}
 .mon-ehint{font-size:10.5px;color:var(--text3);line-height:1.6;margin-top:3px}
 .watchers{margin-top:9px;padding-top:8px;border-top:1px solid var(--border)}
 .w-row{display:flex;justify-content:space-between;align-items:center;gap:10px;
@@ -230,6 +248,9 @@ white-space:nowrap;flex-shrink:0}
 .pill.off{background:var(--close-bg);color:var(--close);border:1px solid rgba(244,63,94,.25)}
 .pill.soon{background:var(--warn-bg);color:var(--warn);border:1px solid rgba(245,158,11,.3)}
 .row-meta{display:flex;flex-wrap:wrap;gap:11px;margin-top:9px;font-size:11px;color:var(--text3)}
+/* RTL يقلب ترتيب المقاطع اللاتينية والأرقام: 202710|ALL|ALL يُعرض
+   ALL|ALL|202710 فتقرأ الترتيب معكوساً. العزل يمنع القلب. */
+.ltr{direction:ltr;unicode-bidi:isolate;display:inline-block}
 .row-meta b{color:var(--text2);font-family:var(--mono);font-weight:500}
 .row-acts{display:flex;gap:7px;margin-top:11px;flex-wrap:wrap}
 .mini{background:transparent;border:1px solid var(--border2);color:var(--text2);
@@ -340,7 +361,7 @@ padding:1px 6px;border-radius:5px;color:var(--accent2)}
 <div class="topbar">
   <div class="logo">
     <div class="logo-icon">📊</div>
-    <div><div>لوحة التحكم</div><div class="brand-sub">JADWALIK ADMIN</div></div>
+    <div><div>لوحة التحكم <span id="envBadge" class="env-badge" hidden></span></div><div class="brand-sub">JADWALIK ADMIN</div></div>
   </div>
   <div class="tb-actions">
     <button class="icon-btn" onclick="loadAll()">🔄 تحديث</button>
@@ -352,11 +373,12 @@ padding:1px 6px;border-radius:5px;color:var(--accent2)}
 <div class="tabs tabs6">
   <button class="tab active" data-p="over"  onclick="go('over')">نظرة عامة</button>
   <button class="tab"        data-p="users" onclick="go('users')">المستخدمين</button>
-  <button class="tab"        data-p="revs"  onclick="go('revs')">التقييمات</button>
+  <button class="tab"        data-p="revs"  onclick="go('revs')">التقييمات<span class="tab-badge" id="revBadge"></span></button>
   <button class="tab"        data-p="mons"  onclick="go('mons')">المراقبة</button>
   <button class="tab"        data-p="fb"    onclick="go('fb')">تذاكر<span class="tab-badge" id="fbBadge"></span></button>
   <button class="tab"        data-p="msgs"  onclick="go('msgs')">الرسائل</button>
   <button class="tab"        data-p="rep"   onclick="go('rep')">بلاغات<span class="tab-badge" id="repBadge"></span></button>
+  <button class="tab"        data-p="stg"   onclick="go('stg')">التخزين</button>
   <button class="tab"        data-p="sys"   onclick="go('sys')">النظام<span class="tab-dot" id="sysDot"></span></button>
 </div>
 
@@ -381,6 +403,7 @@ padding:1px 6px;border-radius:5px;color:var(--accent2)}
   </div>
 
   <div class="page" id="pageRevs">
+    <div id="rrBody"></div>
     <div class="toolbar">
       <input id="revSearch" placeholder="ابحث بالدكتور أو النص..." oninput="renderRevs()">
       <select id="revFilter" onchange="renderRevs()">
@@ -424,8 +447,12 @@ padding:1px 6px;border-radius:5px;color:var(--accent2)}
 
   <div class="page" id="pageReps"><div id="repsBody"></div></div>
 
-  <div class="page" id="pageSys">
+  <div class="page" id="pageStg">
     <div id="stgBody"></div>
+    <div id="upBody"></div>
+  </div>
+
+  <div class="page" id="pageSys">
     <div id="sysBody"><div class="spinner"></div></div>
   </div>
 
@@ -496,7 +523,7 @@ function logout(){
 function go(p){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.p===p));
   const ids={over:'pageOver',users:'pageUsers',revs:'pageRevs',mons:'pageMons',
-             fb:'pageFb',msgs:'pageMsgs',rep:'pageReps',sys:'pageSys'};
+             fb:'pageFb',msgs:'pageMsgs',rep:'pageReps',stg:'pageStg',sys:'pageSys'};
   document.querySelectorAll('.page').forEach(el=>el.classList.remove('active'));
   document.getElementById(ids[p]).classList.add('active');
 }
@@ -546,7 +573,7 @@ function markRev(key,ok){
   if(ok)REV_OK.add(key); else REV_OK.delete(key);
   try{ localStorage.setItem('revOk',JSON.stringify([...REV_OK])) }catch(e){}
   renderRevs(); renderOver();
-  toast(ok?'✅ علّمتها مراجَعة':'↩︎ رجّعتها للمراجعة');
+  toast(ok?'✅ علّمتها سليمة':'↩︎ رجّعتها للتنبيه');
 }
 
 /* ══════════ تحميل ══════════ */
@@ -580,19 +607,24 @@ async function loadAll(silent){
 async function loadAllInner(silent){
   if(!TOKEN) return;
   try{
-    const [s,u,r,m,h,f,tk,mg,rp,stg] = await Promise.all([
+    const [s,u,r,m,h,f,tk,mg,rp,stg,up,rr] = await Promise.all([
       api('stats'), api('users'), api('reviews'), api('monitors'),
       api('health').catch(()=>null), api('feedback').catch(()=>({feedback:[]})),
       api('tickets?status=all').catch(()=>({tickets:[]})),
       api('messages').catch(()=>({messages:[],kinds:[]})),
       api('reports').catch(()=>({reports:[]})),
-      api('storage').catch(()=>null)
+      api('storage').catch(()=>null),
+      api('uploads').catch(()=>null),
+      api('review-requests').catch(()=>({requests:[]}))
     ]);
     STATS=s; USERS=u.users||[]; REVS=r.reviews||[]; MONS=m.monitors||[]; HEALTH=h;
     FB=(f&&f.feedback)||[]; TICKETS=(tk&&tk.tickets)||[]; MSGS=mg||{messages:[],kinds:[]};
-    REPS=(rp&&rp.reports)||[]; STORAGE=stg||null;
-    renderOver(); renderUsers(); renderRevs(); renderMons(); renderFb();
-    renderMsgs(); renderReps(); renderStorage(); renderSys();
+    REPS=(rp&&rp.reports)||[]; STORAGE=stg||null; UPLOADS=up||null;
+    RREQS=(rr&&rr.requests)||[];
+    { const eb=document.getElementById('envBadge'), env=(h&&h.env)||'prod';
+      if(eb){ eb.hidden=env==='prod'; eb.textContent='🧪 '+env } }
+    renderOver(); renderUsers(); renderRRs(); renderRevs(); renderMons(); renderFb();
+    renderMsgs(); renderReps(); renderStorage(); renderUploads(); renderSys();
   }catch(e){ toast(e.message,'err') }
 }
 
@@ -626,10 +658,194 @@ function renderStorage(){
     </div>
     ${S.estimated?`<div class="row-meta" style="margin-top:8px">
       <span>⚠️ ${S.estimated} صورة حجمها مقدَّر — رُفعت قبل تسجيل الأحجام</span></div>`:''}
+    ${S.estimated?`<button class="btn" id="stgSyncBtn" onclick="syncSizes()"
+      style="margin-top:8px">📐 احسب الأحجام الحقيقية</button>`:''}
+    <div class="row" style="margin-top:10px">
+      <div class="row-head"><b>🚪 استطلاع القاعات</b></div>
+      <div class="row-meta"><span>قراءة فقط — قبل بناء ميزة القاعات الفاضية</span></div>
+      <div class="row-acts">
+        <button class="mini go" id="rpBtn" onclick="roomsProbe()">🚪 افحص القاعات</button>
+      </div>
+      <div id="rpBody"></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div class="row-head"><b>🔔 تجربة Pushover</b></div>
+      <div class="row-meta"><span>يرسل إشعاراً تجريبياً لمن ربط مفتاحه</span></div>
+      <div class="row-acts">
+        <input id="poEmail" placeholder="بريد الطالب" style="flex:1;min-width:150px;
+          background:var(--bg);border:1px solid var(--border2);border-radius:9px;
+          padding:8px 11px;color:var(--text);font-family:var(--sans);font-size:12px">
+        <button class="mini go" onclick="pushTest()">أرسل</button>
+      </div>
+    </div>
     ${S.top&&S.top.length?`<div class="row" style="margin-top:10px">
       <div class="row-head"><b>أكثر الطلاب استهلاكاً</b></div>
       ${S.top.map(x=>`<div class="row-meta"><span>${x.user}…</span>
         <b>${fmtKb(x.kb)}</b></div>`).join('')}</div>`:''}`;
+}
+
+/* الأحجام المقدَّرة تبقى تقديراً للأبد ما لم تُقرأ مرة من Storage.
+   زر واحد يقرأها ويملأ العمود، فيختفي التحذير ولا يعود. */
+async function syncSizes(){
+  const b=document.getElementById('stgSyncBtn');
+  if(b){ b.disabled=true; b.textContent='جارٍ القياس…' }
+  try{
+    const r=await api('storage-sync',{body:{}});
+    toast(`قِيست ${r.updated} من ${r.checked}` +
+      (r.missing?` · ${r.missing} ما لقيت ملفها`:''),'ok');
+    STORAGE=await api('storage').catch(()=>STORAGE);
+    renderStorage();
+    UPLOADS=await api('uploads').catch(()=>UPLOADS);
+    renderUploads();
+  }catch(e){
+    toast(e.message,'err');
+    if(b){ b.disabled=false; b.textContent='📐 احسب الأحجام الحقيقية' }
+  }
+}
+
+/* ══════════ استطلاع القاعات ══════════
+   قراءة فقط — تجيب على: كم قاعة، وهل البادئة تدل على الجنس، وهل
+   GZONE مشترك. قبل بناء ميزة القاعات الفاضية. */
+let ROOMS=null;
+async function roomsProbe(){
+  const btn=document.getElementById('rpBtn');
+  if(btn){ btn.disabled=true; btn.textContent='جارٍ الفحص…' }
+  try{
+    ROOMS=await api('rooms-probe');
+    renderRooms();
+    if(!ROOMS.ok){
+      toast(ROOMS.error||'فشل','err');
+      const b=document.getElementById('rpBody');
+      if(b)b.innerHTML=`<div class="row" style="margin-top:8px">
+        <div class="row-meta"><span>⚠️ ${esc(ROOMS.error||'فشل')}</span></div>
+        ${ROOMS.cacheKeys?`<div class="row-meta"><span>الكاش: ${
+          ROOMS.cacheKeys.length?esc(ROOMS.cacheKeys.join(' · ')):'فاضٍ'}</span></div>`:''}
+      </div>`;
+    }
+  }catch(e){ toast(e.message,'err') }
+  if(btn){ btn.disabled=false; btn.textContent='🚪 افحص القاعات' }
+}
+function renderRooms(){
+  const box=document.getElementById('rpBody');
+  if(!box||!ROOMS||!ROOMS.ok)return;
+  const R=ROOMS;
+  box.innerHTML=`${R.source?`<div class="row-meta" style="margin-bottom:8px">
+      <span>المصدر: ${esc(R.source)}</span></div>`:''}
+    ${R.missing&&R.missing.length?`<div class="row"><div class="row-meta">
+      <span>⚠️ ${R.missing.map(esc).join(' · ')}</span></div></div>`:''}
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-val">${R.totalRooms}</div>
+        <div class="kpi-label">قاعة مميّزة</div></div>
+      <div class="kpi"><div class="kpi-val">${R.totalSessions}</div>
+        <div class="kpi-label">جلسة أسبوعية</div></div>
+    </div>
+    <div class="sec-title" style="margin-top:12px">فاضية ${esc(R.sample.label)}</div>
+    ${R.genders.map(g=>`<div class="row" style="margin-top:7px">
+      <div class="row-head"><b>${esc(g.gender)}</b>
+        <span class="pill on">${g.freeAtSample} من ${g.ofRooms}</span></div>
+      <div class="row-meta"><span>${g.rooms} قاعة · ${g.sessions} جلسة</span></div>
+    </div>`).join('')}
+    <div class="sec-title" style="margin-top:12px">المناطق — وحدة الفصل</div>
+    ${R.zones.map(z=>`<div class="row" style="margin-top:7px">
+      <div class="row-head"><b>${esc(z.zone)}</b>
+        <span class="pill ${z.verdict==='مشتركة'?'soon':'on'}">${z.verdict}</span></div>
+      <div class="row-meta">
+        <span>${z.rooms} قاعة · ${z.sessions} جلسة</span>
+        <span>طلاب ${z.M} · طالبات ${z.F}${z.letter?'':` · ${z.femalePct}٪ طالبات`}</span>
+      </div></div>`).join('')}
+    <div class="sec-title" style="margin-top:12px">المباني</div>
+    ${R.buildings.map(b=>`<div class="row" style="margin-top:7px">
+      <div class="row-head"><b>${esc(b.building)}</b>
+        <span class="pill ${b.verdict==='مختلط'?'soon':'on'}">${b.verdict}</span></div>
+      <div class="row-meta">
+        <span>${b.rooms} قاعة · ${b.sessions} جلسة</span>
+        <span>${esc(b.zones)}</span></div>
+    </div>`).join('')}
+    <div class="sec-title" style="margin-top:12px">أكثر القاعات ازدحاماً</div>
+    <div class="row">${R.busiest.map(b=>
+      `<div class="row-meta"><span>${esc(b.room)}</span>
+        <b>${b.sessions} جلسة</b></div>`).join('')}</div>
+    <div class="sec-title" style="margin-top:12px">القيم الشاذة (مستبعدة)</div>
+    <div class="row"><div class="row-meta">
+      <span>بلا قاعة ${R.odd.noRoom}</span><span>TBA/أونلاين ${R.odd.tba}</span>
+      <span>بلا وقت ${R.odd.noTime}</span><span>بلا أيام ${R.odd.noDays}</span>
+      <span>اسم غريب ${R.odd.badName}</span></div>
+      ${R.oddNames&&R.oddNames.length?`<div class="row-meta">
+        <span>${R.oddNames.map(esc).join(' · ')}</span></div>`:''}
+    </div>`;
+}
+
+async function pushTest(){
+  const el=document.getElementById('poEmail');
+  const email=(el&&el.value||'').trim();
+  if(!email){ toast('اكتب البريد','err'); return }
+  try{
+    const r=await api('push-test',{body:{email}});
+    if(r.ok)toast(`أُرسل إلى ${r.email} · مفتاح ${r.keyTail}` +
+      (r.telegram?'':' · ⚠️ ما ربط تلقرام فما بتوصله إشعارات الشُعب'),'ok');
+    else toast(r.error||'ما انرسل','err');
+  }catch(e){ toast(e.message,'err') }
+}
+
+/* ══════════ ما رُفع فعلاً ══════════
+   الأرقام تقول كم ميغابايت، ولا تقول هل الطلاب يستعملون الميزة.
+   هنا المحتوى نفسه ومعه حالته: مشارك أو خاص. */
+let UPLOADS=null, UP_FILTER='all';
+function setUpFilter(f){ UP_FILTER=f; renderUploads() }
+const UP_ICON={photo:'🖼️',file:'📎',note:'📝'};
+const UP_NAME={photo:'صورة',file:'ملف',note:'ملاحظة'};
+
+function renderUploads(){
+  const box=document.getElementById('upBody');
+  if(!box)return;
+  if(!UPLOADS){ box.innerHTML=''; return }
+  const U=UPLOADS;
+  if(!U.total){
+    box.innerHTML=`<div class="empty"><div class="empty-icon">📭</div>
+      <div class="empty-t">ما رفع أحد شيئاً بعد</div>
+      <div class="empty-s">أول صورة أو ملف أو ملاحظة بتظهر هنا</div></div>`;
+    return;
+  }
+  const list=UP_FILTER==='all'?U.items
+    :UP_FILTER==='shared'?U.items.filter(x=>x.shared)
+    :U.items.filter(x=>x.type===UP_FILTER);
+  const tab=(k,lbl,n)=>`<button class="mini${UP_FILTER===k?' go':''}"
+    onclick="setUpFilter('${k}')">${lbl}${n!=null?` (${n})`:''}</button>`;
+  box.innerHTML=`<div class="sec-title">ما رُفع · ${U.total} من ${U.users} طالب</div>
+    ${U.errors&&U.errors.length?`<div class="row" style="margin-top:8px">
+      <div class="row-meta"><span>⚠️ ${U.errors.map(esc).join(' · ')}</span></div></div>`:''}
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-val">${U.counts.photo}</div>
+        <div class="kpi-label">صورة · ${U.sharedCounts.photo} مشتركة</div></div>
+      <div class="kpi"><div class="kpi-val">${U.counts.file}</div>
+        <div class="kpi-label">ملف · ${U.sharedCounts.file} مشترك</div></div>
+      <div class="kpi"><div class="kpi-val">${U.counts.note}</div>
+        <div class="kpi-label">ملاحظة · ${U.sharedCounts.note} مشتركة</div></div>
+    </div>
+    <div class="row-acts" style="margin-top:10px">
+      ${tab('all','الكل',U.total)}${tab('photo','صور',U.counts.photo)}
+      ${tab('file','ملفات',U.counts.file)}${tab('note','ملاحظات',U.counts.note)}
+      ${tab('shared','المشترك',U.items.filter(x=>x.shared).length)}
+    </div>
+    ${list.length?list.map(x=>`<div class="row" style="margin-top:8px">
+      <div class="row-head">
+        <b>${UP_ICON[x.type]} ${esc(x.title||UP_NAME[x.type])}</b>
+        <span class="pill ${x.shared?'on':'off'}">${x.shared?'📢 مشترك':'🔒 خاص'}</span>
+      </div>
+      ${x.url&&x.type==='photo'?`<img src="${esc(x.url)}" loading="lazy" alt=""
+        onclick="window.open('${esc(x.url)}','_blank')"
+        style="width:100%;max-height:190px;object-fit:cover;border-radius:10px;
+               margin-top:9px;cursor:pointer">`:''}
+      ${x.url&&x.type==='file'?`<div class="row-acts">
+        <a class="mini" href="${esc(x.url)}" target="_blank" rel="noopener">📎 افتح الملف</a>
+      </div>`:''}
+      <div class="row-meta"><span>CRN ${esc(x.crn)} · ${esc(x.on_date||'—')}</span>
+        <span>${x.size_kb?fmtKb(x.size_kb):''}</span></div>
+      ${x.note?`<div class="row-meta"><span>${esc(x.note).slice(0,120)}</span></div>`:''}
+      <div class="row-meta"><span>${esc(x.user)}…</span>
+        <span>${fwhen(x.at)}</span></div>
+    </div>`).join('')
+    :`<div class="empty"><div class="empty-t">ما في شيء بهذا الفلتر</div></div>`}`;
 }
 
 /* ══════════ بلاغات المحتوى ══════════
@@ -796,14 +1012,13 @@ function renderUsers(){
         ${planVerTag(u)}
         <span>ينتهي <b>${fdate(u.expires)}</b></span>
         <span>مراقبة <b>${u.monitors}</b></span>
+        ${u.creditHalalas?`<span>رصيد <b style="color:var(--open)">${sar(u.creditHalalas)} ريال</b></span>`:''}
         ${u.telegram?`<span>تيليغرام <b>${esc(u.telegram)}</b></span>`:''}
         ${u.createdAt?`<span>انضم <b>${fdate(u.createdAt)}</b></span>`:''}
       </div>
       <div class="row-acts">
         <button class="mini" onclick="openUser('${u.id}')">👁️ جدوله ومعدله</button>
-        <button class="mini go" onclick="grant('${u.id}',365,'${esc(u.name)}')">+ سنة</button>
-        <button class="mini"    onclick="grant('${u.id}',30,'${esc(u.name)}')">+ شهر</button>
-        <button class="mini"    onclick="grant('${u.id}',7,'${esc(u.name)}')">+ أسبوع</button>
+        ${u.active?'':`<button class="mini go" onclick="grant('${u.id}','${esc(u.name)}')">🎓 فعّل للترم</button>`}
         ${u.telegram?`<button class="mini go" onclick="replyTo('','${esc(u.email)}','${esc(u.name)}')">💬 رسالة</button>`:''}
         ${u.active?`<button class="mini no" onclick="revoke('${u.id}','${esc(u.name)}')">إلغاء</button>`:''}
       </div>
@@ -811,21 +1026,47 @@ function renderUsers(){
   }).join('');
 }
 
-async function grant(id,days,name){
-  const label = days===365?'سنة':days===30?'شهر':'أسبوع';
-  if(!confirm(`تفعيل ${label} لـ ${name}؟`)) return;
+/* الهللة ← ريال للعرض: ١٩٠٠ ← «19»، ٢٥٠ ← «2.50» */
+function sar(h){ const v=(Number(h)||0)/100; return v%1?v.toFixed(2):String(v) }
+const CR_REASON={referral:'دعوة صديق',reviews:'تقييمات',admin:'يدوي',spend:'صُرف',reversal:'تصحيح'};
+const SUB_STATUS={comp:'هدية',paid:'مدفوع',pending:'معلّق',failed:'فشل',refunded:'مسترجع'};
+
+/* التفعيل من هنا هدية أو تجربة أو إصلاح دفعة — لا طريقة دفع، ولا يُحسب
+   في الإيرادات. ينتهي مع نهاية نهائيات الترم الحالي. */
+async function grant(id,name){
+  const note=prompt(`تفعيل ${name} حتى نهاية الترم الحالي — هدية، ما تنحسب دفعاً.\n\nالسبب (يظهر في سجله):`,'');
+  if(note===null) return;
   try{
-    const r=await api('grant',{body:{userId:id,days}});
+    const r=await api('grant',{body:{userId:id,note}});
     if(!r.ok) return toast(r.error||'ما ضبط','err');
-    toast(`فُعّل ${label} — ينتهي ${fdate(r.expires)}`,'ok');
+    toast(r.warning?r.warning:`فُعّل حتى ${fdate(r.expires)}`,r.warning?'err':'ok');
     await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
+/* منح أو سحب رصيد — السبب إلزامي، والمبلغ بالريال */
+async function adjustCredit(id,name,sign){
+  const amt=prompt(`${sign>0?'منح':'سحب'} رصيد ${sign>0?'لـ':'من'} ${name}\n\nالمبلغ بالريال:`,'');
+  if(amt===null) return;
+  const v=Math.round(parseFloat(String(amt).replace(',', '.'))*100);
+  if(!Number.isFinite(v)||v<=0) return toast('مبلغ غير صالح','err');
+  const note=prompt('السبب — إلزامي، يظهر في سجله:','');
+  if(note===null) return;
+  if(note.trim().length<3) return toast('السبب إلزامي','err');
+  try{
+    const r=await api('credit-adjust',{body:{userId:id,amountHalalas:sign*v,note}});
+    if(!r.ok) return toast(r.error||'ما ضبط','err');
+    toast(`${sign>0?'انضاف':'انسحب'} ${sar(v)} ريال`,'ok');
+    await loadAll();
+    openUser(id);
   }catch(e){ toast(e.message,'err') }
 }
 
 async function revoke(id,name){
   if(!confirm(`إلغاء اشتراك ${name}؟\nبيوقف عنه إشعارات المواد فوراً.`)) return;
   try{
-    await api('revoke',{body:{userId:id}});
+    const r=await api('revoke',{body:{userId:id}});
+    if(r&&r.ok===false) return toast(r.error||'ما ضبط','err');
     toast('تم الإلغاء','ok');
     await loadAll();
   }catch(e){ toast(e.message,'err') }
@@ -866,6 +1107,68 @@ async function openUser(id){
   }
 }
 function closeUser(){ document.getElementById('drawer').classList.remove('open') }
+
+/* التنبيه الطارئ في درج الطالب: حالته وتفعيله هدية للترم */
+async function grantPo(id,name,on){
+  let note='';
+  if(on){
+    note=prompt(`تفعيل التنبيه الطارئ لـ ${name} حتى نهاية الترم — هدية.\n\nالسبب:`,'');
+    if(note===null)return;
+  }else if(!confirm(`إيقاف التنبيه الطارئ لـ ${name}؟`))return;
+  try{
+    const r=await api('grant-pushover',{body:{userId:id,on,note}});
+    if(!r.ok)return toast(r.error||'ما ضبط','err');
+    toast(r.warning?r.warning:(on?`فُعّل حتى ${fdate(r.until)}`:'انوقف'),r.warning?'err':'ok');
+    await loadAll(); openUser(id);
+  }catch(e){ toast(e.message,'err') }
+}
+function poBox(u){
+  return `<div class="kv"><span>🚨 التنبيه الطارئ</span>
+    <b>${u.pushoverAddon?`<span style="color:var(--open)">فعّال${u.pushoverUntil?' حتى '+fdate(u.pushoverUntil):''}</span>`
+                        :'<span style="color:var(--text3)">غير مفعّل</span>'}
+       · ${u.pushoverLinked?'التطبيق مربوط':'التطبيق غير مربوط'}</b></div>
+    <div class="row-meta" style="margin-top:6px">
+      ${u.pushoverAddon
+        ?`<button class="mini no" onclick="grantPo('${u.id}','${esc(u.name)}',false)">إيقاف الإضافة</button>`
+        :`<button class="mini go" onclick="grantPo('${u.id}','${esc(u.name)}',true)">🚨 فعّل للترم</button>`}
+    </div>`;
+}
+
+/* الاشتراك والرصيد في درج الطالب: السجل كاملاً، فأي سؤال «ليش رصيدي
+   كذا؟» جوابه هنا بسطر لكل حركة */
+function subCreditBox(d,u){
+  const subs=d.subscriptions||[];
+  const cr=d.credit||{balance:{available:0,expired:0},rows:[]};
+  const b=cr.balance||{};
+  const subRows=subs.length
+    ? subs.map(x=>`<div class="cr-row">
+        <span>${esc(x.term)} · <b>${esc(SUB_STATUS[x.status]||x.status)}</b>
+          ${x.note?`<span style="color:var(--text3)"> — ${esc(x.note)}</span>`:''}</span>
+        <span>${x.amount_halalas?`${sar(x.amount_halalas)} ريال · `:''}${x.valid_until?'حتى '+fdate(x.valid_until):''}</span>
+      </div>`).join('')
+    : `<div class="dw-empty">ما اشترك من قبل</div>`;
+  const crRows=(cr.rows||[]).length
+    ? cr.rows.slice().reverse().map(r=>`<div class="cr-row">
+        <span>${fdate(r.created_at)} · ${esc(CR_REASON[r.reason]||r.reason)}
+          ${r.note?`<span style="color:var(--text3)"> — ${esc(r.note)}</span>`:''}</span>
+        <span class="${r.amount_halalas>0?'cr-plus':'cr-minus'}">${r.amount_halalas>0?'+':'−'}${sar(Math.abs(r.amount_halalas))}</span>
+      </div>`).join('')
+    : `<div class="dw-empty">ما فيه حركات</div>`;
+  return `<div class="gauge" style="margin:12px 0">
+    ${poBox(u)}
+    <div class="kv"><span>الرصيد المتاح</span>
+      <b style="color:var(--open)">${sar(b.available)} ريال</b></div>
+    ${b.nextExpiry?`<div class="kv"><span>أقرب انتهاء</span><b>${fdate(b.nextExpiry)}</b></div>`:''}
+    ${b.expired?`<div class="kv"><span>انتهى بلا استعمال</span><b>${sar(b.expired)} ريال</b></div>`:''}
+    ${b.overdraft?`<div class="kv"><span>صرف أكثر من المتاح</span><b style="color:var(--close)">${sar(b.overdraft)} ريال</b></div>`:''}
+    <div class="row-meta" style="margin-top:8px">
+      <button class="mini go" onclick="adjustCredit('${u.id}','${esc(u.name)}',1)">+ رصيد</button>
+      ${b.available?`<button class="mini no" onclick="adjustCredit('${u.id}','${esc(u.name)}',-1)">− رصيد</button>`:''}
+    </div>
+    <div class="gauge-sub" style="margin-top:12px"><b>الاشتراكات</b></div>${subRows}
+    <div class="gauge-sub" style="margin-top:12px"><b>حركات الرصيد</b></div>${crRows}
+  </div>`;
+}
 
 function renderUserDetail(d){
   const u=d.user;
@@ -954,6 +1257,8 @@ function renderUserDetail(d){
       ${u.telegram?`<span>تيليغرام <b>${esc(u.telegram)}</b></span>`:''}
     </div>
 
+    ${subCreditBox(d,u)}
+
     ${gpaBox}
 
     ${(()=>{const ph=d.prepHint||{};
@@ -972,6 +1277,57 @@ function renderUserDetail(d){
 }
 
 /* ══════════ التقييمات ══════════ */
+/* ═══ طلبات رصيد التقييم ═══
+   الطالب يرسل خمسة تقييمات، تشوفها هنا كاملة، تقبل أو ترفض بسبب يوصله.
+   المقبول يمنح الرصيد ويحتسب الدكاترة للأبد، والمرفوض يقدر يعدّل ويرجع. */
+let RREQS=[];
+function renderRRs(){
+  const box=document.getElementById('rrBody');
+  const badge=document.getElementById('revBadge');
+  if(badge){ badge.textContent=RREQS.length||''; badge.className='tab-badge'+(RREQS.length?' on':'') }
+  if(!box)return;
+  if(!RREQS.length){ box.innerHTML=''; return }
+  const stars=n=>'★'.repeat(Math.max(0,Math.min(5,n)))+'☆'.repeat(Math.max(0,5-n));
+  box.innerHTML=`<div class="gauge-sub" style="margin:4px 0 10px"><b>⭐ طلبات رصيد التقييم (${RREQS.length})</b></div>`+
+    RREQS.map(q=>`<div class="row" style="margin-bottom:12px">
+      <div class="row-meta" style="margin-bottom:8px">
+        <span><b>${esc(q.name)}</b></span><span>${esc(q.email)}</span><span>${fdate(q.createdAt)}</span>
+      </div>
+      ${q.reviews.map(v=>v.missing
+        ?`<div class="cr-row"><span>${esc(v.instructor)}</span><b style="color:var(--close)">محذوف بعد الإرسال</b></div>`
+        :`<div class="cr-row" style="flex-direction:column;align-items:stretch;gap:4px">
+            <div style="display:flex;justify-content:space-between;gap:8px">
+              <span><b>${esc(v.instructor)}</b>${v.course?` · ${esc(v.course)}`:''}
+                ${v.hidden?'<b style="color:var(--close)"> · مخفي</b>':''}
+                ${v.reports?`<b style="color:var(--warn)"> · ${v.reports} بلاغ</b>`:''}</span>
+              <span style="color:var(--warn);letter-spacing:1px">${stars(v.rating)}</span>
+            </div>
+            <div style="color:var(--text2);line-height:1.7">${v.comment?esc(v.comment):'<i style="color:var(--text3)">بلا تعليق</i>'}</div>
+          </div>`).join('')}
+      <div class="row-meta" style="margin-top:10px">
+        <button class="mini go" onclick="decideRR(${q.id},'approve','${esc(q.name)}')">✅ قبول</button>
+        <button class="mini no" onclick="decideRR(${q.id},'reject','${esc(q.name)}')">❌ رفض بسبب</button>
+      </div>
+    </div>`).join('');
+}
+async function decideRR(id,decision,name){
+  let note='';
+  if(decision==='reject'){
+    note=prompt(`سبب رفض طلب ${name} — يوصله على تلقرام:`,'');
+    if(note===null)return;
+    if(note.trim().length<3)return toast('سبب الرفض إلزامي','err');
+  }else{
+    const amt=((HEALTH&&HEALTH.pricing&&HEALTH.pricing.reviewsCreditHalalas)||0)/100;
+    if(!confirm(`قبول تقييمات ${name}${amt?` ومنحه ${amt} ريال رصيد`:''}؟`))return;
+  }
+  try{
+    const r=await api('review-decide',{body:{id,decision,note}});
+    if(!r.ok)return toast(r.error||'ما ضبط','err');
+    toast(r.warning?r.warning:(decision==='approve'?'انقبل ✅':'انرفض — وصله السبب'),r.warning?'err':'ok');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
 function renderRevs(){
   const q=(document.getElementById('revSearch').value||'').trim().toLowerCase();
   const f=document.getElementById('revFilter').value;
@@ -1026,7 +1382,7 @@ function renderRevs(){
       </div>
       <div class="row-acts">
         ${r.reports?`<button class="mini go" onclick="clearRep(${r.id})">✓ ألغِ البلاغ</button>`:''}
-        ${bad?`<button class="mini go" onclick="markRev('${esc(key)}',true)">✓ راجعتها</button>`:''}
+        ${bad?`<button class="mini go" onclick="markRev('${esc(key)}',true)">✓ سليمة</button>`:''}
         ${okd?`<button class="mini" onclick="markRev('${esc(key)}',false)">↩︎ رجّعها للمراجعة</button>`:''}
         <button class="mini" onclick="hideRev(${r.id},${r.hidden?'false':'true'})">
           ${r.hidden?'👁️ أظهرها':'🙈 أخفها'}</button>
@@ -1281,6 +1637,46 @@ async function runSchedSync(){
 }
 
 /* ══════════ جدول الاختبارات النهائية ══════════ */
+const PRICE_FIELDS=[
+  ['termHalalas','اشتراك الترم',1],
+  ['pushoverHalalas','التنبيه الطارئ',1],
+  ['friendDiscountHalalas','خصم الصديق',1],
+  ['referrerCreditHalalas','رصيد الداعي',1],
+  ['reviewsCreditHalalas','رصيد التقييمات',1],
+  ['reviewsNeeded','تقييمات للطلب',0],
+  ['creditTerms','صلاحية الرصيد (ترمات)',0],
+  ['lateDays','أيام الشراء المتأخر',0],
+  ['freeMonitors','مراقبات المجاني',0],
+  ['freeSchedules','جداول المجاني',0]
+];
+async function savePricing(){
+  const pricing={};
+  for(const [k,,money] of PRICE_FIELDS){
+    const el=document.getElementById('pf_'+k);
+    if(!el) continue;
+    const v=parseFloat(el.value);
+    if(!Number.isFinite(v)) return toast('قيمة ناقصة: '+k,'err');
+    pricing[k]=money?Math.round(v*100):Math.round(v);
+  }
+  try{
+    const r=await api('pricing',{body:{pricing}});
+    if(r&&r.error) return toast(r.error,'err');
+    toast('انحفظت الأسعار','ok');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
+async function toggleBeta(on){
+  if(!on&&!confirm('إنهاء الفترة المجانية؟\n\n'+
+    'المجاني يصير مراقبتين وجدولاً واحداً فوراً، والمراقبات الزائدة تتوقف.\n\n'+
+    '⚠️ تأكد إن بوابة الدفع شغّالة — بدونها ما يقدر أحد يشترك.'))return;
+  try{
+    const r=await api('beta-toggle',{body:{on:!!on}});
+    toast(r.on?'الفترة المجانية شغّالة':'الفترة المجانية انتهت','ok');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
 async function toggleFinals(on){
   if(on){
     if(!confirm('تشغيل جدول النهائيات؟ تأكد أن الجامعة نشرت جدول الترم الحالي — وإلا بيشوف الطلاب جدول الترم الماضي.'))return;
@@ -1305,6 +1701,121 @@ async function stopWatcher(id){
   try{
     await api('monitor-row',{body:{ids:[id],action:'stop',notify:true}});
     toast('أوقفت المراقبة','ok'); await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
+/* ═══ التحكم بالموسم ═══
+   الترم والنافذة كانا يحتاجان تعديل متغيّر في Render وإعادة نشر.
+   صارا من هنا، ومحفوظين في القاعدة فما يضيعان مع النشر. */
+function seasonCard(){
+  /* حقول الموسم كلها تحت monitorInfo — لا تسطّحها، اللوحة تقرأ من هناك */
+  const h=(HEALTH&&HEALTH.monitorInfo)||{};
+  const w=h.currentWindow;
+  const open=h.canWatch;
+  return `<div class="gauge" style="margin-bottom:12px">
+    <div class="kv"><span>الترم النشط</span>
+      <b><span class="mono ltr">${esc(h.activeTerm||'—')}</span>${
+        h.termCustom?' <span style="color:var(--warn,#f59e0b)">يدوي</span>':''}</b></div>
+    <div class="kv"><span>نافذة التسجيل</span>
+      <b>${w?`<span class="mono ltr">${esc(w.from)} → ${esc(w.to)}</span>`
+           :'<span style="color:var(--text3)">مغلقة</span>'}${
+        h.windowCustom?' <span style="color:var(--warn,#f59e0b)">يدوية</span>':''}</b></div>
+    <div class="kv"><span>التنبيه الطارئ (Pushover)</span>
+      <b>${h.pushoverReady
+        ? `${esc(h.pushoverMode||'off')} — ${({off:'مخفيّ',link:'رابط التجربة فقط',
+             addon:'لمن اشترى الإضافة',all:'للجميع'})[h.pushoverMode||'off']||''}`
+        : '<span style="color:var(--text3)">الرابط غير مضبوط في Render</span>'}</b></div>
+    <div class="kv"><span>الجرس عند الطلاب</span>
+      <b style="color:${open?'var(--open)':'var(--close)'}">${open?'مفتوح':'مقفول'}</b></div>
+    <div class="gauge-sub">
+      قفل الجرس يمنع مراقبة جديدة فقط — إيقاف مراقبة قائمة يبقى متاحاً دائماً.
+    </div>
+    <div class="row-meta" style="margin-top:10px">
+      <button class="mini" onclick="setTerm()">تبديل الترم</button>
+      <button class="mini" onclick="setWindow()">تعديل النافذة</button>
+      <button class="mini no" onclick="closeWindowNow()">إقفال الجرس الآن</button>
+      <button class="mini" onclick="resetWindow()">رجوع للتقويم</button>
+      <button class="mini" onclick="setPushover()">وضع Pushover</button>
+    </div></div>`;
+}
+
+/* off لا أحد · link لمن يفتح ?pushover=1 · addon لمن اشترى الإضافة · all للجميع.
+   والسيرفر يطبّق الوضع على الإرسال نفسه، لا على البطاقة وحدها */
+async function setPushover(){
+  const cur=((HEALTH&&HEALTH.monitorInfo)||{}).pushoverMode||'off';
+  const m=prompt('وضع Pushover — off / link / addon / all\n\n'+
+    'off: ما يستلمه أحد\nlink: لمن تعطيه رابط ?pushover=1\n'+
+    'addon: لمن اشترى الإضافة (أو فعّلتها له من درجه)\nall: للجميع',cur);
+  if(m===null||m.trim()===cur)return;
+  try{
+    const r=await api('pushover-mode',{body:{mode:m.trim()}});
+    if(!r.ready)toast('الوضع '+r.mode+' — لكن PUSHOVER_SUBSCRIBE_URL ناقص في Render','err');
+    else toast('وضع Pushover صار '+r.mode,'ok');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
+async function setTerm(){
+  const cur=((HEALTH&&HEALTH.monitorInfo)||{}).activeTerm||'';
+  const t=prompt('الترم النشط (10 خريف · 20 ربيع · 30 صيف):',cur);
+  if(t===null||t.trim()===cur)return;
+  try{
+    const r=await api('term-set',{body:{term:t.trim()}});
+    toast('الترم صار '+r.term,'ok'); await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
+async function setWindow(){
+  const f=prompt('بداية نافذة التسجيل (YYYY-MM-DD):',
+    ((HEALTH&&HEALTH.monitorInfo)||{}).riyadhDate||'');
+  if(f===null)return;
+  const t=prompt('نهايتها (YYYY-MM-DD):',f);
+  if(t===null)return;
+  try{
+    await api('monitor-window',{body:{from:f.trim(),to:t.trim()}});
+    toast('النافذة انضبطت','ok'); await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
+/* إقفال فوري: نافذة انتهت أمس، فـcurrentWindow ترجع null والجرس يُقفل */
+async function closeWindowNow(){
+  if(!confirm('إقفال الجرس الآن؟ ما راح يقدر أحد يضيف مراقبة جديدة حتى تفتحها.'))return;
+  const d=new Date(Date.now()-864e5).toISOString().slice(0,10);
+  try{
+    await api('monitor-window',{body:{from:d,to:d,ar:'مقفلة يدوياً'}});
+    toast('الجرس مقفول','ok'); await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
+async function resetWindow(){
+  try{
+    await api('monitor-window',{body:{reset:true}});
+    toast('رجعت لنوافذ التقويم','ok'); await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
+/* ═══ إنهاء موسم المراقبة ═══
+   بعد آخر يوم تسجيل تبقى مئات الصفوف التي لا يستطيع أحد التصرف بها.
+   نعدّ أولاً ونعرض الرقم، ثم نحذف الكل برسالة واحدة لكل طالب. */
+async function endSeason(){
+  let pre;
+  try{ pre=await api('monitor-season-end') }
+  catch(e){ return toast(e.message,'err') }
+  if(!pre.total) return toast('ما فيه مراقبات أصلاً','ok');
+
+  const breakdown=(pre.terms||[])
+    .map(t=>`  ${t.term}: ${t.rows} مراقبة · ${t.students} طالباً`).join('\n');
+  if(!confirm(`إنهاء موسم المراقبة؟\n\n`+
+    `${pre.total} مراقبة · ${pre.students} طالباً\n${breakdown}\n\n`+
+    `تُحذف كلها، ويوصل كل طالب رسالة واحدة تجمع مواده.\n`+
+    `ما فيه تراجع.`))return;
+
+  const note=prompt('سطر إضافي في الرسالة (اتركه فاضياً لو ما تبي):','')||'';
+  try{
+    const r=await api('monitor-season-end',{body:{notify:true,note}});
+    toast(`أوقفنا ${r.stopped} مراقبة لـ${r.students} طالباً · `+
+          `الرسائل تنطلق ويوصلك تقرير`,'ok');
+    await loadAll();
   }catch(e){ toast(e.message,'err') }
 }
 
@@ -1451,6 +1962,36 @@ function renderSys(){
         ${mOn?'▶️ شغّل الموقع':'⏸️ اقفل الموقع'}</button>
     </div>
     ${mOn&&h.maintenanceMsg?`<div class="maint-msg">${esc(h.maintenanceMsg)}</div>`:''}
+  </div>`;
+
+  /* ── الفترة المجانية ── مفتاح يوم الإطلاق */
+  const bOn=h.freeBeta!==false;
+  const beta=`<div class="maint ${bOn?'':'on'}">
+    <div class="maint-top">
+      <div>
+        <div class="maint-t">${bOn?'🎁 الفترة المجانية شغّالة':'💳 الفترة المجانية منتهية'}</div>
+        <div class="maint-s">${bOn
+          ?'كل الميزات مفتوحة لكل مسجّل. أطفئها يوم إطلاق الاشتراك.'
+          :'الميزات المدفوعة للمشتركين فقط.'}</div>
+      </div>
+      <button class="mini ${bOn?'no':'go'}" onclick="toggleBeta(${bOn?'false':'true'})">
+        ${bOn?'💳 أنهِ الفترة':'🎁 رجّعها'}</button>
+    </div>
+  </div>`;
+
+  /* ── الأسعار ── بالريال هنا وبالهللة في السيرفر */
+  const P=h.pricing||{};
+  const pricing=`<div class="gauge" style="margin-bottom:12px">
+    <div class="maint-t">💰 الأسعار والحدود</div>
+    <div class="gauge-sub">المبالغ بالريال. رصيد الداعي لازم أقل مما يدفعه صديقه.</div>
+    <div class="price-grid">${PRICE_FIELDS.map(([k,l,money])=>
+      `<label for="pf_${k}">${l}</label>
+       <input id="pf_${k}" type="number" step="${money?'0.5':'1'}" min="0"
+         value="${P[k]===undefined?'':(money?sar(P[k]):P[k])}">`).join('')}
+    </div>
+    <div class="row-meta" style="margin-top:10px">
+      <button class="mini go" onclick="savePricing()">حفظ الأسعار</button>
+    </div>
   </div>`;
 
   /* ── جدول الاختبارات النهائية ── */
@@ -1736,7 +2277,7 @@ function renderSys(){
 
   ${h.cache&&h.cache.length?`<div class="sec-title">النسخ المحفوظة الآن</div>
   <div class="gauge">
-    ${h.cache.map(c=>`<div class="kv"><span style="font-family:var(--mono);font-size:11px">${esc(c.key)}</span>
+    ${h.cache.map(c=>`<div class="kv"><span class="ltr" style="font-family:var(--mono);font-size:11px">${esc(c.key)}</span>
       <b class="${c.valid?'good':'warn'}">${c.ageSec<90?c.ageSec+' ث':Math.round(c.ageSec/60)+' د'} ${c.valid?'✓':'منتهية'}</b></div>`).join('')}
     <div class="gauge-sub">تُمسح كلها مع كل إعادة تشغيل للسيرفر.</div>
   </div>`:`<div class="sec-title">النسخ المحفوظة الآن</div>
@@ -1881,7 +2422,7 @@ function renderSys(){
     </div>
   </div>`;
 
-  box.innerHTML=maint+monCard+pwCard+cacheCard+finals+alerts+liveBox+gauge+spark+detail;
+  box.innerHTML=maint+beta+pricing+monCard+pwCard+cacheCard+finals+alerts+liveBox+gauge+spark+detail;
 }
 
 /* ══════════ المراقبة ══════════ */
@@ -1910,8 +2451,11 @@ function monSetSort(v){ MON_SORT=v; renderMons() }
 
 function renderMons(){
   const box=document.getElementById('monsBody');
+  /* بطاقة الموسم قبل الخروج المبكر: كانت تختفي بعد إنهاء الموسم بالضبط،
+     وهي اللحظة التي تحتاج فيها فتح النافذة أو تبديل الترم. */
   if(!MONS.length){
-    box.innerHTML=`<div class="empty"><div class="empty-icon">📡</div>
+    box.innerHTML=`${seasonCard()}
+      <div class="empty"><div class="empty-icon">📡</div>
       <div class="empty-t">ما في مواد مراقبة</div>
       <div class="empty-s">أول ما يراقب أحد مادة بتظهر هنا</div></div>`;
     return;
@@ -1925,6 +2469,7 @@ function renderMons(){
      onclick="monSetSort('${v}')">${t}</button>`;
 
   box.innerHTML=`
+    ${seasonCard()}
     <div class="kpis" style="margin-bottom:10px">
       <div class="kpi"><div class="kpi-val">${MONS.length}</div>
         <div class="kpi-label">مادة مراقَبة</div></div>
@@ -1943,6 +2488,7 @@ function renderMons(){
     </div>
     <div class="row-meta" style="margin:8px 0">
       ${btn('watchers','الأكثر طلباً')}${btn('open','المفتوحة أولاً')}${btn('notified','الأكثر تنبيهاً')}
+      <button class="mini no" onclick="endSeason()">🔕 إنهاء الموسم</button>
     </div>
     <div id="monList"></div>`;
   renderMonList();

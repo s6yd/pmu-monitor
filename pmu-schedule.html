@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="ar" dir="rtl" class="auth-pending">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -118,6 +118,10 @@ font-size:12px;font-weight:600;font-family:var(--sans);cursor:pointer;white-spac
 .sync-note{display:none;align-items:center;gap:10px;background:rgba(61,111,255,.08);
 border:1px solid var(--border2);border-radius:13px;padding:12px 14px;margin-bottom:14px;font-size:12.5px;color:var(--text2);line-height:1.6}
 .sync-note.visible{display:flex}
+/* قبل ما تُقرأ الجلسة نخفي كل ما يعلن حالة الدخول — الفراغ أصدق
+   من إعلان خاطئ يرتدّ بعد ثانية. */
+html.auth-pending .auth-btn{visibility:hidden}
+html.auth-pending .sync-note{display:none !important}
 .sync-note b{color:var(--text)}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
 
@@ -509,12 +513,7 @@ font-size:12px;font-weight:600;font-family:var(--sans);cursor:pointer;white-spac
 background:var(--bg);border:1px dashed var(--border2);border-radius:10px;
 padding:11px;text-align:center;margin-top:10px}
 
-.pay-box{background:var(--bg);border:1px solid var(--border2);border-radius:12px;padding:14px;margin-top:12px;display:none}
-.pay-box.visible{display:block}
-.pay-line{display:flex;justify-content:space-between;align-items:center;padding:8px 0;font-size:12.5px;border-bottom:1px solid var(--border)}
-.pay-line:last-child{border-bottom:none}
 .pay-line b{font-family:var(--mono);color:var(--accent2)}
-.pay-note{font-size:11.5px;color:var(--text3);line-height:1.7;margin-top:11px}
 
 /* monitor toggle on course card */
 .btn-bell{width:34px;height:34px;border-radius:10px;border:1px solid var(--border2);
@@ -522,6 +521,69 @@ background:transparent;color:var(--text3);font-size:15px;cursor:pointer;
 display:flex;align-items:center;justify-content:center}
 .btn-bell.on{border-color:var(--warn);color:var(--warn);background:var(--warn-bg)}
 .btn-bell.locked{opacity:.45}
+/* ═══ ورقة الباقات — مكوّن واحد لكل لحظات الجدار ═══ */
+.ps-overlay{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.45);
+  display:flex;align-items:flex-end;justify-content:center;opacity:0;transition:opacity .2s}
+.ps-overlay.open{opacity:1}
+.ps-overlay[hidden]{display:none}
+.ps-sheet{width:100%;max-width:520px;background:var(--card);border-radius:18px 18px 0 0;
+  padding:14px 16px calc(16px + env(safe-area-inset-bottom,0px));
+  transform:translateY(24px);transition:transform .2s;max-height:90vh;overflow-y:auto}
+.ps-overlay.open .ps-sheet{transform:none}
+.ps-grab{width:38px;height:4px;border-radius:4px;background:var(--border2);margin:0 auto 12px}
+.ps-ctx{background:var(--warn-bg);color:var(--text);border-radius:11px;padding:9px 12px;
+  font-size:13px;line-height:1.6;margin-bottom:12px}
+.ps-cols{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.ps-col{border:1px solid var(--border);border-radius:13px;padding:11px;display:flex;
+  flex-direction:column;gap:6px;font-size:12.5px;color:var(--text2);line-height:1.5}
+.ps-col b{color:var(--text);font-size:13.5px;margin-bottom:2px}
+.ps-col.pro{border:2px solid var(--accent)}
+.ps-addon{display:flex;align-items:center;gap:10px;border:1px solid var(--border);
+  border-radius:13px;padding:10px 12px;margin-bottom:12px;font-size:13px;cursor:pointer}
+.ps-addon input[type=checkbox]{width:20px;height:20px;flex:none;padding:0;margin:0;
+  border-radius:6px;-webkit-appearance:none;appearance:none;
+  background:var(--bg);border:2px solid var(--border2);position:relative;cursor:pointer}
+.ps-addon input[type=checkbox]:checked{background:var(--accent);border-color:var(--accent)}
+.ps-addon input[type=checkbox]:checked::after{content:'';position:absolute;
+  left:6px;top:2px;width:5px;height:10px;border:solid #fff;border-width:0 2px 2px 0;
+  transform:rotate(45deg)}
+.ps-addon:has(input:checked){border-color:var(--accent);background:rgba(77,124,254,.07)}
+.ps-addon .ps-a-t{flex:1;line-height:1.5}
+.ps-addon small{color:var(--text3)}
+.ps-total{display:flex;justify-content:space-between;align-items:center;font-size:14px;
+  margin-bottom:12px;padding-top:10px;border-top:1px solid var(--border)}
+.ps-pay{width:100%;height:44px;border:none;border-radius:12px;background:var(--accent);
+  color:#fff;font-size:15px;font-family:inherit;cursor:pointer}
+.ps-pay:disabled{opacity:.55;cursor:default}
+.ps-close{width:100%;background:none;border:none;color:var(--text3);font-size:13px;
+  margin-top:6px;padding:9px;font-family:inherit;cursor:pointer}
+.ps-lines{display:flex;flex-direction:column;gap:6px;margin-bottom:10px;font-size:13px}
+.ps-line{display:flex;justify-content:space-between;color:var(--text2)}
+.ps-line.good{color:var(--open)}
+.ps-note{font-size:12px;color:var(--text3);line-height:1.6}
+/* بطاقة «اشتراكي»: الرصيد والدعوة */
+.pro-price.bare{background:none;border:none;padding:0;box-shadow:none}
+#proSub{white-space:pre-line}
+.acct-code{font-family:var(--mono,monospace);font-size:18px;letter-spacing:.18em;color:var(--text);
+  direction:ltr;unicode-bidi:isolate;font-weight:600}
+.acct-row{display:flex;justify-content:space-between;align-items:center;gap:10px;
+  padding:9px 0;border-top:1px solid var(--border);font-size:13px}
+.acct-row b{color:var(--text)}
+.acct-link{font-family:var(--mono,monospace);font-size:12px;color:var(--accent);direction:ltr;
+  unicode-bidi:isolate;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.acct-hint{font-size:12px;color:var(--text3);line-height:1.7;margin-top:-2px;padding-bottom:4px}
+.slot-pick.locked{opacity:.6}
+.rc-box{border:1px solid var(--border);border-radius:13px;padding:11px 12px;margin:4px 0 12px;
+  background:rgba(77,124,254,.05)}
+.rc-top{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13px}
+.rc-top b{color:var(--text)}
+.rc-bar{height:5px;border-radius:5px;background:var(--border);margin:9px 0 6px;overflow:hidden}
+.rc-bar div{height:100%;background:var(--accent);border-radius:5px;transition:width .3s}
+.rc-hint{font-size:12px;color:var(--text3);line-height:1.6}
+.rc-state{font-size:12.5px;line-height:1.7;color:var(--text2);margin-top:4px}
+.rc-state.good{color:var(--open)}
+.rc-state.bad{color:var(--close)}
+.mon-paused{opacity:.6}
 .btn-bell.all{font-size:13px}
 .btn-bell.all.on{border-color:var(--accent);color:var(--accent);
 background:rgba(61,111,255,.12)}
@@ -726,6 +788,67 @@ font-size:11.5px;color:var(--text3)}
 .gap-row::before,.gap-row::after{content:'';flex:1;height:1px;background:var(--border)}
 .gap-row.has-now{color:var(--open);font-weight:700}
 .gap-row.has-now::before,.gap-row.has-now::after{background:var(--open);opacity:.45}
+/* ── القاعات الفاضية ── */
+.gap-rooms{background:none;border:1px solid var(--border2);color:var(--text2);
+border-radius:20px;padding:2px 10px;font-size:10.5px;font-weight:600;
+font-family:var(--sans);cursor:pointer;flex-shrink:0;
+-webkit-tap-highlight-color:transparent}
+.gap-rooms:active{opacity:.7}
+.rm-sub{font-size:12px;color:var(--text3);margin-bottom:10px}
+.rm-gen{background:var(--bg);border:1px solid var(--border2);color:var(--text);
+border-radius:11px;padding:8px 14px;font-size:12.5px;font-weight:700;
+font-family:var(--sans);cursor:pointer;margin-bottom:12px}
+.rm-note{font-size:11.5px;color:var(--text3);line-height:1.7;margin-bottom:10px}
+.rm-row{background:var(--bg);border-radius:11px;padding:11px 13px;margin-bottom:7px}
+.rm-name{font-size:13.5px;font-weight:700}
+.rm-meta{display:flex;flex-wrap:wrap;gap:9px;margin-top:5px;
+font-size:11.5px;color:var(--text3);align-items:center}
+.rm-tag{font-size:10px;font-weight:700;color:var(--accent2);
+background:rgba(61,111,255,.12);border-radius:20px;padding:1px 8px}
+.rm-tag.warn{color:var(--warn);background:var(--warn-bg)}
+.rm-more{width:100%;background:none;border:1px solid var(--border2);
+color:var(--text2);border-radius:11px;padding:11px;font-size:12.5px;
+font-weight:600;font-family:var(--sans);cursor:pointer;margin-top:6px}
+.rm-empty{font-size:12.5px;color:var(--text3);text-align:center;padding:24px 8px;line-height:1.8}
+
+.rm-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.rm-days{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:12px}
+.rm-day{background:var(--bg);border:1px solid var(--border);color:var(--text2);
+border-radius:10px;padding:9px 2px;font-size:12px;font-weight:600;
+font-family:var(--sans);cursor:pointer}
+.rm-day.on{background:rgba(61,111,255,.12);border-color:var(--accent);color:var(--accent2)}
+.rm-times{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:14px}
+.rm-times label{display:flex;flex-direction:column;gap:5px;
+font-size:11.5px;color:var(--text3)}
+.rm-times input{background:var(--bg);border:1px solid var(--border2);color:var(--text);
+border-radius:10px;padding:10px;font-size:14px;font-family:var(--mono);
+direction:ltr;unicode-bidi:isolate}
+.rm-go{width:100%}
+/* سطر واحد لا بطاقة: من لا يحتاجها يتجاوزها بلا أن تأخذ من مساحة يومه. */
+.rm-card{display:flex;align-items:center;gap:9px;cursor:pointer;
+background:var(--card);border:1px solid var(--border);border-radius:11px;
+padding:9px 13px;margin-bottom:10px;-webkit-tap-highlight-color:transparent}
+.rm-card:active{opacity:.8}
+.rm-card-ic{font-size:15px;line-height:1;flex-shrink:0}
+.rm-card-t{font-size:12.5px;font-weight:600;color:var(--text2)}
+.rm-card-go{margin-inline-start:auto;color:var(--text3);font-size:15px;flex-shrink:0}
+
+/* ── اليوم النموذجي للزائر ──
+   شفافية خفيفة ومنع الضغط: واضح أنه عرض لا جدوله، بلا أن يفقد جماله. */
+.demo-wrap{margin-top:4px}
+.demo-head{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+.demo-t{font-size:13.5px;font-weight:700;flex:1;min-width:0}
+.demo-tag{font-size:10.5px;font-weight:700;color:var(--accent2);
+background:rgba(61,111,255,.12);border-radius:20px;padding:2px 9px;flex-shrink:0}
+.demo-body{opacity:.72;pointer-events:none;user-select:none;
+-webkit-mask-image:linear-gradient(to bottom,#000 72%,transparent);
+mask-image:linear-gradient(to bottom,#000 72%,transparent)}
+.demo-cta{margin-top:-14px;text-align:center;position:relative}
+.demo-s{font-size:12.5px;color:var(--text2);line-height:1.8;margin-bottom:12px}
+.demo-btn{background:var(--accent);color:#fff;border:none;border-radius:12px;
+padding:12px 26px;font-size:13.5px;font-weight:700;font-family:var(--sans);
+cursor:pointer;box-shadow:0 8px 22px rgba(61,111,255,.28)}
+.demo-btn:active{opacity:.85}
 /* خط «الآن» — يتحرك بين البطاقات مع مرور اليوم */
 .now-mark{display:flex;align-items:center;gap:8px;padding:1px 4px}
 .now-mark::after{content:'';flex:1;height:2px;border-radius:2px;
@@ -1068,18 +1191,31 @@ color:var(--text2);font-size:12.5px;font-weight:600;padding:9px 16px;border-radi
 .guide-visual{display:block;text-align:center;text-decoration:none;margin-bottom:18px;
 background:var(--accent);color:#fff;font-size:13.5px;font-weight:700;
 padding:12px;border-radius:12px}
-.g-step{display:flex;gap:13px;padding:14px 0;border-bottom:1px solid var(--border)}
-.g-step:last-of-type{border-bottom:none}
-.g-num{width:27px;height:27px;border-radius:9px;background:var(--accent);color:#fff;
-font-family:var(--mono);font-size:12px;font-weight:600;flex-shrink:0;
-display:flex;align-items:center;justify-content:center}
-.g-num.pro{background:var(--warn);color:#1a1200}
-.g-body h4{font-size:13.5px;font-weight:600;margin-bottom:4px}
-.g-body p{font-size:12.5px;color:var(--text2);line-height:1.75}
-.g-body code{font-family:var(--mono);font-size:11.5px;background:var(--card);
+/* ── الدليل: أقسام تُطوى ──
+   كان قائمة واحدة فيها خمس عشرة خطوة، فالطالب يمرّرها ولا يقرأها.
+   الأقسام تخلّيه يفتح اللي يهمه، ووسم «جديد» يوريه وش تغيّر. */
+.g-acc{border:1px solid var(--border);border-radius:13px;margin-bottom:9px;
+overflow:hidden;background:var(--card)}
+.g-acc-head{width:100%;display:flex;align-items:center;gap:10px;padding:13px 14px;
+background:none;border:none;font-family:inherit;color:var(--text);cursor:pointer;
+text-align:start;-webkit-tap-highlight-color:transparent}
+.g-acc-ic{font-size:17px;line-height:1;flex-shrink:0}
+.g-acc-name{flex:1;font-size:13.5px;font-weight:700;min-width:0;
+display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.g-acc-n{font-family:var(--mono);font-size:11px;color:var(--text3);flex-shrink:0}
+.g-acc-arrow{font-size:15px;color:var(--text3);flex-shrink:0;line-height:1;
+transition:transform .18s ease}
+.g-acc.open .g-acc-arrow{transform:rotate(180deg)}
+.g-acc-body{display:none;padding:0 14px 4px}
+.g-acc.open .g-acc-body{display:block}
+.g-item{padding:11px 0;border-top:1px solid var(--border)}
+.g-item h4{font-size:13px;font-weight:600;margin-bottom:4px;
+display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.g-item p{font-size:12.5px;color:var(--text2);line-height:1.8}
+.g-item code{font-family:var(--mono);font-size:11.5px;background:var(--bg);
 padding:1px 6px;border-radius:6px;color:var(--accent2)}
-.g-sec{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;
-letter-spacing:1px;margin:20px 0 4px;padding-top:14px;border-top:1px solid var(--border)}
+.g-new{font-size:10px;font-weight:700;color:#0b1f14;background:var(--open);
+border-radius:20px;padding:1px 7px;flex-shrink:0}
 .g-tip{background:rgba(61,111,255,.08);border:1px solid var(--border2);border-radius:12px;
 padding:12px 14px;font-size:12.5px;color:var(--text2);line-height:1.7;margin-top:16px}
 .g-tip b{color:var(--text)}
@@ -1197,9 +1333,13 @@ html,body{background:#fff!important;color:#111827!important;
 margin:0!important;padding:0!important;min-height:0!important}
 
 /* اخفِ واجهة الشاشة كاملة */
+/* الشبكة ومبدّل العرض والشريطان يخصّون الشاشة وحدها — بدونهم كانت
+   الطباعة تخرج بورقة أولى فيها التطبيق نفسه قبل ورقة الجدول. */
 .topbar,.tabs,.sched-actions,.slot-remove,.conflict-alert,.sched-summary,.lab-warn,
 .guide-fab,.guide-overlay,.toast,.state-box,.sync-note,.next-check,.reg-card,.crn-panel,
 .slot-bar,#slotBar,
+.vw-switch,#schedView,#schedGrid,.gr-zoom,.gr-hint,#gridPeek,
+.env-bar,.tg-bar,.pick-hint,#schedPickHint,
 #schedDays,.modal,.overlay,.finals-card,.cal-card,.legal-foot{display:none!important}
 .page{display:none!important}
 .main{padding:0!important;max-width:none!important;margin:0!important}
@@ -1324,6 +1464,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/calendar.js"></script>
 </head>
 <body>
 <noscript>
@@ -1376,6 +1517,10 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 
 <!-- SEARCH -->
 <div class="page" id="pageToday"><div id="todayBody"></div></div>
+<div class="guide-overlay" id="rmOv" onclick="if(event.target===this)closeRooms()">
+  <div class="guide-sheet" id="rmSheet"></div>
+</div>
+
 <div class="guide-overlay" id="csOv" onclick="if(event.target===this)closeCourse()">
   <div class="guide-sheet" id="csSheet"></div>
 </div>
@@ -1386,7 +1531,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     <div class="fields">
       <div>
         <label class="field-label" data-i18n="semester">السيمستر</label>
-        <select id="term" onchange="termHint()">
+        <select id="term" onchange="TERM_PICKED=true;termHint()">
           <option value="202710" selected>Fall Semester 2026/2027</option>
           <option value="202630">Summer Semester 2025/2026</option>
           <option value="202730">Summer Semester 2026/2027</option>
@@ -1394,7 +1539,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
           <option value="202620">Spring Semester 2025/2026</option>
           <option value="202610">Fall Semester 2025/2026</option>
         </select>
-        <div class="term-hint" id="termHint"></div>
+        <div class="term-hint hide" id="termHint"></div>
       </div>
       <div class="row2">
         <div>
@@ -1587,8 +1732,8 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     </div>
   </div>
 
-  <div class="tap-tip" data-i18n-html="tapTip">
-    👆 <b>اضغط أي مادة</b> عشان تشوف شعبها وأوقاتها في ترم التسجيل القادم
+  <div class="tap-tip" id="tapTip">
+    👆 <b>اضغط أي مادة</b> عشان تشوف شعبها وأوقاتها في الترم الحالي
   </div>
 
   <div class="suggest-card">
@@ -1635,29 +1780,16 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     <div class="pro-head">
       <div class="pro-icon">⚡️</div>
       <div>
-        <h3 id="proTitle" data-i18n="proTitle">اشتراك جدولك</h3>
-        <p id="proSub" data-i18n="proSub">فعّل المراقبة والحفظ السحابي</p>
+        <h3 id="proTitle"></h3>
+        <p id="proSub"></p>
       </div>
-      <div class="pro-price" id="proPrice" data-i18n="proPrice">19 ريال / سنة</div>
+      <div class="pro-price" id="proPrice"></div>
       <button class="cal-fold" id="proFold" onclick="togglePro()"
         aria-label="tafseel">›</button>
     </div>
     <div id="proBody" hidden>
-    <div class="pro-list" id="proList">
-      <div class="pro-item">🔔 <span data-i18n-html="proFeat1"><b>مراقبة المواد</b> — إشعار تيليغرام فوري أول ما تنفتح أي شعبة</span></div>
-      <div class="pro-item">☁️ <span data-i18n-html="proFeat2"><b>حفظ سحابي</b> — خطتك وجدولك ومعدلك من أي جهاز</span></div>
-      <div class="pro-item">♾️ <span data-i18n-html="proFeat3"><b>مواد بلا حد</b> — راقب كل المواد اللي تبيها</span></div>
-    </div>
-    <button class="btn-pro" id="btnPro" onclick="togglePay()" data-i18n="proBtn">اشترك الحين</button>
     <div class="pro-soon" id="proSoon"></div>
-    </div>
-
-    <div class="pay-box" id="payBox">
-      <div class="pay-line"><span data-i18n="payAmount">المبلغ</span><b data-i18n="payRiyal">19 ريال</b></div>
-      <div class="pay-line"><span data-i18n="payTo">STC Pay / تحويل</span><b id="payNum">0500000000</b></div>
-      <div class="pay-line"><span data-i18n="payCodeLbl">كودك</span><b id="payCode">—</b></div>
-      <div class="pay-note" data-i18n="payNote">حوّل المبلغ، ثم أرسل صورة الإيصال مع كودك للبوت على تيليغرام. بيتفعّل حسابك خلال ساعات قليلة.</div>
-      <button class="btn-sm" style="width:100%;margin-top:11px" onclick="openBot()" data-i18n="payBot">📩 أرسل الإيصال للبوت</button>
+    <div id="proAcct"></div>
     </div>
   </div>
 
@@ -1677,6 +1809,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     <div class="sc-title" data-i18n="ntTitle">تنبيهات جدولك</div>
     <div class="sc-sub" data-i18n="ntSub">تصلك على تيليغرام الساعة ٥ العصر</div>
     <div id="notifList"></div>
+    <div id="poRow"></div>
   </div>
 
   <div class="set-card">
@@ -1793,6 +1926,8 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
   </div>
 
   <div class="legal-foot">
+    <a href="/about" target="_blank" data-i18n="legalAbout">عن جدولك</a>
+    <span>·</span>
     <a href="/privacy" target="_blank" data-i18n="legalPrivacy">سياسة الخصوصية</a>
     <span>·</span>
     <a href="/terms" target="_blank" data-i18n="legalTerms">الشروط والأحكام</a>
@@ -1822,6 +1957,33 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 <div class="toast" id="toast"></div>
 
 <script>
+/* لو ما وصل /calendar.js (شبكة متعثّرة) نكمل بتقويم فاضٍ بدل انهيار
+   الصفحة — كل ما يعتمد عليه يتعامل مع القائمة الفاضية. */
+window.ACAD_CAL = Array.isArray(window.ACAD_CAL) ? window.ACAD_CAL : [];
+
+/* ═══ رابط الدعوة ═══
+   jadwalik.com/?ref=ABC234 — نحفظ الكود حتى أول شراء (٦٠ يوماً)، وننظّف
+   الرابط فما ينتشر بكود غيرك لو نسخ الطالب عنوان الصفحة. وما نلمس باقي
+   المعاملات — رجوع Pushover يستعمل الرابط نفسه. */
+(function captureRef(){
+  try{
+    const u=new URL(location.href);
+    if(!u.searchParams.has('ref'))return;
+    const c=(u.searchParams.get('ref')||'').toUpperCase().trim();
+    if(/^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/.test(c))
+      localStorage.setItem('pmu_ref',JSON.stringify({code:c,at:Date.now()}));
+    u.searchParams.delete('ref');
+    history.replaceState(null,'',u.pathname+u.search+u.hash);
+  }catch(e){}
+})();
+function storedRef(){
+  try{
+    const r=JSON.parse(localStorage.getItem('pmu_ref')||'null');
+    if(r&&r.code&&Date.now()-r.at<60*864e5)return r.code;
+  }catch(e){}
+  return '';
+}
+
 /* مسار نسبي: الصفحة والسيرفر على نفس النطاق.
    الرابط المطلق لـ onrender كان يسبّب إعادة توجيه 308 لكل طلب —
    رحلة شبكة زائدة تضاعف زمن الانتظار. */
@@ -1861,9 +2023,9 @@ sems:[
 {c:'GEEN 1211',n:'Intro to Engineering',h:2,p:[]}]},
 
 {id:'F2',label:'Freshman — الترم الثاني',hrs:17,courses:[
-{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
-{c:'UNIV 1212',n:'Critical Thinking & Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking & Problem Solving',h:2,p:[]},
 {c:'MATH 1423',n:'Calculus II',h:4,p:['MATH 1422']},
 {c:'CHEM 1421',n:'Chemistry for Engineers I',h:4,p:[]},
 {c:'GEEN 2311',n:'Engineering Mechanics I: Statics',h:3,p:['PHYS 1421']}]},
@@ -1882,7 +2044,7 @@ sems:[
 {c:'GEEN 2313',n:'Thermodynamics I',h:3,p:['MATH 1423','CHEM 1421']},
 {c:'MATH 2332',n:'Ordinary Differential Equations',h:3,p:['MATH 1324']},
 {c:'MEEN 2313',n:'Solid Mechanics',h:3,p:['GEEN 2311']},
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]},
 {c:'COMM 2312',n:'Technical & Professional Communication',h:3,p:['COMM 2311']}]},
 
 {id:'J1',label:'Junior — الترم الأول',hrs:18,courses:[
@@ -1892,7 +2054,7 @@ sems:[
 {c:'MEEN 3101',n:'Machine Shop Practice and Safety',h:1,p:['MEEN 2313']},
 {c:'MEEN 3322',n:'Thermodynamics II',h:3,p:['GEEN 2313']},
 {c:'MEEN 3391',n:'Design Of Mechanisms',h:3,p:['MEEN 2312']},
-{c:'ALIS 2211',n:'Linguistic Comm. Skills',h:2,p:['ALIS 1212']}]},
+{c:'ALIS 2211',n:'Linguistic Comm. Skills',h:2,p:[]}]},
 
 {id:'J2',label:'Junior — الترم الثاني',hrs:16,courses:[
 {c:'GEEN 3314',n:'Electric Circuits and Electronics',h:3,p:['PHYS 1422'],min:60},
@@ -1914,7 +2076,7 @@ sems:[
 {c:'ELEC 1',n:'ME Technical Elective 1',h:3,p:[],el:1}]},
 
 {id:'R2',label:'Senior — الترم الثاني',hrs:14,courses:[
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]},
 {c:'MEEN 4311',n:'Principles of HVAC',h:3,p:['MEEN 3322','MEEN 3333']},
 {c:'MEEN 4397',n:'ME Senior Design II',h:3,p:['GEEN 4311','MEEN 4396']},
 {c:'ELEC 3',n:'Social Science Elective',h:3,p:[],el:1},
@@ -1942,10 +2104,10 @@ sems:[
 {c:'GEEN 1211',n:'Intro to Engineering',h:2,p:[]}]},
 
 {id:'F2',label:'Freshman — الترم الثاني',hrs:17,courses:[
-{c:'PHED 1112',n:'Healthy Behaviors & Management',h:1,p:['PHED 1111']},
+{c:'PHED 1112',n:'Healthy Behaviors & Management',h:1,p:[]},
 {c:'GEEN 2311',n:'Engineering Mechanics I: Statics',h:3,p:['PHYS 1421']},
 {c:'COMM 1322',n:'Written Communication',h:3,p:['COMM 1321']},
-{c:'UNIV 1212',n:'Critical Thinking',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking',h:2,p:[]},
 {c:'MATH 1423',n:'Calculus II',h:4,p:['MATH 1422']},
 {c:'CHEM 1421',n:'Chemistry for Engineers I',h:4,p:[]}]},
 
@@ -2212,16 +2374,16 @@ CSEC:{name:'Cybersecurity',ar:'الأمن السيبراني',total:133,tech:{},
 {c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]}]},
 
 {id:'F2',hrs:18,courses:[
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
-{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:[]},
 {c:'MATH 1313',n:'Statistical Methods',h:3,p:[]},
 {c:'GEIT 1412',n:'Computer Science II',h:4,p:['GEIT 1411']},
-{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]},
 {c:'CSEC E1',n:'Social Science Elective I',h:3,p:[],el:1}]},
 
 {id:'S1',hrs:18,courses:[
-{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:[]},
 {c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:['UNIV 1212']},
 {c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
 {c:'GEIT 2421',n:'Data Structures',h:4,p:['GEIT 1412']},
@@ -2230,7 +2392,7 @@ CSEC:{name:'Cybersecurity',ar:'الأمن السيبراني',total:133,tech:{},
 {c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']}]},
 
 {id:'S2',hrs:17,courses:[
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]},
 {c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
 {c:'GEIT 2331',n:'Mathematical Reasoning & Algorithmic Thinking',h:3,p:['GEIT 1412']},
 {c:'CSEC 2331',n:'Digital Forensics',h:3,p:['GEIT 2291']},
@@ -2277,24 +2439,24 @@ AINT:{name:'Artificial Intelligence',ar:'الذكاء الاصطناعي',total:
 {c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]}]},
 
 {id:'F2',hrs:19,courses:[
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
-{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:[]},
 {c:'PHYS 1421',n:'Physics for Engineers I',h:4,p:[]},
 {c:'GEIT 1412',n:'Computer Science II',h:4,p:['GEIT 1411']},
 {c:'MATH 1423',n:'Calculus II',h:4,p:['MATH 1422']}]},
 
 {id:'S1',hrs:18,courses:[
-{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:[]},
 {c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:['UNIV 1212']},
 {c:'PHYS 1422',n:'Physics for Engineers II',h:4,p:['PHYS 1421','MATH 1422']},
 {c:'GEIT 2291',n:'Professional Ethics',h:2,p:[]},
 {c:'GEIT 2421',n:'Data Structures',h:4,p:['GEIT 1412']},
 {c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
-{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]}]},
 
 {id:'S2',hrs:19,courses:[
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]},
 {c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
 {c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
 {c:'GEIT 2331',n:'Mathematical Reasoning & Algorithmic Thinking',h:3,p:['GEIT 1412']},
@@ -2409,16 +2571,16 @@ CVEN:{name:'Civil Engineering',ar:'الهندسة المدنية',total:139,tech
 {c:'GEEN 1211',n:'Intro to Engineering',h:2,p:[]}]},
 
 {id:'F2',hrs:17,courses:[
-{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
-{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:[]},
 {c:'MATH 1423',n:'Calculus II',h:4,p:['MATH 1422']},
 {c:'CHEM 1421',n:'Chemistry for Engineers I',h:4,p:[]},
 {c:'GEEN 2311',n:'Engineering Mechanics I: Statics',h:3,p:['PHYS 1421']}]},
 
 {id:'S1',hrs:18,courses:[
 {c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
-{c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:['UNIV 1212']},
+{c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:[]},
 {c:'MATH 1324',n:'Calculus III',h:3,p:['MATH 1423']},
 {c:'PHYS 1422',n:'Physics for Engineers II',h:4,p:['PHYS 1421','MATH 1422']},
 {c:'GEEN 2211',n:'Engineering Computing',h:2,p:['MATH 1423']},
@@ -2431,7 +2593,7 @@ CVEN:{name:'Civil Engineering',ar:'الهندسة المدنية',total:139,tech
 {c:'MATH 2332',n:'Ordinary Differential Equations',h:3,p:['MATH 1324']},
 {c:'MEEN 2313',n:'Solid Mechanics',h:3,p:['GEEN 2311','MATH 1324']},
 {c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']}]},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]}]},
 
 {id:'J1',hrs:17,courses:[
 {c:'ASSE 3211',n:'Learning Outcome Assessment II',h:2,p:['ASSE 2111']},
@@ -2447,7 +2609,7 @@ CVEN:{name:'Civil Engineering',ar:'الهندسة المدنية',total:139,tech
 {c:'CVEN 3343',n:'Engineering Probability & Statistics',h:3,p:['MATH 1324']},
 {c:'CVEN 3312',n:'Reinforced Concrete Design',h:3,p:['CVEN 3311']},
 {c:'CVEN 3344',n:'Sustainable Engineering',h:3,p:['CVEN 3322']},
-{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']}]},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:[]}]},
 
 {id:'SU',hrs:3,courses:[
 {c:'CVEN 3301',n:'Internship',h:3,p:[]}]},
@@ -2461,7 +2623,7 @@ CVEN:{name:'Civil Engineering',ar:'الهندسة المدنية',total:139,tech
 {c:'CVEN E1',n:'CE Technical Elective I',h:3,p:[],el:1}]},
 
 {id:'R2',hrs:14,courses:[
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]},
 {c:'CVEN 4314',n:'Construction Management',h:3,p:['GEEN 4311']},
 {c:'CVEN 4397',n:'Civil Engineering Senior Design II',h:3,p:['CVEN 4396','GEEN 4311']},
 {c:'CVEN E2',n:'CE Technical Elective II',h:3,p:[],el:1},
@@ -2481,7 +2643,7 @@ CHEN:{name:'Chemical Engineering',ar:'الهندسة الكيميائية',total
 {c:'ALIS 1211',n:'Arabic and Islamic Studies',h:2,p:[]},
 {c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
-{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:[]},
 {c:'MATH 1423',n:'Calculus II',h:4,p:['MATH 1422']},
 {c:'CHEM 1422',n:'Chemistry for Engineers II',h:4,p:['CHEM 1421']},
 {c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]}]},
@@ -2500,13 +2662,13 @@ CHEN:{name:'Chemical Engineering',ar:'الهندسة الكيميائية',total
 {c:'GEEN 2313',n:'Thermodynamics I',h:3,p:['MATH 1324','CHEM 1421']},
 {c:'MATH 2332',n:'Ordinary Differential Equations',h:3,p:['MATH 1324']},
 {c:'PHYS 1422',n:'Physics for Engineers II',h:4,p:['PHYS 1421','MATH 1422']},
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]},
 {c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']}]},
 
 {id:'J1',hrs:16,courses:[
 {c:'GEEN 3314',n:'Electric Circuits and Electronics',h:3,p:['PHYS 1422']},
 {c:'GEEN 3311',n:'Intro to Fluid Mechanics',h:3,p:['GEEN 2313']},
-{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:[]},
 {c:'CHEN 3313',n:'Biology',h:3,p:['CHEN 2391']},
 {c:'CHEN 3315',n:'Physical Chemistry',h:3,p:['CHEM 1422']},
 {c:'ASSE 3211',n:'Learning Outcome Assessment II',h:2,p:['ASSE 2111']}]},
@@ -2530,7 +2692,7 @@ CHEN:{name:'Chemical Engineering',ar:'الهندسة الكيميائية',total
 {c:'CHEN E2',n:'Chem Technical Elective I',h:3,p:[],el:1}]},
 
 {id:'R2',hrs:15,courses:[
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]},
 {c:'CHEN 4422',n:'Plant Design',h:4,p:['CHEN 4320']},
 {c:'CHEN 4397',n:'Chemical Eng. Senior Design II',h:3,p:['CHEN 4396']},
 {c:'GEEN 4311',n:'Engineering Economy',h:3,p:[]},
@@ -2550,7 +2712,7 @@ EEEN:{name:'Electrical Engineering',ar:'الهندسة الكهربائية',tot
 {c:'EEEN E1',n:'Social Science Elective',h:3,p:[],el:1},
 {c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
-{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:[]},
 {c:'MATH 1423',n:'Calculus II',h:4,p:['MATH 1422']},
 {c:'PHYS 1422',n:'Physics for Engineers II',h:4,p:['PHYS 1421','MATH 1422']}]},
 
@@ -2563,9 +2725,9 @@ EEEN:{name:'Electrical Engineering',ar:'الهندسة الكهربائية',tot
 {c:'GEEN 2211',n:'Engineering Computing',h:2,p:['MATH 1423']}]},
 
 {id:'S2',hrs:16,courses:[
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]},
 {c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
-{c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:['UNIV 1212']},
+{c:'UNIV 1213',n:'Leadership and Teamwork',h:2,p:[]},
 {c:'GEEN 2310',n:'Applied Linear Algebra for Engineers',h:3,p:[]},
 {c:'MATH 2332',n:'Ordinary Differential Equations',h:3,p:['MATH 1324']},
 {c:'EEEN 2312',n:'Circuits II',h:3,p:['EEEN 2411']}]},
@@ -2576,7 +2738,7 @@ EEEN:{name:'Electrical Engineering',ar:'الهندسة الكهربائية',tot
 {c:'EEEN 3361',n:'Electromagnetic Fields & Waves',h:3,p:['EEEN 2411']},
 {c:'EEEN 3421',n:'Electronics I',h:4,p:['EEEN 2411']},
 {c:'EEEN 3331',n:'Digital Systems',h:3,p:['EEEN 2411']},
-{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']}]},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:[]}]},
 
 {id:'J2',hrs:18,courses:[
 {c:'EEEN 3422',n:'Electronics II',h:4,p:['EEEN 3421']},
@@ -2600,8 +2762,8 @@ EEEN:{name:'Electrical Engineering',ar:'الهندسة الكهربائية',tot
 {c:'EEEN 4451',n:'Automatic Control Systems',h:4,p:['EEEN 3341','EEEN 3331']},
 {c:'EEEN E3',n:'EE Technical Elective II',h:3,p:[],el:1},
 {c:'EEEN 4424',n:'Power Electronics',h:4,p:['EEEN 3422']},
-{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']},
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']}]}
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]}]}
 ]},
 
 ARCH:{name:'Architecture',ar:'العمارة',total:163,tech:{},sems:[
@@ -2721,7 +2883,7 @@ IDES:{name:'Interior Design',ar:'التصميم الداخلي',total:126,tech:{
 {c:'IDES 3411',n:'Interior Design V — Office Design Studio',h:4,p:['IDES 2312','COAD 2252']},
 {c:'COAD 3341',n:'Built World Design History and Theory I',h:3,p:['COAD 2333']},
 {c:'IDES 3321',n:'Interior Building System',h:3,p:['IDES 2332']},
-{c:'IDES 3331',n:'Interior Lighting',h:3,p:['IDES 2332']}]},
+{c:'IDES 3331',n:'Interior Lighting',h:3,p:['COAD 1314','IDES 2332','MATH 1312']}]},
 
 {id:'J2',hrs:15,courses:[
 {c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
@@ -2779,7 +2941,7 @@ GDES:{name:'Graphic Design',ar:'التصميم الجرافيكي',total:125,tec
 {c:'MATH 1313',n:'Statistical Methods',h:3,p:['MATH 1311']},
 {c:'GDES 2312',n:'Arabic Typography',h:3,p:['GDES 2311']},
 {c:'GDES 2322',n:'Digital Photography',h:3,p:['GDES 1312']},
-{c:'GDES 2332',n:'Design Thinking',h:3,p:['GDES 2331']}]},
+{c:'GDES 2332',n:'Design Thinking',h:3,p:['GDES 2331','UNIV 1212']}]},
 
 {id:'J1',hrs:16,courses:[
 {c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
@@ -2824,24 +2986,24 @@ ACCT:{name:'Accounting',ar:'المحاسبة',total:128,tech:{},sems:[
 {c:'ACCT E1',n:'Social Science Elective',h:3,p:[],el:1}]},
 
 {id:'F2',hrs:15,courses:[
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
-{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:[]},
 {c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]},
 {c:'MATH 1312',n:'Calculus for Business',h:3,p:['MATH 1311']},
 {c:'ACCT E2',n:'Natural Science Elective',h:4,p:[],el:1}]},
 
 {id:'S1',hrs:16,courses:[
-{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:[]},
 {c:'ACCT 2311',n:'Fundamentals of Financial Accounting',h:3,p:[]},
 {c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
 {c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
 {c:'ECON 1311',n:'Introduction to Macroeconomics',h:3,p:[]},
 {c:'MISY 2311',n:'Introduction to Management Information Systems',h:3,p:[]},
-{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]}]},
 
 {id:'S2',hrs:17,courses:[
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]},
 {c:'ACCT 2321',n:'Managerial Accounting',h:3,p:['ACCT 2311']},
 {c:'BUSI 2311',n:'Principles of Management',h:3,p:[]},
 {c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
@@ -2891,24 +3053,24 @@ BUSI:{name:'Business Administration',ar:'إدارة الأعمال',total:125,te
 {c:'BUSI E1',n:'Social Science Elective',h:3,p:[],el:1}]},
 
 {id:'F2',hrs:15,courses:[
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
-{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:[]},
 {c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]},
 {c:'MATH 1312',n:'Calculus for Business',h:3,p:['MATH 1311']},
 {c:'BUSI E2',n:'Natural Science Elective',h:4,p:[],el:1}]},
 
 {id:'S1',hrs:16,courses:[
-{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:[]},
 {c:'ACCT 2311',n:'Fundamentals of Financial Accounting',h:3,p:[]},
 {c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
 {c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
 {c:'ECON 1311',n:'Introduction to Macroeconomics',h:3,p:[]},
 {c:'MISY 2311',n:'Introduction to Management Information Systems',h:3,p:[]},
-{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]}]},
 
 {id:'S2',hrs:17,courses:[
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]},
 {c:'ACCT 2321',n:'Managerial Accounting',h:3,p:['ACCT 2311']},
 {c:'BUSI 2311',n:'Principles of Management',h:3,p:[]},
 {c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
@@ -2957,24 +3119,24 @@ FINA:{name:'Finance',ar:'التمويل',total:125,tech:{},sems:[
 {c:'FINA E1',n:'Social Science Elective',h:3,p:[],el:1}]},
 
 {id:'F2',hrs:15,courses:[
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
-{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:[]},
 {c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]},
 {c:'MATH 1312',n:'Calculus for Business',h:3,p:['MATH 1311']},
 {c:'FINA E2',n:'Natural Science Elective',h:4,p:[],el:1}]},
 
 {id:'S1',hrs:16,courses:[
-{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:[]},
 {c:'ACCT 2311',n:'Fundamentals of Financial Accounting',h:3,p:[]},
 {c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
 {c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
 {c:'ECON 1311',n:'Introduction to Macroeconomics',h:3,p:[]},
 {c:'MISY 2311',n:'Introduction to Management Information Systems',h:3,p:[]},
-{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]}]},
 
 {id:'S2',hrs:17,courses:[
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]},
 {c:'ACCT 2321',n:'Managerial Accounting',h:3,p:['ACCT 2311']},
 {c:'BUSI 2311',n:'Principles of Management',h:3,p:[]},
 {c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
@@ -3023,24 +3185,24 @@ MISY:{name:'Management Information Systems',ar:'نظم المعلومات الإ
 {c:'MISY E1',n:'Social Science Elective',h:3,p:[],el:1}]},
 
 {id:'F2',hrs:15,courses:[
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
-{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:[]},
 {c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]},
 {c:'MATH 1312',n:'Calculus for Business',h:3,p:['MATH 1311']},
 {c:'MISY E2',n:'Natural Science Elective',h:4,p:[],el:1}]},
 
 {id:'S1',hrs:16,courses:[
-{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:[]},
 {c:'ACCT 2311',n:'Fundamentals of Financial Accounting',h:3,p:[]},
 {c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
 {c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
 {c:'ECON 1311',n:'Introduction to Macroeconomics',h:3,p:[]},
 {c:'MISY 2311',n:'Introduction to Management Information Systems',h:3,p:[]},
-{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]}]},
 
 {id:'S2',hrs:17,courses:[
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]},
 {c:'BUSI 2311',n:'Principles of Management',h:3,p:[]},
 {c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
 {c:'MISY 2312',n:'Introduction to Programming for MIS',h:3,p:['MISY 2311']},
@@ -3089,24 +3251,24 @@ HRMT:{name:'Human Resource Management',ar:'إدارة الموارد البشر�
 {c:'HRMT E1',n:'Social Science Elective',h:3,p:[],el:1}]},
 
 {id:'F2',hrs:15,courses:[
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
-{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:[]},
 {c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]},
 {c:'MATH 1312',n:'Calculus for Business',h:3,p:['MATH 1311']},
 {c:'HRMT E2',n:'Natural Science Elective',h:4,p:[],el:1}]},
 
 {id:'S1',hrs:16,courses:[
-{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:[]},
 {c:'ACCT 2311',n:'Fundamentals of Financial Accounting',h:3,p:[]},
 {c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
 {c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
 {c:'ECON 1311',n:'Introduction to Macroeconomics',h:3,p:[]},
 {c:'MISY 2311',n:'Introduction to Management Information Systems',h:3,p:[]},
-{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]}]},
 
 {id:'S2',hrs:17,courses:[
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]},
 {c:'ACCT 2321',n:'Managerial Accounting',h:3,p:['ACCT 2311']},
 {c:'BUSI 2311',n:'Principles of Management',h:3,p:[]},
 {c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
@@ -3156,25 +3318,25 @@ MKDM:{name:'Marketing & Digital Media',ar:'التسويق والإعلام ال�
 {c:'MKDM E1',n:'Social Science Elective',h:3,p:[],el:1}]},
 
 {id:'F2',hrs:15,courses:[
-{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:['ALIS 1211']},
+{c:'ALIS 1212',n:'The Social System in Islam',h:2,p:[]},
 {c:'COMM 1312',n:'Writing and Research',h:3,p:['COMM 1311']},
 {c:'MATH 1312',n:'Calculus for Business',h:3,p:['MATH 1311']},
 {c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]},
-{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:['UNIV 1211']},
+{c:'UNIV 1212',n:'Critical Thinking and Problem Solving',h:2,p:[]},
 {c:'MKDM E2',n:'Natural Science Elective',h:4,p:[],el:1}]},
 
 {id:'S1',hrs:16,courses:[
-{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:['ALIS 1212']},
+{c:'ALIS 2211',n:'Linguistic Communication Skills',h:2,p:[]},
 {c:'ACCT 2311',n:'Fundamentals of Financial Accounting',h:3,p:[]},
 {c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[]},
 {c:'COMM 2311',n:'Oral Communication',h:3,p:['COMM 1312']},
 {c:'ECON 1311',n:'Introduction to Macroeconomics',h:3,p:[]},
 {c:'MISY 2311',n:'Introduction to Management Information Systems',h:3,p:[]},
-{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:['PHED 1111']}]},
+{c:'PHED 1112',n:'Healthy Behaviors and Management',h:1,p:[]}]},
 
 {id:'S2',hrs:17,courses:[
 {c:'ACCT 2321',n:'Managerial Accounting',h:3,p:['ACCT 2311']},
-{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:['ALIS 2211']},
+{c:'ALIS 2212',n:'The Biography of Prophet Mohammad',h:2,p:[]},
 {c:'BUSI 2311',n:'Principles of Management',h:3,p:[]},
 {c:'COMM 2312',n:'Technical and Professional Communications',h:3,p:['COMM 2311']},
 {c:'ECON 1312',n:'Introduction to Microeconomics',h:3,p:[]},
@@ -3572,7 +3734,7 @@ function activeTermCode(){
    2) صفوف الجدول المحلية ما تحمل حقل term (سبق أن كسر هذا مراقبة المادة
       كاملة)، فنعتمد على الترم المعروض لا على حقل غير موجود. */
 function inSchedule(code){
-  if(activeTermCode()!==UPCOMING_TERM)return false;
+  if(activeTermCode()!==serverTerm())return false;
   if(!Array.isArray(schedule))return false;
   return schedule.some(c=>c.courseCode===code);
 }
@@ -3934,7 +4096,7 @@ function renderResults(){
           ${genderChip(c)}
           <span class="badge ${c.status==='OPEN'?'open':'close'}">${c.status}</span>
           <button class="btn-add ${inSch?'added':''} ${lock?'locked':clash.length?'blocked':''}" onclick="toggleCourse('${c.crn}')">${inSch?'✓':'+'}</button>
-          ${c.status==='CLOSE'?`<button class="btn-bell ${isMonitored(c.crn)?'on':''} ${isPro()?'':'locked'}" onclick="toggleMonitorCourse('${c.crn}')" title="مراقبة هذي الشعبة">${isMonitored(c.crn)?'🔔':'🔕'}</button>`:''}
+          ${c.status==='CLOSE'?`<button class="btn-bell ${isMonitored(c.crn)?'on':''} ${(!isMonitored(c.crn)&&monCapReached())?'locked':''}" onclick="toggleMonitorCourse('${c.crn}')" title="مراقبة هذي الشعبة">${isMonitored(c.crn)?'🔔':'🔕'}</button>`:''}
           <button class="btn-bell all ${isCourseMonitored(c.courseCode)?'on':''} ${isPro()?'':'locked'}"
             onclick="toggleMonitorAll('${escapeHtml(c.courseCode)}')"
             title="${isCourseMonitored(c.courseCode)?'توقف مراقبة كل شعب المادة':'راقب كل شعب هذي المادة'}">📡</button>
@@ -4107,6 +4269,7 @@ function saveSchedules(){
 function switchSlot(i){
   i=Math.min(2,Math.max(0,i));
   if(i===SLOT)return;
+  if(slotLocked(i)){ openPlans('slots'); return }
   SLOT=i; save('pmu_slot',String(i));
   schedule=SCHEDULES[SLOT];
   updateBadge(); renderSchedule(); renderResults(); renderSlots();
@@ -4115,12 +4278,13 @@ function switchSlot(i){
 }
 
 function renderSlots(){
+  enforceSlot();          /* جدول مقفول بعد انتهاء الاشتراك يرجع للأول */
   const box=document.getElementById('slotBar');
   if(!box)return;
   const ar=LANG==='ar';
   box.innerHTML=SCHEDULES.map((sc,i)=>`
-    <button class="slot-pick${i===SLOT?' on':''}" onclick="switchSlot(${i})">
-      <span class="slot-n">${ar?'جدول':'Plan'} ${i+1}</span>
+    <button class="slot-pick${i===SLOT?' on':''}${slotLocked(i)?' locked':''}" onclick="switchSlot(${i})">
+      <span class="slot-n">${slotLocked(i)?'🔒 ':''}${ar?'جدول':'Plan'} ${i+1}</span>
       <span class="slot-c">${sc.length?sc.length+(ar?' مواد':' crs'):(ar?'فاضي':'empty')}</span>
     </button>`).join('');
 }
@@ -4559,12 +4723,15 @@ function renderSchedule(){
 /* ════════════ تبويب «اليوم» — نسخة تجريبية ════════════
    حساب محض على بيانات موجودة في الذاكرة: صفر طلبات شبكة، صفر كتابة.
    لا يظهر إلا للبريد المذكور تحت — أي طالب آخر لا يرى الزر ولا الصفحة. */
-/* أُغلق مرة أخرى للتجربة: القائمة غير فاضية = التبويب محصور بمن فيها.
-   المقارنة بحروف صغيرة — الكود يُصغّر بريد الطالب قبل المطابقة. */
-const BETA_EMAILS=['mohammadmusabbeh@gmail.com'];
+/* انفتح للجميع بعد التجربة. القائمة تبقى للاستخدام مستقبلاً:
+   BETA_EMAILS غير فاضية = التبويب محصور بمن فيها. */
+const BETA_EMAILS=[];
 function isBeta(){
-  if(!USER)return false;                  /* التبويب يعتمد على جدول محفوظ */
+  /* التبويب لم يعد محصوراً بمن سجّل دخوله: الزائر يبني جدوله محلياً مثل
+     ما يفعل في «جدولي» و«خطتي»، فحجب يومه عنه بلا سبب. الحالات الناقصة
+     (بلا جدول، بلا حساب) تُشرح داخل التبويب لا بإخفائه. */
   if(!BETA_EMAILS.length)return true;
+  if(!USER)return false;
   const e=(USER.email||'').toLowerCase().trim();
   return !!e && BETA_EMAILS.includes(e);
 }
@@ -4684,11 +4851,193 @@ function nowMark(n){
   return `<div class="now-mark"><span class="now-dot"></span>
     <span class="now-lbl ltr" id="todayClock">${fmtTime(n.min)}</span></div>`;
 }
-function gapRow(mins,n){
+function gapRow(mins,n,win){
   const lbl=`${t('tdGap')} ${fmtLeft(mins,0)}`;
-  if(!n)return `<div class="gap-row"><span>${lbl}</span></div>`;
+  /* الفراغ يصير مدخلاً للقاعات: الوقت والمبنى معروفان من السياق،
+     فما نطلب من الطالب يدخل شيئاً. */
+  const btn=win?`<button class="gap-rooms"
+    onclick="openRooms(${win.from},${win.to},'${win.day}','${win.near||''}')"
+    >${t('rmGapBtn')}</button>`:'';
+  if(!n)return `<div class="gap-row"><span>${lbl}</span>${btn}</div>`;
   return `<div class="gap-row has-now"><span class="now-dot"></span>
-    <span>${lbl} · <span class="ltr" id="todayClock">${fmtTime(n.min)}</span></span></div>`;
+    <span>${lbl} · <span class="ltr" id="todayClock">${fmtTime(n.min)}</span></span>
+    ${btn}</div>`;
+}
+
+/* البطاقة تحت مبدّل اليوم/الأسبوع مباشرة: كانت أسفل الصفحة فلا يصلها
+   أحد. هنا تقع عليها العين قبل الجدول، وتظهر في العرضين ومع الجدول
+   الفاضي — وهي الشيء الوحيد المفيد لمن ما عنده محاضرات اليوم. */
+function roomsCard(){
+  return `<div class="rm-card" id="rmCard" onclick="openRoomsPicker()">
+    <span class="rm-card-ic">🚪</span>
+    <span class="rm-card-t">${t('rmCardT')}</span>
+    <span class="rm-card-go">‹</span>
+  </div>`;
+}
+
+/* ═══ القاعات الفاضية ═══
+   جنس الطالب يُستنتج من مناطق قاعاته: M-* طلاب، وغيرها طالبات.
+   لا نسأله ولا نخزّن الجنس — سياسة الخصوصية تقول نجمع الحد الأدنى،
+   والاستنتاج المحلي يعطي نفس النتيجة بلا بيان جديد. */
+function myGender(){
+  const saved=load('pmu_room_gender',null);
+  if(saved==='M'||saved==='F')return saved;
+  let m=0,f=0;
+  (schedule||[]).forEach(c=>{
+    const z=String(c.room||'').split(/\s+-\s+/)[0].toUpperCase();
+    if(/^M-/.test(z))m++; else if(z)f++;
+  });
+  return m||f ? (m>=f?'M':'F') : null;
+}
+function myBuilding(crn){
+  const c=(schedule||[]).find(x=>String(x.crn)===String(crn));
+  if(!c)return '';
+  const z=String(c.room||'').split(/\s+-\s+/)[0].toUpperCase();
+  const mm=z.match(/^[MF]-(.+)$/);
+  return mm?mm[1]:z;
+}
+
+let RM_STATE=null;
+async function openRooms(from,to,day,near){
+  const g=myGender();
+  RM_STATE={from,to,day,near,gender:g,all:false,pick:false};
+  document.getElementById('rmOv').classList.add('open');
+  renderRoomsSheet(true);
+  await loadRooms();
+}
+
+/* مدخل حر: يفتح اللوح بمنتقي يوم ووقت بدل نتائج جاهزة. لازم لأن
+   الفراغ لا يوجد كل يوم — ومن ما عنده محاضرات اليوم لا يرى الزر أصلاً. */
+const RM_DAYS=['U','M','T','W','R'];
+function openRoomsPicker(){
+  const n=ksaNow();
+  const from=Math.min(23*60,Math.floor(n.min/30)*30);
+  /* الجمعة والسبت ليسا يومي دراسة — البحث فيهما يرجّع كل القاعات
+     «فاضية» وهي نتيجة صحيحة حسابياً ومضلّلة تماماً. نبدأ بأقرب يوم دراسي. */
+  const order=['U','M','T','W','R','F','S'];
+  let day=n.day;
+  if(!RM_DAYS.includes(day)){
+    const i=order.indexOf(day);
+    for(let k=1;k<=7;k++){
+      const c=order[(i+k)%7];
+      if(RM_DAYS.includes(c)){ day=c; break }
+    }
+  }
+  RM_STATE={ day, from, to:Math.min(24*60,from+60),
+             gender:myGender(), all:false, pick:true, near:null };
+  document.getElementById('rmOv').classList.add('open');
+  renderRoomsSheet(false);
+}
+/* القرب بلا سياق فراغ: نأخذ مبنى أقرب محاضرة له في اليوم المختار،
+   فالسؤال الحقيقي «وين أذاكر قبل محاضرتي». وبلا محاضرة يسقط الترتيب. */
+function nearFor(day,from){
+  const list=(schedule||[]).map(c=>({c,t:parseTime(c.courseTiming),
+      d:parseDays(c.courseDate)}))
+    .filter(x=>x.t&&x.d.includes(day))
+    .sort((a,b)=>a.t.start-b.t.start);
+  if(!list.length)return '';
+  const next=list.find(x=>x.t.start>=from)||list[list.length-1];
+  return myBuilding(next.c.crn);
+}
+function setRmDay(d){ if(RM_STATE){ RM_STATE.day=d; renderRoomsSheet(false) } }
+function setRmTime(which,val){
+  if(!RM_STATE)return;
+  const m=String(val||'').match(/^(\d{1,2}):(\d{2})$/);
+  if(!m)return;
+  const mins=(+m[1])*60+(+m[2]);
+  if(which==='from'){
+    RM_STATE.from=mins;
+    if(RM_STATE.to<=mins)RM_STATE.to=Math.min(24*60,mins+60);
+  } else RM_STATE.to=mins;
+  renderRoomsSheet(false);
+}
+async function runRoomSearch(){
+  if(!RM_STATE)return;
+  if(RM_STATE.to<=RM_STATE.from){ showToast(t('rmBadWin'),'warn'); return }
+  RM_STATE.pick=false; RM_STATE.all=false;
+  RM_STATE.near=nearFor(RM_STATE.day,RM_STATE.from);
+  renderRoomsSheet(true);
+  await loadRooms();
+}
+function backToPicker(){ if(RM_STATE){ RM_STATE.pick=true; renderRoomsSheet(false) } }
+function closeRooms(){
+  document.getElementById('rmOv').classList.remove('open');
+  RM_STATE=null;
+}
+function flipRoomGender(){
+  if(!RM_STATE)return;
+  RM_STATE.gender=RM_STATE.gender==='F'?'M':'F';
+  save('pmu_room_gender',RM_STATE.gender);
+  renderRoomsSheet(true); loadRooms();
+}
+function showAllRooms(){ if(RM_STATE){ RM_STATE.all=true; loadRooms() } }
+
+async function loadRooms(){
+  const st=RM_STATE; if(!st)return;
+  try{
+    const q=`day=${st.day}&from=${st.from}&to=${st.to}` +
+      (st.gender?`&gender=${st.gender}`:'') +
+      (st.near?`&near=${encodeURIComponent(st.near)}`:'') +
+      (st.all?'&all=1':'&limit=5');
+    const r=await (await fetch(API_BASE+'/api/rooms?'+q)).json();
+    if(!RM_STATE)return;
+    RM_STATE.data=r&&r.ok?r:null;
+    RM_STATE.err=r&&r.ok?null:(r&&r.error)||t('rmErr');
+  }catch(e){ if(RM_STATE){RM_STATE.data=null;RM_STATE.err=t('rmErr')} }
+  renderRoomsSheet(false);
+}
+
+function renderRoomsSheet(loading){
+  const box=document.getElementById('rmSheet');
+  if(!box||!RM_STATE)return;
+  const st=RM_STATE;
+  /* نفس ترويسة لوح المادة: guide-grip/head/close معرَّفة ومجرَّبة.
+     كنت أستعمل cs-head و cs-x وهما غير موجودتين في الملف. */
+  const head=`<div class="guide-grip"></div>
+    <div class="guide-head">
+      <h2>${t('rmTitle')}</h2>
+      <button class="guide-close" onclick="closeRooms()">✕</button>
+    </div>
+    <div class="rm-sub"><span class="ltr">${fmtTime(st.from)}–${fmtTime(st.to)}</span>
+      · ${t('days')[st.day]||''}</div>
+    <div class="rm-bar">
+      <button class="rm-gen" onclick="flipRoomGender()">${
+        st.gender==='F'?t('rmFemale'):t('rmMale')} ▾</button>
+      ${st.pick?'':`<button class="rm-gen" onclick="backToPicker()">${t('rmChange')}</button>`}
+    </div>`;
+  if(st.pick){
+    const days=RM_DAYS;
+    box.innerHTML=head+
+      `<div class="rm-days">${days.map(d=>`<button class="rm-day${
+        st.day===d?' on':''}" onclick="setRmDay('${d}')">${t('days')[d]}</button>`).join('')}</div>
+      <div class="rm-times">
+        <label>${t('rmFrom')}<input type="time" value="${fmtTime(st.from)}"
+          onchange="setRmTime('from',this.value)"></label>
+        <label>${t('rmTo')}<input type="time" value="${fmtTime(st.to)}"
+          onchange="setRmTime('to',this.value)"></label>
+      </div>
+      <button class="demo-btn rm-go" onclick="runRoomSearch()">${t('rmSearch')}</button>`;
+    return;
+  }
+  if(loading){ box.innerHTML=head+`<div class="spinner"></div>`; return }
+  if(st.err){ box.innerHTML=head+`<div class="rm-empty">${escapeHtml(st.err)}</div>`; return }
+  const d=st.data;
+  if(!d||!d.rooms.length){
+    box.innerHTML=head+`<div class="rm-empty">${t('rmNone')}</div>`; return;
+  }
+  box.innerHTML=head+
+    `<div class="rm-note">${t('rmNote')}</div>` +
+    d.rooms.map(r=>`<div class="rm-row">
+      <div class="rm-name ltr">${escapeHtml(r.room)}</div>
+      <div class="rm-meta">
+        ${r.sameBuilding?`<span class="rm-tag">${t('rmNear')}</span>`:''}
+        ${r.usedToday?'':`<span class="rm-tag warn">${t('rmQuiet')}</span>`}
+        <span>${r.freeUntil==null?t('rmAllDay')
+          :`${t('rmUntil')} <span class="ltr">${fmtTime(r.freeUntil)}</span>`}</span>
+      </div></div>`).join('') +
+    (!st.all&&d.total>d.rooms.length
+      ?`<button class="rm-more" onclick="showAllRooms()">${t('rmMore')} (${d.total})</button>`
+      :'');
 }
 
 /* بطاقة المواعيد الأكاديمية تعيش في «جدولي» للطلاب. لمن عنده تبويب اليوم
@@ -5075,7 +5424,11 @@ async function loadSharedPhotos(){
   SHP_TRIED=true;
   try{
     const {data,error}=await sb.from('shared_photos')
-      .select('id,crn,term,on_date,path,note,mine').eq('term',activeTermCode());
+      /* kind و filename و size_kb لازمة: sharedFilesOf تفرز بـkind،
+         وبدونها تجي undefined فما يظهر أي ملف مشارك أبداً، وتتسرّب
+         الملفات إلى شبكة الصور. */
+      .select('id,crn,term,on_date,path,note,kind,filename,size_kb,mine')
+      .eq('term',activeTermCode());
     if(error)return;
     SH_PHOTOS=(data||[]).filter(p=>!p.mine);   /* صوري تظهر في قسمي */
   }catch(e){}
@@ -5092,10 +5445,14 @@ async function toggleShare(id){
   if(!p)return;
   const on=!p.shared;
   if(on&&!confirm(t('phShareAsk')))return;
-  const {error}=await sb.from('course_photos').update({shared:on}).eq('id',id);
-  if(error){ showToast(t('errSave')); return }
-  p.shared=on;
-  showToast(on?t('phShared'):t('phPrivate'));
+  /* .select() ضروري: التحديث الذي تحجبه RLS يطابق صفراً من الصفوف
+     ويرجع بلا خطأ. بدونه نعلن النجاح ونقلب الحالة محلياً، ثم يرجع
+     القفل عند أول تحديث للصفحة — نجاح كاذب. */
+  const {data,error}=await sb.from('course_photos')
+    .update({shared:on}).eq('id',id).select('id,shared');
+  if(error||!data||!data.length){ showToast(t('errSave'),'err'); return }
+  p.shared=data[0].shared;
+  showToast(p.shared?t('phShared'):t('phPrivate'));
   redrawCourse();
 }
 
@@ -5104,7 +5461,11 @@ async function loadPhotos(){
   PH_TRIED=true;
   try{
     const {data,error}=await sb.from('course_photos')
-      .select('id,crn,term,on_date,event_id,path,note').eq('term',activeTermCode());
+      /* shared و kind كانتا ناقصتين: بدون shared تجي undefined فيظهر
+         القفل مهما شاركت، وبدون kind تسقط كل الملفات في شبكة الصور
+         ويبقى قسم «ملفات المادة» فاضياً أبداً. */
+      .select('id,crn,term,on_date,event_id,path,note,shared,kind,filename,size_kb')
+      .eq('term',activeTermCode());
     if(error)return;
     PHOTOS=data||[];
   }catch(e){}
@@ -5714,6 +6075,47 @@ function viewSwitch(){
   </div>`;
 }
 
+/* ═══ يوم نموذجي للزائر بلا جدول ═══
+   الصفحة الفاضية تطرد الزائر قبل أن يفهم الميزة. هذا يعرض له يوماً
+   حقيقي الشكل — بطاقة جارية بشريط يمشي، وفراغ، وقادمة بعدّاد — مرسوماً
+   بنفس دوال الرسم لا بصورة، فيبقى مطابقاً للواجهة مهما تغيّرت. */
+function demoDay(){
+  const now=11*60+40;                       /* لحظة ثابتة تُظهر أحسن حالة */
+  const mk=(code,title,room,doc,s,e)=>({
+    c:{crn:'demo-'+code,courseCode:code,courseTitle:title,section:'101',
+       room,instructor:doc},
+    t:{start:s,end:e}});
+  const day=[
+    mk('MEEN 3301','Thermodynamics','M-COE - G022','Dr. Khalid',9*60,9*60+50),
+    mk('GENG 2311','Contemporary Issues','GZONE - G037','Dr. Sara',11*60,12*60+15),
+    mk('MATH 2411','Differential Equations','M-CORE - F051','Dr. Omar',14*60,15*60+15)
+  ];
+  const prog=Math.round((now-day[1].t.start)/(day[1].t.end-day[1].t.start)*100);
+  const rows=
+    slotCard(day[0].c,day[0].t,'past',t('tdDone'))+
+    gapRow(day[1].t.start-day[0].t.end,null)+
+    slotCard(day[1].c,day[1].t,'now',
+      `${t('tdEndsIn')} ${fmtLeft(day[1].t.end-now,0)}`,prog)+
+    gapRow(day[2].t.start-day[1].t.end,null)+
+    slotCard(day[2].c,day[2].t,'next',
+      `${t('tdStartsIn')} ${fmtLeft(day[2].t.start-now,0)}`);
+  return `<div class="demo-wrap">
+    <div class="demo-head">
+      <div class="demo-t">${t('tdDemoT')}</div>
+      <span class="demo-tag">${t('tdDemoTag')}</span>
+    </div>
+    <div class="demo-body">
+      <div class="day-block"><div class="day-head">
+        <span>${t('days')[ksaNow().day]}</span><span>1 ${t('tdOf')} 3 ${t('tdDoneN')}</span>
+      </div><div class="day-body">${rows}</div></div>
+    </div>
+    <div class="demo-cta">
+      <div class="demo-s">${t('tdNeedSchedS')}</div>
+      <button class="demo-btn" onclick="switchTab('search')">${t('tdNeedSchedBtn')}</button>
+    </div>
+  </div>`;
+}
+
 let TODAY_HTML='', TODAY_SCROLLED=false;
 function renderToday(){
   const box=document.getElementById('todayBody');
@@ -5723,7 +6125,22 @@ function renderToday(){
   const running=mine.find(x=>x.t.start<=n.min&&n.min<x.t.end);
   const next=mine.find(x=>x.t.start>n.min);
   const hol=todayHoliday(n.date);
-  let html=viewSwitch();
+  let html=viewSwitch()+roomsCard();
+
+  /* التبويب مفتوح للجميع، فالحالتان الناقصتان تُشرحان هنا بدل أن يقف
+     الطالب أمام صفحة فاضية ما يدري ليش هي فاضية. */
+  if(!schedule||!schedule.length){
+    html+=demoDay();
+    if(html!==TODAY_HTML&&!CS_OPEN){ box.innerHTML=html; TODAY_HTML=html }
+    return;
+  }
+  /* الغياب والمواعيد والصور تُكتب في الحساب — الزائر يرى يومه كاملاً
+     ويُدعى للدخول مرة واحدة فوق، لا عند كل زر يضغطه فيفشل. */
+  /* ما نحكم إنه زائر قبل ما تُقرأ الجلسة */
+  const authPending=document.documentElement.classList.contains('auth-pending');
+  if(!USER&&!authPending)html+=`<div class="tg-bar" style="margin-bottom:10px">
+    <span>${t('tdGuestNote')}</span>
+    <button onclick="handleAuth()">${t('tdGuestBtn')}</button></div>`;
 
   if(VIEW==='week'){
     html+=renderWeek();
@@ -5754,7 +6171,9 @@ function renderToday(){
       if(!nx)return;
       const gap=nx.t.start-x.t.end;
       const inGap=n.min>=x.t.end&&n.min<nx.t.start;
-      if(gap>=GAP_MIN)parts.push(gapRow(gap,inGap?n:null));
+      /* نافذة الفراغ ومبنى المحاضرة القادمة — يرتّب القاعات بالأقرب */
+      const win={from:x.t.end,to:nx.t.start,day:n.day,near:myBuilding(nx.c.crn)};
+      if(gap>=GAP_MIN)parts.push(gapRow(gap,inGap?n:null,win));
       else if(inGap)parts.push(nowMark(n));
     });
     const rows=parts.join('');
@@ -5837,6 +6256,12 @@ let MON_STATE=null;
 async function loadMonitorState(){
   try{ MON_STATE=await (await fetch(API_BASE+'/api/monitor-status')).json(); }
   catch(e){ MON_STATE=null; }
+  poCheckUnlock();
+  poHandleReturn().catch(()=>{});
+  try{ syncTermSelect() }catch(e){}
+  try{ syncPlanHint() }catch(e){}
+  /* أول قراءة تثبّت بصمة النسخة المحمّلة، وما بعدها يقارن بها */
+  try{ checkBuild(MON_STATE) }catch(e){}
   const eb=document.getElementById('envBar');
   if(eb && MON_STATE && MON_STATE.env && MON_STATE.env!=='prod'){
     eb.className='env-bar on';
@@ -5884,65 +6309,69 @@ async function sendFeedback(){
   }catch(e){ showToast(t('fbFail')+' — '+e.message,'err'); }
   finally{ btn.disabled=false; }
 }
-/* الترم اللي يسجّل فيه الطالب قريباً — نأخذه من نوافذ التقويم */
-const UPCOMING_TERM='202710';
+/* الترم النشط يجي من السيرفر لا من ثابت في الكود.
+   كان مكتوباً '202710' فبقي يقول «ترم التسجيل القادم» بعد ما صار
+   الترم الحالي وانتهى تسجيله. */
+function serverTerm(){
+  const st=MON_STATE||{};
+  return st.term||'202710';
+}
+function regOpen(){ return !!(MON_STATE&&MON_STATE.canWatch) }
+
+/* ترم التسجيل: ترم النافذة المفتوحة. في التسجيل المبكر للصيفي (أبريل)
+   يختلف عن serverTerm — الطالب يدرس الثاني ويسجّل الصيفي. */
+function regTermCode(){
+  const st=MON_STATE||{};
+  return st.regTerm||st.term||'202710';
+}
+/* الترم الذي يبحث فيه الطالب افتراضياً: ترم التسجيل وقت التسجيل،
+   وإلا ترم الدراسة */
+function searchTermCode(){ return regOpen()?regTermCode():serverTerm() }
+
 function termHint(){
   const el=document.getElementById('termHint');
   if(!el)return;
   const v=(document.getElementById('term')||{}).value;
-  if(v===UPCOMING_TERM){
-    el.className='term-hint';
-    el.textContent=LANG==='ar'
-      ? '✅ هذا ترم التسجيل القادم — ابنِ جدولك منه'
-      : '✅ This is the upcoming registration term — build your schedule from it';
-  }else{
-    el.className='term-hint hide';
-  }
+  const ar=LANG==='ar';
+  /* النص أولاً ثم الإظهار: لو تعثّر شيء بينهما ما يظهر صندوق فاضٍ */
+  let txt='';
+  if(regOpen()&&v===regTermCode())
+    txt=ar?'✅ هذا الترم المفتوح للتسجيل — ابنِ جدولك منه'
+          :'✅ Registration is open for this term — build your schedule from it';
+  else if(v===serverTerm())
+    txt=ar?'هذا الترم الحالي':'This is the current term';
+  if(!txt){ el.className='term-hint hide'; return }
+  el.textContent=txt;
+  el.className='term-hint';
 }
+
+/* الترتيب: الأحدث أولاً. كانت القائمة بترتيب عشوائي في الـHTML،
+   والمحدَّد ثابتاً في الكود بدل ما يتبع الترم النشط. */
+function syncTermSelect(){
+  const sel=document.getElementById('term');
+  if(!sel)return;
+  const opts=[...sel.options].sort((a,b)=>Number(b.value)-Number(a.value));
+  const cur=sel.value;
+  sel.innerHTML='';
+  opts.forEach(o=>sel.appendChild(o));
+  const act=searchTermCode();
+  const has=v=>[...sel.options].some(o=>o.value===v);
+  /* اختيار الطالب يُحترم، وغيره يتبع السيرفر. كان الشرط cur!=='202710' —
+     ثابت آخر مكتوب في الكود يفترض أن الترم الافتراضي في HTML هو الأول */
+  sel.value=TERM_PICKED&&has(cur) ? cur : (has(act)?act:sel.options[0].value);
+  termHint();
+}
+let TERM_PICKED=false;   /* غيّر الطالب القائمة بنفسه؟ */
 
 function updateFbCount(){
   const ta=document.getElementById('fbText'), c=document.getElementById('fbCount');
   if(ta&&c)c.textContent=`${ta.value.length} / 1200`;
 }
 
-/* ═══════════ التقويم الأكاديمي 2026/2027 ═══════════ */
-/* المصدر: تقويم الجامعة المعتمد. t=نوع الحدث للتلوين */
-const ACAD_CAL=[
-/* ── الترم الأول ── */
-{s:'2026-08-23',e:'2026-08-27',t:'reg', ar:'فترة التسجيل',                 en:'Registration period'},
-{s:'2026-08-30',              t:'start',ar:'بداية الدراسة — الترم الأول',   en:'Classes begin — Fall'},
-{s:'2026-08-28',e:'2026-09-03',t:'add', ar:'التسجيل المتأخر والحذف والإضافة',en:'Late registration & Add/Drop'},
-{s:'2026-09-06',e:'2026-09-10',t:'add',  ar:'فترة الحذف (آخر يوم بدون رسوم ١٠ سبتمبر)',en:'Drop period (last day without charge 10 Sep)'},
-{s:'2026-09-23',e:'2026-09-26',t:'off', ar:'إجازة اليوم الوطني',            en:'National Day holiday'},
-{s:'2026-11-05',              t:'warn', ar:'آخر يوم للانسحاب بتقدير W',     en:'Last day to withdraw with "W"'},
-{s:'2026-11-22',e:'2026-11-24',t:'off', ar:'إجازة منتصف الترم',             en:'Mid-term break'},
-{s:'2026-12-17',              t:'warn', ar:'آخر يوم للانسحاب بـ WP/WF وتغيير التخصص',en:'Last day for WP/WF & major change'},
-{s:'2026-12-20',e:'2026-12-30',t:'exam',ar:'الاختبارات النهائية',           en:'Final exams'},
-{s:'2027-01-03',e:'2027-01-16',t:'off', ar:'إجازة منتصف السنة',             en:'Mid-year break'},
-{s:'2027-01-15',              t:'note', ar:'آخر يوم للتظلم على الدرجات',    en:'Last day for grade appeal'},
-/* ── الترم الثاني ── */
-{s:'2027-01-10',e:'2027-01-14',t:'reg', ar:'فترة التسجيل',                 en:'Registration period'},
-{s:'2027-01-17',              t:'start',ar:'بداية الدراسة — الترم الثاني',  en:'Classes begin — Spring'},
-{s:'2027-01-17',e:'2027-01-21',t:'add', ar:'التسجيل المتأخر والحذف والإضافة',en:'Late registration & Add/Drop'},
-{s:'2027-01-28',              t:'add',  ar:'آخر يوم للحذف بدون رسوم',       en:'Last day to drop without charge'},
-{s:'2027-02-19',e:'2027-02-22',t:'off', ar:'إجازة يوم التأسيس',             en:'Founding Day holiday'},
-{s:'2027-02-28',e:'2027-03-13',t:'off', ar:'إجازة عيد الفطر',               en:'Eid Al-Fitr holiday'},
-{s:'2027-04-08',              t:'warn', ar:'آخر يوم للانسحاب بتقدير W',     en:'Last day to withdraw with "W"'},
-{s:'2027-04-11',e:'2027-04-15',t:'reg', ar:'التسجيل المبكر للصيفي',         en:'Early registration — Summer'},
-{s:'2027-05-11',e:'2027-05-22',t:'off', ar:'إجازة عيد الأضحى',              en:'Eid Al-Adha holiday'},
-{s:'2027-05-27',              t:'warn', ar:'آخر يوم للانسحاب بـ WP/WF وتغيير التخصص',en:'Last day for WP/WF & major change'},
-{s:'2027-05-30',e:'2027-06-09',t:'exam',ar:'الاختبارات النهائية',           en:'Final exams'},
-{s:'2027-06-25',              t:'note', ar:'آخر يوم للتظلم على الدرجات',    en:'Last day for grade appeal'},
-/* ── الترم الصيفي ── */
-{s:'2027-06-15',e:'2027-06-19',t:'reg', ar:'تأكيد التسجيل للمسجّلين مسبقاً',en:'Registration confirmation'},
-{s:'2027-06-20',              t:'start',ar:'بداية الدراسة — الصيفي',        en:'Classes begin — Summer'},
-{s:'2027-06-20',e:'2027-06-22',t:'add', ar:'التسجيل المتأخر والحذف والإضافة',en:'Late registration & Add/Drop'},
-{s:'2027-07-22',              t:'warn', ar:'آخر يوم للانسحاب بتقدير W',     en:'Last day to withdraw with "W"'},
-{s:'2027-08-12',              t:'warn', ar:'آخر يوم للانسحاب بـ WP/WF وتغيير التخصص',en:'Last day for WP/WF & major change'},
-{s:'2027-08-15',e:'2027-08-17',t:'exam',ar:'الاختبارات النهائية',           en:'Final exams'},
-{s:'2027-08-29',              t:'start',ar:'بداية الترم الأول 2027/2028',   en:'Fall 2027/2028 begins'}
-];
-
+/* ═══ التقويم الأكاديمي ═══
+   يأتي من السيرفر عبر /calendar.js (يُحمَّل قبل هذا السكربت) — مصدر واحد
+   للصفحة والتنبيهات. كان هنا نسخة ثانية تختلف عن نسخة السيرفر، فتحذيرات
+   الحرمان في تلقرام كانت بتنحسب على غير ما يعرضه الموقع. */
 const CAL_ICON={reg:'📝',start:'🎓',add:'🔁',off:'🌴',warn:'⚠️',exam:'📕',note:'📌'};
 
 /* ═══════════ تواريخ التسجيل حسب المستوى ═══════════
@@ -6507,6 +6936,15 @@ function shortName(n){
 }
 
 /* ===== Plan ===== */
+/* أي تغيير في الخطة قد يفتح مادة مقفلة في البحث أو يقفلها:
+   العلامة، الدرجة (F أو W تلغي الاجتياز)، ومفتاح المستوى التحضيري.
+   كانت toggleDone وحدها تحدّث النتائج، فيبقى «متطلب ناقص» معروضاً
+   حتى يعيد الطالب تحميل الصفحة. */
+function planTouched(){
+  renderPlan();
+  try{ if(typeof allCourses!=='undefined'&&allCourses.length)renderResults() }catch(e){}
+}
+
 function toggleDone(code){
   const i=completed.indexOf(code);
   if(i>-1){completed.splice(i,1);delete grades[code];save('pmu_grades',grades);}
@@ -6516,8 +6954,7 @@ function toggleDone(code){
     completed.push(code);
   }
   save('pmu_completed',completed);pushCompleted();
-  renderPlan();
-  if(allCourses.length)renderResults();
+  planTouched();
 }
 
 /* هل اختار الطالب تخصصه فعلاً؟ */
@@ -6531,16 +6968,8 @@ function syncMajorSelect(){
   if(el.value!==v)el.value=v;
 }
 
-function goPickMajor(){
-  switchTab('set');
-  setTimeout(()=>{
-    const el=document.getElementById('majorSelect');
-    if(el){
-      el.scrollIntoView({behavior:'smooth',block:'center'});
-      el.focus();
-    }
-  },120);
-}
+/* goPickMajor كانت معرّفة مرتين، والثانية (قرب ٨١٧٠) هي اللي تغلب دائماً —
+   هذي كانت كوداً ميتاً. حُذفت. */
 
 function renderPlan(){
   applyGpaHidden();
@@ -6728,34 +7157,283 @@ setTimeout(async()=>{applyLang();renderSettings();maybeShowGuide();loadMonitorSt
 
 /* ================= PRO / MONITOR / TELEGRAM ================= */
 const BOT_USERNAME='JadwalikBot';
-const PAY_NUMBER='0500000000';          /* غيّر هذا لرقمك */
 let monitored=[];
-
-function daysLeft(){
-  if(!PROFILE?.subscription_expires_at)return 0;
-  const d=Math.ceil((new Date(PROFILE.subscription_expires_at)-new Date())/86400000);
-  return d>0?d:0;
-}
-/* تجربة = اشتراك فعّال بدون دفع مؤكد */
-function isTrial(){ return !PROFILE?.is_pro && daysLeft()>0 && !PROFILE?.paid_at; }
-/* ملاحظة: paid_at يتعبأ يدوياً عند تأكيد الدفع */
 
 /* البطاقة مطويّة افتراضياً: كل شي مجاني الآن، فالتفاصيل تشغل مساحة بلا
    قرار مطلوب من الطالب. يبقى ظاهراً «مجاني حالياً» ومن يبي التفاصيل يفتحها. */
-let PRO_OPEN=false;
+let PRO_OPEN=false, PRO_TOUCHED=false;
+/* الرصيد والدعوة داخل البطاقة. يُطلب الحساب عند الحاجة ويُعاد الرسم لما يوصل */
+function renderAcct(ar){
+  const box=document.getElementById('proAcct');
+  if(!box)return;
+  if(!USER){ box.innerHTML=''; return }
+  const A=ACCOUNT;
+  if(!A||Date.now()-ACCOUNT_AT>5*60*1000){
+    loadAccount().then(x=>{ if(x&&document.getElementById('proAcct'))renderAcct(LANG==='ar') });
+    if(!A){ box.innerHTML=''; return }
+  }
+  const P=planInfo(), R=ar?' ريال':' SAR';
+  const cr=(A.credit&&A.credit.available)||0;
+  const exp=A.credit&&A.credit.nextExpiry;
+  const code=A.invite&&A.invite.code;
+  const friends=(A.invite&&A.invite.paidFriends)||0;
+  const RC=REVCREDIT;
+  if(!RC)loadRevCredit().then(x=>{ if(x&&document.getElementById('proAcct'))renderAcct(LANG==='ar') });
+  const rcRow=RC?`<div class="acct-row" style="cursor:pointer" onclick="event.stopPropagation();openMyRev()">
+      <span>⭐ ${ar?'تقييم الدكاترة':'Instructor reviews'}</span>
+      <b dir="ltr">${RC.pending?'⏳':RC.approvedThisTerm?'✅':Math.min(RC.eligibleCount||0,RC.needed)+'/'+RC.needed}</b></div>`:'';
+  box.innerHTML=rcRow+
+    (cr?`<div class="acct-row"><span>💰 ${ar?'رصيدك':'Your credit'}</span>
+      <b>${sarTxt(cr)}${R}${exp?`<span class="acct-hint"> · ${ar?'ينتهي':'until'} ${new Date(exp).toLocaleDateString(ar?'ar-u-ca-gregory-nu-latn':'en-GB',{day:'numeric',month:'long'})}</span>`:''}</b></div>`:'')+
+    (code?`<div class="acct-row"><span>🎁 ${ar?'ادعُ صديقك':'Invite a friend'}</span>
+      <button class="btn-sm" onclick="event.stopPropagation();copyInvite()">${ar?'شارك الرابط':'Share link'}</button></div>
+      <div class="acct-row" style="border-top:none;padding-top:0">
+        <span class="acct-hint" style="padding:0">${ar?'كودك':'Your code'}</span>
+        <span class="acct-code">${code}</span></div>
+      <div class="acct-hint">${ar
+        ?`صديقك يوفّر ${sarTxt(P.friend)} ريال، وأنت تكسب ${sarTxt(P.referrer)} ريال رصيداً لما يدفع.${friends?` أصدقاء دفعوا: ${friends}`:''}`
+        :`Your friend saves ${sarTxt(P.friend)} SAR; you earn ${sarTxt(P.referrer)} SAR credit when they pay.${friends?` Friends who paid: ${friends}`:''}`}</div>`:'');
+}
+
 function togglePro(){
+  PRO_TOUCHED=true;
   PRO_OPEN=!PRO_OPEN;
   const b=document.getElementById('proBody'),f=document.getElementById('proFold');
   if(b)b.hidden=!PRO_OPEN;
   if(f)f.classList.toggle('open',PRO_OPEN);
 }
 
-/* ═══ الفترة التجريبية المجانية ═══
-   خلّه false لما تبدأ تحصيل الاشتراك — يرجع كل شي زي ما كان. */
-const FREE_BETA = true;
+/* ═══ الفترة المجانية ═══
+   كانت ثابتاً هنا وثابتاً ثانياً في السيرفر — لو أطفأت واحداً ونسيت الثاني
+   صارت الصفحة تقول شيئاً والتنبيهات تفعل غيره. الآن من السيرفر وحده،
+   ويُطفأ من اللوحة يوم الإطلاق. وقبل ما تصل حالة السيرفر نفترضها شغّالة:
+   السيرفر هو اللي يقرر من يُخدَم فعلاً، فالتساهل هنا ما يفتح شيئاً. */
+function freeBeta(){ return !(MON_STATE&&MON_STATE.freeBeta===false) }
+
+/* الباقات والحدود من السيرفر — والقيم هنا احتياط فقط لو ما وصلت */
+function planInfo(){
+  const p=(MON_STATE&&MON_STATE.plans)||{};
+  const n=(v,d)=>Number.isInteger(v)?v:d;
+  return { term:n(p.termHalalas,1900), po:n(p.pushoverHalalas,1000),
+           friend:n(p.friendDiscountHalalas,300), referrer:n(p.referrerCreditHalalas,500),
+           freeMonitors:n(p.freeMonitors,2), freeSchedules:n(p.freeSchedules,1),
+           termEnd:p.termEnd||null, poOffered:!!p.pushoverOffered };
+}
+function sarTxt(h){ const v=(Number(h)||0)/100; return v%1?v.toFixed(2):String(v) }
+
+/* مراقبات الشعب في ترم التسجيل — نفس ما تعدّه الدورة في السيرفر */
+function freeWatchUsed(){
+  const t=(typeof regTermCode==='function')?regTermCode():'';
+  return monitored.filter(m=>m.scope!=='course'&&(!t||m.term===t)).length;
+}
+function monCapReached(){ return !isPro()&&freeWatchUsed()>=planInfo().freeMonitors }
+
+/* المتوقفة بعد انتهاء الاشتراك أو الفترة المجانية: نفس قاعدة الدورة —
+   أقدم N مراقبات شعبة تشتغل، والباقي و«كل الشعب» متوقفة لا محذوفة */
+function pausedMonitorIds(){
+  const out=new Set();
+  if(isPro())return out;
+  const t=(typeof regTermCode==='function')?regTermCode():'';
+  const sec=monitored.filter(m=>m.scope!=='course'&&(!t||m.term===t))
+    .sort((a,b)=>((Date.parse(a.created_at)||0)-(Date.parse(b.created_at)||0))||(a.id-b.id));
+  sec.slice(planInfo().freeMonitors).forEach(m=>out.add(m.id));
+  monitored.filter(m=>m.scope==='course').forEach(m=>out.add(m.id));
+  return out;
+}
+
+/* الجدول الثاني والثالث للمشتركين. البيانات تبقى — تنقفل فقط */
+function slotLocked(i){ return !isPro()&&i>=planInfo().freeSchedules }
+function enforceSlot(){
+  if(!slotLocked(SLOT))return false;
+  SLOT=0; save('pmu_slot','0'); schedule=SCHEDULES[0]; updateBadge();
+  return true;
+}
+function enforceSlotAndRedraw(){
+  if(!enforceSlot())return;
+  try{ renderSlots(); renderSchedule(); renderResults();
+       if(CUR_TAB==='today'){ TODAY_HTML=''; renderToday() } }catch(e){}
+}
+
+/* ═══ حساب الطالب من السيرفر ═══
+   نرسل رمز الجلسة، والسيرفر يسأل Supabase عن صاحبه — ما نرسل معرّفاً
+   يقدر أحد يغيّره. نخزّن الجواب ٥ دقائق. */
+let ACCOUNT=null, ACCOUNT_AT=0, ACCOUNT_LOADING=null;
+async function meFetch(path,method){
+  const {data}=await sb.auth.getSession();
+  const tok=data&&data.session&&data.session.access_token;
+  if(!tok)return null;
+  const r=await fetch(API_BASE+path,{method:method||'GET',
+    headers:{Authorization:'Bearer '+tok},cache:'no-store'});
+  if(!r.ok)return null;
+  return r.json();
+}
+
+/* ═══ رصيد تقييم الدكاترة ═══
+   الحالة من السيرفر وحده — هو يعرف الدكاترة المحتسبين من قبل والطلب
+   المعلّق، فما نعيد حسابها هنا بطريقة قد تختلف. */
+let REVCREDIT=null, REVCREDIT_AT=0, REVCREDIT_LOADING=null;
+function loadRevCredit(force){
+  if(!USER)return Promise.resolve(null);
+  if(!force&&REVCREDIT&&Date.now()-REVCREDIT_AT<2*60*1000)return Promise.resolve(REVCREDIT);
+  if(REVCREDIT_LOADING)return REVCREDIT_LOADING;
+  REVCREDIT_LOADING=meFetch('/api/me/reviews-credit').then(j=>{
+    if(j&&j.ok){ REVCREDIT=j; REVCREDIT_AT=Date.now() }
+    return REVCREDIT;
+  }).catch(()=>REVCREDIT).finally(()=>{ REVCREDIT_LOADING=null });
+  return REVCREDIT_LOADING;
+}
+async function submitRevCredit(btn){
+  const ar=LANG==='ar';
+  if(btn){ btn.disabled=true; btn.textContent=ar?'يرسل…':'Sending…' }
+  const r=await meFetch('/api/me/reviews-credit','POST').catch(()=>null);
+  if(r&&r.ok){
+    showToast(ar?'⏳ انرسل للمراجعة — يوصلك الرد على تلقرام':'⏳ Sent for review — the reply comes on Telegram','ok');
+  }else{
+    showToast((r&&r.error)||(ar?'ما انرسل — جرّب مرة ثانية':'Not sent — try again'),'warn');
+  }
+  await loadRevCredit(true);
+  renderMyReviews();
+  try{ renderAcct(ar) }catch(e){}
+}
+/* المربّع أعلى «تقييماتي» — يظهر بعد الفترة المجانية فقط */
+function revCreditHTML(){
+  const ar=LANG==='ar';
+  if(!USER||freeBeta())return '';
+  const C=REVCREDIT;
+  if(!C){ loadRevCredit().then(x=>{ if(x)renderMyReviews() }); return '' }
+  const n=C.needed||5, have=Math.min(C.eligibleCount||0,n), money=sarTxt(C.creditHalalas||0);
+  const bar=`<div class="rc-bar"><div style="width:${Math.round(have/n*100)}%"></div></div>`;
+  let body='';
+  if(C.pending){
+    body=`<div class="rc-state">⏳ ${ar?'طلبك قيد المراجعة — يوصلك الرد على تلقرام':'Under review — the reply comes on Telegram'}</div>`;
+  }else if(C.approvedThisTerm){
+    body=`<div class="rc-state good">✅ ${ar?`انقبل طلبك هذا الترم — نزل لك ${money} ريال`:`Approved this term — ${money} SAR credited`}</div>`;
+  }else{
+    const rej=C.latest&&C.latest.status==='rejected'
+      ?`<div class="rc-state bad">❌ ${ar?'آخر طلب ما انقبل':'Last request not approved'}: ${escapeHtml(C.latest.note||'')}</div>`:'';
+    body=rej+(have>=n
+      ?`<button class="btn-sm" style="width:100%;margin-top:8px" onclick="event.stopPropagation();submitRevCredit(this)">${ar?'أرسل تقييماتك للمراجعة':'Send for review'}</button>`
+      :`<div class="rc-hint">${ar?`باقي ${n-have} — كل دكتور يُحتسب مرة واحدة`:`${n-have} to go — each instructor counts once`}</div>`);
+  }
+  return `<div class="rc-box">
+    <div class="rc-top"><b>🎁 ${ar?`قيّم ${n} دكاترة واكسب ${money} ريال`:`Review ${n} instructors, earn ${money} SAR`}</b>
+      <span dir="ltr">${have}/${n}</span></div>
+    ${bar}${body}</div>`;
+}
+function loadAccount(force){
+  if(!USER)return Promise.resolve(null);
+  if(!force&&ACCOUNT&&Date.now()-ACCOUNT_AT<5*60*1000)return Promise.resolve(ACCOUNT);
+  if(ACCOUNT_LOADING)return ACCOUNT_LOADING;
+  ACCOUNT_LOADING=meFetch('/api/me/account').then(j=>{
+    if(j&&j.ok){ ACCOUNT=j; ACCOUNT_AT=Date.now() }
+    return ACCOUNT;
+  }).catch(()=>ACCOUNT).finally(()=>{ ACCOUNT_LOADING=null });
+  return ACCOUNT_LOADING;
+}
+function inviteLink(code){ return 'https://jadwalik.com/?ref='+code }
+async function copyInvite(){
+  const c=ACCOUNT&&ACCOUNT.invite&&ACCOUNT.invite.code; if(!c)return;
+  const link=inviteLink(c), ar=LANG==='ar';
+  const P=planInfo();
+  const text=ar?`جرّب جدولك — مراقبة الشعب وجدولك وخطتك في مكان واحد. بكودي تاخذ خصم ${sarTxt(P.friend)} ريال: ${link}`
+               :`Try Jadwalik — use my link for ${sarTxt(P.friend)} SAR off: ${link}`;
+  try{
+    if(navigator.share){ await navigator.share({text}); return }
+  }catch(e){ if(e&&e.name==='AbortError')return }
+  try{ await navigator.clipboard.writeText(link); showToast(ar?'انسخ الرابط ✅':'Link copied ✅','ok') }
+  catch(e){ prompt(ar?'انسخ الرابط:':'Copy the link:',link) }
+}
+
+/* ═══ ورقة الباقات ═══ */
+function openPlans(reason){
+  const ar=LANG==='ar', P=planInfo();
+  let el=document.getElementById('planSheet');
+  if(!el){
+    el=document.createElement('div');
+    el.id='planSheet'; el.className='ps-overlay'; el.hidden=true;
+    el.addEventListener('click',e=>{ if(e.target===el)closePlans() });
+    document.body.appendChild(el);
+  }
+  const mons=ar?(P.freeMonitors===2?'مراقبتان':`${P.freeMonitors} مراقبات`):`${P.freeMonitors} watches`;
+  const scheds=ar?(P.freeSchedules===1?'جدول واحد':`${P.freeSchedules} جداول`):`${P.freeSchedules} schedule(s)`;
+  const ctx={
+    monitors: ar?`وصلت حد ${P.freeMonitors===2?'المراقبتين':P.freeMonitors+' مراقبات'} في المجاني`
+                :`You reached the free limit of ${P.freeMonitors} watches`,
+    course:   ar?'مراقبة كل شعب المادة للمشتركين':'Watching every section is for subscribers',
+    slots:    ar?'الجدول الثاني والثالث للمشتركين — جدولك محفوظ ويرجع لك مع الاشتراك'
+                :'Schedules 2 and 3 are for subscribers — yours is saved',
+    pushover: ar?'التنبيه الطارئ إضافة على اشتراك الترم':'Urgent alerts are an add-on to the term plan'
+  }[reason]||'';
+  const end=P.termEnd?new Date(P.termEnd).toLocaleDateString(ar?'ar-u-ca-gregory-nu-latn':'en-GB',{day:'numeric',month:'long'}):'';
+  el.innerHTML=`<div class="ps-sheet" role="dialog" aria-modal="true">
+    <div class="ps-grab"></div>
+    ${ctx?`<div class="ps-ctx">🔒 ${ctx}</div>`:''}
+    <div class="ps-cols">
+      <div class="ps-col"><b>${ar?'مجاني':'Free'}</b>
+        <span>${mons}</span><span>${scheds}</span>
+        <span>${ar?'تنبيهات تلقرام':'Telegram alerts'}</span>
+        <span>${ar?'كل الموقع':'Everything else'}</span></div>
+      <div class="ps-col pro"><b>${ar?'الترم':'Term'} · ${sarTxt(P.term)} ${ar?'ريال':'SAR'}</b>
+        <span>${ar?'مراقبة بلا حد':'Unlimited watches'}</span>
+        <span>${ar?'كل شعب المادة':'Every section of a course'}</span>
+        <span>${ar?'3 جداول':'3 schedules'}</span>
+        <span>${end?(ar?'حتى '+end:'Until '+end):(ar?'حتى نهاية الترم':'Until term end')}</span></div>
+    </div>
+    ${P.poOffered?`<label class="ps-addon">
+      <input type="checkbox" id="psPo" ${reason==='pushover'?'checked':''} onchange="plansTotal()">
+      <span class="ps-a-t"><b>🚨 ${ar?'التنبيه الطارئ':'Urgent alert'}</b><br>
+        <small>${ar?'يرن حتى لو الجوال صامت':'Rings even on silent'}</small></span>
+      <span dir="ltr">+${sarTxt(P.po)}</span></label>`:''}
+    <div class="ps-lines" id="psLines"></div>
+    <div class="ps-total"><span>${ar?'الإجمالي':'Total'}</span><b id="psTotal"></b></div>
+    <button class="ps-pay" id="psPay" disabled>${ar?'الدفع يفتح قريباً':'Checkout opens soon'}</button>
+    <button class="ps-close" onclick="closePlans()">${ar?'مو الحين':'Not now'}</button>
+  </div>`;
+  plansTotal();
+  el.hidden=false;
+  requestAnimationFrame(()=>el.classList.add('open'));
+}
+/* الإجمالي فوراً من الأسعار العامة، ثم نستبدله بحساب السيرفر: الخصم
+   والرصيد يعرفهما السيرفر وحده، وهو اللي بيحاسب عند الدفع */
+let PS_QUOTE_SEQ=0;
+function plansTotal(){
+  const P=planInfo(), po=document.getElementById('psPo');
+  const tot=P.term+(po&&po.checked?P.po:0);
+  const el=document.getElementById('psTotal');
+  if(el)el.textContent=sarTxt(tot)+(LANG==='ar'?' ريال':' SAR');
+  const lines=document.getElementById('psLines');
+  if(lines)lines.innerHTML='';
+  plansQuote();
+}
+async function plansQuote(){
+  if(!USER)return;
+  const seq=++PS_QUOTE_SEQ, ar=LANG==='ar';
+  const po=document.getElementById('psPo');
+  const q=await meFetch(`/api/me/quote?pushover=${po&&po.checked?1:0}&ref=${encodeURIComponent(storedRef())}`)
+    .catch(()=>null);
+  if(seq!==PS_QUOTE_SEQ||!q||!q.ok)return;          /* جواب قديم أو فشل: نبقي التقدير */
+  const R=ar?' ريال':' SAR';
+  const row=(l,v,cls)=>`<div class="ps-line${cls?' '+cls:''}"><span>${l}</span><span dir="ltr">${v}</span></div>`;
+  let h='';
+  if(q.base)h+=row(ar?'اشتراك الترم':'Term plan',sarTxt(q.base));
+  if(q.po)h+=row(ar?'التنبيه الطارئ':'Urgent alert','+'+sarTxt(q.po));
+  if(q.discount)h+=row(ar?'خصم صديقك':'Friend discount','−'+sarTxt(q.discount),'good');
+  if(q.credit)h+=row(ar?'رصيدك':'Your credit','−'+sarTxt(q.credit),'good');
+  if(q.ref==='own')h+=`<div class="ps-note">${ar?'هذا كود دعوتك أنت — ما ينطبق على حسابك':'That is your own invite code'}</div>`;
+  if(q.ref==='used')h+=`<div class="ps-note">${ar?'خصم الصديق لأول اشتراك فقط':'Friend discount is for a first purchase only'}</div>`;
+  const lines=document.getElementById('psLines'), tot=document.getElementById('psTotal');
+  if(lines)lines.innerHTML=h;
+  if(tot)tot.textContent=sarTxt(q.amount)+R;
+}
+function closePlans(){
+  const el=document.getElementById('planSheet');
+  if(!el)return;
+  el.classList.remove('open');
+  setTimeout(()=>{ el.hidden=true },200);
+}
 
 function isPro(){
-  if(FREE_BETA) return !!USER;      /* أي حساب مسجّل = كل الميزات مفتوحة */
+  if(freeBeta()) return !!USER;     /* أي حساب مسجّل = كل الميزات مفتوحة */
   if(!PROFILE)return false;
   if(PROFILE.is_pro)return true;
   if(PROFILE.subscription_expires_at)
@@ -6763,13 +7441,6 @@ function isPro(){
   return false;
 }
 
-function togglePay(){
-  if(FREE_BETA)return;      /* ما فيه دفع في الفترة التجريبية */
-  if(!USER){showToast(LANG==='ar'?'سجّل دخول أول':'Sign in first','warn');return}
-  document.getElementById('payBox').classList.toggle('visible');
-  document.getElementById('payNum').textContent=PAY_NUMBER;
-  document.getElementById('payCode').textContent=PROFILE?.telegram_link_code||'—';
-}
 
 function openBot(){
   const code=PROFILE?.telegram_link_code||'';
@@ -6821,6 +7492,133 @@ document.addEventListener('visibilitychange',()=>{
    نسحب ما يتغيّر من خارج الصفحة فقط: الملف الشخصي (حالة ربط تلقرام والاشتراك)
    وقائمة المراقبة. الجدول والخطة لا نلمسهما هنا — يعدّلهما الطالب من جهازه،
    وسحبهما يعني احتمال كتابة نسخة السحابة فوق تعديل محلي لسه ما رُفع. */
+/* ═══ تحديث تغيّرات الجامعة عند الرجوع ═══
+   المشكلة: المثبَّت على الشاشة الرئيسية ما يُعاد تحميله لأيام، والسيرفر
+   يكتب تغيّر الدكتور أو القاعة في user_schedule ويرسل تيليغرام — لكن
+   الصفحة المفتوحة تظل تعرض القديم، فيوصل الإشعار ولا يظهر شيء في جدولي.
+
+   ليش ما ننادي pullCloud هنا: هي تستبدل الجداول الثلاثة بالكامل، وأي
+   تعديل محلي لسه ما ارتفع يضيع — وهذا بالضبط اللي أفسد البيانات سابقاً.
+
+   البديل: دمج على مستوى الحقل. نحدّث الحقول التي تملكها الجامعة وحدها
+   (الاسم، الأيام، الوقت، الدكتور، القاعة) على صفوف موجودة أصلاً محلياً،
+   ولا نضيف صفاً ولا نحذف صفاً ولا نغيّر جدولاً. فما فيه تعديل للطالب
+   يمكن أن يُداس. */
+async function syncSchedChanges(){
+  if(!USER||!Array.isArray(SCHEDULES))return false;
+  const {data,error}=await sb.from('user_schedule')
+    .select('crn,course_title,course_date,course_timing,instructor,room,change_note,changed_at')
+    .eq('user_id',USER.id);
+  if(error||!Array.isArray(data)||!data.length)return false;
+
+  /* المادة قد تجي بجلستين بنفس الـCRN — نطابق بالجلسة لا بالـCRN وحده */
+  const key=r=>String(r.crn||'').trim()+'|'+
+    String(r.course_date||r.courseDate||'').trim()+'|'+
+    String(r.course_timing||r.courseTiming||'').trim();
+  const byCrn=new Map();
+  data.forEach(r=>{
+    const c=String(r.crn||'').trim();
+    if(!byCrn.has(c))byCrn.set(c,[]);
+    byCrn.get(c).push(r);
+  });
+
+  let hits=0;
+  SCHEDULES.forEach(slot=>{
+    if(!Array.isArray(slot))return;
+    slot.forEach(c=>{
+      const list=byCrn.get(String(c.crn||'').trim());
+      if(!list||!list.length)return;
+      /* جلسة واحدة: طابق بالـCRN. أكثر: لازم تطابق الجلسة بالضبط،
+         وإلا نترك الصف كما هو بدل ما نخمّن أيّ جلسة هي. */
+      const s=list.length===1?list[0]:list.find(r=>key(r)===key(c));
+      if(!s)return;
+      const same=(a,b)=>String(a||'').trim()===String(b||'').trim();
+      if(same(s.course_title,c.courseTitle)&&same(s.course_date,c.courseDate)&&
+         same(s.course_timing,c.courseTiming)&&same(s.instructor,c.instructor)&&
+         same(s.room,c.room)&&same(s.changed_at||'',c.changedAt||''))return;
+      c.courseTitle=s.course_title; c.courseDate=s.course_date;
+      c.courseTiming=s.course_timing; c.instructor=s.instructor; c.room=s.room;
+      c.changeNote=s.change_note||null; c.changedAt=s.changed_at||null;
+      hits++;
+    });
+  });
+  if(!hits)return false;
+  schedule=SCHEDULES[SLOT];
+  save('pmu_schedules',SCHEDULES); save('pmu_schedule',schedule);
+  renderSchedule();
+  try{ if(CUR_TAB==='today'){TODAY_HTML='';renderToday()} }catch(e){}
+  return true;
+}
+
+/* ═══ نسخة الصفحة ═══
+   النسخة المثبَّتة على الشاشة الرئيسية تعيش أياماً بلا إعادة تحميل: iOS
+   يعلّقها في الذاكرة ويرجّعها كما هي. فالطالب يفتح الموقع في المتصفح
+   ويشوف الجديد، ويفتح الأيقونة فيشوف نسخة من الأسبوع الماضي.
+   وكانت الرسالة تقول «اسحب لتحديث الصفحة» — وما فيه سحب للتحديث أصلاً.
+   فنعيد التحميل بأنفسنا بدل ما نطلب منه. */
+let BUILD_SEEN=null, BUILD_NAG=false;
+
+/* كتابة معلّقة = تعديل الطالب لم يصل القاعدة بعد. إعادة التحميل تضيّعه. */
+function pendingWrites(){
+  try{ return Object.values(_saveQ).some(x=>x&&(x.running||x.pending)) }
+  catch(e){ return false }
+}
+
+function checkBuild(st){
+  if(!st||!st.build)return false;
+  if(!BUILD_SEEN){ BUILD_SEEN=st.build; return false }
+  if(st.build===BUILD_SEEN)return false;
+  const ar=LANG==='ar';
+
+  if(pendingWrites()){
+    if(!BUILD_NAG){
+      BUILD_NAG=true;
+      showToast(ar?'فيه تحديث — نحفظ تعديلاتك أول'
+                  :'Update available — saving your changes first','ok');
+    }
+    return false;
+  }
+
+  /* حزام ضد حلقة إعادة تحميل: لو أعدنا التحميل للتو ما نعيدها.
+     محفوظ في التخزين لأن المتغيّر يضيع مع كل تحميل. */
+  const last=Number(load('pmu_build_reload',0))||0;
+  if(Date.now()-last<120000){
+    if(!BUILD_NAG){
+      BUILD_NAG=true;
+      showToast(ar?'فيه تحديث للموقع — أغلق الصفحة وافتحها'
+                  :'A new version is available — close and reopen','ok');
+    }
+    return false;
+  }
+
+  save('pmu_build_reload',Date.now());
+  showToast(ar?'ينزل تحديث للموقع…':'Updating…','ok');
+  setTimeout(()=>{ try{ location.reload() }catch(e){} },700);
+  return true;
+}
+
+/* البصمة تُفحص عند كل رجوع للصفحة، سواء كان الطالب مسجّلاً أو لا —
+   resumeSync تتوقف عند غير المسجّل، وتحديث النسخة يخص الجميع. */
+let BUILD_CHECKING=false;
+async function checkBuildNow(){
+  if(BUILD_CHECKING)return;
+  if(document.visibilityState&&document.visibilityState!=='visible')return;
+  BUILD_CHECKING=true;
+  try{
+    const st=await (await fetch(API_BASE+'/api/monitor-status',
+                                {cache:'no-store'})).json();
+    MON_STATE=st;
+    checkBuild(st);
+    enforceSlotAndRedraw();
+  }catch(e){ /* شبكة متعثّرة لحظة الفتح — نتركها للمرة القادمة */ }
+  finally{ BUILD_CHECKING=false }
+}
+
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible')checkBuildNow();
+});
+window.addEventListener('focus',()=>checkBuildNow());
+
 let RESUME_AT=0, RESUMING=false;
 async function resumeSync(){
   if(!USER)return;
@@ -6834,13 +7632,22 @@ async function resumeSync(){
       await refreshProfile();
     }
     await loadMonitored();
+    /* تغيّرات الجامعة على جدوله — قراءة ودمج حقول فقط، بلا استبدال */
+    try{ await syncSchedChanges() }catch(e){}
+    /* بصمة النسخة: المثبَّت قد يكون على بناء قديم من أيام */
+    try{
+      const st=await (await fetch(API_BASE+'/api/monitor-status')).json();
+      MON_STATE=st; checkBuild(st);
+    }catch(e){}
     renderResults();renderSettings();
   }catch(e){ /* الشبكة قد تكون منقطعة لحظة الفتح — نبقي المعروض */ }
   finally{ RESUMING=false }
 }
 
 /* iOS يرجّع الصفحة من الذاكرة عند الرجوع للخلف بلا visibilitychange */
-window.addEventListener('pageshow',e=>{ if(e.persisted)resumeSync() });
+window.addEventListener('pageshow',e=>{
+  if(e.persisted){ resumeSync(); checkBuildNow(); }
+});
 
 async function refreshProfile(){
   if(!USER)return false;
@@ -6956,18 +7763,41 @@ function isCourseMonitored(code){
   return monitored.some(m=>m.scope==='course'&&sameCode(m.course_code,code)&&m.term===term);
 }
 
+/* ═══ متى يُسمح بمراقبة جديدة ═══
+   مراقبة ترم غير مفتوح للتسجيل وعد كاذب: لو فتحت الشعبة ما يقدر
+   الطالب يسجّل، ودورة السيرفر تتجاهل الصف أصلاً.
+   يقيّد الإضافة فقط — إيقاف مراقبة قائمة يبقى متاحاً في كل وقت.
+   ولو تعذّرت قراءة الحالة نسمح: قطع شبكة لحظي ما يستاهل قفل الجرس. */
+function watchGate(term){
+  const st=MON_STATE||{};
+  if(st.canWatch===false){
+    const nx=st.next&&st.next.from?st.next.from:'';
+    return {ok:false,msg:LANG==='ar'
+      ?'المراقبة مقفولة خارج فترة التسجيل'+(nx?` — تفتح ${nx}`:'')
+      :'Watching is closed outside registration'+(nx?` — reopens ${nx}`:'')};
+  }
+  const rt=st.regTerm||st.term;
+  if(rt&&String(term)!==String(rt))
+    return {ok:false,msg:LANG==='ar'
+      ?'المراقبة للترم المفتوح للتسجيل فقط'
+      :'Watching is limited to the term open for registration'};
+  return {ok:true};
+}
+
 async function toggleMonitorAll(code){
   if(USER&&isPro()&&!isCourseMonitored(code)&&!needTelegram())return;
   return toggleMonitorAllGo(code);
 }
 async function toggleMonitorAllGo(code){
   if(!USER){showToast(LANG==='ar'?'سجّل دخول أول':'Sign in first','warn');return}
-  if(!isPro()){
-    showToast(LANG==='ar'?'🔒 المراقبة تحتاج اشتراك':'🔒 Monitoring requires a subscription','warn');
-    switchTab('set');return;
-  }
   const term=document.getElementById('term').value;
   const ex=monitored.find(m=>m.scope==='course'&&sameCode(m.course_code,code)&&m.term===term);
+  if(!ex){
+    const g=watchGate(term);
+    if(!g.ok){ showToast(g.msg,'warn'); return }
+    /* كان يقفل حتى الإيقاف — والإيقاف لازم يبقى متاحاً دائماً */
+    if(!isPro()){ openPlans('course'); return }
+  }
   if(ex){
     logUnwatch(ex);
     await sb.from('monitored_courses').delete().eq('id',ex.id);
@@ -6999,12 +7829,13 @@ async function toggleMonitorCourse(crn){
 }
 async function toggleMonitorCourseGo(crn){
   if(!USER){showToast(LANG==='ar'?'سجّل دخول أول':'Sign in first','warn');return}
-  if(!isPro()){
-    showToast(LANG==='ar'?'🔒 المراقبة تحتاج اشتراك':'🔒 Monitoring requires a subscription','warn');
-    switchTab('set');return;
-  }
   const c=allCourses.find(x=>x.crn===crn);if(!c)return;
   const ex=monitored.find(m=>m.crn===crn);
+  if(!ex){
+    const g=watchGate(document.getElementById('term').value);
+    if(!g.ok){ showToast(g.msg,'warn'); return }
+    if(monCapReached()){ openPlans('monitors'); return }
+  }
   if(ex){
     logUnwatch(ex);
     await sb.from('monitored_courses').delete().eq('id',ex.id);
@@ -7062,23 +7893,17 @@ function renderSettings(){
   if(pchk)pchk.checked=prepOn();
   const pro=isPro();
   const card=document.getElementById('proCard');
-  const btn=document.getElementById('btnPro');
+  const set=(id,v)=>{ const el=document.getElementById(id); if(el)el.textContent=v };
+  const soon=document.getElementById('proSoon');
 
-  const d=daysLeft(),trial=isTrial();
-
-  /* ═══ الفترة التجريبية: كل شي مجاني، ولا نعرض سعر ولا وسيلة دفع ═══ */
-  if(FREE_BETA){
+  /* ═══ الفترة المجانية: لا سعر ولا وسيلة دفع ولا دعوات ═══ */
+  if(freeBeta()){
+    const acct=document.getElementById('proAcct'); if(acct)acct.innerHTML='';
     card.classList.add('pro-trial');
     card.classList.remove('pro-active');
-    /* البطاقة مطويّة، فالعنوان قصير يتّسع بالعرض بدل ما ينزل كلمة بكل سطر.
-       التفصيل الكامل في الوصف داخلها. */
-    document.getElementById('proTitle').textContent=ar?'🎁 كل شي مجاني':'🎁 All free';
-    document.getElementById('proSub').textContent=ar?
-      'فترة تجريبية — بلا رسوم':'Open beta — no fees';
-    document.getElementById('proPrice').textContent=ar?'مجاني حالياً':'Free for now';
-    btn.style.display='none';
-    document.getElementById('payBox').classList.remove('visible');
-    const soon=document.getElementById('proSoon');
+    set('proTitle',ar?'🎁 كل شي مجاني':'🎁 All free');
+    set('proSub',ar?'فترة مجانية — بلا رسوم':'Open beta — no fees');
+    set('proPrice',ar?'مجاني حالياً':'Free for now');
     if(soon){
       soon.style.display='block';
       soon.innerHTML=ar?
@@ -7089,40 +7914,32 @@ function renderSettings(){
     return;
   }
 
-  card.classList.toggle('pro-active',pro&&!trial);
-  card.classList.toggle('pro-trial',trial);
-  const soonEl=document.getElementById('proSoon');
-  if(soonEl)soonEl.style.display='none';
-
-  if(trial){
-    document.getElementById('proTitle').textContent=ar?'🎁 تجربتك المجانية شغّالة':'🎁 Free trial active';
-    document.getElementById('proSub').textContent=ar?
-      'كل الميزات مفتوحة — جدّد قبل ما تنتهي عشان ما تنقطع':
-      'All features unlocked — renew before it ends';
-    document.getElementById('proPrice').textContent=ar?
-      (d===1?'باقي يوم واحد':d===2?'باقي يومين':`باقي ${d} يوم`):
-      (d===1?'1 day left':`${d} days left`);
-    btn.style.display='block';
-    btn.textContent=ar?'جدّد بـ 19 ريال / سنة':'Renew — SAR 19 / year';
-  }else if(pro){
-    document.getElementById('proTitle').textContent=ar?'اشتراكك فعّال ✅':'Subscription active ✅';
-    document.getElementById('proSub').textContent=ar?'كل الميزات مفتوحة لك':'All features unlocked';
+  /* بعد الفترة المجانية: مشترك أو لا. تنفتح البطاقة مرة أولى لوحدها —
+     رابط الدعوة خلف سهم مطوي ما أحد يشوفه */
+  if(!PRO_TOUCHED&&!PRO_OPEN){
+    PRO_OPEN=true;
+    const b=document.getElementById('proBody'), f=document.getElementById('proFold');
+    if(b)b.hidden=false; if(f)f.classList.add('open');
+  }
+  card.classList.toggle('pro-active',pro);
+  card.classList.remove('pro-trial');
+  if(soon)soon.style.display='none';
+  const price=document.getElementById('proPrice');
+  renderAcct(ar);
+  if(pro){
     const exp=PROFILE?.subscription_expires_at;
-    document.getElementById('proPrice').textContent=exp?
-      (ar?'ينتهي '+new Date(exp).toLocaleDateString('ar-SA'):'Until '+new Date(exp).toLocaleDateString('en-GB')):
-      (ar?'فعّال':'Active');
-    btn.style.display='none';
-    document.getElementById('payBox').classList.remove('visible');
+    set('proTitle',ar?'اشتراك الترم ✅':'Term plan ✅');
+    set('proSub',exp?(ar?'حتى '+new Date(exp).toLocaleDateString('ar-u-ca-gregory-nu-latn',{day:'numeric',month:'long'})
+                        :'Until '+new Date(exp).toLocaleDateString('en-GB',{day:'numeric',month:'long'}))
+                    :(ar?'كل الميزات مفتوحة لك':'All features unlocked'));
+    if(price){ price.classList.remove('bare'); price.textContent='' }
   }else{
-    const everHad=!!PROFILE?.subscription_expires_at;
-    document.getElementById('proTitle').textContent=ar?
-      (everHad?'انتهت تجربتك':'اشتراك جدولك'):(everHad?'Your trial ended':'Jadwalik Pro');
-    document.getElementById('proSub').textContent=ar?
-      (everHad?'اشترك عشان ترجع المراقبة والحفظ السحابي':'فعّل المراقبة والحفظ السحابي'):
-      (everHad?'Subscribe to restore monitoring and cloud sync':'Unlock monitoring and cloud sync');
-    document.getElementById('proPrice').textContent=ar?'19 ريال / سنة':'SAR 19 / year';
-    btn.style.display='block';
-    btn.textContent=ar?'اشترك الحين':'Subscribe now';
+    const P=planInfo();
+    set('proTitle',ar?'حساب مجاني':'Free account');
+    set('proSub',ar?`المراقبة ${Math.min(freeWatchUsed(),P.freeMonitors)} من ${P.freeMonitors}\n${P.freeSchedules===1?'جدول واحد':P.freeSchedules+' جداول'}`
+                   :`Watches ${Math.min(freeWatchUsed(),P.freeMonitors)} of ${P.freeMonitors}`);
+    if(price){ price.classList.add('bare');
+      price.innerHTML=`<button class="btn-sm" onclick="event.stopPropagation();openPlans('compare')">${ar?'الباقات':'Plans'}</button>` }
   }
 
   renderTgAndMon(ar);
@@ -7151,6 +7968,12 @@ function toggleMyRev(){
   const c=document.getElementById('myRevCard');
   if(c)c.classList.toggle('open');
 }
+function openMyRev(){
+  const c=document.getElementById('myRevCard');
+  if(!c)return;
+  c.classList.add('open');
+  c.scrollIntoView({behavior:'smooth',block:'start'});
+}
 
 /* تفضيلات التنبيهات — محفوظة في profiles.notif_prefs (jsonb).
    جدول مستقل لأربعة مفاتيح مبالغة، والملف الشخصي يُسحب مع كل دخول أصلاً. */
@@ -7173,6 +7996,158 @@ async function setNotif(key,val){
   PROFILE=Object.assign({},PROFILE,{notif_prefs:next});
   renderSettings();
 }
+/* ═══ التنبيه الطارئ عبر Pushover ═══
+   تيليغرام يُكتم بسهولة، وهذي تعيد التنبيه حتى يؤكّده الطالب بنفسه.
+   مخفية افتراضياً: تجربة Pushover ٣٠ يوماً تبدأ لحظة الاشتراك، فتفعيلها
+   خارج موسم التسجيل يحرقها على الفاضي.
+   الأوضاع من السيرفر: off لا أحد · link لمن فتح ‎?pushover=1‎ ·
+   addon لمن اشترى الإضافة · all للجميع. والسيرفر هو اللي يقرر من يستلم
+   فعلاً — البطاقة هنا عرض فقط. */
+const PO_UNLOCK='jdw_po_unlock', PO_NONCE='jdw_po_nonce';
+
+function poConf(){ return (MON_STATE&&MON_STATE.pushover)||null }
+
+/* الإضافة سارية: من الملف أو من حساب السيرفر — أيهما أحدث */
+function hasPushoverAddon(){
+  const until=(PROFILE&&PROFILE.pushover_until)||(ACCOUNT&&ACCOUNT.pushoverUntil)||null;
+  return !!((PROFILE&&PROFILE.is_pro)||(until&&new Date(until)>new Date()));
+}
+/* البطاقة تظهر كاملة لمن يحق له، ومقفولة بشرح لمن ما اشترى الإضافة —
+   بدل ما تختفي فما يعرف الطالب إن الميزة موجودة */
+function poState(){
+  const c=poConf();
+  if(!c||!c.url)return 'hidden';
+  if(c.mode==='all')return 'open';
+  if(c.mode==='addon')return hasPushoverAddon()?'open':(USER?'locked':'hidden');
+  if(c.mode==='link'){
+    try{ return localStorage.getItem(PO_UNLOCK)==='1'?'open':'hidden' }catch(e){ return 'hidden' }
+  }
+  return 'hidden';
+}
+function poVisible(){ return poState()==='open' }
+
+/* ‎?pushover=1‎ يفتحها لهذا الجهاز وحده — رابط تعطيه لمن تجرّب معه */
+function poCheckUnlock(){
+  try{
+    const q=new URLSearchParams(location.search);
+    if(q.get('pushover')==='1'){
+      localStorage.setItem(PO_UNLOCK,'1');
+      q.delete('pushover');
+      history.replaceState({},'',location.pathname+(q.toString()?'?'+q:''));
+    }
+  }catch(e){}
+}
+
+function poStart(){
+  const c=poConf();
+  if(!c||!c.url)return;
+  /* رمز عشوائي نتحقق منه عند الرجوع. بدونه يقدر أحد يفتح للطالب رابط
+     العودة بمفتاح يملكه هو، فتروح إشعارات الطالب الخاصة له. */
+  let n='';
+  try{
+    const a=new Uint8Array(16); crypto.getRandomValues(a);
+    n=[...a].map(x=>x.toString(16).padStart(2,'0')).join('');
+    localStorage.setItem(PO_NONCE,n);
+  }catch(e){ showToast(LANG==='ar'?'ما ضبطت — جرّب مرة ثانية':'Failed — try again','err'); return }
+  const base=location.origin+'/';
+  const ok=base+'?rand='+n;
+  location.href=c.url+'?success='+encodeURIComponent(ok)+
+                '&failure='+encodeURIComponent(base);
+}
+
+/* الرجوع من Pushover: نتحقق من الرمز، نخزّن المفتاح، وننظّف الرابط */
+async function poHandleReturn(){
+  let q;
+  try{ q=new URLSearchParams(location.search) }catch(e){ return }
+  const key=q.get('pushover_user_key');
+  const unsub=q.get('pushover_unsubscribed')==='1';
+  if(key===null&&!unsub)return;
+
+  const clean=()=>{
+    ['rand','pushover_user_key','pushover_unsubscribed',
+     'pushover_unsubscribed_user_key'].forEach(k=>q.delete(k));
+    try{ history.replaceState({},'',location.pathname+(q.toString()?'?'+q:'')) }catch(e){}
+  };
+
+  let saved='';
+  try{ saved=localStorage.getItem(PO_NONCE)||'' }catch(e){}
+  try{ localStorage.removeItem(PO_NONCE) }catch(e){}   /* مرة واحدة دائماً */
+
+  if(!saved||q.get('rand')!==saved){
+    clean();
+    showToast(LANG==='ar'?'الرابط ما هو من عندك — ألغينا الربط'
+                         :'Link did not originate here — cancelled','err');
+    return;
+  }
+  if(!USER){ clean(); return }
+
+  const val=unsub?null:(key||null);
+  const {error}=await sb.from('profiles').update({pushover_key:val}).eq('id',USER.id);
+  clean();
+  if(error){ showToast(LANG==='ar'?'ما ضبطت — جرّب مرة ثانية':'Failed — try again','err'); return }
+  PROFILE=Object.assign({},PROFILE,{pushover_key:val});
+  showToast(val?(LANG==='ar'?'🔔 التنبيه الطارئ شغّال':'🔔 Urgent alerts on')
+                :(LANG==='ar'?'أوقفنا التنبيه الطارئ':'Urgent alerts off'));
+  renderSettings();
+}
+
+/* نفس علّة بطاقة الترم: النص كان يعد بترم قادم وهو الحالي.
+   خرج من جدول الترجمة عمداً لأن صيغته تتبدّل مع حالة التسجيل. */
+function syncPlanHint(){
+  const el=document.getElementById('tapTip');
+  if(!el)return;
+  const ar=LANG==='ar';
+  el.innerHTML=ar
+    ? '👆 <b>اضغط أي مادة</b> عشان تشوف شعبها وأوقاتها'+
+      (regOpen()?' في ترم التسجيل القادم':' في الترم الحالي')
+    : '👆 <b>Tap any course</b> to see its sections and times'+
+      (regOpen()?' for the upcoming registration term':' for the current term');
+}
+
+function renderPushover(){
+  const box=document.getElementById('poRow');
+  if(!box)return;
+  const st=poState();
+  const ar=LANG==='ar';
+  if(st==='hidden'){ box.innerHTML=''; return }
+  if(st==='locked'){
+    const P=planInfo();
+    box.innerHTML=`<div class="nt-row">
+      <div class="nt-txt">
+        <b>🚨 ${ar?'تنبيه طارئ عند فتح الشعبة':'Urgent alert when a section opens'}</b>
+        <span>${ar?`يرن حتى لو الجوال صامت، ويعيد لين تأكّده. إضافة على اشتراك الترم بـ${sarTxt(P.po)} ريال.`
+                  :`Rings even on silent and repeats until you confirm. A ${sarTxt(P.po)} SAR add-on.`}</span>
+      </div>
+      <button class="btn-sm" onclick="openPlans('pushover')">${ar?'أضفه':'Add'}</button>
+    </div>`;
+    return;
+  }
+  const on=!!(PROFILE&&PROFILE.pushover_key);
+  /* المشتري ما يدفع لـPushover — نحن نغطي ترخيص التطبيق لو انتهت تجربته */
+  const addonMode=(poConf()||{}).mode==='addon';
+  box.innerHTML=`<div class="nt-row">
+    <div class="nt-txt">
+      <b>${ar?'تنبيه طارئ عند فتح الشعبة':'Urgent alert when a section opens'}</b>
+      <span>${on
+        ? (ar?'شغّال — يعيد التنبيه حتى تأكّده بنفسك.<br>'+
+              'عشان يتجاوز الكتم ووضع «عدم الإزعاج»: افتح تطبيق Pushover ← '+
+              'Settings ← فعّل <b>Critical Alerts for high-priority</b> و'+
+              '<b>Critical Alerts for emergency</b>، واضبط <b>Volume for Critical Alerts</b>. '+
+              'هذا إعداد في جهازك ما نقدر نضبطه عنك.'
+             :'On — repeats until you acknowledge it.<br>'+
+              'To bypass mute and Do Not Disturb, open Pushover ← Settings and enable '+
+              '<b>Critical Alerts</b> for high-priority and emergency.')
+        : addonMode
+          ? (ar?'عبر تطبيق Pushover — إضافتك تغطيه، ولو طلب منك الدفع نحن ندفعه. تنبيهات تيليغرام تستمر في كل الأحوال.'
+               :'Via the Pushover app — your add-on covers it; if it asks you to pay, we pay. Telegram alerts continue regardless.')
+          : (ar?'عبر تطبيق Pushover. مجاني ٣٠ يوماً من لحظة الاشتراك، وبعدها شراء مرة واحدة لو حبيت. تنبيهات تيليغرام تستمر في كل الأحوال.'
+               :'Via the Pushover app. Free for 30 days, one-time purchase after that. Telegram alerts continue regardless.')}</span>
+    </div>
+    <button class="btn-sm${on?' ghost':''}" onclick="poStart()">${
+      on?(ar?'إدارة':'Manage'):(ar?'تفعيل':'Enable')}</button>
+  </div>`;
+}
+
 function renderNotif(){
   const card=document.getElementById('notifCard');
   if(!card)return;
@@ -7190,6 +8165,7 @@ function renderNotif(){
   document.getElementById('notifList').innerHTML=
     row('on',t('ntAll'),t('ntAllSub'),p.on)
     +NOTIF_KEYS.map(([k,tk,dk])=>row(k,t(tk),t(dk),p.on&&p[k],!p.on)).join('');
+  renderPushover();
 }
 
 function renderTgAndMon(ar){
@@ -7234,12 +8210,13 @@ function renderTgAndMon(ar){
       ar?'ما تراقب أي مادة. روح للبحث واضغط 🔔 على أي مادة مسكّرة.':
           'Not watching any course. Go to Search and tap 🔔 on a closed course.'}</div>`;
   }else{
+    const paused=pausedMonitorIds();
     ml.innerHTML=monitored.map(m=>{
-      const all=m.scope==='course';
-      return `<div class="set-row">
+      const all=m.scope==='course', ps=paused.has(m.id);
+      return `<div class="set-row${ps?' mon-paused':''}">
         <div class="set-info">
           <h4>${m.course_code}${all?'':' §'+(m.section||'')}</h4>
-          <p>${all
+          <p>${ps?(ar?'⏸️ متوقفة — ترجع تشتغل مع الاشتراك · ':'⏸️ Paused — resumes with a plan · '):''}${all
             ? (ar?'📡 كل الشعب — أي شعبة تفتح أو تنزل':'📡 All sections')
             : `CRN ${m.crn} · ${m.last_status==='OPEN'?'🟢 OPEN':'🔴 CLOSE'}`}</p>
         </div>
@@ -7252,9 +8229,11 @@ function renderTgAndMon(ar){
   /* account */
   document.getElementById('accEmail').textContent=USER?USER.email:(ar?'غير مسجل':'Not signed in');
   document.getElementById('accStatus').textContent=USER?
-    (FREE_BETA?(ar?'كل الميزات مفتوحة':'All features unlocked'):
-     isTrial()?(ar?`تجربة مجانية — باقي ${daysLeft()} يوم`:`Free trial — ${daysLeft()} days left`):
-     pro?(ar?'حساب مشترك':'Subscribed account'):(ar?'حساب مجاني':'Free account')):
+    /* كانت تقرأ متغيّر pro غير معرّف في هذي الدالة — ما انكشف لأن الفترة
+       المجانية كانت تقطع الشرط قبله دائماً. يوم الإطلاق كان تبويب الإعدادات
+       بينهار لكل مسجّل. */
+    (freeBeta()?(ar?'كل الميزات مفتوحة':'All features unlocked'):
+     isPro()?(ar?'حساب مشترك':'Subscribed account'):(ar?'حساب مجاني':'Free account')):
     (ar?'سجّل دخول لحفظ بياناتك':'Sign in to save your data');
   document.getElementById('btnAcc').textContent=USER?(ar?'خروج':'Sign out'):(ar?'دخول':'Sign in');
 }
@@ -7435,7 +8414,7 @@ async function loadInstructors(force){
       const ctrl=new AbortController();
       const timer=setTimeout(()=>ctrl.abort(),30000);
       try{
-        const r=await fetch(`${API}?term=${UPCOMING_TERM}&college=ALL&gender=ALL`,
+        const r=await fetch(`${API}?term=${serverTerm()}&college=ALL&gender=ALL`,
                             {signal:ctrl.signal});
         const d=await r.json();
         if(d && d.success){
@@ -7647,8 +8626,8 @@ function searchIn(query, note){
   const gen =document.getElementById('gender');
 
   /* نجبر الخيارات على ترم التسجيل القادم + الكل، مهما كان اختياره السابق */
-  const changed = term.value!==UPCOMING_TERM || col.value!=='ALL' || gen.value!=='ALL';
-  term.value=UPCOMING_TERM; col.value='ALL'; gen.value='ALL';
+  const changed = term.value!==searchTermCode() || col.value!=='ALL' || gen.value!=='ALL';
+  term.value=searchTermCode(); col.value='ALL'; gen.value='ALL';
   termHint();
 
   resetTabScroll('search');
@@ -7749,7 +8728,20 @@ function renderDocDetail(){
           ar?'ما كتب أحد رأيه بعد.':'No written reviews yet.'}</div>`}</div>`;
 }
 
-function escapeHtml(x){return (x||'').replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]))}
+/* بيانات الجامعة تجي وفيها كيانات HTML مرمَّزة أصلاً («Think&#x27;g»)،
+   فترميزها مرة ثانية يطبع الكيان كما هو أمام الطالب. نفك الترميز أولاً
+   ثم نرمّز. textarea آمن: المحتوى يُقرأ نصاً ولا يُنفَّذ. */
+let _ENT=null;
+function decodeEnt(s){
+  if(!/&[#a-zA-Z]/.test(s))return s;
+  try{
+    if(!_ENT)_ENT=document.createElement('textarea');
+    _ENT.innerHTML=s;
+    return _ENT.value;
+  }catch(e){ return s }
+}
+function escapeHtml(x){return decodeEnt(String(x==null?'':x))
+  .replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]))}
 
 /* ---------- نموذج التقييم ---------- */
 function openRatingForm(){
@@ -7875,13 +8867,14 @@ function renderMyReviews(){
     return;
   }
   const mine=reviews.filter(r=>r.user_id===USER.id);
+  const rc=revCreditHTML();
   if(!mine.length){
-    box.innerHTML=`<div style="font-size:12.5px;color:var(--text3);padding:8px 0;line-height:1.7">${
+    box.innerHTML=rc+`<div style="font-size:12.5px;color:var(--text3);padding:8px 0;line-height:1.7">${
       ar?'ما قيّمت أي دكتور بعد. روح تبويب الدكاترة وشارك تجربتك.':
           'You have not reviewed anyone yet. Head to the Faculty tab and share your experience.'}</div>`;
     return;
   }
-  box.innerHTML=mine.map(r=>`
+  box.innerHTML=rc+mine.map(r=>`
     <div class="my-rev">
       <div class="my-rev-top">
         <div style="flex:1;min-width:0">
@@ -7917,72 +8910,129 @@ async function deleteMyReview(name){
 
 /* ================= GUIDE ================= */
 const GUIDE={
-ar:{title:'كيف تستخدم جدولك',lead:'كل ميزة بسطر — أقل من دقيقتين',
-sec1:'البداية',sec2:'ميزات إضافية',
-steps:[
-{n:'1',t:'اختر تخصصك',d:'من <b>⚙️ الإعدادات</b> اختر تخصصك — <b>20 تخصص</b>، كل كليات الجامعة. الخطة والساعات والمتطلبات تتغير معك تلقائياً.'},
-{n:'2',t:'علّم اللي خلصته',d:'في <b>📋 خطتي</b> اضغط المربّع جنب كل مادة درستها. المواد اللي متطلبها ناقص تظهر <b>مقفلة</b>، وتنفتح أول ما تعلّم متطلبها.'},
-{n:'3',t:'شوف مقترح الترم الجاي',d:'فوق الخطة يطلع لك مقترح جاهز. اللي معلّم <b>"لا تؤجلها"</b> مواد تفتح لك مواد بعدها — تأجيلها يأخّر تخرّجك.'},
-{n:'4',t:'اضغط أي مادة تشوف شعبها',d:'من <b>📋 خطتي</b> اضغط أي مادة — من المقترح أو من الخطة كاملة — ينقلك للبحث ويوريك شعبها وأوقاتها ودكاترتها في <b>ترم التسجيل القادم</b> مباشرة.'},
-{n:'5',t:'احسب معدلك',d:'حط درجة أي مادة خلصتها، والمعدل يتحدّث فوراً بنظام الجامعة (‎A+‎ = 4.00). تقدر كمان تجرّب: كم لازم أجيب هذا الترم عشان أوصل معدل معيّن.'},
-{n:'6',t:'ابحث عن موادك',d:'في <b>🔍 البحث</b> اختر الترم واضغط ابحث. الفلتر يقبل <b>كود المادة</b> أو <b>الـ CRN</b> أو <b>اسم المادة</b> أو <b>اسم الدكتور</b>. وكل شعبة مكتوب عليها إذا هي للطلاب ولا للطالبات.'},
-{n:'7',t:'ابنِ جدولك',d:'اضغط <b>+</b> على أي شعبة تضيفها. لو تعارضت مع مادة عندك، الموقع ينبّهك قبل ما تسجّل.'},
-{n:'8',t:'اطبع جدولك',d:'زر <b>🖨️ اطبع الجدول</b> يطلع ورقة واحدة منظّمة — شبكة أسبوعية ملوّنة تبيّن فراغاتك، ومعها اختباراتك النهائية.'},
-{n:'9',t:'اختباراتك النهائية',d:'في <b>📅 جدولي</b> اضغط <b>اعرض</b> تحت "اختباراتك النهائية" — يطلع لك موعد وقاعة كل اختبار من مواد جدولك، وينبّهك لو صار اختبارين بنفس الوقت.'},
-{n:'10',t:'مواعيد تهمك',d:'نفس الصفحة تعرض أقرب المواعيد بعدّاد أيام: التسجيل، بداية الدراسة، <b>آخر يوم انسحاب</b>، والاختبارات. المواعيد القريبة تتلوّن تنبيهاً.'},
-{n:'11',t:'قيّم دكاترتك',d:'في <b>👨‍🏫 دكاترة</b> شوف تقييمات الطلاب قبل ما تسجّل، وقيّم أنت <b>بشكل مجهول</b> — ما أحد يشوف اسمك. وفي صفحة كل دكتور زر <b>"شوف مواده هذا الترم"</b>.'},
-{n:'12',t:'قول لنا رأيك',d:'في <b>⚙️ الإعدادات</b> خانة <b>"رأيك يهمنا"</b> — اكتب أي اقتراح أو مشكلة. توصلني فوراً، وإذا حطيت وسيلة تواصل أرد عليك.'}],
-pro:[
-{n:'★',t:'راقب المواد المسكّرة',d:'أي مادة <code>CLOSE</code> جنبها <b>🔕</b> — اضغطه يصير <b>🔔</b>. السيرفر يفحص كل 5 دقائق <b>حتى والموقع مسكّر</b>، فما تحتاج تفتح الصفحة. راقب كم مادة ما تبي.'},
-{n:'★',t:'اربط تيليغرام',d:'من <b>⚙️ الإعدادات</b> اضغط "ربط" → يفتح البوت → Start. أول ما تنفتح مادتك يوصلك إشعار فيه الـ CRN والوقت والقاعة.'},
-{n:'★',t:'حفظ سحابي',d:'خطتك وجدولك ومعدلك محفوظة في حسابك — افتح من أي جهاز وتلقى كل شي زي ما تركته.'}],
+ar:{title:'كيف تستخدم جدولك',lead:'مقسّم على أقسام — افتح اللي يهمك',
+newLbl:'جديد',
+sections:[
+{ic:'🚀',name:'ابدأ من هنا',open:1,items:[
+ {t:'اختر تخصصك',d:'من <b>⚙️ الإعدادات</b> اختر تخصصك — <b>٢٠ تخصص</b>، كل كليات الجامعة. الخطة والساعات والمتطلبات تتغيّر معك تلقائياً.'},
+ {t:'علّم اللي خلصته',d:'في <b>📋 خطتي</b> اضغط المربّع جنب كل مادة درستها. المواد اللي متطلبها ناقص تظهر <b>مقفلة</b>، وتنفتح أول ما تعلّم متطلبها.'},
+ {t:'ابحث وابنِ جدولك',d:'في <b>🔍 البحث</b> اختر الترم واضغط ابحث. الفلتر يقبل <b>كود المادة</b> أو <b>CRN</b> أو <b>اسم المادة</b> أو <b>اسم الدكتور</b>. اضغط <b>➕</b> على أي شعبة تضيفها.'}]},
+
+{ic:'☀️',name:'يومك',isNew:1,items:[
+ {t:'وين أنت من يومك',isNew:1,d:'تبويب <b>اليوم</b> يرتّب محاضراتك بالترتيب: الجارية تتلوّن أخضر ومعها شريط يمشي، و<b>خط «الآن»</b> يتحرك بينها مع الساعة، واللي خلص يبهت لحاله.'},
+ {t:'فراغاتك مكتوبة',isNew:1,d:'بين كل محاضرتين يطلع سطر مثل «فراغ ١ ساعة و١٠ د» — تعرف متى تذاكر ومتى ترجع البيت بدون ما تحسب.'},
+ {t:'اضغط المادة يفتح ملفها',d:'أي محاضرة تضغطها ينفتح لوح فيه وقتها وقاعتها ودكتورها، وتحته كل شي يخص المادة.'},
+ {t:'الغياب',isNew:1,d:'سجّل غيابك بتاريخه، ويحسب لك النسبة تلقائياً — الحد <b>١٥٪</b> من محاضرات الترم. العدّاد يقول لك <b>٢ من ٤</b> قبل ما توصل الحرمان.<br><b>ملاحظة:</b> الحساب إرشادي، والمرجع الرسمي سجل الجامعة.'},
+ {t:'مواعيد المادة',isNew:1,d:'كويز · واجب · مشروع · ميدتيرم · نهائي. تكتبه مرة ويطلع في يومه ويذكّرك قبله. وتقدر تعدّله أو تأجّله.'},
+ {t:'صور وملفات المادة',isNew:1,d:'صوّر السبورة أو ارفع الملخص — ينحفظ على المادة نفسها وتلقاه وقت المذاكرة، بدل ما يضيع بين ألف صورة في ألبومك. الصور تُضغط تلقائياً، والحد ١٠ ميغا للملف.'},
+ {t:'شارك مع شعبتك',isNew:1,d:'أي موعد أو ملف تقدر تشاركه بضغطة <b>📢</b> فيوصل لزملائك في <b>نفس الشعبة</b> وبدون اسمك.<br>🔒 وكل شي ترفعه <b>خاص فيك</b> ما لم تختر تشاركه.'},
+ {t:'أسبوعك كامل',isNew:1,d:'بدّل لـ<b>الأسبوع</b> تشوف الخمسة أيام: عدد محاضرات كل يوم ووقت أول وآخر وحدة، ومواعيدك في يومها، وتواريخ الحذف والانسحاب. وتقدر تتنقل بين أسابيع الترم.'}]},
+
+{ic:'📅',name:'جدولك',items:[
+ {t:'ثلاثة جداول تجرّب فيها',d:'<b>جدول ١ · ٢ · ٣</b> — جرّب توزيعات مختلفة قبل ما تقرر، وبدّل بينها بضغطة.'},
+ {t:'التعارض ينبّهك',d:'لو أضفت شعبة تتعارض مع مادة عندك، الموقع يقول لك قبل ما تسجّل — لا بعدها.'},
+ {t:'الشبكة واضغط أي مادة',isNew:1,d:'حوّل لـ<b>شبكة</b> تشوف أسبوعك كجدول، بثلاثة أحجام. والاسم مقطوع؟ اضغط المادة تطلع لك بطاقة فيها الاسم والقاعة والدكتور كاملة، وتختفي بأي لمسة.'},
+ {t:'اطبع جدولك',d:'<b>🖨️ اطبع</b> يطلع ورقة واحدة منظّمة — شبكة أسبوعية ملوّنة تبيّن فراغاتك، ومعها اختباراتك النهائية.'},
+ {t:'اختباراتك النهائية',d:'اضغط <b>اعرض</b> تحت «اختباراتك النهائية» — موعد وقاعة كل اختبار، وتنبيه لو صار اختبارين بنفس الوقت.'},
+ {t:'مواعيد تهمك',d:'أقرب المواعيد بعدّاد أيام: التسجيل، بداية الدراسة، <b>آخر يوم انسحاب</b>، والاختبارات. القريبة تتلوّن تنبيهاً.'}]},
+
+{ic:'📋',name:'خطتك ومعدلك',items:[
+ {t:'مقترح الترم الجاي',d:'فوق الخطة يطلع لك مقترح جاهز بناءً على اللي خلصته.'},
+ {t:'«لا تؤجلها»',d:'المواد المعلّمة كذا تفتح لك مواد بعدها — تأجيلها يأخّر تخرّجك.'},
+ {t:'احسب معدلك',d:'حط درجة أي مادة خلصتها والمعدل يتحدّث فوراً بنظام الجامعة (‎A+‎ = 4.00). وتقدر تسأل: كم لازم أجيب هذا الترم عشان أوصل معدل معيّن.'},
+ {t:'اضغط مادة تشوف شعبها',d:'من الخطة أو المقترح — اضغط أي مادة ينقلك للبحث ويوريك شعبها وأوقاتها ودكاترتها في <b>ترم التسجيل القادم</b>.'}]},
+
+{ic:'🔔',name:'تنبيهاتك',items:[
+ {t:'راقب المواد المسكّرة',d:'أي مادة <code>CLOSE</code> جنبها <b>🔕</b> — اضغطه يصير <b>🔔</b>. السيرفر يفحص كل ٥ دقائق <b>حتى والموقع مسكّر</b>، فما تحتاج تفتح الصفحة.'},
+ {t:'اربط تيليغرام',d:'من <b>⚙️ الإعدادات</b> اضغط «ربط» → يفتح البوت → Start. أول ما تنفتح مادتك يوصلك إشعار فيه الـCRN والوقت والقاعة.'},
+ {t:'لو تغيّر جدولك',isNew:1,d:'غيّرت الجامعة دكتور أو قاعة أو وقت مادة عندك؟ يوصلك إشعار، ويظهر تنبيه على المادة في جدولك يبيّن لك <b>وش كان ووش صار</b>.'},
+ {t:'تحكّم بالتنبيهات',isNew:1,d:'من <b>⚙️ الإعدادات</b> اختر أي إشعار تبيه وأيهم لا — كل نوع بمفتاح مستقل.'}]},
+
+{ic:'👨‍🏫',name:'الدكاترة ورأيك',items:[
+ {t:'قيّم دكاترتك',d:'في <b>👨‍🏫 دكاترة</b> شوف تقييمات الطلاب قبل ما تسجّل، وقيّم أنت <b>بشكل مجهول</b> — ما أحد يشوف اسمك. وفي صفحة كل دكتور زر «شوف مواده هذا الترم».'},
+ {t:'حفظ سحابي',d:'خطتك وجدولك ومعدلك محفوظة في حسابك — افتح من أي جهاز وتلقى كل شي زي ما تركته.'},
+ {t:'قول لنا رأيك',d:'في <b>⚙️ الإعدادات</b> خانة «رأيك يهمنا» — اكتب أي اقتراح أو مشكلة. توصلنا فوراً، وإذا حطيت وسيلة تواصل نرد عليك.'}]}],
 tip:'<b>🎁 كل الميزات مفتوحة مجاناً</b> — جدولك في فترة تجريبية، سجّل دخول واستمتع بكل شي بدون أي رسوم.'},
 
-en:{
-tdTab:'☀️ Today',tdDay:'Today',tdWeek:'Week',
-tdNoToday:'☕ No classes today',tdNoAny:'No classes in your schedule',
-tdEndsIn:'⏳ Ends in',tdStartsIn:'⏰ In',tdDone:'✓ Done',tdOf:'of',tdDoneN:'done',
-tdMin:'min',tdHr:'h',tdAnd:'',tdM:'m',
-tdToday:'Today',tdTomorrow:'Tomorrow',tdIn2:'In 2 days',tdInN:'In',tdDays:'days',
-tdAgo:'',tdDay1:'days ago',
-wkThis:'This week',wkNext:'Next week',wkPrev:'Last week',
-wkInN:'In',wkAgoN:'',wkWeeks:'weeks',wkBack:'Prev',wkFwd:'Next',
-wkPicker:'Term weeks',wkNum:'Week',wkCur:'current',wkNone:'No weeks — term has not started',
-wkOut:'Outside the term',title:'How to use Jadwalik',lead:'Every feature in one line — under two minutes',
-sec1:'Getting started',sec2:'Extra features',
-steps:[
-{n:'1',t:'Pick your major',d:'In <b>⚙️ Settings</b> choose your major — <b>20 programs</b>, every college. Your plan, credits and prerequisites switch automatically.'},
-{n:'2',t:'Mark what you finished',d:'In <b>📋 My Plan</b> tick the box next to each course you passed. Courses missing a prerequisite show as <b>locked</b> and open the moment you tick it.'},
-{n:'3',t:'See next term suggestion',d:'A ready plan appears above your degree plan. Anything marked <b>"Do not delay"</b> unlocks later courses — delaying it delays your graduation.'},
-{n:'4',t:'Tap any course for its sections',d:'In <b>📋 My Plan</b> tap any course — from the suggestion or the full plan — and it jumps to Search showing its sections, times and instructors for the <b>upcoming registration term</b>.'},
-{n:'5',t:'Calculate your GPA',d:'Enter a grade for any finished course and your GPA updates instantly on the PMU scale (A+ = 4.00). You can also ask: what do I need this term to reach a target GPA.'},
-{n:'6',t:'Search for courses',d:'In <b>🔍 Search</b> pick the term and hit search. The filter accepts a <b>course code</b>, <b>CRN</b>, <b>course title</b>, or <b>instructor name</b>. Every section is labelled male or female.'},
-{n:'7',t:'Build your schedule',d:'Tap <b>+</b> on any section to add it. If it clashes with a course you already have, you get warned before you register.'},
-{n:'8',t:'Print your schedule',d:'<b>🖨️ Print schedule</b> gives you one clean page — a colour-coded weekly grid showing your gaps, with your final exams underneath.'},
-{n:'9',t:'Your final exams',d:'In <b>📅 Schedule</b> tap <b>Show</b> under "Your final exams" — you get the date and room for every course in your schedule, and a warning if two exams collide.'},
-{n:'10',t:'Dates that matter',d:'The same page shows upcoming dates with a countdown: registration, first day of class, <b>the withdrawal deadline</b>, and finals. Near dates turn amber.'},
-{n:'11',t:'Rate your instructors',d:'In <b>👨‍🏫 Faculty</b> read student ratings before you register, and rate <b>anonymously</b> — nobody sees your name. Each instructor page has a <b>"See their courses this term"</b> button.'},
-{n:'12',t:'Tell us what you think',d:'In <b>⚙️ Settings</b> the <b>"Your feedback matters"</b> box takes any idea or problem. It reaches me instantly, and if you leave contact details I reply.'}],
-pro:[
-{n:'★',t:'Monitor closed sections',d:'Any <code>CLOSE</code> course has a <b>🔕</b> — tap it to make it <b>🔔</b>. The server checks every 5 minutes <b>even with the site closed</b>, so you never keep the page open. Watch as many as you like.'},
-{n:'★',t:'Link Telegram',d:'In <b>⚙️ Settings</b> tap "Link" → the bot opens → Start. When your course opens you get an alert with the CRN, time and room.'},
-{n:'★',t:'Cloud sync',d:'Your plan, schedule and GPA live in your account — open from any device and find everything as you left it.'}],
+en:{title:'How to use Jadwalik',lead:'Split into sections — open what matters to you',
+newLbl:'New',
+sections:[
+{ic:'🚀',name:'Start here',open:1,items:[
+ {t:'Pick your major',d:'In <b>⚙️ Settings</b> choose your major — <b>20 programs</b>, every college. Your plan, credits and prerequisites switch automatically.'},
+ {t:'Mark what you finished',d:'In <b>📋 My Plan</b> tick the box next to each course you passed. Courses missing a prerequisite show as <b>locked</b> and open the moment you tick it.'},
+ {t:'Search and build',d:'In <b>🔍 Search</b> pick the term and hit search. The filter accepts a <b>course code</b>, <b>CRN</b>, <b>course title</b> or <b>instructor name</b>. Tap <b>➕</b> on any section to add it.'}]},
+
+{ic:'☀️',name:'Your day',isNew:1,items:[
+ {t:'Where you are in your day',isNew:1,d:'The <b>Today</b> tab lays out your lectures in order: the running one turns green with a bar that moves, a <b>“now” line</b> travels between them with the clock, and finished ones fade on their own.'},
+ {t:'Your gaps, spelled out',isNew:1,d:'Between lectures you get a line like “1h 10m break” — so you know when to study and when to head home, without doing the maths.'},
+ {t:'Tap a course for its file',d:'Tap any lecture and a sheet opens with its time, room and instructor, and everything about that course underneath.'},
+ {t:'Absences',isNew:1,d:'Log an absence with its date and the rate is calculated for you — the limit is <b>15%</b> of the term\'s lectures. The counter tells you <b>2 of 4</b> before you hit exclusion.<br><b>Note:</b> this is indicative; the official record is the university\'s.'},
+ {t:'Course deadlines',isNew:1,d:'Quiz · homework · project · midterm · final. Enter it once and it appears on its day and reminds you beforehand. You can edit it or snooze it.'},
+ {t:'Photos and files',isNew:1,d:'Snap the board or upload the summary — it is saved on the course itself and waiting when you revise, instead of getting lost among a thousand photos. Images are compressed automatically; the limit is 10 MB per file.'},
+ {t:'Share with your section',isNew:1,d:'Any deadline or file can be shared with one <b>📢</b> tap — it reaches classmates in <b>your own section</b>, without your name.<br>🔒 Everything you upload is <b>private to you</b> unless you choose to share it.'},
+ {t:'Your whole week',isNew:1,d:'Switch to <b>Week</b> for all five days: how many lectures each day and its first and last time, your deadlines on their day, and add/drop and withdrawal dates. You can move between the term\'s weeks.'}]},
+
+{ic:'📅',name:'Your schedule',items:[
+ {t:'Three schedules to try',d:'<b>Schedule 1 · 2 · 3</b> — try different arrangements before you commit, and switch with one tap.'},
+ {t:'Clashes warn you',d:'If a section you add clashes with a course you already have, you are told before you register — not after.'},
+ {t:'Grid view, and tap any course',isNew:1,d:'Switch to <b>Grid</b> to see your week as a timetable, in three sizes. Name cut off? Tap the course and a card shows the full name, room and instructor — it disappears at any touch.'},
+ {t:'Print your schedule',d:'<b>🖨️ Print</b> gives you one clean page — a colour-coded weekly grid showing your gaps, with your final exams underneath.'},
+ {t:'Your final exams',d:'Tap <b>Show</b> under “Your final exams” — the date and room for every exam, and a warning if two collide.'},
+ {t:'Dates that matter',d:'Upcoming dates with a countdown: registration, first day of class, <b>the withdrawal deadline</b>, and finals. Near dates turn amber.'}]},
+
+{ic:'📋',name:'Your plan and GPA',items:[
+ {t:'Next term suggestion',d:'A ready plan appears above your degree plan, based on what you have finished.'},
+ {t:'“Do not delay”',d:'Courses marked this way unlock later ones — delaying them delays your graduation.'},
+ {t:'Calculate your GPA',d:'Enter a grade for any finished course and your GPA updates instantly on the PMU scale (A+ = 4.00). You can also ask what you need this term to reach a target.'},
+ {t:'Tap a course for its sections',d:'From the plan or the suggestion — tap any course and it jumps to Search showing its sections, times and instructors for the <b>upcoming registration term</b>.'}]},
+
+{ic:'🔔',name:'Your alerts',items:[
+ {t:'Monitor closed sections',d:'Any <code>CLOSE</code> course has a <b>🔕</b> — tap it to make it <b>🔔</b>. The server checks every 5 minutes <b>even with the site closed</b>, so you never keep the page open.'},
+ {t:'Link Telegram',d:'In <b>⚙️ Settings</b> tap “Link” → the bot opens → Start. When your course opens you get an alert with the CRN, time and room.'},
+ {t:'If your schedule changes',isNew:1,d:'Did the university change an instructor, room or time on one of your courses? You get an alert, and a notice appears on that course showing <b>what it was and what it became</b>.'},
+ {t:'Control your alerts',isNew:1,d:'In <b>⚙️ Settings</b> choose which notifications you want and which you do not — each type has its own switch.'}]},
+
+{ic:'👨‍🏫',name:'Faculty and feedback',items:[
+ {t:'Rate your instructors',d:'In <b>👨‍🏫 Faculty</b> read student ratings before you register, and rate <b>anonymously</b> — nobody sees your name. Each instructor page has a “See their courses this term” button.'},
+ {t:'Cloud sync',d:'Your plan, schedule and GPA live in your account — open from any device and find everything as you left it.'},
+ {t:'Tell us what you think',d:'In <b>⚙️ Settings</b> the “Your feedback matters” box takes any idea or problem. It reaches us instantly, and if you leave contact details we reply.'}]}],
 tip:'<b>🎁 Everything is free right now</b> — Jadwalik is in open beta. Sign in and enjoy every feature at no cost.'}
 };
+
+/* أي أقسام مفتوحة — يبقى محفوظاً عبر تبديل اللغة وإعادة الرسم */
+let G_OPEN=null;
 
 function renderGuide(){
   const G=GUIDE[LANG];
   document.getElementById('gTitle').textContent=G.title;
   document.getElementById('gLead').textContent=G.lead;
-  const row=(x,pro)=>`<div class="g-step">
-    <div class="g-num ${pro?'pro':''}">${x.n}</div>
-    <div class="g-body"><h4>${x.t}</h4><p>${x.d}</p></div></div>`;
-  document.getElementById('guideBody').innerHTML=
-    `<div class="g-sec" style="border:none;padding-top:0;margin-top:0">${G.sec1}</div>`+
-    G.steps.map(x=>row(x,0)).join('')+
-    `<div class="g-sec">${G.sec2}</div>`+
-    G.pro.map(x=>row(x,1)).join('')+
-    `<div class="g-tip">${G.tip}</div>`;
+  /* أول مرة: القسم المعلَّم open مفتوح وبقيته مطوية */
+  if(!G_OPEN)G_OPEN=G.sections.map(s=>!!s.open);
+  const pill=x=>x.isNew?`<span class="g-new">${G.newLbl}</span>`:'';
+  document.getElementById('guideBody').innerHTML=G.sections.map((sec,i)=>`
+    <div class="g-acc${G_OPEN[i]?' open':''}">
+      <button class="g-acc-head" onclick="gToggle(${i})" aria-expanded="${!!G_OPEN[i]}">
+        <span class="g-acc-ic">${sec.ic}</span>
+        <span class="g-acc-name">${sec.name}${pill(sec)}</span>
+        <span class="g-acc-n">${sec.items.length}</span>
+        <span class="g-acc-arrow">⌄</span>
+      </button>
+      <div class="g-acc-body">${sec.items.map(x=>`
+        <div class="g-item"><h4>${x.t}${pill(x)}</h4><p>${x.d}</p></div>`).join('')}</div>
+    </div>`).join('')
+    /* «كل شي مجاني» صحيح في الفترة المجانية فقط */
+    +`<div class="g-tip">${freeBeta()?G.tip:(LANG==='ar'
+        ?`<b>💡 المجاني فيه ${planInfo().freeMonitors===2?'مراقبتان':planInfo().freeMonitors+' مراقبات'} وجدول</b> — واشتراك الترم يفتح المراقبة بلا حد وثلاثة جداول.`
+        :`<b>💡 Free includes ${planInfo().freeMonitors} watches and a schedule</b> — the term plan unlocks unlimited watches and three schedules.`)}</div>`;
+}
+/* الطي والفتح — الحالة في G_OPEN فتبقى بعد تبديل اللغة */
+function gToggle(i){
+  G_OPEN[i]=!G_OPEN[i];
+  const el=document.querySelectorAll('#guideBody .g-acc')[i];
+  if(!el)return;
+  el.classList.toggle('open',G_OPEN[i]);
+  const h=el.querySelector('.g-acc-head');
+  if(h)h.setAttribute('aria-expanded',String(G_OPEN[i]));
 }
 function openGuide(){renderGuide();document.getElementById('guideOverlay').classList.add('open');
   document.body.style.overflow='hidden';}
@@ -8039,7 +9089,23 @@ errSave:'ما انحفظ — جرّب مرة ثانية',errDel:'ما انحذف
 tdTab:'☀️ اليوم',tdDay:'اليوم',tdWeek:'الأسبوع',
 tdNoToday:'☕ ما عندك محاضرات اليوم',tdNoAny:'ما في محاضرات في جدولك',
 tdEndsIn:'⏳ تنتهي بعد',tdStartsIn:'⏰ بعد',tdDone:'✓ خلصت',tdOf:'من',tdDoneN:'خلصت',
-tdGap:'فراغ',wkFrom:'من',wkTo:'إلى',
+tdGap:'فراغ',
+rmGapBtn:'🚪 قاعة فاضية',
+rmCardT:'قاعة فاضية',
+rmFrom:'من',rmTo:'إلى',rmSearch:'🔍 دوّر',rmChange:'غيّر الوقت',
+rmBadWin:'وقت النهاية لازم يكون بعد البداية',rmTitle:'قاعات ما فيها محاضرة',
+rmMale:'قاعات الطلاب',rmFemale:'قاعات الطالبات',
+rmNear:'قريبة',rmQuiet:'ما فيها محاضرات اليوم',
+rmUntil:'فاضية حتى',rmAllDay:'فاضية لآخر اليوم',
+rmMore:'شوف الكل',rmNone:'ما لقينا قاعة فاضية في هذا الوقت',
+rmErr:'ما قدرنا نجيب القاعات — جرّب بعد شوي',
+rmNote:'حسب جدول المحاضرات المعلن — القاعة قد تكون مقفلة أو فيها نشاط غير مسجّل.',
+tdNeedSchedT:'يومك يبدأ من جدولك',
+tdDemoT:'كذا بيصير شكل يومك',tdDemoTag:'مثال',
+tdNeedSchedS:'أضف موادك وبيطلع لك هنا يومك بالترتيب: وش الجاي، كم باقي عليه، ووين فراغاتك.',
+tdNeedSchedBtn:'🔍 روح للبحث',
+tdGuestNote:'أنت تتصفّح بلا حساب — يومك وأسبوعك يشتغلان، لكن الغياب والمواعيد والصور تحتاج حساباً.',
+tdGuestBtn:'دخول',wkFrom:'من',wkTo:'إلى',
 tdMin:'دقيقة',tdHr:'ساعة',tdAnd:'و',tdM:'د',
 tdToday:'اليوم',tdTomorrow:'بكرة',tdIn2:'بعد يومين',tdInN:'بعد',tdDays:'أيام',
 tdAgo:'قبل',tdDay1:'يوم',
@@ -8069,7 +9135,7 @@ gpaRank:'التقدير',gpaFrom:'محسوب من',gpaFrom2:'مادة بدرجا
 critGroup:'🔴 لا تأجلها — تفتح لك مواد الترم الجاي',
 optGroup:'⚪ اختيارية — لك الخيار تنزلها أو تأجلها',
 unlocks:'يفتح',unlocks2:'مادة',
-acctSection:'الحساب',legalPrivacy:'سياسة الخصوصية',legalTerms:'الشروط والأحكام',
+acctSection:'الحساب',legalAbout:'عن جدولك',legalPrivacy:'سياسة الخصوصية',legalTerms:'الشروط والأحكام',
 legalNote:'موقع مستقل غير تابع لجامعة الأمير محمد بن فهد',
 calTitle:'🗓️ مواعيد تهمك',calSub:'من التقويم الأكاديمي المعتمد',
 calNow:'جارٍ الآن',calToday:'اليوم',calTomorrow:'بكرة',calIn:'بعد',calDays:'يوم',
@@ -8101,14 +9167,6 @@ finPrint:'الاختبارات النهائية',
 pickOne:'— اختر تخصصك —',optAll:'الكل',optMale:'طلاب',optFemale:'طالبات',
 docRefresh:'🔄 حدّث القائمة',uniSoon:'جامعات ثانية — قريباً',
 tgSection:'إشعارات تيليغرام',monSection:'المواد المراقبة',
-proTitle:'اشتراك جدولك',proSub:'فعّل المراقبة والحفظ السحابي',
-proPrice:'19 ريال / سنة',proBtn:'اشترك الحين',
-proFeat1:'<b>مراقبة المواد</b> — إشعار تيليغرام فوري أول ما تنفتح أي شعبة',
-proFeat2:'<b>حفظ سحابي</b> — خطتك وجدولك ومعدلك من أي جهاز',
-proFeat3:'<b>مواد بلا حد</b> — راقب كل المواد اللي تبيها',
-payAmount:'المبلغ',payRiyal:'19 ريال',payTo:'STC Pay / تحويل',payCodeLbl:'كودك',
-payNote:'حوّل المبلغ، ثم أرسل صورة الإيصال مع كودك للبوت على تيليغرام. بيتفعّل حسابك خلال ساعات قليلة.',
-payBot:'📩 أرسل الإيصال للبوت',
 unlocks1:'يفتح مادة وحدة',unlocksN:'يفتح',unlocksN2:'مواد',
 
 sugEmpty:'حدد المواد اللي خلصتها تحت وبيطلع لك المقترح',
@@ -8137,7 +9195,23 @@ crnCopy:'copy',crnCopyAll:'📋 Copy all numbers',
 crnHint2:'Tap any number to copy it alone. They are printed with the schedule too.',tdTab:'☀️ Today',tdDay:'Today',tdWeek:'Week',
 tdNoToday:'☕ No classes today',tdNoAny:'No classes in your schedule',
 tdEndsIn:'⏳ Ends in',tdStartsIn:'⏰ In',tdDone:'✓ Done',tdOf:'of',tdDoneN:'done',
-tdGap:'break',wkFrom:'from',wkTo:'to',
+tdGap:'break',
+rmGapBtn:'🚪 Free room',
+rmCardT:'Free room',
+rmFrom:'From',rmTo:'To',rmSearch:'🔍 Search',rmChange:'Change time',
+rmBadWin:'End time must be after the start',rmTitle:'Rooms with no class',
+rmMale:'Male rooms',rmFemale:'Female rooms',
+rmNear:'Nearby',rmQuiet:'No classes today',
+rmUntil:'Free until',rmAllDay:'Free all day',
+rmMore:'Show all',rmNone:'No free room found at this time',
+rmErr:'Could not load rooms — try again shortly',
+rmNote:'Based on the published class schedule — a room may still be locked or hold an unlisted activity.',
+tdNeedSchedT:'Your day starts with your schedule',
+tdDemoT:'This is how your day will look',tdDemoTag:'Example',
+tdNeedSchedS:'Add your courses and your day appears here in order: what is next, how long until it, and where your gaps are.',
+tdNeedSchedBtn:'🔍 Go to search',
+tdGuestNote:'You are browsing without an account — your day and week work, but absences, deadlines and photos need one.',
+tdGuestBtn:'Sign in',wkFrom:'from',wkTo:'to',
 tdMin:'min',tdHr:'h',tdAnd:'',tdM:'m',
 tdToday:'Today',tdTomorrow:'Tomorrow',tdIn2:'In 2 days',tdInN:'In',tdDays:'days',
 tdAgo:'',tdDay1:'days ago',
@@ -8201,7 +9275,7 @@ gpaRank:'Standing',gpaFrom:'based on',gpaFrom2:'graded courses',
 critGroup:'🔴 Do not delay — these unlock next term',
 optGroup:'⚪ Optional — take them or postpone',
 unlocks:'unlocks',unlocks2:'courses',
-acctSection:'Account',legalPrivacy:'Privacy Policy',legalTerms:'Terms of Service',
+acctSection:'Account',legalAbout:'About',legalPrivacy:'Privacy Policy',legalTerms:'Terms of Service',
 legalNote:'An independent site, not affiliated with Prince Mohammad Bin Fahd University',
 calTitle:'🗓️ Dates that matter',calSub:'From the official academic calendar',
 calNow:'Now',calToday:'Today',calTomorrow:'Tomorrow',calIn:'in',calDays:'days',
@@ -8233,14 +9307,6 @@ finPrint:'Final Exams',
 pickOne:'— Choose your major —',optAll:'All',optMale:'Male',optFemale:'Female',
 docRefresh:'🔄 Refresh list',uniSoon:'More universities — soon',
 tgSection:'Telegram notifications',monSection:'Monitored courses',
-proTitle:'Jadwalik Pro',proSub:'Unlock monitoring and cloud sync',
-proPrice:'SAR 19 / year',proBtn:'Subscribe now',
-proFeat1:'<b>Course monitoring</b> — instant Telegram alert the moment a section opens',
-proFeat2:'<b>Cloud sync</b> — your plan, schedule and GPA on any device',
-proFeat3:'<b>Unlimited courses</b> — watch as many as you want',
-payAmount:'Amount',payRiyal:'SAR 19',payTo:'STC Pay / transfer',payCodeLbl:'Your code',
-payNote:'Transfer the amount, then send the receipt with your code to the bot on Telegram. Your account is activated within a few hours.',
-payBot:'📩 Send receipt to bot',
 unlocks1:'unlocks 1 course',unlocksN:'unlocks',unlocksN2:'courses',
 
 sugEmpty:'Mark the courses you finished below to get your suggestion',
@@ -8293,7 +9359,12 @@ function toggleTheme(){
   THEME = THEME==='auto' ? 'light' : THEME==='light' ? 'dark' : 'auto';
   save('pmu_theme',THEME);
   applyTheme();
-  if(THEME==='auto')showToast(LANG==='ar'?'الثيم يتبع إعداد جهازك':'Theme follows your device');
+  const ar=LANG==='ar';
+  showToast(THEME==='auto'
+    ? (ar?'🌗 تلقائي — يتبع إعداد جوالك':'🌗 Auto — follows your device')
+    : THEME==='light'
+      ? (ar?'☀️ فاتح دائماً — اضغط مرة ثانية للغامق':'☀️ Always light — tap again for dark')
+      : (ar?'🌙 غامق دائماً — اضغط مرة ثانية ليتبع جوالك':'🌙 Always dark — tap again to follow your device'));
 }
 
 /* لو غيّر الطالب إعداد جهازه والموقع مفتوح، يتغيّر معه فوراً */
@@ -8404,7 +9475,7 @@ function markSem(id){
   });
   save('pmu_completed',completed);
   pushCompleted();
-  renderPlan();
+  planTouched();
 }
 
 function onPrepToggle(){
@@ -8413,7 +9484,7 @@ function onPrepToggle(){
   save('pmu_prep',on);
   if(majorChosen())applyMajor(MAJOR,false,false);
   else if(el)showToast(LANG==='ar'?'اختر تخصصك أول':'Pick your major first','warn');
-  renderPlan();
+  planTouched();               /* مفتاح المستوى التحضيري بوابة متطلبات */
   renderPickHints();
 }
 
@@ -8525,8 +9596,9 @@ function setGrade(code,val){
   if(val)grades[code]=val;else delete grades[code];
   save('pmu_grades',grades);
   pushGrades();
-  /* الدرجة تؤثر في الشريط والساعات والمقترح والمتطلبات، لا في المعدل وحده */
-  renderPlan();
+  /* الدرجة تؤثر في الشريط والساعات والمقترح والمتطلبات، لا في المعدل وحده.
+     و F أو W تلغي الاجتياز، فقد تُعيد قفل مادة في البحث. */
+  planTouched();
 }
 
 function renderGPA(){
@@ -8748,6 +9820,9 @@ async function handleAuth(){
 }
 
 function setAuthUI(){
+  /* الجلسة انقرأت — نسمح بإظهار حالة الدخول */
+  if(typeof AUTH_READY!=='undefined'&&AUTH_READY)
+    document.documentElement.classList.remove('auth-pending');
   const b=document.getElementById('authBtn');
   const note=document.getElementById('syncNote');
   if(USER){
@@ -8784,6 +9859,13 @@ async function pullCloud(){
     if(prof&&prof.major&&PLANS[prof.major]&&prof.major!==MAJOR) applyMajor(prof.major,true);
     else if(prof&&prof.major===MAJOR&&hasAltPlan(MAJOR)) applyMajor(MAJOR,true,false);
     else if(prof&&!prof.major&&MAJOR!=='MEEN') pushProfile();
+
+    /* تخصص في الحساب = اختيار فعلي منه، مهما طابق القيمة الافتراضية */
+    if(prof&&prof.major&&PLANS[prof.major]&&!majorChosen()){
+      save('pmu_major',prof.major);
+      const ms=document.getElementById('majorSelect');
+      if(ms)ms.value=prof.major;
+    }
 
     if(cc&&cc.length){
       completed=cc.map(r=>r.course_code);
@@ -8880,6 +9962,15 @@ async function writeSchedule(){
 
 async function pushSchedule(){ return saveQueue('schedule',writeSchedule) }
 
+/* لو ما وصل سكربت Supabase أصلاً، نكشف الزر بعد ثلاث ثوانٍ بدل ما
+   يبقى الطالب أمام رأس صفحة ناقص */
+setTimeout(()=>document.documentElement.classList.remove('auth-pending'),3000);
+
+/* «اليوم» تُرسم مبكراً — نعيد رسمها أول ما تتضح حالة الدخول */
+function redrawTodayAfterAuth(){
+  try{ if(CUR_TAB==='today'){ TODAY_HTML=''; renderToday() } }catch(e){}
+}
+
 /* بدء الجلسة */
 (async function initAuth(){
   /* اعرض أي خطأ راجع من جوجل */
@@ -8899,11 +9990,13 @@ async function pushSchedule(){ return saveQueue('schedule',writeSchedule) }
   USER=session?session.user:null;
   AUTH_READY=true;
   setAuthUI();
-  if(USER){await pullCloud();setAuthUI();renderPlan();
+  redrawTodayAfterAuth();
+  if(USER){await pullCloud();setAuthUI();renderPlan();enforceSlotAndRedraw();redrawTodayAfterAuth();
+    loadAccount(true).then(()=>{ try{ if(CUR_TAB==='set')renderSettings() }catch(e){} });
     if(document.getElementById('pageSched').classList.contains('active'))renderSchedule();}
   sb.auth.onAuthStateChange(async(ev,sess)=>{
     const was=!!USER;USER=sess?sess.user:null;
-    if(USER&&!was){await pullCloud();setAuthUI();renderPlan();}
+    if(USER&&!was){await pullCloud();setAuthUI();renderPlan();redrawTodayAfterAuth();}
   });
 })();
 
