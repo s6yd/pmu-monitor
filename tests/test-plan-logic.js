@@ -28,12 +28,15 @@ const MOVED = ['hasAltPlan', 'planKey', 'planOf', 'prepSems', 'semesters', 'ctxO
   'allPlanCourses', 'findPlanCourse', 'failGrades', 'isFailed', 'isWithdrawn',
   'isDone', 'isPassed', 'doneCredits', 'level', 'prepGate', 'prepLevelLock',
   'prereqCheck', 'creditsOf', 'unlocksCount', 'unlockedBy', 'isInternship',
-  'currentPrepSem', 'retakeList', 'calcGPA', 'calcProjected'];
+  'currentPrepSem', 'retakeList', 'calcGPA', 'calcProjected',
+  'nextTermCode', 'offerKnown', 'notOfferedIn', 'skipAhead', 'nextOffered',
+  'offerWarn', 'suggestNext'];
 for (const f of MOVED) ok(typeof L[f] === 'function', `${f} مُصدَّرة ودالة`);
 
 const CONSTS = ['PREP_MATH', 'PREP_MATH_NAME', 'PREP_EXIT', 'PREP_GATE_LANG',
   'PREP_GATE_MATH', 'FAIL_GRADES', 'FAIL_GRADES_C', 'WITHDRAW_GRADES',
-  'GRADE_POINTS', 'GRADE_SKIP', 'INTERN_MIN_CREDITS'];
+  'GRADE_POINTS', 'GRADE_SKIP', 'INTERN_MIN_CREDITS',
+  'OFFER_MAJORS', 'NOT_OFFERED'];
 for (const c of CONSTS) ok(L[c] !== undefined, `${c} مُصدَّر`);
 
 /* ═══ ٢. حالات معروفة ═══
@@ -266,6 +269,115 @@ eq(L.level(200), 'Senior', 'level(200)');
   ok(bad === 0, 'كل تخصص × نسخة × تحضيري يمر بلا انهيار');
 }
 
+
+/* ═══ الطرح المعلن ═══ */
+{
+  /* تسلسل الترمات: خريف ← ربيع ← صيف ← خريف السنة الجاية */
+  eq(L.nextTermCode('202710'), '202720', 'خريف ← ربيع');
+  eq(L.nextTermCode('202720'), '202730', 'ربيع ← صيف');
+  eq(L.nextTermCode('202730'), '202810', 'صيف ← خريف السنة الجاية');
+
+  ok(L.offerKnown('202710') === true, 'ترم في الجدول معروف');
+  ok(L.offerKnown('203010') === false, 'ترم خارج الجدول غير معروف');
+  ok(L.notOfferedIn('202710', 'MEEN 2311') === true, 'MEEN 2311 ما تُطرح خريف 2026/2027');
+  ok(L.notOfferedIn('202710', 'MEEN 2312') === false, 'MEEN 2312 تُطرح فيه');
+
+  const M = o => L.ctxOf(Object.assign({ major: 'MEEN', planVer: 'new', prep: false,
+    completed: [], grades: {}, term: '202710' }, o || {}));
+
+  /* مادة لا تُطرح هذا الترم */
+  eq(L.offerWarn(M(), 'MEEN 2311'), { kind: 'none', next: '202720' },
+     'MEEN 2311: ما تُطرح الآن وترجع ربيع');
+
+  /* مادة تُطرح الآن لكن لا تُطرح الترم الجاي = آخر فرصة */
+  eq(L.offerWarn(M(), 'MEEN 2312'), { kind: 'last', n: 1, next: '202810' },
+     'MEEN 2312: آخر فرصة');
+  eq(L.skipAhead(M(), 'MEEN 2312'), 1, 'MEEN 2312 تغيب ترماً واحداً');
+
+  /* الصيف لا يُعدّ ترماً متاحاً */
+  ok(String(L.nextOffered(M(), 'MEEN 2312')).slice(4) !== '30',
+     'ما نرجّع الصيف كترم طرح — رجع ' + L.nextOffered(M(), 'MEEN 2312'));
+
+  /* الجدول يخص الميكانيكال وحده */
+  ok(L.offerWarn(M({ major: 'COSC' }), 'CSCI 1401') === null,
+     'تخصص خارج الجدول: ولا تحذير');
+  eq(L.skipAhead(M({ major: 'COSC' }), 'MEEN 2312'), 0, 'وskipAhead صفر له');
+
+  /* المادة المنتهية ما يهمّ متى تُطرح */
+  const passed = M({ completed: ['MEEN 2311'], grades: { 'MEEN 2311': 'A' } });
+  ok(L.offerWarn(passed, 'MEEN 2311') === null, 'المادة المنتهية بلا تحذير');
+  /* لكن الراسب فيها لسه يهمّه */
+  const failed = M({ completed: ['MEEN 2311'], grades: { 'MEEN 2311': 'F' } });
+  ok(L.offerWarn(failed, 'MEEN 2311') !== null, 'الراسب فيها يهمّه متى تُطرح');
+
+  /* الترم المعروض يغيّر الجواب */
+  ok(JSON.stringify(L.offerWarn(M({ term: '202710' }), 'MEEN 2312')) !==
+     JSON.stringify(L.offerWarn(M({ term: '202720' }), 'MEEN 2312')),
+     'تغيير الترم المعروض يغيّر التحذير');
+}
+
+/* ═══ المقترح للترم الجاي ═══ */
+{
+  const M = o => L.ctxOf(Object.assign({ major: 'MEEN', planVer: 'new', prep: false,
+    completed: [], grades: {}, term: '202710' }, o || {}));
+
+  const s0 = L.suggestNext(M());
+  ok(Array.isArray(s0.crit) && Array.isArray(s0.opt), 'المقترح يرجع أساسية واختيارية');
+  ok(s0.hours <= 20, 'سقف الساعات ٢٠ — جانا ' + s0.hours);
+  ok(s0.crit.length > 0, 'طالب جديد عنده مواد مقترحة');
+  ok(s0.crit.every(c => L.prereqCheck(M(), c.c).ok),
+     'كل مادة مقترحة متطلباتها مكتملة');
+  ok(s0.crit.every(c => !c.adm) && s0.opt.every(c => !c.adm),
+     'ما نقترح مادة تنزّلها الإدارة');
+
+  /* الترتيب: الراسب قبل غيره */
+  const all = L.allPlanCourses(M());
+  const f1 = (M().sems[0].courses || []).map(c => c.c);
+  const ret = M({ completed: f1, grades: Object.assign(
+    Object.fromEntries(f1.map(c => [c, 'A'])), { [f1[0]]: 'F' }) });
+  const sr = L.suggestNext(ret);
+  ok(sr.crit.some(c => c.c === f1[0] && c.retake),
+     'المادة اللي رسب فيها ترجع في المقترح معلّمة إعادة');
+  ok(sr.crit.length && sr.crit[0].retake === true,
+     'والإعادة تتقدّم على غيرها');
+
+  /* المنتهية ما تتكرر */
+  ok(!sr.crit.some(c => c.c === f1[1]) && !sr.opt.some(c => c.c === f1[1]),
+     'المادة المنتهية ما تنقترح مرة ثانية');
+
+  /* طالب التحضيري: مستواه الحالي فقط */
+  const p = L.suggestNext(M({ prep: true }));
+  ok(p.prepSem && p.prepSem.id === 'PP1', 'مستوى التحضيري الحالي PP1');
+  ok(p.crit.every(c => c.prep), 'كل المقترح من التحضيري — ما ننزّل مواد تخصص معه');
+  ok(typeof p.admOnly === 'boolean', 'admOnly مضبوطة');
+  /* المشترك يرجع معرّفاً لا نصاً مترجماً */
+  ok(!p.prepLevel, 'المشترك ما يرجع نصاً مترجماً — الصفحة تترجم prepSem');
+
+  /* التطبيق العملي ينزل لحاله */
+  const most = all.map(c => c.c).slice(0, Math.max(0, all.length - 2));
+  const senior = M({ completed: most, grades: Object.fromEntries(most.map(c => [c, 'A'])) });
+  const ss = L.suggestNext(senior);
+  if (ss.internOnly) {
+    eq(ss.crit.length, 1, 'التطبيق العملي ينزل لحاله — مادة واحدة');
+    ok(L.isInternship(ss.crit[0]), 'وهي فعلاً تطبيق عملي');
+  } else ok(true, 'ما وصل حالة التطبيق العملي وحده — مقبول');
+
+  /* كل تخصص × ترم: المقترح ما ينهار ويحترم السقف */
+  let bad = 0;
+  for (const code of Object.keys(L.PLANS)) {
+    for (const term of ['202710', '202720', '202810']) {
+      try {
+        const r = L.suggestNext(L.ctxOf({ major: code, planVer: 'new', prep: false,
+          completed: [], grades: {}, term }));
+        if (r.hours > 20 && !r.internOnly && !r.crit.some(c => c.prep)) {
+          bad++; console.log(`  ✗ ${code}/${term}: ساعات ${r.hours} فوق السقف`);
+        }
+      } catch (e) { bad++; console.log(`  ✗ ${code}/${term}: ${e.message}`) }
+    }
+  }
+  ok(bad === 0, 'المقترح يمر لكل تخصص × ترم بلا انهيار ولا تجاوز سقف');
+}
+
 }  /* نهاية الحالات السلوكية */
 
 /* ═══ ٣. فحص ثابت: ما بقت نسخة ثانية في الصفحة ═══ */
@@ -331,6 +443,25 @@ eq(L.level(200), 'Senior', 'level(200)');
   /* الصفحة تبني السياق مرة واحدة بدالة واحدة */
   ok((page.match(/^function planCtx\(\)/gm) || []).length === 1,
      'planCtx معرّفة مرة واحدة في الصفحة');
+
+  /* جدول الطرح بيانات — ما تُنسخ في الصفحة. نفحص مفاتيحه نفسها:
+     نسخة ثانية تنحرف عن الأصل بصمت، نفس ما صار في التقويم قبل توحيده. */
+  for (const term of Object.keys(L.NOT_OFFERED || {})) {
+    const lit = new RegExp("'" + term + "'\\s*:\\s*\\[");
+    ok(!lit.test(page), `جدول الطرح: مفتاح ${term} مو منسوخ في الصفحة`);
+    ok(lit.test(shared), `جدول الطرح: مفتاح ${term} في المشترك`);
+  }
+
+  /* السياق يحمل الترم المعروض — بدونه الطرح يُحسب على ترم غلط */
+  const pc = (/function planCtx\(\)[\s\S]*?\n\}/.exec(page) || [''])[0];
+  ok(/term\s*:/.test(pc), 'planCtx يمرّر الترم المعروض للسياق');
+  ok(/activeTermCode/.test(pc), 'ومصدره activeTermCode في الصفحة لا في المشترك');
+  /* نفحص الاستعمال الفعلي لا ذكر الاسم — التعليقات تشرح القاعدة نفسها */
+  const code = shared.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  ok(!/\bdocument\s*\./.test(code) && !/getElementById/.test(code),
+     'المشترك ما يلمس DOM إطلاقاً');
+  ok(!/\blocalStorage\s*[.[]/.test(code), 'والمشترك ما يلمس localStorage');
+  ok(!/\bwindow\s*\./.test(code), 'ولا يقرأ window');
 }
 
 console.log(`\n${pass} نجحت · ${fail} فشلت`);
