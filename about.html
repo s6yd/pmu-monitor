@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>عن جدولك | About Jadwalik</title>
+<meta name="description" content="عن جدولك — أداة مستقلة لطلاب جامعة الأمير محمد بن فهد لبناء الجدول ومتابعة الخطة الدراسية.">
+<style>
+:root{
+--bg:#080b12;--card:#131928;--border:#1e2740;--accent:#3d6fff;--accent2:#6b8fff;
+--text:#e2e8f8;--text2:#8b96b8;--text3:#4a5580;
+--warn:#f59e0b;--warn-bg:rgba(245,158,11,.09);
+--mono:'JetBrains Mono',ui-monospace,monospace;
+--sans:'IBM Plex Sans Arabic','Segoe UI',system-ui,sans-serif}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);
+line-height:1.85;padding:26px 18px 70px}
+.wrap{max-width:760px;margin:0 auto}
+.top{display:flex;align-items:center;justify-content:space-between;
+gap:12px;margin-bottom:26px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px}
+.logo{width:34px;height:34px;background:var(--accent);border-radius:9px;
+display:flex;align-items:center;justify-content:center;font-size:18px}
+.brand b{font-size:16px;font-weight:700;display:block;line-height:1.2}
+.brand span{font-size:10px;font-family:var(--mono);color:var(--text3);letter-spacing:.5px}
+.langbtn{background:transparent;border:1px solid var(--border);color:var(--text2);
+border-radius:20px;padding:6px 15px;font-size:12.5px;font-weight:600;
+font-family:var(--sans);cursor:pointer}
+h1{font-size:23px;font-weight:700;margin-bottom:6px;line-height:1.3}
+.updated{font-size:12px;color:var(--text3);font-family:var(--mono);margin-bottom:24px}
+h2{font-size:16px;font-weight:700;margin:30px 0 10px;color:var(--accent2)}
+h3{font-size:14px;font-weight:600;margin:18px 0 7px}
+p{font-size:14.5px;color:var(--text2);margin-bottom:12px}
+ul{margin:0 0 14px;padding-inline-start:20px}
+li{font-size:14.5px;color:var(--text2);margin-bottom:8px}
+b,strong{color:var(--text);font-weight:600}
+a{color:var(--accent2)}
+.box{background:var(--card);border:1px solid var(--border);
+border-radius:13px;padding:15px 17px;margin:16px 0}
+.box.warn{border-color:rgba(245,158,11,.3);background:var(--warn-bg)}
+.box p:last-child,.box li:last-child{margin-bottom:0}
+table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.5px}
+th,td{text-align:start;padding:9px 11px;border-bottom:1px solid var(--border);vertical-align:top}
+th{color:var(--text);font-weight:600;font-size:12.5px}
+td{color:var(--text2)}
+.foot{margin-top:40px;padding-top:20px;border-top:1px solid var(--border);
+font-size:12.5px;color:var(--text3)}
+code{font-family:var(--mono);font-size:13px;color:var(--accent2);
+background:var(--card);padding:2px 7px;border-radius:5px}
+[lang-block]{display:none}
+[lang-block].on{display:block}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="top">
+  <a href="/" class="brand" style="text-decoration:none;color:inherit">
+    <div class="logo">🎓</div>
+    <div><b>جدولك</b><span>JADWALIK.COM</span></div>
+  </a>
+  <button class="langbtn" onclick="sw()" id="lb">English</button>
+</div>
+
+<!-- ══════════════ عربي ══════════════ -->
+<div lang-block="ar" class="on">
+
+<h1>عن جدولك</h1>
+<div class="updated">jadwalik.com</div>
+
+<p><b>جدولك</b> أداة مستقلة تساعد طلاب جامعة الأمير محمد بن فهد على بناء جداولهم ومتابعة خططهم الدراسية، من الجوال، بالعربي والإنجليزي.</p>
+
+<div class="box">
+<p>بدأ لأن ترتيب الجدول كل ترم كان يستهلك وقتاً أطول مما يستحق: تفتح الجدول الرئيسي، تنسخ الأوقات، تحسب التعارض بيدك، وترجع تتأكد. جدولك يختصر هذا في مكان واحد.</p>
+</div>
+
+<h2>وش يسوّي</h2>
+<ul>
+<li><b>البحث في المواد</b> — بكود المادة أو رقم الشعبة أو اسم الدكتور، مع حالة المقاعد</li>
+<li><b>بناء الجدول</b> — ثلاثة جداول تجريبية، وكشف التعارض في الأوقات تلقائياً</li>
+<li><b>الخطة الدراسية</b> — المواد المنتهية، الساعات المتبقية، المعدل، ومقترح الترم القادم</li>
+<li><b>مراقبة المواد المسكّرة</b> — إشعار على تيليغرام أول ما ينفتح مقعد</li>
+<li><b>تقييمات الدكاترة</b> — آراء الطلاب، تُنشر بدون أسماء</li>
+<li><b>التقويم الأكاديمي</b> — تواريخ الحذف والإضافة والانسحاب والإجازات</li>
+</ul>
+
+<h2>من وين تجي بيانات المواد</h2>
+<p>من الجدول الرئيسي المعلن على موقع الجامعة، وهي معلومات عامة متاحة للجميع. جدولك يقرأها ويعرضها بشكل أسهل، ولا يصل لأي حساب طالب في أنظمة الجامعة، ولا يسجّل لك في أي مادة.</p>
+
+<div class="box warn">
+<p><b>مستقل تماماً:</b> جدولك غير تابع لجامعة الأمير محمد بن فهد ولا معتمد منها ولا مرتبط بها بأي صفة رسمية. اسم الجامعة يُذكر للتعريف بمجال الخدمة فقط. التسجيل الفعلي في المواد يتم حصراً عبر أنظمة الجامعة.</p>
+</div>
+
+<h2>الوضع الحالي</h2>
+<p>الموقع في <b>فترة تجريبية مجانية بالكامل</b>. كل الميزات مفتوحة للجميع بدون أي رسوم، وما فيه أي عملية دفع ولا وسيلة دفع داخل الموقع. نخطط لإضافة خطة مدفوعة لبعض الميزات لاحقاً، وبنعلن التفاصيل داخل الموقع قبل وقت كافٍ. التفاصيل في <a href="/terms">الشروط والأحكام</a>.</p>
+
+<h2>الخصوصية باختصار</h2>
+<ul>
+<li>ما نستخدم أي أداة تتبع إعلاني — ولا واحدة</li>
+<li>ما نبيع بياناتك ولا نشاركها لأغراض إعلانية</li>
+<li>ما نطلب رقم هويتك ولا رقمك الجامعي ولا أي بيانات بنكية</li>
+<li>تقدر تطلب حذف حسابك وكل بياناتك في أي وقت</li>
+</ul>
+<p>التفاصيل الكاملة في <a href="/privacy">سياسة الخصوصية</a>.</p>
+
+<h2>التواصل</h2>
+<p>ملاحظة أو اقتراح أو مشكلة؟ <a href="mailto:jadwalik@gmail.com">jadwalik@gmail.com</a> — أو من زر الملاحظات داخل الموقع. نقرأ كل رسالة.</p>
+
+</div>
+
+<!-- ══════════════ English ══════════════ -->
+<div lang-block="en">
+
+<h1>About Jadwalik</h1>
+<div class="updated">jadwalik.com</div>
+
+<p><b>Jadwalik</b> is an independent tool that helps students at Prince Mohammad Bin Fahd University build their schedules and follow their degree plans — from a phone, in Arabic and English.</p>
+
+<div class="box">
+<p>It started because arranging a schedule each term took longer than it should: open the master schedule, copy the times, work out the clashes by hand, then check again. Jadwalik puts that in one place.</p>
+</div>
+
+<h2>What it does</h2>
+<ul>
+<li><b>Course search</b> — by course code, CRN or instructor name, with live seat status</li>
+<li><b>Schedule building</b> — three draft schedules, with automatic time-conflict detection</li>
+<li><b>Degree plan</b> — completed courses, remaining hours, GPA, and a suggestion for next term</li>
+<li><b>Closed-section monitoring</b> — a Telegram alert the moment a seat opens</li>
+<li><b>Instructor ratings</b> — students' opinions, published without names</li>
+<li><b>Academic calendar</b> — add/drop, withdrawal and holiday dates</li>
+</ul>
+
+<h2>Where course data comes from</h2>
+<p>From the master schedule published publicly on the university's website — information already available to everyone. Jadwalik reads it and presents it more conveniently. It never accesses any student account in university systems, and it never registers you in any course.</p>
+
+<div class="box warn">
+<p><b>Fully independent:</b> Jadwalik is not affiliated with, endorsed by, or officially connected to Prince Mohammad Bin Fahd University in any capacity. The university name is used only to describe the scope of the service. Actual course registration happens exclusively through the university's own systems.</p>
+</div>
+
+<h2>Where things stand</h2>
+<p>The site is in a <b>completely free trial period</b>. Every feature is open to everyone at no charge, and there is no payment process or payment method inside the site. We plan to add a paid plan for some features later, and we will announce the details in the app well in advance. See the <a href="/terms">Terms of Service</a>.</p>
+
+<h2>Privacy in short</h2>
+<ul>
+<li>We use no advertising trackers — not one</li>
+<li>We do not sell your data or share it for advertising</li>
+<li>We never ask for your national ID, university ID, or any banking details</li>
+<li>You can request deletion of your account and all your data at any time</li>
+</ul>
+<p>Full details in the <a href="/privacy">Privacy Policy</a>.</p>
+
+<h2>Contact</h2>
+<p>Feedback, a suggestion, or a problem? <a href="mailto:jadwalik@gmail.com">jadwalik@gmail.com</a> — or use the feedback button inside the site. We read every message.</p>
+
+</div>
+
+<div class="foot">
+  <a href="/">← جدولك · Jadwalik</a> &nbsp;·&nbsp;
+  <a href="/privacy">سياسة الخصوصية · Privacy</a> &nbsp;·&nbsp;
+  <a href="/terms">الشروط والأحكام · Terms</a> &nbsp;·&nbsp;
+  <a href="mailto:jadwalik@gmail.com">jadwalik@gmail.com</a>
+</div>
+
+</div>
+
+<script>
+function sw(){
+  const en=document.querySelector('[lang-block="en"]').classList.contains('on');
+  document.querySelector('[lang-block="ar"]').classList.toggle('on',en);
+  document.querySelector('[lang-block="en"]').classList.toggle('on',!en);
+  document.documentElement.lang=en?'ar':'en';
+  document.documentElement.dir=en?'rtl':'ltr';
+  document.getElementById('lb').textContent=en?'English':'العربية';
+}
+</script>
+</body>
+</html>
