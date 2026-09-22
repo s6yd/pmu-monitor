@@ -50,6 +50,7 @@ run test-review-credit  "$S" "$F" "$A"
 run test-pushover-addon "$S" "$F" "$A"
 run test-static-pages   "$S"
 run test-plans          "$S" "$F"
+run test-plan-logic     "$S" "$F"
 
 echo
 if [ ${#failed[@]} -eq 0 ]; then
