@@ -158,6 +158,13 @@ const SRV_ABS = {};
     const u = req.url.split('?')[0];
     if (u === '/') { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); return res.end(fs.readFileSync(PAGE)) }
     if (u === '/calendar.js') { res.writeHead(200, { 'Content-Type': 'application/javascript' }); return res.end(calJs) }
+    /* الصفحة صارت تحمّل الخطط من /plans.js — نخدم الملف الحقيقي.
+       تغيير بنية لا تسهيل: بدونه يرجع الرد الافتراضي JSON، والصفحة
+       تنفّذه كسكربت فينفجر SyntaxError. */
+    if (u === '/plans.js') {
+      res.writeHead(200, { 'Content-Type': 'application/javascript' });
+      return res.end(fs.readFileSync(path.join(__dirname, '..', 'shared', 'plans.js')));
+    }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ courses: [], term: '202720', canWatch: false }));
   });

@@ -175,6 +175,13 @@ const U1 = 'tok-u1-aaaaaaaaaaaaaaaaaaaa', U2 = 'tok-u2-bbbbbbbbbbbbbbbbbbbb', U3
     const srv = http.createServer((req, res) => {
       const u = req.url.split('?')[0];
       if (u === '/') { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); return res.end(fs.readFileSync(PAGE)) }
+      /* الصفحة صارت تحمّل الخطط من /plans.js — نخدم الملف الحقيقي.
+         تغيير بنية لا تسهيل: قبله كان المحاكي يرد 404 على كل .js، فالصفحة
+         تفقد PLANS وتبويب خطتي يعرض رسالة العطل بدل الخطة. */
+      if (u === '/plans.js') {
+        res.writeHead(200, { 'Content-Type': 'application/javascript' });
+        return res.end(fs.readFileSync(path.join(__dirname, '..', 'shared', 'plans.js')));
+      }
       if (u.endsWith('.js')) { res.writeHead(404); return res.end('') }
       res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{"courses":[]}');
     });
