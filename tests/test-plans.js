@@ -10,6 +10,7 @@ const path = require('path');
 const http = require('http');
 const { spawnSync } = require('child_process');
 const zlib = require('zlib');
+const crypto = require('crypto');
 
 const SRV = path.resolve(process.argv[2] || path.join(__dirname, '..', 'server.js'));
 const PAGE = path.resolve(process.argv[3] || path.join(__dirname, '..', 'pmu-schedule.html'));
@@ -60,17 +61,25 @@ if (process.argv[2] === '--child') {
     const sneaky = await Promise.all(
       ['/shared/plans.js', '/plans.js/../server.js', '/shared/../server.js']
         .map(p => get(p).then(r => ({ p, code: r.code }))));
-    log(JSON.stringify({
+    /* بصمة لا محتوى: المقارنة تبقى بايتية (sha256 + الطول) لكن الحمولة
+       مئات البايتات بدل ١٤٦ ك.ب. الملف الكامل عبر الأنبوب كان يُقطع
+       لما كبر shared/plans.js، فيفشل الاختبار بلا سبب حقيقي. */
+    const sha = b => crypto.createHash('sha256').update(b).digest('hex');
+    let un = null;
+    try { un = zlib.gunzipSync(gz.body) } catch (e) {}
+    const out = JSON.stringify({
       plain: { code: plain.code, etag: plain.headers.etag, cc: plain.headers['cache-control'],
                type: plain.headers['content-type'], enc: plain.headers['content-encoding'] || null,
-               b64: plain.body.toString('base64') },
+               len: plain.body.length, sha: sha(plain.body) },
       gz: { code: gz.code, enc: gz.headers['content-encoding'] || null,
-            b64: gz.body.toString('base64') },
+            len: gz.body.length,
+            unLen: un ? un.length : -1, unSha: un ? sha(un) : null },
       notModified: etagReq.code,
       build: (() => { try { return JSON.parse(st.body.toString()).build } catch (e) { return null } })(),
       sneaky,
-    }));
-    process.exit(0);
+    });
+    /* stdout أنبوب: process.exit يقطع ما لم يُكتب بعد — ننتظر الكتابة */
+    process.stdout.write(out + '\n', () => process.exit(0));
   }, 800);
   return;
 }
@@ -166,14 +175,17 @@ if (S) {
 
   /* المطابقة البايتية تحتاج الملف على القرص */
   if (onDisk) {
-    ok(Buffer.from(S.plain.b64, 'base64').equals(onDisk),
-       '/plans.js مطابق بايت ببايت لـshared/plans.js');
-    let un = null;
-    try { un = zlib.gunzipSync(Buffer.from(S.gz.b64, 'base64')) } catch (e) {}
-    ok(!!un && un.equals(onDisk), 'فكّ الgzip يعطي نفس الملف بايت ببايت');
+    const want = crypto.createHash('sha256').update(onDisk).digest('hex');
+    ok(S.plain.len === onDisk.length && S.plain.sha === want,
+       `/plans.js مطابق بايت ببايت لـshared/plans.js — ${S.plain.len}/${onDisk.length} بايت`);
+    ok(S.gz.unLen === onDisk.length && S.gz.unSha === want,
+       `فكّ الgzip يعطي نفس الملف بايت ببايت — ${S.gz.unLen}/${onDisk.length} بايت`);
+    ok(S.gz.len > 0 && S.gz.len < onDisk.length,
+       `الgzip أصغر من الأصل فعلاً — ${S.gz.len} < ${onDisk.length}`);
   } else {
     ok(false, '/plans.js مطابق بايت ببايت لـshared/plans.js (لا يوجد ملف)');
     ok(false, 'فكّ الgzip يعطي نفس الملف بايت ببايت (لا يوجد ملف)');
+    ok(false, 'الgzip أصغر من الأصل فعلاً (لا يوجد ملف)');
   }
 }
 

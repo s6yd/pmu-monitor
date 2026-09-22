@@ -1590,10 +1590,297 @@ sections:[
 tip:'<b>🎁 Everything is free right now</b> — Jadwalik is in open beta. Sign in and enjoy every feature at no cost.'}
 };
 
-const DATA = { PLANS, PLAN_ALT, REG_CAL, GUIDE };
 
-/* Node يأخذها بـrequire، والمتصفح يعرّفها على window. */
+/* ═══════════ منطق الخطة — دوال صافية ═══════════
+   منقولة حرفياً من pmu-schedule.html. الصفحة والمساعد يحسبان بنفسها،
+   فما يختلف جوابان على نفس السؤال.
+
+   **صافية بالمعنى الصارم:** ولا DOM، ولا localStorage، ولا متغيّر
+   عام من الصفحة، ولا ترجمة. كل مدخل يجي صريحاً في `ctx`. الصفحة
+   تبني ctx من حالتها وتمرّره.
+
+   ctx = { major, planVer, prep, completed, grades }
+     major     كود التخصص            'COSC'
+     planVer   نسخة الخطة            'new' | 'old'
+     prep      الطالب في التحضيري؟   true | false
+     completed أكواد المواد المنجزة  ['MATH 1422', …]
+     grades    التقدير لكل كود       { 'MATH 1422': 'A' }
+
+   ما يعرض نصاً للطالب يبقى في الصفحة: prepLevelLock ترجع **معرّف**
+   الترم لا اسمه المترجم، والصفحة تترجمه. */
+
+/* ═══ التحضيري ═══
+   الأكواد من الخطط الرسمية الموقّعة ومن صفحة البرنامج في موقع الجامعة.
+   مواده بلا ساعات معتمدة ولا تدخل المعدل، والاجتياز فيه من C فأعلى. */
+
+/* مادة رياضيات التحضيري حسب التخصص */
+const PREP_MATH={
+  MEEN:'PRPM 0022',EEEN:'PRPM 0022',CVEN:'PRPM 0022',CHEN:'PRPM 0022',
+  COEN:'PRPM 0022',COSC:'PRPM 0022',SOEN:'PRPM 0022',AINT:'PRPM 0022',
+  ARCH:'PRPM 0022',
+  CSEC:'PRPM 0012',ITAP:'PRPM 0012',IDES:'PRPM 0012',GDES:'PRPM 0012',
+  BUSI:'PRPM 0012',ACCT:'PRPM 0012',FINA:'PRPM 0012',MISY:'PRPM 0012',
+  HRMT:'PRPM 0012',MKDM:'PRPM 0012',LAWB:'PRPM 0012'
+};
+const PREP_MATH_NAME={'PRPM 0022':'Pre-Calculus','PRPM 0012':'Intermediate Algebra'};
+
+/* اجتياز المستوى المتقدم = شرط مواد اللغة والمقدمات في السنة الأولى */
+const PREP_EXIT='PREE 0061';
+
+/* مواد الخطة اللي تشترط اجتياز التحضيري — تُفحص فقط لو الطالب مفعّل الخانة */
+const PREP_GATE_LANG=['COMM 1311','UNIV 1211','ALIS 1211','PHED 1111'];
+const PREP_GATE_MATH=['MATH 1422','PHYS 1421','CHEM 1421','GEEN 1211',
+                      'MATH 1311','MATH 1313','ACCT 2311'];
+
+/* تقديرات الرسوب — المادة تُعاد وما تفتح اللي بعدها.
+   جامعة الأمير محمد بن فهد: الحد الأدنى للنجاح في متطلب سابق هو C. */
+const FAIL_GRADES=['D','F','WF'];
+/* التحضيري: الاجتياز من C فأعلى — D+ و D رسوب فيه */
+const FAIL_GRADES_C=['D+','D','F','WF'];
+/* الانسحاب: الطالب ما اجتاز المادة، فهي باقية عليه كمتطلب
+   ولا تفتح المواد اللاحقة، ولا تُحسب ضمن ساعاته المكتسبة. */
+const WITHDRAW_GRADES=['W','WP'];
+
+const GRADE_POINTS={'A+':4.00,'A':3.75,'B+':3.50,'B':3.00,
+'C+':2.50,'C':2.00,'D+':1.50,'D':1.00,'F':0.00,'WF':0.00};
+/* تقديرات لا تدخل في حساب المعدل */
+const GRADE_SKIP=['I','IP','AU','EX','TR','W','WP','N','P','AW'];
+
+/* التطبيق العملي للسينيور فقط. نشترط الساعات لأن بيانات المتطلبات
+   السابقة ناقصة في بعض التخصصات، فبدونها يظهر لطالب جديد ما بدأ. */
+const INTERN_MIN_CREDITS=90;
+
+/* ═══ اختيار الخطة ═══ */
+function hasAltPlan(code){ return !!(PLAN_ALT[code]&&PLANS[PLAN_ALT[code]]) }
+function planKey(code,planVer){
+  return (planVer==='old'&&hasAltPlan(code))?PLAN_ALT[code]:code;
+}
+function planOf(code,planVer){ return PLANS[planKey(code,planVer)]||PLANS[code] }
+
+/* مستويات التحضيري — مادة الرياضيات تتغيّر حسب التخصص */
+function prepSems(major){
+  const mc=PREP_MATH[major]||'PRPM 0012';
+  const mn=PREP_MATH_NAME[mc]||'';
+  return [
+  {id:'PP1',label:'التحضيري — المستوى التأسيسي',hrs:0,prep:true,courses:[
+    {c:'PRPC 0002',n:'Pre-Beginner Communication Skills',h:0,p:[],adm:true,prep:true},
+    {c:'PRPW 0002',n:'Pre-Beginner Writing Skills',h:0,p:[],adm:true,prep:true},
+    {c:'PRPE 0002',n:'Pre-Beginner Enhanced Learning',h:0,p:[],adm:true,prep:true}]},
+
+  {id:'PP2',label:'التحضيري — المستوى المبتدئ',hrs:0,prep:true,courses:[
+    {c:'PRPC 0021',n:'Beginner Communication Skills',h:0,p:[],adm:true,prep:true},
+    {c:'PRPW 0021',n:'Beginner Writing Skills',h:0,p:[],adm:true,prep:true},
+    {c:'PRPE 0021',n:'Beginner Enhanced Learning',h:0,p:[],adm:true,prep:true}]},
+
+  {id:'PP3',label:'التحضيري — المستوى المتوسط',hrs:0,prep:true,courses:[
+    {c:'PRPC 0041',n:'Intermediate Communication Skills',h:0,p:[],adm:true,prep:true},
+    {c:'PRPW 0041',n:'Intermediate Writing Skills',h:0,p:[],adm:true,prep:true},
+    {c:'PRPI 0041',n:'Intermediate Enhanced Learning',h:0,p:[],adm:true,prep:true},
+    {c:'PRPL 0011',n:'Theories & Applications of Learning I',h:0,p:[],prep:true},
+    {c:'PRPM 0011',n:'Introductory Algebra',h:0,p:[],prep:true}]},
+
+  {id:'PP4',label:'التحضيري — المستوى المتقدم',hrs:0,prep:true,courses:[
+    {c:'PRPC 0061',n:'Advanced Communication Skills',h:0,p:[],adm:true,prep:true},
+    {c:'PRPW 0061',n:'Advanced Writing Skills',h:0,p:[],adm:true,prep:true},
+    {c:'PRPA 0061',n:'Advanced Enhanced Learning',h:0,p:[],adm:true,prep:true},
+    {c:'PRPL 0012',n:'Theories & Applications of Learning II',h:0,p:[],prep:true},
+    {c:mc,n:mn+' — مادة تخصصك',h:0,p:[],prep:true},
+    {c:PREP_EXIT,n:'Core Entry Exam — اختبار الخروج',h:0,p:[],adm:true,prep:true}]}
+  ];
+}
+
+/* فصول الخطة كما تبنيها الصفحة: التحضيري أولاً لمن فعّله */
+function semesters(major,planVer,prep){
+  const p=planOf(major,planVer);
+  if(!p)return [];
+  return prep?prepSems(major).concat(p.sems):p.sems;
+}
+
+/* ═══ السياق ═══
+   يُبنى مرة ويُمرَّر. يحسب الفصول والاختياريات مسبقاً فما نكررها. */
+function ctxOf(o){
+  o=o||{};
+  const major=o.major, planVer=o.planVer==='old'?'old':'new';
+  const prep=!!o.prep;
+  const p=planOf(major,planVer)||{};
+  return {
+    major, planVer, prep,
+    completed: Array.isArray(o.completed)?o.completed:[],
+    grades: (o.grades&&typeof o.grades==='object')?o.grades:{},
+    /* sems و tech يقبلان تمريراً صريحاً: الصفحة تبنيهما في applyMajor
+       وتمرّر ما عندها بالضبط، فما نعيد حسابهما ونخاطر باختلاف. */
+    sems: Array.isArray(o.sems)?o.sems:semesters(major,planVer,prep),
+    tech: (o.tech&&typeof o.tech==='object')?o.tech:(p.tech||{}),
+    total: o.total!==undefined?o.total:p.total,
+    /* الأصل يقرأ PLANS[MAJOR] لا planOf — أي النسخة الجديدة دائماً.
+       نطابقه حرفياً: تغييره يغيّر حد الرسوب على خطة قديمة. */
+    minPassC: !!(PLANS[major]&&PLANS[major].minPassC),
+  };
+}
+
+/* ═══ مساعدات الخطة ═══ */
+function allPlanCourses(ctx){return ctx.sems.flatMap(s=>s.courses.map(c=>({...c,sem:s.id})))}
+function findPlanCourse(ctx,code){return allPlanCourses(ctx).find(c=>c.c===code)}
+
+function failGrades(ctx){ return ctx.minPassC?FAIL_GRADES_C:FAIL_GRADES }
+function isFailed(ctx,code){ return failGrades(ctx).includes(ctx.grades[code]) }
+function isWithdrawn(ctx,code){ return WITHDRAW_GRADES.includes(ctx.grades[code]) }
+
+/* "خلّصها" للعرض والتقدّم — يشمل حتى اللي رسب فيها بـ D */
+function isDone(ctx,code){ return ctx.completed.includes(code) }
+
+/* "نجح فيها" لفتح المواد اللاحقة — يستثني الرسوب والانسحاب */
+function isPassed(ctx,code){
+  return ctx.completed.includes(code) && !isFailed(ctx,code) && !isWithdrawn(ctx,code);
+}
+
+/* الساعات المنجزة من الخطة: تستثني الراسب والمنسحب مثل نظام الجامعة،
+   لأنها تُستخدم في شريط التقدّم وفي متطلبات المستوى (مثل: يلزم 60 ساعة) */
+function doneCredits(ctx){
+  let t=0;
+  allPlanCourses(ctx).forEach(c=>{
+    if(isDone(ctx,c.c) && !isFailed(ctx,c.c) && !isWithdrawn(ctx,c.c)) t+=c.h;
+  });
+  return t;
+}
+function level(cr){return cr>=90?'Senior':cr>=60?'Junior':cr>=30?'Sophomore':'Freshman'}
+
+/* متطلبات التحضيري تُفحص فقط لمن فعّل الخانة —
+   الطالب المقبول مباشرة ما مرّ بالتحضيري فما نقفل عليه شي. */
+function prepGate(ctx,code){
+  if(!ctx.prep)return [];
+  if(PREP_GATE_LANG.includes(code))return [PREP_EXIT];
+  if(PREP_GATE_MATH.includes(code))return [PREP_MATH[ctx.major]||'PRPM 0012'];
+  return [];
+}
+
+/* التحضيري متسلسل: ما يفتح لك مستوى إلا بعد ما تخلّص اللي قبله.
+   ترجع **معرّف** الترم واسمه الخام — الترجمة على الصفحة لا هنا. */
+function prepLevelLock(ctx,code){
+  if(!ctx.prep)return null;
+  const i=ctx.sems.findIndex(sem=>sem.prep&&sem.courses.some(c=>c.c===code));
+  if(i<=0)return null;
+  for(let k=0;k<i;k++){
+    const sem=ctx.sems[k];
+    if(!sem.prep)continue;
+    if(!sem.courses.every(c=>isPassed(ctx,c.c)))
+      return {id:sem.id,label:sem.label};
+  }
+  return null;
+}
+
+/* فحص المتطلبات السابقة.
+   `missing` أكواد مواد فقط. قفل مستوى التحضيري يرجع في `lock` منفصلاً
+   لأنه نص يُعرض للطالب — الصفحة تترجمه وتضيفه لآخر القائمة. */
+function prereqCheck(ctx,code){
+  const pc=findPlanCourse(ctx,code);
+  let reqs=null;
+  if(pc) reqs={p:pc.p||[],min:pc.min||0};
+  else if(ctx.tech[code]) reqs={p:ctx.tech[code],min:0};
+  if(!reqs) return {known:false,ok:true,missing:[],lock:null};
+  const missing=reqs.p.concat(prepGate(ctx,code)).filter(r=>!isPassed(ctx,r));
+  const lock=prepLevelLock(ctx,code);
+  const cr=doneCredits(ctx);
+  const needCr=reqs.min&&cr<reqs.min?reqs.min:0;
+  return {known:true,ok:missing.length===0&&!lock&&!needCr,
+          missing,lock,needCr,haveCr:cr};
+}
+
+/* عدد ساعات أي مادة: من الخطة، وإلا من الرقم الثاني في كود المادة (نظام PMU) */
+function creditsOf(ctx,code){
+  const pc=findPlanCourse(ctx,code);
+  if(pc)return pc.h;
+  const m=(code||'').match(/(\d{4})/);
+  if(m){const d=parseInt(m[1][1]);if(d>=1&&d<=6)return d}
+  return 3;
+}
+
+/* كم مادة تنفتح لو خلصت هذي المادة */
+function unlocksCount(ctx,code){
+  /* المادة المكتملة ما تنعد — لو خلصتها فالمتطلب ما عاد يفتح شي */
+  return allPlanCourses(ctx).filter(c=>!isDone(ctx,c.c)&&(c.p||[]).includes(code)).length;
+}
+
+/* أي المواد تنفتح فعلاً — للمساعد، يشرح لا يعدّ فقط */
+function unlockedBy(ctx,code){
+  return allPlanCourses(ctx).filter(c=>!isDone(ctx,c.c)&&(c.p||[]).includes(code));
+}
+
+/* التطبيق العملي (Internship / Co-op) ينزل لحاله — ممنوع معه مواد */
+function isInternship(c){
+  const code=((c&&c.c)||'').toUpperCase(), name=((c&&c.n)||'').toUpperCase();
+  return /\b(INTERN|COOP|CO-OP|TRAINING|PRACTIC)/.test(name) ||
+         /^(INTR|COOP|TRAI)/.test(code) ||
+         /\b(4399|4499|4999)\b/.test(code);
+}
+
+/* أول مستوى تحضيري ما خلّصه الطالب — التحضيري متسلسل، مستوى بعد مستوى */
+function currentPrepSem(ctx){
+  if(!ctx.prep)return null;
+  return ctx.sems.find(sem=>sem.prep && !sem.courses.every(c=>isPassed(ctx,c.c))) || null;
+}
+
+/* المواد اللي لازم تنعاد: أخذها وما نجح — رسوب أو انسحاب.
+   جديدة (ما كانت دالة مستقلة في الصفحة)، مبنية على isDone/isPassed
+   نفسها اللي يستعملها المقترح، فما تغيّر أي نتيجة قائمة. */
+function retakeList(ctx){
+  return allPlanCourses(ctx)
+    .filter(c=>isDone(ctx,c.c)&&!isPassed(ctx,c.c))
+    .map(c=>({...c,why:isFailed(ctx,c.c)?'failed':'withdrawn',grade:ctx.grades[c.c]||null}));
+}
+
+/* ═══ المعدل ═══ */
+function calcGPA(ctx){
+  let pts=0,hrs=0,n=0;
+  Object.keys(ctx.grades).forEach(code=>{
+    const g=ctx.grades[code];
+    if(!g||GRADE_SKIP.includes(g)||!(g in GRADE_POINTS))return;
+    if(!isDone(ctx,code))return;
+    /* درجات مواد مو في خطتك الحالية ما تُحسب — أكواد المواد تختلف
+       بين التخصصات، فلو غيّرت تخصصك تبقى درجة قديمة تؤثر على معدلك
+       وأنت ما تشوفها ولا تقدر تعدّلها. */
+    if(!findPlanCourse(ctx,code) && !ctx.tech[code])return;
+    const h=creditsOf(ctx,code);
+    pts+=GRADE_POINTS[g]*h;hrs+=h;n++;
+  });
+  return {gpa:hrs?pts/hrs:null,hrs,n,pts};
+}
+
+/* المعدل المتوقّع — الطالب يحط تقديراً افتراضياً لمادة ما خلصها */
+function calcProjected(ctx,whatIf){
+  const w=(whatIf&&typeof whatIf==='object')?whatIf:{};
+  const base=calcGPA(ctx);
+  let pts=base.pts||0, hrs=base.hrs||0, n=0;
+  Object.keys(w).forEach(code=>{
+    const g=w[code];
+    if(!g||!(g in GRADE_POINTS))return;
+    if(isDone(ctx,code))return;              /* خلصها فعلاً — نتجاهل الافتراض */
+    const h=creditsOf(ctx,code);
+    pts+=GRADE_POINTS[g]*h; hrs+=h; n++;
+  });
+  return {gpa:hrs?pts/hrs:null,hrs,n};
+}
+
+const LOGIC = {
+  PREP_MATH, PREP_MATH_NAME, PREP_EXIT, PREP_GATE_LANG, PREP_GATE_MATH,
+  FAIL_GRADES, FAIL_GRADES_C, WITHDRAW_GRADES, GRADE_POINTS, GRADE_SKIP,
+  INTERN_MIN_CREDITS,
+  hasAltPlan, planKey, planOf, prepSems, semesters, ctxOf,
+  allPlanCourses, findPlanCourse, failGrades, isFailed, isWithdrawn,
+  isDone, isPassed, doneCredits, level, prepGate, prepLevelLock,
+  prereqCheck, creditsOf, unlocksCount, unlockedBy, isInternship,
+  currentPrepSem, retakeList, calcGPA, calcProjected,
+};
+
+const DATA = Object.assign({ PLANS, PLAN_ALT, REG_CAL, GUIDE }, LOGIC);
+
+/* Node يأخذها بـrequire، والمتصفح يعرّفها على window.
+   البيانات تبقى على window كما كانت (كود الصفحة يناديها بلا بادئة)،
+   والمنطق تحت اسم واحد PlanLogic حتى ما نزحم النطاق العام. */
 if (typeof module === 'object' && module && module.exports) module.exports = DATA;
-else { root.PLANS = PLANS; root.PLAN_ALT = PLAN_ALT; root.REG_CAL = REG_CAL; root.GUIDE = GUIDE; }
+else {
+  root.PLANS = PLANS; root.PLAN_ALT = PLAN_ALT; root.REG_CAL = REG_CAL; root.GUIDE = GUIDE;
+  root.PlanLogic = LOGIC;
+}
 
 })(typeof globalThis !== 'undefined' ? globalThis : this);
