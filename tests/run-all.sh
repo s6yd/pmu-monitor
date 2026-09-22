@@ -2,7 +2,13 @@
 # يشغّل كل الاختبارات على ملفات المستودع ويطبع ملخصاً.
 #   bash tests/run-all.sh
 # يحتاج Node 18+، وPlaywright للاختبارات اللي تفتح متصفحاً:
-#   npm i --no-save playwright && npx playwright install chromium
+#   npm i --no-save playwright@1.56.0
+#
+# النسخة محددة عمداً: البيئة فيها Chromium مثبّت مسبقاً في /opt/pw-browsers
+# (نسخة ١٤١ · بناء 1194)، و cdn.playwright.dev محجوب فما نقدر نحمّل متصفحاً
+# جديداً. النسخة 1.56.0 تطابق البناء الموجود فتشتغل بلا تحميل. أي نسخة ثانية
+# تطلب بناءً مختلفاً وتنهار بـ "Executable doesn't exist at …".
+# لو تغيّر المتصفح في البيئة، طريقة إيجاد النسخة المطابقة في CLAUDE.md §٥.
 set -u
 cd "$(dirname "$0")/.."
 S=server.js; F=pmu-schedule.html; A=admin.html
