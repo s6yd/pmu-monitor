@@ -5331,6 +5331,293 @@ box-shadow:0 8px 24px rgba(61,111,255,.3)}
 }
 
 /* ============ HTTP server ============ */
+
+/* ═══════════ أدوات المساعد — القراءة (CLAUDE.md §٩-أ-٢) ═══════════
+   الدفعة الأولى: أدوات الخطة والتقويم والدليل. كلها تُبنى على
+   shared/plans.js و ACAD_CAL — ولا واحدة تسحب من الجامعة.
+
+   ثلاث قواعد مفروضة هنا لا في النموذج:
+   ١) **الهوية من الجلسة لا من الوسائط.** ولا أداة تاخذ معرّف مستخدم؛
+      runTool يرفض أي وسيط اسمه user_id مهما جاء من النموذج.
+   ٢) **لا اختراع.** المادة اللي ما لقيناها في الخطة ترجع known:false
+      ورسالة صريحة — لا نخمّن ساعاتها ولا متطلبها.
+   ٣) **الحصة.** المجاني: الدليل والمعلومات العامة وأسئلة الخطة.
+      المشترك: ما يُحسب من موادّه ودرجاته. الفحص بـhasAccess وحدها. */
+
+/* سياق الطالب — صفوفه هو فقط، تُقرأ مرة لكل طلب.
+   ما نستعمل sbAll: مواد طالب واحد لا تتجاوز ٦٠، فحد الألف بعيد. */
+async function aiStudentCtx(userId) {
+  const id = encodeURIComponent(String(userId));
+  const [prof, done] = await Promise.all([
+    sb('GET', 'profiles', { query: `?id=eq.${id}&select=*` }),
+    sb('GET', 'completed_courses', { query: `?user_id=eq.${id}&select=course_code,grade` }),
+  ]);
+  /* sb ما ترمي عند خطأ HTTP — ترجع كائن الخطأ */
+  const p = Array.isArray(prof) ? (prof[0] || null) : null;
+  const D = Array.isArray(done) ? done : [];
+
+  const completed = D.map(c => c.course_code).filter(Boolean);
+  const grades = {};
+  D.forEach(c => { if (c.course_code && c.grade) grades[c.course_code] = c.grade });
+
+  /* حالة التحضيري ما هي محفوظة في القاعدة — الصفحة تحفظها في
+     localStorage وحدها. نستنتجها: طالب عنده مادة تحضيري منجزة مرّ به.
+     الاستنتاج معلن في ناتج الأدوات (prepInferred) فما نوهم بدقة. */
+  const prep = completed.some(c => /^(PRP|PREE)/.test(c));
+
+  const major = (p && p.major) || 'MEEN';
+  const planVer = (p && p.plan_ver === 'old') ? 'old' : 'new';
+
+  return {
+    userId: String(userId),
+    profile: p,
+    pro: hasAccess(p),
+    prepInferred: prep,
+    plan: PLANS_DATA.ctxOf({
+      major, planVer, prep, completed, grades,
+      term: regTerm(),
+    }),
+  };
+}
+
+/* نص «ما أعرف» موحّد — الأداة تقولها، والنموذج ينقلها */
+const AI_UNKNOWN = 'ما لقيتها في بيانات جدولك';
+const AI_PRO_ONLY = 'هذي تحتاج اشتراك — الحساب والدرجات للمشتركين';
+
+function aiCourse(ctx, code) {
+  const c = PLANS_DATA.findPlanCourse(ctx.plan, code);
+  if (!c) return null;
+  return { code: c.c, name: c.n, credits: c.h, semester: c.sem,
+           prereqs: c.p || [], electiveSlot: !!c.el, adminPlaced: !!c.adm,
+           prep: !!c.prep };
+}
+
+/* ═══ سجل الأدوات ═══
+   كل أداة: وصفها للنموذج · مخطط وسائطها · حصتها · ودالتها.
+   المخطط هو نفسه اللي يُرسل للنموذج في §٩-أ-٣. */
+const AI_TOOLS = {
+
+  guide: {
+    tier: 'free',
+    description: 'دليل استخدام جدولك — الأقسام وعناوينها وشرح كل ميزة. '
+      + 'استعملها لأسئلة «كيف أسوي كذا في الموقع».',
+    input_schema: { type: 'object', properties: {
+      lang: { type: 'string', enum: ['ar', 'en'], description: 'لغة الدليل' } },
+      required: [] },
+    run: (ctx, a) => {
+      const g = PLANS_DATA.GUIDE[(a.lang === 'en') ? 'en' : 'ar'];
+      if (!g) return { error: AI_UNKNOWN };
+      return { title: g.title, lead: g.lead,
+        sections: g.sections.map(s => ({ name: s.name,
+          items: s.items.map(i => ({ title: i.t, text: i.d })) })) };
+    },
+  },
+
+  academic_calendar: {
+    tier: 'free',
+    description: 'التقويم الأكاديمي: بداية الدراسة، الإجازات، النهائيات، '
+      + 'الحذف والإضافة. معلومة عامة لكل الطلاب.',
+    input_schema: { type: 'object', properties: {
+      term: { type: 'string', description: 'كود الترم مثل 202710 — اتركه لترم الدراسة الحالي' } },
+      required: [] },
+    run: (ctx, a) => {
+      const t = a.term ? String(a.term) : null;
+      const rows = ACAD_CAL.filter(e => !t || e.term === t);
+      if (!rows.length) return { error: AI_UNKNOWN, term: t };
+      return { term: t || 'الكل', events: rows.map(e => ({
+        start: e.s, end: e.e || null, kind: e.t, ar: e.ar, en: e.en })) };
+    },
+  },
+
+  registration_calendar: {
+    tier: 'free',
+    description: 'تواريخ التسجيل حسب المستوى (سينيور/جونيور/سوفومور/فريشمان) '
+      + 'وفترات الحذف والإضافة للترم القادم.',
+    input_schema: { type: 'object', properties: {}, required: [] },
+    run: () => {
+      const R = PLANS_DATA.REG_CAL;
+      if (!R || !Array.isArray(R.rows)) return { error: AI_UNKNOWN };
+      return { termAr: R.termAr, termEn: R.termEn, hideAfter: R.hideAfter,
+        rows: R.rows.map(r => ({ key: r.k, date: r.d, minCredits: r.min,
+          ar: r.ar, en: r.en, hintAr: r.hAr, hintEn: r.hEn })),
+        addDrop: R.addDrop || null, drop: R.drop || null };
+    },
+  },
+
+  course_info: {
+    tier: 'free',
+    description: 'معلومات مادة من الخطة: اسمها، ساعاتها، ترمها، متطلباتها السابقة. '
+      + 'وللمشترك: هل هي مفتوحة له الآن ووش ينقصه.',
+    input_schema: { type: 'object', properties: {
+      code: { type: 'string', description: 'كود المادة مثل "MATH 1422"' } },
+      required: ['code'] },
+    run: (ctx, a) => {
+      const c = aiCourse(ctx, a.code);
+      if (!c) return { known: false, error: AI_UNKNOWN, code: a.code };
+      const out = { known: true, ...c };
+      /* الحالة الشخصية من موادّه ودرجاته — للمشترك */
+      if (ctx.pro) {
+        const r = PLANS_DATA.prereqCheck(ctx.plan, c.code);
+        out.yourStatus = {
+          done: PLANS_DATA.isDone(ctx.plan, c.code),
+          passed: PLANS_DATA.isPassed(ctx.plan, c.code),
+          open: r.ok, missing: r.missing,
+          needCredits: r.needCr || 0, yourCredits: r.haveCr,
+          prepLevelLocked: r.lock ? r.lock.id : null,
+        };
+      } else out.note = AI_PRO_ONLY;
+      return out;
+    },
+  },
+
+  what_unlocks: {
+    tier: 'free',
+    description: 'وش تفتح هذي المادة: أسماء المواد اللي متطلبها السابق هو هذي المادة. '
+      + 'تجاوب «ليش أقدّم هذي المادة».',
+    input_schema: { type: 'object', properties: {
+      code: { type: 'string', description: 'كود المادة' } },
+      required: ['code'] },
+    run: (ctx, a) => {
+      if (!PLANS_DATA.findPlanCourse(ctx.plan, a.code))
+        return { known: false, error: AI_UNKNOWN, code: a.code };
+      const list = PLANS_DATA.unlockedBy(ctx.plan, a.code);
+      return { known: true, code: a.code, count: list.length,
+        unlocks: list.map(c => ({ code: c.c, name: c.n, credits: c.h })) };
+    },
+  },
+
+  course_offering: {
+    tier: 'free',
+    description: 'هل تُطرح المادة هذا الترم أو الترم الجاي، ومتى ترجع. '
+      + 'جدول الطرح معلن للهندسة الميكانيكية فقط.',
+    input_schema: { type: 'object', properties: {
+      code: { type: 'string', description: 'كود المادة' } },
+      required: ['code'] },
+    run: (ctx, a) => {
+      if (!PLANS_DATA.findPlanCourse(ctx.plan, a.code))
+        return { known: false, error: AI_UNKNOWN, code: a.code };
+      const w = PLANS_DATA.offerWarn(ctx.plan, a.code);
+      if (!w) return { known: true, code: a.code, term: ctx.plan.term,
+        status: 'ok', note: 'ما فيه تحذير طرح لهذي المادة' };
+      return { known: true, code: a.code, term: ctx.plan.term,
+        status: w.kind === 'none' ? 'not_offered_now' : 'last_chance',
+        skipsTerms: w.n || 0, returnsTerm: w.next || null };
+    },
+  },
+
+  plan_overview: {
+    tier: 'pro',
+    description: 'ملخص خطة الطالب: تخصصه، ساعاته المنجزة من الكلية، مستواه، '
+      + 'ونسبة تقدّمه.',
+    input_schema: { type: 'object', properties: {}, required: [] },
+    run: (ctx) => {
+      const p = PLANS_DATA.planOf(ctx.plan.major, ctx.plan.planVer);
+      if (!p) return { error: AI_UNKNOWN };
+      const cr = PLANS_DATA.doneCredits(ctx.plan);
+      return { major: ctx.plan.major, majorAr: p.ar, majorEn: p.name,
+        planVersion: ctx.plan.planVer, totalCredits: p.total,
+        doneCredits: cr, remainingCredits: Math.max(0, p.total - cr),
+        level: PLANS_DATA.level(cr),
+        percent: p.total ? Math.round(cr / p.total * 100) : 0,
+        prepInferred: ctx.prepInferred,
+        semesters: ctx.plan.sems.length };
+    },
+  },
+
+  next_term_suggestion: {
+    tier: 'pro',
+    description: 'المقترح للترم الجاي: المواد الأساسية والاختيارية بترتيبها، '
+      + 'وساعاتها، وليش كل مادة (إعادة/تفتح مواد/آخر فرصة).',
+    input_schema: { type: 'object', properties: {}, required: [] },
+    run: (ctx) => {
+      const s = PLANS_DATA.suggestNext(ctx.plan);
+      const map = c => ({ code: c.c, name: c.n, credits: c.h,
+        unlocks: c.unlocks || 0, retake: !!c.retake,
+        lastChance: !!c.lastChance, prep: !!c.prep });
+      return { critical: s.crit.map(map), optional: s.opt.map(map),
+        hours: s.hours, internshipOnly: !!s.internOnly,
+        internshipAvailable: !!s.internAvailable,
+        adminPlacedOnly: !!s.admOnly,
+        prepLevel: s.prepSem ? s.prepSem.id : null };
+    },
+  },
+
+  retake_list: {
+    tier: 'pro',
+    description: 'المواد اللي لازم الطالب يعيدها — رسب فيها أو انسحب منها.',
+    input_schema: { type: 'object', properties: {}, required: [] },
+    run: (ctx) => {
+      const r = PLANS_DATA.retakeList(ctx.plan);
+      return { count: r.length, courses: r.map(c => ({ code: c.c, name: c.n,
+        credits: c.h, grade: c.grade, reason: c.why })) };
+    },
+  },
+
+  gpa: {
+    tier: 'pro',
+    description: 'معدل الطالب التراكمي، و«ماذا لو» — أثر تقديرات افتراضية '
+      + 'لمواد ما خلّصها على معدله.',
+    input_schema: { type: 'object', properties: {
+      whatIf: { type: 'object',
+        description: 'تقديرات افتراضية، مثل {"MATH 1422":"A"} — اتركه فاضياً للمعدل الحالي',
+        additionalProperties: { type: 'string' } } },
+      required: [] },
+    run: (ctx, a) => {
+      const g = PLANS_DATA.calcGPA(ctx.plan);
+      const out = { gpa: g.gpa === null ? null : Number(g.gpa.toFixed(4)),
+        gradedCredits: g.hrs, gradedCourses: g.n, scale: 4 };
+      if (g.gpa === null) out.note = 'ما فيه درجات محفوظة بعد';
+      if (a.whatIf && typeof a.whatIf === 'object' && Object.keys(a.whatIf).length) {
+        const p = PLANS_DATA.calcProjected(ctx.plan, a.whatIf);
+        out.projected = { gpa: p.gpa === null ? null : Number(p.gpa.toFixed(4)),
+          credits: p.hrs, addedCourses: p.n };
+      }
+      return out;
+    },
+  },
+
+};
+
+/* ═══ منفّذ الأدوات ═══
+   يتحقق من الاسم والوسائط والحصة قبل أي تنفيذ. ما يثق في النموذج. */
+function aiToolSchemas() {
+  return Object.entries(AI_TOOLS).map(([name, t]) =>
+    ({ name, description: t.description, input_schema: t.input_schema, tier: t.tier }));
+}
+
+async function aiRunTool(name, args, ctx) {
+  const t = AI_TOOLS[name];
+  if (!t) return { error: `أداة غير معروفة: ${name}` };
+
+  const a = (args && typeof args === 'object' && !Array.isArray(args)) ? args : {};
+
+  /* الهوية من الجلسة لا من الوسائط — أي محاولة لتمرير معرّف تُرفض.
+     نفس قاعدة /api/me/*: لا نقبل معرّف مستخدم من الخارج أبداً. */
+  for (const k of Object.keys(a)) {
+    if (/^(user_?id|uid|student_?id|email)$/i.test(k))
+      return { error: 'ما نقبل معرّف مستخدم في الوسائط — الهوية من الجلسة' };
+  }
+
+  /* الوسائط المطلوبة */
+  for (const r of (t.input_schema.required || [])) {
+    if (a[r] === undefined || a[r] === null || a[r] === '')
+      return { error: `ناقص وسيط مطلوب: ${r}` };
+  }
+  /* وسيط غير معرّف في المخطط يُرفض بدل ما يُتجاهل بصمت */
+  const known = Object.keys(t.input_schema.properties || {});
+  for (const k of Object.keys(a)) {
+    if (!known.includes(k)) return { error: `وسيط غير معروف: ${k}` };
+  }
+
+  /* الحصة — hasAccess وحدها، لا فحص ثانٍ */
+  if (t.tier === 'pro' && !ctx.pro) return { error: AI_PRO_ONLY, tier: 'pro' };
+
+  try { return await t.run(ctx, a) }
+  catch (e) { return { error: 'تعذّر تنفيذ الأداة: ' + e.message } }
+}
+/* ═══ نهاية أدوات المساعد ═══
+   الاختبارات تقتطع ما بين العلامتين وتشغّله — لا تغيّر العلامتين. */
+
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
