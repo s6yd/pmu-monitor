@@ -47,12 +47,21 @@ const DB = {
     'u-pro':  { id: 'u-pro',  major: 'COSC', plan_ver: 'new', is_pro: true,  name: 'صاحب السؤال' },
     'u-free': { id: 'u-free', major: 'COSC', plan_ver: 'new', is_pro: false, name: 'مجاني' },
     'u-other':{ id: 'u-other',major: 'MEEN', plan_ver: 'old', is_pro: true,  name: 'طالب ثانٍ' },
+    /* التحضيري: محفوظة true · محفوظة false · بلا قيمة (NULL) */
+    'u-prep-on':  { id: 'u-prep-on',  major: 'COSC', plan_ver: 'new', is_pro: true, prep: true },
+    'u-prep-off': { id: 'u-prep-off', major: 'COSC', plan_ver: 'new', is_pro: true, prep: false },
+    'u-prep-null':{ id: 'u-prep-null',major: 'COSC', plan_ver: 'new', is_pro: true },
   },
   completed: {
     'u-pro':  [{ course_code: 'ALIS 1211', grade: 'A' }, { course_code: 'MATH 1422', grade: 'F' },
                { course_code: 'COMM 1311', grade: 'W' }],
     'u-free': [{ course_code: 'ALIS 1211', grade: 'A' }],
     'u-other':[{ course_code: 'MEEN 2311', grade: 'A' }, { course_code: 'MEEN 2312', grade: 'B' }],
+    /* الثلاثة عندهم مادة تحضيري منجزة — فالاستنتاج يقول «نعم» لهم كلهم.
+       المحفوظة لازم تغلبه عند الأولين. */
+    'u-prep-on':  [{ course_code: 'PRPC 0002', grade: 'A' }],
+    'u-prep-off': [{ course_code: 'PRPC 0002', grade: 'A' }],
+    'u-prep-null':[{ course_code: 'PRPC 0002', grade: 'A' }],
   },
 };
 let SB_CALLS = [];
@@ -241,6 +250,42 @@ function fakeModel(ctx) {
 
   /* ── ولا أداة تسحب من الجامعة ── */
   ok(!/masterschedule|getData/.test(REGION), 'ولا أداة تسحب من موقع الجامعة');
+
+  /* ── ٤) التحضيري: المحفوظة تغلب الاستنتاج ── */
+  {
+    const ON = await aiStudentCtx('u-prep-on');
+    const OFF = await aiStudentCtx('u-prep-off');
+    const NUL = await aiStudentCtx('u-prep-null');
+
+    /* الثلاثة عندهم PRPC 0002 منجزة، فالاستنتاج وحده يقول «نعم» لهم كلهم */
+    ok(ON.prep === true, 'محفوظة true ⇒ التحضيري شغّال');
+    ok(ON.prepInferred === false, 'وprepInferred خاطئة — القيمة محفوظة لا مستنتَجة');
+
+    ok(OFF.prep === false, 'محفوظة false ⇒ مطفأ، رغم إن عنده مادة تحضيري منجزة');
+    ok(OFF.prepInferred === false, 'وprepInferred خاطئة كذلك');
+
+    ok(NUL.prep === true, 'بلا قيمة ⇒ نستنتج من المواد المنجزة');
+    ok(NUL.prepInferred === true, 'وprepInferred صادقة هنا وحدها');
+
+    /* الأثر الحقيقي: التحضيري يغيّر عدد فصول الخطة */
+    ok(ON.plan.sems.length > OFF.plan.sems.length,
+       `التحضيري يزيد الفصول — شغّال ${ON.plan.sems.length} · مطفأ ${OFF.plan.sems.length}`);
+    ok(NUL.plan.sems.length === ON.plan.sems.length,
+       'والمستنتَج «نعم» يعطي نفس فصول المحفوظة «نعم»');
+
+    /* وتظهر في الأداة */
+    const povOn = await fakeModel(ON)('plan_overview', '{}');
+    eq([povOn.prep, povOn.prepInferred], [true, false], 'plan_overview للمحفوظة');
+    const povNul = await fakeModel(NUL)('plan_overview', '{}');
+    eq([povNul.prep, povNul.prepInferred], [true, true], 'plan_overview للمستنتَجة');
+
+    /* طالب بلا مواد تحضيري وبلا قيمة ⇒ مستنتَج «لا» */
+    DB.profiles['u-fresh'] = { id: 'u-fresh', major: 'COSC', plan_ver: 'new', is_pro: true };
+    DB.completed['u-fresh'] = [{ course_code: 'ALIS 1211', grade: 'A' }];
+    const FRESH = await aiStudentCtx('u-fresh');
+    ok(FRESH.prep === false && FRESH.prepInferred === true,
+       'طالب بلا مواد تحضيري وبلا قيمة: مستنتَج «لا»');
+  }
 
   console.log(`\n${pass} نجحت · ${fail} فشلت`);
   process.exit(fail ? 1 : 0);
