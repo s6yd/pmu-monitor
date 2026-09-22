@@ -7817,6 +7817,7 @@ function onPrepToggle(){
   const el=document.getElementById('prepChk');
   const on=!!(el&&el.checked);
   save('pmu_prep',on);
+  if(USER)pushProfile();        /* يتبع التخصص للسحابة — ما يبقى في المتصفح */
   if(majorChosen())applyMajor(MAJOR,false,false);
   else if(el)showToast(LANG==='ar'?'اختر تخصصك أول':'Pick your major first','warn');
   planTouched();               /* مفتاح المستوى التحضيري بوابة متطلبات */
@@ -8161,6 +8162,21 @@ async function pullCloud(){
     if(prof&&(prof.plan_ver==='old'||prof.plan_ver==='new')&&prof.plan_ver!==PLAN_VER){
       PLAN_VER=prof.plan_ver; save('pmu_plan_ver',PLAN_VER);
     }
+
+    /* ═══ التحضيري من السحابة ═══
+       كان في تخزين المتصفح وحده، فيضيع لو مسح تخزينه أو دخل من جهاز
+       ثاني — والنسخة المثبّتة على الشاشة الرئيسية في iOS تخزينها منفصل
+       عن سفاري أصلاً. الآن في القاعدة مثل التخصص ونسخة الخطة.
+
+       NULL معناها «ما انضبط بعد» لا «مطفأ»: الطالب الموجود قبل هذا
+       التغيير قيمته في متصفحه، فنرفعها مرة وحدة بدل ما نطفيها عليه.
+       وقبل applyMajor لأن مواد التحضيري جزء من PLAN. */
+    if(prof && typeof prof.prep === 'boolean'){
+      if(prof.prep !== prepOn()) save('pmu_prep', prof.prep);
+    } else if(prof && prepOn()){
+      pushProfile();                 /* قيمة المتصفح تصعد مرة وحدة */
+    }
+    { const pc=document.getElementById('prepChk'); if(pc)pc.checked=prepOn(); }
     /* التخصص من السحابة — يجي معك لأي جهاز */
     if(prof&&prof.major&&PLANS[prof.major]&&prof.major!==MAJOR) applyMajor(prof.major,true);
     else if(prof&&prof.major===MAJOR&&hasAltPlan(MAJOR)) applyMajor(MAJOR,true,false);
@@ -8222,7 +8238,9 @@ async function pullCloud(){
 /* حفظ التخصص في الحساب */
 async function pushProfile(){
   if(!USER)return;
-  try{ await sb.from('profiles').update({major:MAJOR,plan_ver:PLAN_VER}).eq('id',USER.id); }
+  /* التحضيري معها: تفضيل طالب مثل التخصص ونسخة الخطة، لا عمود فوترة —
+     فالحارس guard_profile_billing ما يمسّه (يعيد خمسة أعمدة بالاسم فقط). */
+  try{ await sb.from('profiles').update({major:MAJOR,plan_ver:PLAN_VER,prep:prepOn()}).eq('id',USER.id); }
   catch(e){ console.log('major sync',e); }
 }
 

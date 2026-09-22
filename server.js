@@ -5360,10 +5360,13 @@ async function aiStudentCtx(userId) {
   const grades = {};
   D.forEach(c => { if (c.course_code && c.grade) grades[c.course_code] = c.grade });
 
-  /* حالة التحضيري ما هي محفوظة في القاعدة — الصفحة تحفظها في
-     localStorage وحدها. نستنتجها: طالب عنده مادة تحضيري منجزة مرّ به.
-     الاستنتاج معلن في ناتج الأدوات (prepInferred) فما نوهم بدقة. */
-  const prep = completed.some(c => /^(PRP|PREE)/.test(c));
+  /* حالة التحضيري: المحفوظة في القاعدة تغلب دائماً.
+     NULL معناها «ما انضبطت بعد» (طالب ما فتح الموقع من ما أضفنا العمود)،
+     فنستنتجها رجوعاً أخيراً: عنده مادة تحضيري منجزة = مرّ به.
+     prepInferred صادقة: true وقت الاستنتاج وحده، لا لما تكون محفوظة. */
+  const prepStored = (p && typeof p.prep === 'boolean') ? p.prep : null;
+  const prepInferred = prepStored === null;
+  const prep = prepInferred ? completed.some(c => /^(PRP|PREE)/.test(c)) : prepStored;
 
   const major = (p && p.major) || 'MEEN';
   const planVer = (p && p.plan_ver === 'old') ? 'old' : 'new';
@@ -5372,7 +5375,8 @@ async function aiStudentCtx(userId) {
     userId: String(userId),
     profile: p,
     pro: hasAccess(p),
-    prepInferred: prep,
+    prep,                       /* القيمة الفعلية المستعملة في الحساب */
+    prepInferred,               /* true لما تكون مستنتَجة لا محفوظة */
     plan: PLANS_DATA.ctxOf({
       major, planVer, prep, completed, grades,
       term: regTerm(),
@@ -5519,7 +5523,7 @@ const AI_TOOLS = {
         doneCredits: cr, remainingCredits: Math.max(0, p.total - cr),
         level: PLANS_DATA.level(cr),
         percent: p.total ? Math.round(cr / p.total * 100) : 0,
-        prepInferred: ctx.prepInferred,
+        prep: ctx.prep, prepInferred: ctx.prepInferred,
         semesters: ctx.plan.sems.length };
     },
   },

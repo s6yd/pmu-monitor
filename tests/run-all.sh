@@ -52,6 +52,7 @@ run test-static-pages   "$S"
 run test-plans          "$S" "$F"
 run test-plan-logic     "$S" "$F"
 run test-ai-tools       "$S"
+run test-prep-sync      "$F"
 
 echo
 if [ ${#failed[@]} -eq 0 ]; then
