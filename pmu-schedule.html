@@ -513,12 +513,7 @@ font-size:12px;font-weight:600;font-family:var(--sans);cursor:pointer;white-spac
 background:var(--bg);border:1px dashed var(--border2);border-radius:10px;
 padding:11px;text-align:center;margin-top:10px}
 
-.pay-box{background:var(--bg);border:1px solid var(--border2);border-radius:12px;padding:14px;margin-top:12px;display:none}
-.pay-box.visible{display:block}
-.pay-line{display:flex;justify-content:space-between;align-items:center;padding:8px 0;font-size:12.5px;border-bottom:1px solid var(--border)}
-.pay-line:last-child{border-bottom:none}
 .pay-line b{font-family:var(--mono);color:var(--accent2)}
-.pay-note{font-size:11.5px;color:var(--text3);line-height:1.7;margin-top:11px}
 
 /* monitor toggle on course card */
 .btn-bell{width:34px;height:34px;border-radius:10px;border:1px solid var(--border2);
@@ -526,6 +521,69 @@ background:transparent;color:var(--text3);font-size:15px;cursor:pointer;
 display:flex;align-items:center;justify-content:center}
 .btn-bell.on{border-color:var(--warn);color:var(--warn);background:var(--warn-bg)}
 .btn-bell.locked{opacity:.45}
+/* ═══ ورقة الباقات — مكوّن واحد لكل لحظات الجدار ═══ */
+.ps-overlay{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.45);
+  display:flex;align-items:flex-end;justify-content:center;opacity:0;transition:opacity .2s}
+.ps-overlay.open{opacity:1}
+.ps-overlay[hidden]{display:none}
+.ps-sheet{width:100%;max-width:520px;background:var(--card);border-radius:18px 18px 0 0;
+  padding:14px 16px calc(16px + env(safe-area-inset-bottom,0px));
+  transform:translateY(24px);transition:transform .2s;max-height:90vh;overflow-y:auto}
+.ps-overlay.open .ps-sheet{transform:none}
+.ps-grab{width:38px;height:4px;border-radius:4px;background:var(--border2);margin:0 auto 12px}
+.ps-ctx{background:var(--warn-bg);color:var(--text);border-radius:11px;padding:9px 12px;
+  font-size:13px;line-height:1.6;margin-bottom:12px}
+.ps-cols{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.ps-col{border:1px solid var(--border);border-radius:13px;padding:11px;display:flex;
+  flex-direction:column;gap:6px;font-size:12.5px;color:var(--text2);line-height:1.5}
+.ps-col b{color:var(--text);font-size:13.5px;margin-bottom:2px}
+.ps-col.pro{border:2px solid var(--accent)}
+.ps-addon{display:flex;align-items:center;gap:10px;border:1px solid var(--border);
+  border-radius:13px;padding:10px 12px;margin-bottom:12px;font-size:13px;cursor:pointer}
+.ps-addon input[type=checkbox]{width:20px;height:20px;flex:none;padding:0;margin:0;
+  border-radius:6px;-webkit-appearance:none;appearance:none;
+  background:var(--bg);border:2px solid var(--border2);position:relative;cursor:pointer}
+.ps-addon input[type=checkbox]:checked{background:var(--accent);border-color:var(--accent)}
+.ps-addon input[type=checkbox]:checked::after{content:'';position:absolute;
+  left:6px;top:2px;width:5px;height:10px;border:solid #fff;border-width:0 2px 2px 0;
+  transform:rotate(45deg)}
+.ps-addon:has(input:checked){border-color:var(--accent);background:rgba(77,124,254,.07)}
+.ps-addon .ps-a-t{flex:1;line-height:1.5}
+.ps-addon small{color:var(--text3)}
+.ps-total{display:flex;justify-content:space-between;align-items:center;font-size:14px;
+  margin-bottom:12px;padding-top:10px;border-top:1px solid var(--border)}
+.ps-pay{width:100%;height:44px;border:none;border-radius:12px;background:var(--accent);
+  color:#fff;font-size:15px;font-family:inherit;cursor:pointer}
+.ps-pay:disabled{opacity:.55;cursor:default}
+.ps-close{width:100%;background:none;border:none;color:var(--text3);font-size:13px;
+  margin-top:6px;padding:9px;font-family:inherit;cursor:pointer}
+.ps-lines{display:flex;flex-direction:column;gap:6px;margin-bottom:10px;font-size:13px}
+.ps-line{display:flex;justify-content:space-between;color:var(--text2)}
+.ps-line.good{color:var(--open)}
+.ps-note{font-size:12px;color:var(--text3);line-height:1.6}
+/* بطاقة «اشتراكي»: الرصيد والدعوة */
+.pro-price.bare{background:none;border:none;padding:0;box-shadow:none}
+#proSub{white-space:pre-line}
+.acct-code{font-family:var(--mono,monospace);font-size:18px;letter-spacing:.18em;color:var(--text);
+  direction:ltr;unicode-bidi:isolate;font-weight:600}
+.acct-row{display:flex;justify-content:space-between;align-items:center;gap:10px;
+  padding:9px 0;border-top:1px solid var(--border);font-size:13px}
+.acct-row b{color:var(--text)}
+.acct-link{font-family:var(--mono,monospace);font-size:12px;color:var(--accent);direction:ltr;
+  unicode-bidi:isolate;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.acct-hint{font-size:12px;color:var(--text3);line-height:1.7;margin-top:-2px;padding-bottom:4px}
+.slot-pick.locked{opacity:.6}
+.rc-box{border:1px solid var(--border);border-radius:13px;padding:11px 12px;margin:4px 0 12px;
+  background:rgba(77,124,254,.05)}
+.rc-top{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13px}
+.rc-top b{color:var(--text)}
+.rc-bar{height:5px;border-radius:5px;background:var(--border);margin:9px 0 6px;overflow:hidden}
+.rc-bar div{height:100%;background:var(--accent);border-radius:5px;transition:width .3s}
+.rc-hint{font-size:12px;color:var(--text3);line-height:1.6}
+.rc-state{font-size:12.5px;line-height:1.7;color:var(--text2);margin-top:4px}
+.rc-state.good{color:var(--open)}
+.rc-state.bad{color:var(--close)}
+.mon-paused{opacity:.6}
 .btn-bell.all{font-size:13px}
 .btn-bell.all.on{border-color:var(--accent);color:var(--accent);
 background:rgba(61,111,255,.12)}
@@ -1406,6 +1464,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/calendar.js"></script>
 </head>
 <body>
 <noscript>
@@ -1472,7 +1531,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     <div class="fields">
       <div>
         <label class="field-label" data-i18n="semester">السيمستر</label>
-        <select id="term" onchange="termHint()">
+        <select id="term" onchange="TERM_PICKED=true;termHint()">
           <option value="202710" selected>Fall Semester 2026/2027</option>
           <option value="202630">Summer Semester 2025/2026</option>
           <option value="202730">Summer Semester 2026/2027</option>
@@ -1721,29 +1780,16 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     <div class="pro-head">
       <div class="pro-icon">⚡️</div>
       <div>
-        <h3 id="proTitle" data-i18n="proTitle">اشتراك جدولك</h3>
-        <p id="proSub" data-i18n="proSub">فعّل المراقبة والحفظ السحابي</p>
+        <h3 id="proTitle"></h3>
+        <p id="proSub"></p>
       </div>
-      <div class="pro-price" id="proPrice" data-i18n="proPrice">19 ريال / سنة</div>
+      <div class="pro-price" id="proPrice"></div>
       <button class="cal-fold" id="proFold" onclick="togglePro()"
         aria-label="tafseel">›</button>
     </div>
     <div id="proBody" hidden>
-    <div class="pro-list" id="proList">
-      <div class="pro-item">🔔 <span data-i18n-html="proFeat1"><b>مراقبة المواد</b> — إشعار تيليغرام فوري أول ما تنفتح أي شعبة</span></div>
-      <div class="pro-item">☁️ <span data-i18n-html="proFeat2"><b>حفظ سحابي</b> — خطتك وجدولك ومعدلك من أي جهاز</span></div>
-      <div class="pro-item">♾️ <span data-i18n-html="proFeat3"><b>مواد بلا حد</b> — راقب كل المواد اللي تبيها</span></div>
-    </div>
-    <button class="btn-pro" id="btnPro" onclick="togglePay()" data-i18n="proBtn">اشترك الحين</button>
     <div class="pro-soon" id="proSoon"></div>
-    </div>
-
-    <div class="pay-box" id="payBox">
-      <div class="pay-line"><span data-i18n="payAmount">المبلغ</span><b data-i18n="payRiyal">19 ريال</b></div>
-      <div class="pay-line"><span data-i18n="payTo">STC Pay / تحويل</span><b id="payNum">0500000000</b></div>
-      <div class="pay-line"><span data-i18n="payCodeLbl">كودك</span><b id="payCode">—</b></div>
-      <div class="pay-note" data-i18n="payNote">حوّل المبلغ، ثم أرسل صورة الإيصال مع كودك للبوت على تيليغرام. بيتفعّل حسابك خلال ساعات قليلة.</div>
-      <button class="btn-sm" style="width:100%;margin-top:11px" onclick="openBot()" data-i18n="payBot">📩 أرسل الإيصال للبوت</button>
+    <div id="proAcct"></div>
     </div>
   </div>
 
@@ -1911,6 +1957,33 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 <div class="toast" id="toast"></div>
 
 <script>
+/* لو ما وصل /calendar.js (شبكة متعثّرة) نكمل بتقويم فاضٍ بدل انهيار
+   الصفحة — كل ما يعتمد عليه يتعامل مع القائمة الفاضية. */
+window.ACAD_CAL = Array.isArray(window.ACAD_CAL) ? window.ACAD_CAL : [];
+
+/* ═══ رابط الدعوة ═══
+   jadwalik.com/?ref=ABC234 — نحفظ الكود حتى أول شراء (٦٠ يوماً)، وننظّف
+   الرابط فما ينتشر بكود غيرك لو نسخ الطالب عنوان الصفحة. وما نلمس باقي
+   المعاملات — رجوع Pushover يستعمل الرابط نفسه. */
+(function captureRef(){
+  try{
+    const u=new URL(location.href);
+    if(!u.searchParams.has('ref'))return;
+    const c=(u.searchParams.get('ref')||'').toUpperCase().trim();
+    if(/^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/.test(c))
+      localStorage.setItem('pmu_ref',JSON.stringify({code:c,at:Date.now()}));
+    u.searchParams.delete('ref');
+    history.replaceState(null,'',u.pathname+u.search+u.hash);
+  }catch(e){}
+})();
+function storedRef(){
+  try{
+    const r=JSON.parse(localStorage.getItem('pmu_ref')||'null');
+    if(r&&r.code&&Date.now()-r.at<60*864e5)return r.code;
+  }catch(e){}
+  return '';
+}
+
 /* مسار نسبي: الصفحة والسيرفر على نفس النطاق.
    الرابط المطلق لـ onrender كان يسبّب إعادة توجيه 308 لكل طلب —
    رحلة شبكة زائدة تضاعف زمن الانتظار. */
@@ -4023,7 +4096,7 @@ function renderResults(){
           ${genderChip(c)}
           <span class="badge ${c.status==='OPEN'?'open':'close'}">${c.status}</span>
           <button class="btn-add ${inSch?'added':''} ${lock?'locked':clash.length?'blocked':''}" onclick="toggleCourse('${c.crn}')">${inSch?'✓':'+'}</button>
-          ${c.status==='CLOSE'?`<button class="btn-bell ${isMonitored(c.crn)?'on':''} ${isPro()?'':'locked'}" onclick="toggleMonitorCourse('${c.crn}')" title="مراقبة هذي الشعبة">${isMonitored(c.crn)?'🔔':'🔕'}</button>`:''}
+          ${c.status==='CLOSE'?`<button class="btn-bell ${isMonitored(c.crn)?'on':''} ${(!isMonitored(c.crn)&&monCapReached())?'locked':''}" onclick="toggleMonitorCourse('${c.crn}')" title="مراقبة هذي الشعبة">${isMonitored(c.crn)?'🔔':'🔕'}</button>`:''}
           <button class="btn-bell all ${isCourseMonitored(c.courseCode)?'on':''} ${isPro()?'':'locked'}"
             onclick="toggleMonitorAll('${escapeHtml(c.courseCode)}')"
             title="${isCourseMonitored(c.courseCode)?'توقف مراقبة كل شعب المادة':'راقب كل شعب هذي المادة'}">📡</button>
@@ -4196,6 +4269,7 @@ function saveSchedules(){
 function switchSlot(i){
   i=Math.min(2,Math.max(0,i));
   if(i===SLOT)return;
+  if(slotLocked(i)){ openPlans('slots'); return }
   SLOT=i; save('pmu_slot',String(i));
   schedule=SCHEDULES[SLOT];
   updateBadge(); renderSchedule(); renderResults(); renderSlots();
@@ -4204,12 +4278,13 @@ function switchSlot(i){
 }
 
 function renderSlots(){
+  enforceSlot();          /* جدول مقفول بعد انتهاء الاشتراك يرجع للأول */
   const box=document.getElementById('slotBar');
   if(!box)return;
   const ar=LANG==='ar';
   box.innerHTML=SCHEDULES.map((sc,i)=>`
-    <button class="slot-pick${i===SLOT?' on':''}" onclick="switchSlot(${i})">
-      <span class="slot-n">${ar?'جدول':'Plan'} ${i+1}</span>
+    <button class="slot-pick${i===SLOT?' on':''}${slotLocked(i)?' locked':''}" onclick="switchSlot(${i})">
+      <span class="slot-n">${slotLocked(i)?'🔒 ':''}${ar?'جدول':'Plan'} ${i+1}</span>
       <span class="slot-c">${sc.length?sc.length+(ar?' مواد':' crs'):(ar?'فاضي':'empty')}</span>
     </button>`).join('');
 }
@@ -6243,19 +6318,30 @@ function serverTerm(){
 }
 function regOpen(){ return !!(MON_STATE&&MON_STATE.canWatch) }
 
+/* ترم التسجيل: ترم النافذة المفتوحة. في التسجيل المبكر للصيفي (أبريل)
+   يختلف عن serverTerm — الطالب يدرس الثاني ويسجّل الصيفي. */
+function regTermCode(){
+  const st=MON_STATE||{};
+  return st.regTerm||st.term||'202710';
+}
+/* الترم الذي يبحث فيه الطالب افتراضياً: ترم التسجيل وقت التسجيل،
+   وإلا ترم الدراسة */
+function searchTermCode(){ return regOpen()?regTermCode():serverTerm() }
+
 function termHint(){
   const el=document.getElementById('termHint');
   if(!el)return;
   const v=(document.getElementById('term')||{}).value;
   const ar=LANG==='ar';
-  if(v!==serverTerm()){ el.className='term-hint hide'; return }
-  /* النص أولاً ثم الإظهار: لو تعثّر شيء بينهما ما يظهر صندوق فاضٍ.
-     والصنف في HTML يبدأ hide لنفس السبب — قبلها كان يظهر فاضياً
-     إذا ما وصلت الدالة أصلاً. */
-  el.textContent=regOpen()
-    ? (ar ? '✅ هذا الترم المفتوح للتسجيل — ابنِ جدولك منه'
-          : '✅ Registration is open for this term — build your schedule from it')
-    : (ar ? 'هذا الترم الحالي' : 'This is the current term');
+  /* النص أولاً ثم الإظهار: لو تعثّر شيء بينهما ما يظهر صندوق فاضٍ */
+  let txt='';
+  if(regOpen()&&v===regTermCode())
+    txt=ar?'✅ هذا الترم المفتوح للتسجيل — ابنِ جدولك منه'
+          :'✅ Registration is open for this term — build your schedule from it';
+  else if(v===serverTerm())
+    txt=ar?'هذا الترم الحالي':'This is the current term';
+  if(!txt){ el.className='term-hint hide'; return }
+  el.textContent=txt;
   el.className='term-hint';
 }
 
@@ -6268,56 +6354,24 @@ function syncTermSelect(){
   const cur=sel.value;
   sel.innerHTML='';
   opts.forEach(o=>sel.appendChild(o));
-  const act=serverTerm();
-  sel.value=[...sel.options].some(o=>o.value===cur)&&cur!=='202710'
-    ? cur
-    : ([...sel.options].some(o=>o.value===act)?act:sel.options[0].value);
+  const act=searchTermCode();
+  const has=v=>[...sel.options].some(o=>o.value===v);
+  /* اختيار الطالب يُحترم، وغيره يتبع السيرفر. كان الشرط cur!=='202710' —
+     ثابت آخر مكتوب في الكود يفترض أن الترم الافتراضي في HTML هو الأول */
+  sel.value=TERM_PICKED&&has(cur) ? cur : (has(act)?act:sel.options[0].value);
   termHint();
 }
+let TERM_PICKED=false;   /* غيّر الطالب القائمة بنفسه؟ */
 
 function updateFbCount(){
   const ta=document.getElementById('fbText'), c=document.getElementById('fbCount');
   if(ta&&c)c.textContent=`${ta.value.length} / 1200`;
 }
 
-/* ═══════════ التقويم الأكاديمي 2026/2027 ═══════════ */
-/* المصدر: تقويم الجامعة المعتمد. t=نوع الحدث للتلوين */
-const ACAD_CAL=[
-/* ── الترم الأول ── */
-{s:'2026-08-23',e:'2026-08-27',t:'reg', ar:'فترة التسجيل',                 en:'Registration period'},
-{s:'2026-08-30',              t:'start',ar:'بداية الدراسة — الترم الأول',   en:'Classes begin — Fall'},
-{s:'2026-08-28',e:'2026-09-03',t:'add', ar:'التسجيل المتأخر والحذف والإضافة',en:'Late registration & Add/Drop'},
-{s:'2026-09-06',e:'2026-09-10',t:'add',  ar:'فترة الحذف (آخر يوم بدون رسوم ١٠ سبتمبر)',en:'Drop period (last day without charge 10 Sep)'},
-{s:'2026-09-23',e:'2026-09-26',t:'off', ar:'إجازة اليوم الوطني',            en:'National Day holiday'},
-{s:'2026-11-05',              t:'warn', ar:'آخر يوم للانسحاب بتقدير W',     en:'Last day to withdraw with "W"'},
-{s:'2026-11-22',e:'2026-11-24',t:'off', ar:'إجازة منتصف الترم',             en:'Mid-term break'},
-{s:'2026-12-17',              t:'warn', ar:'آخر يوم للانسحاب بـ WP/WF وتغيير التخصص',en:'Last day for WP/WF & major change'},
-{s:'2026-12-20',e:'2026-12-30',t:'exam',ar:'الاختبارات النهائية',           en:'Final exams'},
-{s:'2027-01-03',e:'2027-01-16',t:'off', ar:'إجازة منتصف السنة',             en:'Mid-year break'},
-{s:'2027-01-15',              t:'note', ar:'آخر يوم للتظلم على الدرجات',    en:'Last day for grade appeal'},
-/* ── الترم الثاني ── */
-{s:'2027-01-10',e:'2027-01-14',t:'reg', ar:'فترة التسجيل',                 en:'Registration period'},
-{s:'2027-01-17',              t:'start',ar:'بداية الدراسة — الترم الثاني',  en:'Classes begin — Spring'},
-{s:'2027-01-17',e:'2027-01-21',t:'add', ar:'التسجيل المتأخر والحذف والإضافة',en:'Late registration & Add/Drop'},
-{s:'2027-01-28',              t:'add',  ar:'آخر يوم للحذف بدون رسوم',       en:'Last day to drop without charge'},
-{s:'2027-02-19',e:'2027-02-22',t:'off', ar:'إجازة يوم التأسيس',             en:'Founding Day holiday'},
-{s:'2027-02-28',e:'2027-03-13',t:'off', ar:'إجازة عيد الفطر',               en:'Eid Al-Fitr holiday'},
-{s:'2027-04-08',              t:'warn', ar:'آخر يوم للانسحاب بتقدير W',     en:'Last day to withdraw with "W"'},
-{s:'2027-04-11',e:'2027-04-15',t:'reg', ar:'التسجيل المبكر للصيفي',         en:'Early registration — Summer'},
-{s:'2027-05-11',e:'2027-05-22',t:'off', ar:'إجازة عيد الأضحى',              en:'Eid Al-Adha holiday'},
-{s:'2027-05-27',              t:'warn', ar:'آخر يوم للانسحاب بـ WP/WF وتغيير التخصص',en:'Last day for WP/WF & major change'},
-{s:'2027-05-30',e:'2027-06-09',t:'exam',ar:'الاختبارات النهائية',           en:'Final exams'},
-{s:'2027-06-25',              t:'note', ar:'آخر يوم للتظلم على الدرجات',    en:'Last day for grade appeal'},
-/* ── الترم الصيفي ── */
-{s:'2027-06-15',e:'2027-06-19',t:'reg', ar:'تأكيد التسجيل للمسجّلين مسبقاً',en:'Registration confirmation'},
-{s:'2027-06-20',              t:'start',ar:'بداية الدراسة — الصيفي',        en:'Classes begin — Summer'},
-{s:'2027-06-20',e:'2027-06-22',t:'add', ar:'التسجيل المتأخر والحذف والإضافة',en:'Late registration & Add/Drop'},
-{s:'2027-07-22',              t:'warn', ar:'آخر يوم للانسحاب بتقدير W',     en:'Last day to withdraw with "W"'},
-{s:'2027-08-12',              t:'warn', ar:'آخر يوم للانسحاب بـ WP/WF وتغيير التخصص',en:'Last day for WP/WF & major change'},
-{s:'2027-08-15',e:'2027-08-17',t:'exam',ar:'الاختبارات النهائية',           en:'Final exams'},
-{s:'2027-08-29',              t:'start',ar:'بداية الترم الأول 2027/2028',   en:'Fall 2027/2028 begins'}
-];
-
+/* ═══ التقويم الأكاديمي ═══
+   يأتي من السيرفر عبر /calendar.js (يُحمَّل قبل هذا السكربت) — مصدر واحد
+   للصفحة والتنبيهات. كان هنا نسخة ثانية تختلف عن نسخة السيرفر، فتحذيرات
+   الحرمان في تلقرام كانت بتنحسب على غير ما يعرضه الموقع. */
 const CAL_ICON={reg:'📝',start:'🎓',add:'🔁',off:'🌴',warn:'⚠️',exam:'📕',note:'📌'};
 
 /* ═══════════ تواريخ التسجيل حسب المستوى ═══════════
@@ -7103,34 +7157,283 @@ setTimeout(async()=>{applyLang();renderSettings();maybeShowGuide();loadMonitorSt
 
 /* ================= PRO / MONITOR / TELEGRAM ================= */
 const BOT_USERNAME='JadwalikBot';
-const PAY_NUMBER='0500000000';          /* غيّر هذا لرقمك */
 let monitored=[];
-
-function daysLeft(){
-  if(!PROFILE?.subscription_expires_at)return 0;
-  const d=Math.ceil((new Date(PROFILE.subscription_expires_at)-new Date())/86400000);
-  return d>0?d:0;
-}
-/* تجربة = اشتراك فعّال بدون دفع مؤكد */
-function isTrial(){ return !PROFILE?.is_pro && daysLeft()>0 && !PROFILE?.paid_at; }
-/* ملاحظة: paid_at يتعبأ يدوياً عند تأكيد الدفع */
 
 /* البطاقة مطويّة افتراضياً: كل شي مجاني الآن، فالتفاصيل تشغل مساحة بلا
    قرار مطلوب من الطالب. يبقى ظاهراً «مجاني حالياً» ومن يبي التفاصيل يفتحها. */
-let PRO_OPEN=false;
+let PRO_OPEN=false, PRO_TOUCHED=false;
+/* الرصيد والدعوة داخل البطاقة. يُطلب الحساب عند الحاجة ويُعاد الرسم لما يوصل */
+function renderAcct(ar){
+  const box=document.getElementById('proAcct');
+  if(!box)return;
+  if(!USER){ box.innerHTML=''; return }
+  const A=ACCOUNT;
+  if(!A||Date.now()-ACCOUNT_AT>5*60*1000){
+    loadAccount().then(x=>{ if(x&&document.getElementById('proAcct'))renderAcct(LANG==='ar') });
+    if(!A){ box.innerHTML=''; return }
+  }
+  const P=planInfo(), R=ar?' ريال':' SAR';
+  const cr=(A.credit&&A.credit.available)||0;
+  const exp=A.credit&&A.credit.nextExpiry;
+  const code=A.invite&&A.invite.code;
+  const friends=(A.invite&&A.invite.paidFriends)||0;
+  const RC=REVCREDIT;
+  if(!RC)loadRevCredit().then(x=>{ if(x&&document.getElementById('proAcct'))renderAcct(LANG==='ar') });
+  const rcRow=RC?`<div class="acct-row" style="cursor:pointer" onclick="event.stopPropagation();openMyRev()">
+      <span>⭐ ${ar?'تقييم الدكاترة':'Instructor reviews'}</span>
+      <b dir="ltr">${RC.pending?'⏳':RC.approvedThisTerm?'✅':Math.min(RC.eligibleCount||0,RC.needed)+'/'+RC.needed}</b></div>`:'';
+  box.innerHTML=rcRow+
+    (cr?`<div class="acct-row"><span>💰 ${ar?'رصيدك':'Your credit'}</span>
+      <b>${sarTxt(cr)}${R}${exp?`<span class="acct-hint"> · ${ar?'ينتهي':'until'} ${new Date(exp).toLocaleDateString(ar?'ar-u-ca-gregory-nu-latn':'en-GB',{day:'numeric',month:'long'})}</span>`:''}</b></div>`:'')+
+    (code?`<div class="acct-row"><span>🎁 ${ar?'ادعُ صديقك':'Invite a friend'}</span>
+      <button class="btn-sm" onclick="event.stopPropagation();copyInvite()">${ar?'شارك الرابط':'Share link'}</button></div>
+      <div class="acct-row" style="border-top:none;padding-top:0">
+        <span class="acct-hint" style="padding:0">${ar?'كودك':'Your code'}</span>
+        <span class="acct-code">${code}</span></div>
+      <div class="acct-hint">${ar
+        ?`صديقك يوفّر ${sarTxt(P.friend)} ريال، وأنت تكسب ${sarTxt(P.referrer)} ريال رصيداً لما يدفع.${friends?` أصدقاء دفعوا: ${friends}`:''}`
+        :`Your friend saves ${sarTxt(P.friend)} SAR; you earn ${sarTxt(P.referrer)} SAR credit when they pay.${friends?` Friends who paid: ${friends}`:''}`}</div>`:'');
+}
+
 function togglePro(){
+  PRO_TOUCHED=true;
   PRO_OPEN=!PRO_OPEN;
   const b=document.getElementById('proBody'),f=document.getElementById('proFold');
   if(b)b.hidden=!PRO_OPEN;
   if(f)f.classList.toggle('open',PRO_OPEN);
 }
 
-/* ═══ الفترة التجريبية المجانية ═══
-   خلّه false لما تبدأ تحصيل الاشتراك — يرجع كل شي زي ما كان. */
-const FREE_BETA = true;
+/* ═══ الفترة المجانية ═══
+   كانت ثابتاً هنا وثابتاً ثانياً في السيرفر — لو أطفأت واحداً ونسيت الثاني
+   صارت الصفحة تقول شيئاً والتنبيهات تفعل غيره. الآن من السيرفر وحده،
+   ويُطفأ من اللوحة يوم الإطلاق. وقبل ما تصل حالة السيرفر نفترضها شغّالة:
+   السيرفر هو اللي يقرر من يُخدَم فعلاً، فالتساهل هنا ما يفتح شيئاً. */
+function freeBeta(){ return !(MON_STATE&&MON_STATE.freeBeta===false) }
+
+/* الباقات والحدود من السيرفر — والقيم هنا احتياط فقط لو ما وصلت */
+function planInfo(){
+  const p=(MON_STATE&&MON_STATE.plans)||{};
+  const n=(v,d)=>Number.isInteger(v)?v:d;
+  return { term:n(p.termHalalas,1900), po:n(p.pushoverHalalas,1000),
+           friend:n(p.friendDiscountHalalas,300), referrer:n(p.referrerCreditHalalas,500),
+           freeMonitors:n(p.freeMonitors,2), freeSchedules:n(p.freeSchedules,1),
+           termEnd:p.termEnd||null, poOffered:!!p.pushoverOffered };
+}
+function sarTxt(h){ const v=(Number(h)||0)/100; return v%1?v.toFixed(2):String(v) }
+
+/* مراقبات الشعب في ترم التسجيل — نفس ما تعدّه الدورة في السيرفر */
+function freeWatchUsed(){
+  const t=(typeof regTermCode==='function')?regTermCode():'';
+  return monitored.filter(m=>m.scope!=='course'&&(!t||m.term===t)).length;
+}
+function monCapReached(){ return !isPro()&&freeWatchUsed()>=planInfo().freeMonitors }
+
+/* المتوقفة بعد انتهاء الاشتراك أو الفترة المجانية: نفس قاعدة الدورة —
+   أقدم N مراقبات شعبة تشتغل، والباقي و«كل الشعب» متوقفة لا محذوفة */
+function pausedMonitorIds(){
+  const out=new Set();
+  if(isPro())return out;
+  const t=(typeof regTermCode==='function')?regTermCode():'';
+  const sec=monitored.filter(m=>m.scope!=='course'&&(!t||m.term===t))
+    .sort((a,b)=>((Date.parse(a.created_at)||0)-(Date.parse(b.created_at)||0))||(a.id-b.id));
+  sec.slice(planInfo().freeMonitors).forEach(m=>out.add(m.id));
+  monitored.filter(m=>m.scope==='course').forEach(m=>out.add(m.id));
+  return out;
+}
+
+/* الجدول الثاني والثالث للمشتركين. البيانات تبقى — تنقفل فقط */
+function slotLocked(i){ return !isPro()&&i>=planInfo().freeSchedules }
+function enforceSlot(){
+  if(!slotLocked(SLOT))return false;
+  SLOT=0; save('pmu_slot','0'); schedule=SCHEDULES[0]; updateBadge();
+  return true;
+}
+function enforceSlotAndRedraw(){
+  if(!enforceSlot())return;
+  try{ renderSlots(); renderSchedule(); renderResults();
+       if(CUR_TAB==='today'){ TODAY_HTML=''; renderToday() } }catch(e){}
+}
+
+/* ═══ حساب الطالب من السيرفر ═══
+   نرسل رمز الجلسة، والسيرفر يسأل Supabase عن صاحبه — ما نرسل معرّفاً
+   يقدر أحد يغيّره. نخزّن الجواب ٥ دقائق. */
+let ACCOUNT=null, ACCOUNT_AT=0, ACCOUNT_LOADING=null;
+async function meFetch(path,method){
+  const {data}=await sb.auth.getSession();
+  const tok=data&&data.session&&data.session.access_token;
+  if(!tok)return null;
+  const r=await fetch(API_BASE+path,{method:method||'GET',
+    headers:{Authorization:'Bearer '+tok},cache:'no-store'});
+  if(!r.ok)return null;
+  return r.json();
+}
+
+/* ═══ رصيد تقييم الدكاترة ═══
+   الحالة من السيرفر وحده — هو يعرف الدكاترة المحتسبين من قبل والطلب
+   المعلّق، فما نعيد حسابها هنا بطريقة قد تختلف. */
+let REVCREDIT=null, REVCREDIT_AT=0, REVCREDIT_LOADING=null;
+function loadRevCredit(force){
+  if(!USER)return Promise.resolve(null);
+  if(!force&&REVCREDIT&&Date.now()-REVCREDIT_AT<2*60*1000)return Promise.resolve(REVCREDIT);
+  if(REVCREDIT_LOADING)return REVCREDIT_LOADING;
+  REVCREDIT_LOADING=meFetch('/api/me/reviews-credit').then(j=>{
+    if(j&&j.ok){ REVCREDIT=j; REVCREDIT_AT=Date.now() }
+    return REVCREDIT;
+  }).catch(()=>REVCREDIT).finally(()=>{ REVCREDIT_LOADING=null });
+  return REVCREDIT_LOADING;
+}
+async function submitRevCredit(btn){
+  const ar=LANG==='ar';
+  if(btn){ btn.disabled=true; btn.textContent=ar?'يرسل…':'Sending…' }
+  const r=await meFetch('/api/me/reviews-credit','POST').catch(()=>null);
+  if(r&&r.ok){
+    showToast(ar?'⏳ انرسل للمراجعة — يوصلك الرد على تلقرام':'⏳ Sent for review — the reply comes on Telegram','ok');
+  }else{
+    showToast((r&&r.error)||(ar?'ما انرسل — جرّب مرة ثانية':'Not sent — try again'),'warn');
+  }
+  await loadRevCredit(true);
+  renderMyReviews();
+  try{ renderAcct(ar) }catch(e){}
+}
+/* المربّع أعلى «تقييماتي» — يظهر بعد الفترة المجانية فقط */
+function revCreditHTML(){
+  const ar=LANG==='ar';
+  if(!USER||freeBeta())return '';
+  const C=REVCREDIT;
+  if(!C){ loadRevCredit().then(x=>{ if(x)renderMyReviews() }); return '' }
+  const n=C.needed||5, have=Math.min(C.eligibleCount||0,n), money=sarTxt(C.creditHalalas||0);
+  const bar=`<div class="rc-bar"><div style="width:${Math.round(have/n*100)}%"></div></div>`;
+  let body='';
+  if(C.pending){
+    body=`<div class="rc-state">⏳ ${ar?'طلبك قيد المراجعة — يوصلك الرد على تلقرام':'Under review — the reply comes on Telegram'}</div>`;
+  }else if(C.approvedThisTerm){
+    body=`<div class="rc-state good">✅ ${ar?`انقبل طلبك هذا الترم — نزل لك ${money} ريال`:`Approved this term — ${money} SAR credited`}</div>`;
+  }else{
+    const rej=C.latest&&C.latest.status==='rejected'
+      ?`<div class="rc-state bad">❌ ${ar?'آخر طلب ما انقبل':'Last request not approved'}: ${escapeHtml(C.latest.note||'')}</div>`:'';
+    body=rej+(have>=n
+      ?`<button class="btn-sm" style="width:100%;margin-top:8px" onclick="event.stopPropagation();submitRevCredit(this)">${ar?'أرسل تقييماتك للمراجعة':'Send for review'}</button>`
+      :`<div class="rc-hint">${ar?`باقي ${n-have} — كل دكتور يُحتسب مرة واحدة`:`${n-have} to go — each instructor counts once`}</div>`);
+  }
+  return `<div class="rc-box">
+    <div class="rc-top"><b>🎁 ${ar?`قيّم ${n} دكاترة واكسب ${money} ريال`:`Review ${n} instructors, earn ${money} SAR`}</b>
+      <span dir="ltr">${have}/${n}</span></div>
+    ${bar}${body}</div>`;
+}
+function loadAccount(force){
+  if(!USER)return Promise.resolve(null);
+  if(!force&&ACCOUNT&&Date.now()-ACCOUNT_AT<5*60*1000)return Promise.resolve(ACCOUNT);
+  if(ACCOUNT_LOADING)return ACCOUNT_LOADING;
+  ACCOUNT_LOADING=meFetch('/api/me/account').then(j=>{
+    if(j&&j.ok){ ACCOUNT=j; ACCOUNT_AT=Date.now() }
+    return ACCOUNT;
+  }).catch(()=>ACCOUNT).finally(()=>{ ACCOUNT_LOADING=null });
+  return ACCOUNT_LOADING;
+}
+function inviteLink(code){ return 'https://jadwalik.com/?ref='+code }
+async function copyInvite(){
+  const c=ACCOUNT&&ACCOUNT.invite&&ACCOUNT.invite.code; if(!c)return;
+  const link=inviteLink(c), ar=LANG==='ar';
+  const P=planInfo();
+  const text=ar?`جرّب جدولك — مراقبة الشعب وجدولك وخطتك في مكان واحد. بكودي تاخذ خصم ${sarTxt(P.friend)} ريال: ${link}`
+               :`Try Jadwalik — use my link for ${sarTxt(P.friend)} SAR off: ${link}`;
+  try{
+    if(navigator.share){ await navigator.share({text}); return }
+  }catch(e){ if(e&&e.name==='AbortError')return }
+  try{ await navigator.clipboard.writeText(link); showToast(ar?'انسخ الرابط ✅':'Link copied ✅','ok') }
+  catch(e){ prompt(ar?'انسخ الرابط:':'Copy the link:',link) }
+}
+
+/* ═══ ورقة الباقات ═══ */
+function openPlans(reason){
+  const ar=LANG==='ar', P=planInfo();
+  let el=document.getElementById('planSheet');
+  if(!el){
+    el=document.createElement('div');
+    el.id='planSheet'; el.className='ps-overlay'; el.hidden=true;
+    el.addEventListener('click',e=>{ if(e.target===el)closePlans() });
+    document.body.appendChild(el);
+  }
+  const mons=ar?(P.freeMonitors===2?'مراقبتان':`${P.freeMonitors} مراقبات`):`${P.freeMonitors} watches`;
+  const scheds=ar?(P.freeSchedules===1?'جدول واحد':`${P.freeSchedules} جداول`):`${P.freeSchedules} schedule(s)`;
+  const ctx={
+    monitors: ar?`وصلت حد ${P.freeMonitors===2?'المراقبتين':P.freeMonitors+' مراقبات'} في المجاني`
+                :`You reached the free limit of ${P.freeMonitors} watches`,
+    course:   ar?'مراقبة كل شعب المادة للمشتركين':'Watching every section is for subscribers',
+    slots:    ar?'الجدول الثاني والثالث للمشتركين — جدولك محفوظ ويرجع لك مع الاشتراك'
+                :'Schedules 2 and 3 are for subscribers — yours is saved',
+    pushover: ar?'التنبيه الطارئ إضافة على اشتراك الترم':'Urgent alerts are an add-on to the term plan'
+  }[reason]||'';
+  const end=P.termEnd?new Date(P.termEnd).toLocaleDateString(ar?'ar-u-ca-gregory-nu-latn':'en-GB',{day:'numeric',month:'long'}):'';
+  el.innerHTML=`<div class="ps-sheet" role="dialog" aria-modal="true">
+    <div class="ps-grab"></div>
+    ${ctx?`<div class="ps-ctx">🔒 ${ctx}</div>`:''}
+    <div class="ps-cols">
+      <div class="ps-col"><b>${ar?'مجاني':'Free'}</b>
+        <span>${mons}</span><span>${scheds}</span>
+        <span>${ar?'تنبيهات تلقرام':'Telegram alerts'}</span>
+        <span>${ar?'كل الموقع':'Everything else'}</span></div>
+      <div class="ps-col pro"><b>${ar?'الترم':'Term'} · ${sarTxt(P.term)} ${ar?'ريال':'SAR'}</b>
+        <span>${ar?'مراقبة بلا حد':'Unlimited watches'}</span>
+        <span>${ar?'كل شعب المادة':'Every section of a course'}</span>
+        <span>${ar?'3 جداول':'3 schedules'}</span>
+        <span>${end?(ar?'حتى '+end:'Until '+end):(ar?'حتى نهاية الترم':'Until term end')}</span></div>
+    </div>
+    ${P.poOffered?`<label class="ps-addon">
+      <input type="checkbox" id="psPo" ${reason==='pushover'?'checked':''} onchange="plansTotal()">
+      <span class="ps-a-t"><b>🚨 ${ar?'التنبيه الطارئ':'Urgent alert'}</b><br>
+        <small>${ar?'يرن حتى لو الجوال صامت':'Rings even on silent'}</small></span>
+      <span dir="ltr">+${sarTxt(P.po)}</span></label>`:''}
+    <div class="ps-lines" id="psLines"></div>
+    <div class="ps-total"><span>${ar?'الإجمالي':'Total'}</span><b id="psTotal"></b></div>
+    <button class="ps-pay" id="psPay" disabled>${ar?'الدفع يفتح قريباً':'Checkout opens soon'}</button>
+    <button class="ps-close" onclick="closePlans()">${ar?'مو الحين':'Not now'}</button>
+  </div>`;
+  plansTotal();
+  el.hidden=false;
+  requestAnimationFrame(()=>el.classList.add('open'));
+}
+/* الإجمالي فوراً من الأسعار العامة، ثم نستبدله بحساب السيرفر: الخصم
+   والرصيد يعرفهما السيرفر وحده، وهو اللي بيحاسب عند الدفع */
+let PS_QUOTE_SEQ=0;
+function plansTotal(){
+  const P=planInfo(), po=document.getElementById('psPo');
+  const tot=P.term+(po&&po.checked?P.po:0);
+  const el=document.getElementById('psTotal');
+  if(el)el.textContent=sarTxt(tot)+(LANG==='ar'?' ريال':' SAR');
+  const lines=document.getElementById('psLines');
+  if(lines)lines.innerHTML='';
+  plansQuote();
+}
+async function plansQuote(){
+  if(!USER)return;
+  const seq=++PS_QUOTE_SEQ, ar=LANG==='ar';
+  const po=document.getElementById('psPo');
+  const q=await meFetch(`/api/me/quote?pushover=${po&&po.checked?1:0}&ref=${encodeURIComponent(storedRef())}`)
+    .catch(()=>null);
+  if(seq!==PS_QUOTE_SEQ||!q||!q.ok)return;          /* جواب قديم أو فشل: نبقي التقدير */
+  const R=ar?' ريال':' SAR';
+  const row=(l,v,cls)=>`<div class="ps-line${cls?' '+cls:''}"><span>${l}</span><span dir="ltr">${v}</span></div>`;
+  let h='';
+  if(q.base)h+=row(ar?'اشتراك الترم':'Term plan',sarTxt(q.base));
+  if(q.po)h+=row(ar?'التنبيه الطارئ':'Urgent alert','+'+sarTxt(q.po));
+  if(q.discount)h+=row(ar?'خصم صديقك':'Friend discount','−'+sarTxt(q.discount),'good');
+  if(q.credit)h+=row(ar?'رصيدك':'Your credit','−'+sarTxt(q.credit),'good');
+  if(q.ref==='own')h+=`<div class="ps-note">${ar?'هذا كود دعوتك أنت — ما ينطبق على حسابك':'That is your own invite code'}</div>`;
+  if(q.ref==='used')h+=`<div class="ps-note">${ar?'خصم الصديق لأول اشتراك فقط':'Friend discount is for a first purchase only'}</div>`;
+  const lines=document.getElementById('psLines'), tot=document.getElementById('psTotal');
+  if(lines)lines.innerHTML=h;
+  if(tot)tot.textContent=sarTxt(q.amount)+R;
+}
+function closePlans(){
+  const el=document.getElementById('planSheet');
+  if(!el)return;
+  el.classList.remove('open');
+  setTimeout(()=>{ el.hidden=true },200);
+}
 
 function isPro(){
-  if(FREE_BETA) return !!USER;      /* أي حساب مسجّل = كل الميزات مفتوحة */
+  if(freeBeta()) return !!USER;     /* أي حساب مسجّل = كل الميزات مفتوحة */
   if(!PROFILE)return false;
   if(PROFILE.is_pro)return true;
   if(PROFILE.subscription_expires_at)
@@ -7138,13 +7441,6 @@ function isPro(){
   return false;
 }
 
-function togglePay(){
-  if(FREE_BETA)return;      /* ما فيه دفع في الفترة التجريبية */
-  if(!USER){showToast(LANG==='ar'?'سجّل دخول أول':'Sign in first','warn');return}
-  document.getElementById('payBox').classList.toggle('visible');
-  document.getElementById('payNum').textContent=PAY_NUMBER;
-  document.getElementById('payCode').textContent=PROFILE?.telegram_link_code||'—';
-}
 
 function openBot(){
   const code=PROFILE?.telegram_link_code||'';
@@ -7313,6 +7609,7 @@ async function checkBuildNow(){
                                 {cache:'no-store'})).json();
     MON_STATE=st;
     checkBuild(st);
+    enforceSlotAndRedraw();
   }catch(e){ /* شبكة متعثّرة لحظة الفتح — نتركها للمرة القادمة */ }
   finally{ BUILD_CHECKING=false }
 }
@@ -7479,7 +7776,8 @@ function watchGate(term){
       ?'المراقبة مقفولة خارج فترة التسجيل'+(nx?` — تفتح ${nx}`:'')
       :'Watching is closed outside registration'+(nx?` — reopens ${nx}`:'')};
   }
-  if(st.term&&String(term)!==String(st.term))
+  const rt=st.regTerm||st.term;
+  if(rt&&String(term)!==String(rt))
     return {ok:false,msg:LANG==='ar'
       ?'المراقبة للترم المفتوح للتسجيل فقط'
       :'Watching is limited to the term open for registration'};
@@ -7492,15 +7790,13 @@ async function toggleMonitorAll(code){
 }
 async function toggleMonitorAllGo(code){
   if(!USER){showToast(LANG==='ar'?'سجّل دخول أول':'Sign in first','warn');return}
-  if(!isPro()){
-    showToast(LANG==='ar'?'🔒 المراقبة تحتاج اشتراك':'🔒 Monitoring requires a subscription','warn');
-    switchTab('set');return;
-  }
   const term=document.getElementById('term').value;
   const ex=monitored.find(m=>m.scope==='course'&&sameCode(m.course_code,code)&&m.term===term);
   if(!ex){
     const g=watchGate(term);
     if(!g.ok){ showToast(g.msg,'warn'); return }
+    /* كان يقفل حتى الإيقاف — والإيقاف لازم يبقى متاحاً دائماً */
+    if(!isPro()){ openPlans('course'); return }
   }
   if(ex){
     logUnwatch(ex);
@@ -7533,15 +7829,12 @@ async function toggleMonitorCourse(crn){
 }
 async function toggleMonitorCourseGo(crn){
   if(!USER){showToast(LANG==='ar'?'سجّل دخول أول':'Sign in first','warn');return}
-  if(!isPro()){
-    showToast(LANG==='ar'?'🔒 المراقبة تحتاج اشتراك':'🔒 Monitoring requires a subscription','warn');
-    switchTab('set');return;
-  }
   const c=allCourses.find(x=>x.crn===crn);if(!c)return;
   const ex=monitored.find(m=>m.crn===crn);
   if(!ex){
     const g=watchGate(document.getElementById('term').value);
     if(!g.ok){ showToast(g.msg,'warn'); return }
+    if(monCapReached()){ openPlans('monitors'); return }
   }
   if(ex){
     logUnwatch(ex);
@@ -7600,23 +7893,17 @@ function renderSettings(){
   if(pchk)pchk.checked=prepOn();
   const pro=isPro();
   const card=document.getElementById('proCard');
-  const btn=document.getElementById('btnPro');
+  const set=(id,v)=>{ const el=document.getElementById(id); if(el)el.textContent=v };
+  const soon=document.getElementById('proSoon');
 
-  const d=daysLeft(),trial=isTrial();
-
-  /* ═══ الفترة التجريبية: كل شي مجاني، ولا نعرض سعر ولا وسيلة دفع ═══ */
-  if(FREE_BETA){
+  /* ═══ الفترة المجانية: لا سعر ولا وسيلة دفع ولا دعوات ═══ */
+  if(freeBeta()){
+    const acct=document.getElementById('proAcct'); if(acct)acct.innerHTML='';
     card.classList.add('pro-trial');
     card.classList.remove('pro-active');
-    /* البطاقة مطويّة، فالعنوان قصير يتّسع بالعرض بدل ما ينزل كلمة بكل سطر.
-       التفصيل الكامل في الوصف داخلها. */
-    document.getElementById('proTitle').textContent=ar?'🎁 كل شي مجاني':'🎁 All free';
-    document.getElementById('proSub').textContent=ar?
-      'فترة تجريبية — بلا رسوم':'Open beta — no fees';
-    document.getElementById('proPrice').textContent=ar?'مجاني حالياً':'Free for now';
-    btn.style.display='none';
-    document.getElementById('payBox').classList.remove('visible');
-    const soon=document.getElementById('proSoon');
+    set('proTitle',ar?'🎁 كل شي مجاني':'🎁 All free');
+    set('proSub',ar?'فترة مجانية — بلا رسوم':'Open beta — no fees');
+    set('proPrice',ar?'مجاني حالياً':'Free for now');
     if(soon){
       soon.style.display='block';
       soon.innerHTML=ar?
@@ -7627,40 +7914,32 @@ function renderSettings(){
     return;
   }
 
-  card.classList.toggle('pro-active',pro&&!trial);
-  card.classList.toggle('pro-trial',trial);
-  const soonEl=document.getElementById('proSoon');
-  if(soonEl)soonEl.style.display='none';
-
-  if(trial){
-    document.getElementById('proTitle').textContent=ar?'🎁 تجربتك المجانية شغّالة':'🎁 Free trial active';
-    document.getElementById('proSub').textContent=ar?
-      'كل الميزات مفتوحة — جدّد قبل ما تنتهي عشان ما تنقطع':
-      'All features unlocked — renew before it ends';
-    document.getElementById('proPrice').textContent=ar?
-      (d===1?'باقي يوم واحد':d===2?'باقي يومين':`باقي ${d} يوم`):
-      (d===1?'1 day left':`${d} days left`);
-    btn.style.display='block';
-    btn.textContent=ar?'جدّد بـ 19 ريال / سنة':'Renew — SAR 19 / year';
-  }else if(pro){
-    document.getElementById('proTitle').textContent=ar?'اشتراكك فعّال ✅':'Subscription active ✅';
-    document.getElementById('proSub').textContent=ar?'كل الميزات مفتوحة لك':'All features unlocked';
+  /* بعد الفترة المجانية: مشترك أو لا. تنفتح البطاقة مرة أولى لوحدها —
+     رابط الدعوة خلف سهم مطوي ما أحد يشوفه */
+  if(!PRO_TOUCHED&&!PRO_OPEN){
+    PRO_OPEN=true;
+    const b=document.getElementById('proBody'), f=document.getElementById('proFold');
+    if(b)b.hidden=false; if(f)f.classList.add('open');
+  }
+  card.classList.toggle('pro-active',pro);
+  card.classList.remove('pro-trial');
+  if(soon)soon.style.display='none';
+  const price=document.getElementById('proPrice');
+  renderAcct(ar);
+  if(pro){
     const exp=PROFILE?.subscription_expires_at;
-    document.getElementById('proPrice').textContent=exp?
-      (ar?'ينتهي '+new Date(exp).toLocaleDateString('ar-SA'):'Until '+new Date(exp).toLocaleDateString('en-GB')):
-      (ar?'فعّال':'Active');
-    btn.style.display='none';
-    document.getElementById('payBox').classList.remove('visible');
+    set('proTitle',ar?'اشتراك الترم ✅':'Term plan ✅');
+    set('proSub',exp?(ar?'حتى '+new Date(exp).toLocaleDateString('ar-u-ca-gregory-nu-latn',{day:'numeric',month:'long'})
+                        :'Until '+new Date(exp).toLocaleDateString('en-GB',{day:'numeric',month:'long'}))
+                    :(ar?'كل الميزات مفتوحة لك':'All features unlocked'));
+    if(price){ price.classList.remove('bare'); price.textContent='' }
   }else{
-    const everHad=!!PROFILE?.subscription_expires_at;
-    document.getElementById('proTitle').textContent=ar?
-      (everHad?'انتهت تجربتك':'اشتراك جدولك'):(everHad?'Your trial ended':'Jadwalik Pro');
-    document.getElementById('proSub').textContent=ar?
-      (everHad?'اشترك عشان ترجع المراقبة والحفظ السحابي':'فعّل المراقبة والحفظ السحابي'):
-      (everHad?'Subscribe to restore monitoring and cloud sync':'Unlock monitoring and cloud sync');
-    document.getElementById('proPrice').textContent=ar?'19 ريال / سنة':'SAR 19 / year';
-    btn.style.display='block';
-    btn.textContent=ar?'اشترك الحين':'Subscribe now';
+    const P=planInfo();
+    set('proTitle',ar?'حساب مجاني':'Free account');
+    set('proSub',ar?`المراقبة ${Math.min(freeWatchUsed(),P.freeMonitors)} من ${P.freeMonitors}\n${P.freeSchedules===1?'جدول واحد':P.freeSchedules+' جداول'}`
+                   :`Watches ${Math.min(freeWatchUsed(),P.freeMonitors)} of ${P.freeMonitors}`);
+    if(price){ price.classList.add('bare');
+      price.innerHTML=`<button class="btn-sm" onclick="event.stopPropagation();openPlans('compare')">${ar?'الباقات':'Plans'}</button>` }
   }
 
   renderTgAndMon(ar);
@@ -7689,6 +7968,12 @@ function toggleMyRev(){
   const c=document.getElementById('myRevCard');
   if(c)c.classList.toggle('open');
 }
+function openMyRev(){
+  const c=document.getElementById('myRevCard');
+  if(!c)return;
+  c.classList.add('open');
+  c.scrollIntoView({behavior:'smooth',block:'start'});
+}
 
 /* تفضيلات التنبيهات — محفوظة في profiles.notif_prefs (jsonb).
    جدول مستقل لأربعة مفاتيح مبالغة، والملف الشخصي يُسحب مع كل دخول أصلاً. */
@@ -7716,21 +8001,30 @@ async function setNotif(key,val){
    مخفية افتراضياً: تجربة Pushover ٣٠ يوماً تبدأ لحظة الاشتراك، فتفعيلها
    خارج موسم التسجيل يحرقها على الفاضي.
    الأوضاع من السيرفر: off لا أحد · link لمن فتح ‎?pushover=1‎ ·
-   pro للمشتركين · all للجميع. */
+   addon لمن اشترى الإضافة · all للجميع. والسيرفر هو اللي يقرر من يستلم
+   فعلاً — البطاقة هنا عرض فقط. */
 const PO_UNLOCK='jdw_po_unlock', PO_NONCE='jdw_po_nonce';
 
 function poConf(){ return (MON_STATE&&MON_STATE.pushover)||null }
 
-function poVisible(){
-  const c=poConf();
-  if(!c||!c.url)return false;
-  if(c.mode==='all')return true;
-  if(c.mode==='pro')return !!(typeof isPro==='function'&&isPro());
-  if(c.mode==='link'){
-    try{ return localStorage.getItem(PO_UNLOCK)==='1' }catch(e){ return false }
-  }
-  return false;
+/* الإضافة سارية: من الملف أو من حساب السيرفر — أيهما أحدث */
+function hasPushoverAddon(){
+  const until=(PROFILE&&PROFILE.pushover_until)||(ACCOUNT&&ACCOUNT.pushoverUntil)||null;
+  return !!((PROFILE&&PROFILE.is_pro)||(until&&new Date(until)>new Date()));
 }
+/* البطاقة تظهر كاملة لمن يحق له، ومقفولة بشرح لمن ما اشترى الإضافة —
+   بدل ما تختفي فما يعرف الطالب إن الميزة موجودة */
+function poState(){
+  const c=poConf();
+  if(!c||!c.url)return 'hidden';
+  if(c.mode==='all')return 'open';
+  if(c.mode==='addon')return hasPushoverAddon()?'open':(USER?'locked':'hidden');
+  if(c.mode==='link'){
+    try{ return localStorage.getItem(PO_UNLOCK)==='1'?'open':'hidden' }catch(e){ return 'hidden' }
+  }
+  return 'hidden';
+}
+function poVisible(){ return poState()==='open' }
 
 /* ‎?pushover=1‎ يفتحها لهذا الجهاز وحده — رابط تعطيه لمن تجرّب معه */
 function poCheckUnlock(){
@@ -7813,9 +8107,24 @@ function syncPlanHint(){
 function renderPushover(){
   const box=document.getElementById('poRow');
   if(!box)return;
-  if(!poVisible()){ box.innerHTML=''; return }
+  const st=poState();
   const ar=LANG==='ar';
+  if(st==='hidden'){ box.innerHTML=''; return }
+  if(st==='locked'){
+    const P=planInfo();
+    box.innerHTML=`<div class="nt-row">
+      <div class="nt-txt">
+        <b>🚨 ${ar?'تنبيه طارئ عند فتح الشعبة':'Urgent alert when a section opens'}</b>
+        <span>${ar?`يرن حتى لو الجوال صامت، ويعيد لين تأكّده. إضافة على اشتراك الترم بـ${sarTxt(P.po)} ريال.`
+                  :`Rings even on silent and repeats until you confirm. A ${sarTxt(P.po)} SAR add-on.`}</span>
+      </div>
+      <button class="btn-sm" onclick="openPlans('pushover')">${ar?'أضفه':'Add'}</button>
+    </div>`;
+    return;
+  }
   const on=!!(PROFILE&&PROFILE.pushover_key);
+  /* المشتري ما يدفع لـPushover — نحن نغطي ترخيص التطبيق لو انتهت تجربته */
+  const addonMode=(poConf()||{}).mode==='addon';
   box.innerHTML=`<div class="nt-row">
     <div class="nt-txt">
       <b>${ar?'تنبيه طارئ عند فتح الشعبة':'Urgent alert when a section opens'}</b>
@@ -7828,8 +8137,11 @@ function renderPushover(){
              :'On — repeats until you acknowledge it.<br>'+
               'To bypass mute and Do Not Disturb, open Pushover ← Settings and enable '+
               '<b>Critical Alerts</b> for high-priority and emergency.')
-        : (ar?'عبر تطبيق Pushover. مجاني ٣٠ يوماً من لحظة الاشتراك، وبعدها شراء مرة واحدة لو حبيت. تنبيهات تيليغرام تستمر في كل الأحوال.'
-             :'Via the Pushover app. Free for 30 days, one-time purchase after that. Telegram alerts continue regardless.')}</span>
+        : addonMode
+          ? (ar?'عبر تطبيق Pushover — إضافتك تغطيه، ولو طلب منك الدفع نحن ندفعه. تنبيهات تيليغرام تستمر في كل الأحوال.'
+               :'Via the Pushover app — your add-on covers it; if it asks you to pay, we pay. Telegram alerts continue regardless.')
+          : (ar?'عبر تطبيق Pushover. مجاني ٣٠ يوماً من لحظة الاشتراك، وبعدها شراء مرة واحدة لو حبيت. تنبيهات تيليغرام تستمر في كل الأحوال.'
+               :'Via the Pushover app. Free for 30 days, one-time purchase after that. Telegram alerts continue regardless.')}</span>
     </div>
     <button class="btn-sm${on?' ghost':''}" onclick="poStart()">${
       on?(ar?'إدارة':'Manage'):(ar?'تفعيل':'Enable')}</button>
@@ -7898,12 +8210,13 @@ function renderTgAndMon(ar){
       ar?'ما تراقب أي مادة. روح للبحث واضغط 🔔 على أي مادة مسكّرة.':
           'Not watching any course. Go to Search and tap 🔔 on a closed course.'}</div>`;
   }else{
+    const paused=pausedMonitorIds();
     ml.innerHTML=monitored.map(m=>{
-      const all=m.scope==='course';
-      return `<div class="set-row">
+      const all=m.scope==='course', ps=paused.has(m.id);
+      return `<div class="set-row${ps?' mon-paused':''}">
         <div class="set-info">
           <h4>${m.course_code}${all?'':' §'+(m.section||'')}</h4>
-          <p>${all
+          <p>${ps?(ar?'⏸️ متوقفة — ترجع تشتغل مع الاشتراك · ':'⏸️ Paused — resumes with a plan · '):''}${all
             ? (ar?'📡 كل الشعب — أي شعبة تفتح أو تنزل':'📡 All sections')
             : `CRN ${m.crn} · ${m.last_status==='OPEN'?'🟢 OPEN':'🔴 CLOSE'}`}</p>
         </div>
@@ -7916,9 +8229,11 @@ function renderTgAndMon(ar){
   /* account */
   document.getElementById('accEmail').textContent=USER?USER.email:(ar?'غير مسجل':'Not signed in');
   document.getElementById('accStatus').textContent=USER?
-    (FREE_BETA?(ar?'كل الميزات مفتوحة':'All features unlocked'):
-     isTrial()?(ar?`تجربة مجانية — باقي ${daysLeft()} يوم`:`Free trial — ${daysLeft()} days left`):
-     pro?(ar?'حساب مشترك':'Subscribed account'):(ar?'حساب مجاني':'Free account')):
+    /* كانت تقرأ متغيّر pro غير معرّف في هذي الدالة — ما انكشف لأن الفترة
+       المجانية كانت تقطع الشرط قبله دائماً. يوم الإطلاق كان تبويب الإعدادات
+       بينهار لكل مسجّل. */
+    (freeBeta()?(ar?'كل الميزات مفتوحة':'All features unlocked'):
+     isPro()?(ar?'حساب مشترك':'Subscribed account'):(ar?'حساب مجاني':'Free account')):
     (ar?'سجّل دخول لحفظ بياناتك':'Sign in to save your data');
   document.getElementById('btnAcc').textContent=USER?(ar?'خروج':'Sign out'):(ar?'دخول':'Sign in');
 }
@@ -8311,8 +8626,8 @@ function searchIn(query, note){
   const gen =document.getElementById('gender');
 
   /* نجبر الخيارات على ترم التسجيل القادم + الكل، مهما كان اختياره السابق */
-  const changed = term.value!==serverTerm() || col.value!=='ALL' || gen.value!=='ALL';
-  term.value=serverTerm(); col.value='ALL'; gen.value='ALL';
+  const changed = term.value!==searchTermCode() || col.value!=='ALL' || gen.value!=='ALL';
+  term.value=searchTermCode(); col.value='ALL'; gen.value='ALL';
   termHint();
 
   resetTabScroll('search');
@@ -8552,13 +8867,14 @@ function renderMyReviews(){
     return;
   }
   const mine=reviews.filter(r=>r.user_id===USER.id);
+  const rc=revCreditHTML();
   if(!mine.length){
-    box.innerHTML=`<div style="font-size:12.5px;color:var(--text3);padding:8px 0;line-height:1.7">${
+    box.innerHTML=rc+`<div style="font-size:12.5px;color:var(--text3);padding:8px 0;line-height:1.7">${
       ar?'ما قيّمت أي دكتور بعد. روح تبويب الدكاترة وشارك تجربتك.':
           'You have not reviewed anyone yet. Head to the Faculty tab and share your experience.'}</div>`;
     return;
   }
-  box.innerHTML=mine.map(r=>`
+  box.innerHTML=rc+mine.map(r=>`
     <div class="my-rev">
       <div class="my-rev-top">
         <div style="flex:1;min-width:0">
@@ -8627,7 +8943,7 @@ sections:[
  {t:'اضغط مادة تشوف شعبها',d:'من الخطة أو المقترح — اضغط أي مادة ينقلك للبحث ويوريك شعبها وأوقاتها ودكاترتها في <b>ترم التسجيل القادم</b>.'}]},
 
 {ic:'🔔',name:'تنبيهاتك',items:[
- {t:'راقب المواد المسكّرة',d:'أي مادة <code>CLOSE</code> جنبها <b>🔕</b> — اضغطه يصير <b>🔔</b>. السيرفر يفحص كل ٥ دقائق <b>حتى والموقع مسكّر</b>، فما تحتاج تفتح الصفحة. راقب كم مادة ما تبي.'},
+ {t:'راقب المواد المسكّرة',d:'أي مادة <code>CLOSE</code> جنبها <b>🔕</b> — اضغطه يصير <b>🔔</b>. السيرفر يفحص كل ٥ دقائق <b>حتى والموقع مسكّر</b>، فما تحتاج تفتح الصفحة.'},
  {t:'اربط تيليغرام',d:'من <b>⚙️ الإعدادات</b> اضغط «ربط» → يفتح البوت → Start. أول ما تنفتح مادتك يوصلك إشعار فيه الـCRN والوقت والقاعة.'},
  {t:'لو تغيّر جدولك',isNew:1,d:'غيّرت الجامعة دكتور أو قاعة أو وقت مادة عندك؟ يوصلك إشعار، ويظهر تنبيه على المادة في جدولك يبيّن لك <b>وش كان ووش صار</b>.'},
  {t:'تحكّم بالتنبيهات',isNew:1,d:'من <b>⚙️ الإعدادات</b> اختر أي إشعار تبيه وأيهم لا — كل نوع بمفتاح مستقل.'}]},
@@ -8635,7 +8951,7 @@ sections:[
 {ic:'👨‍🏫',name:'الدكاترة ورأيك',items:[
  {t:'قيّم دكاترتك',d:'في <b>👨‍🏫 دكاترة</b> شوف تقييمات الطلاب قبل ما تسجّل، وقيّم أنت <b>بشكل مجهول</b> — ما أحد يشوف اسمك. وفي صفحة كل دكتور زر «شوف مواده هذا الترم».'},
  {t:'حفظ سحابي',d:'خطتك وجدولك ومعدلك محفوظة في حسابك — افتح من أي جهاز وتلقى كل شي زي ما تركته.'},
- {t:'قول لنا رأيك',d:'في <b>⚙️ الإعدادات</b> خانة «رأيك يهمنا» — اكتب أي اقتراح أو مشكلة. توصلني فوراً، وإذا حطيت وسيلة تواصل أرد عليك.'}]}],
+ {t:'قول لنا رأيك',d:'في <b>⚙️ الإعدادات</b> خانة «رأيك يهمنا» — اكتب أي اقتراح أو مشكلة. توصلنا فوراً، وإذا حطيت وسيلة تواصل نرد عليك.'}]}],
 tip:'<b>🎁 كل الميزات مفتوحة مجاناً</b> — جدولك في فترة تجريبية، سجّل دخول واستمتع بكل شي بدون أي رسوم.'},
 
 en:{title:'How to use Jadwalik',lead:'Split into sections — open what matters to you',
@@ -8671,7 +8987,7 @@ sections:[
  {t:'Tap a course for its sections',d:'From the plan or the suggestion — tap any course and it jumps to Search showing its sections, times and instructors for the <b>upcoming registration term</b>.'}]},
 
 {ic:'🔔',name:'Your alerts',items:[
- {t:'Monitor closed sections',d:'Any <code>CLOSE</code> course has a <b>🔕</b> — tap it to make it <b>🔔</b>. The server checks every 5 minutes <b>even with the site closed</b>, so you never keep the page open. Watch as many as you like.'},
+ {t:'Monitor closed sections',d:'Any <code>CLOSE</code> course has a <b>🔕</b> — tap it to make it <b>🔔</b>. The server checks every 5 minutes <b>even with the site closed</b>, so you never keep the page open.'},
  {t:'Link Telegram',d:'In <b>⚙️ Settings</b> tap “Link” → the bot opens → Start. When your course opens you get an alert with the CRN, time and room.'},
  {t:'If your schedule changes',isNew:1,d:'Did the university change an instructor, room or time on one of your courses? You get an alert, and a notice appears on that course showing <b>what it was and what it became</b>.'},
  {t:'Control your alerts',isNew:1,d:'In <b>⚙️ Settings</b> choose which notifications you want and which you do not — each type has its own switch.'}]},
@@ -8679,7 +8995,7 @@ sections:[
 {ic:'👨‍🏫',name:'Faculty and feedback',items:[
  {t:'Rate your instructors',d:'In <b>👨‍🏫 Faculty</b> read student ratings before you register, and rate <b>anonymously</b> — nobody sees your name. Each instructor page has a “See their courses this term” button.'},
  {t:'Cloud sync',d:'Your plan, schedule and GPA live in your account — open from any device and find everything as you left it.'},
- {t:'Tell us what you think',d:'In <b>⚙️ Settings</b> the “Your feedback matters” box takes any idea or problem. It reaches me instantly, and if you leave contact details I reply.'}]}],
+ {t:'Tell us what you think',d:'In <b>⚙️ Settings</b> the “Your feedback matters” box takes any idea or problem. It reaches us instantly, and if you leave contact details we reply.'}]}],
 tip:'<b>🎁 Everything is free right now</b> — Jadwalik is in open beta. Sign in and enjoy every feature at no cost.'}
 };
 
@@ -8704,7 +9020,10 @@ function renderGuide(){
       <div class="g-acc-body">${sec.items.map(x=>`
         <div class="g-item"><h4>${x.t}${pill(x)}</h4><p>${x.d}</p></div>`).join('')}</div>
     </div>`).join('')
-    +`<div class="g-tip">${G.tip}</div>`;
+    /* «كل شي مجاني» صحيح في الفترة المجانية فقط */
+    +`<div class="g-tip">${freeBeta()?G.tip:(LANG==='ar'
+        ?`<b>💡 المجاني فيه ${planInfo().freeMonitors===2?'مراقبتان':planInfo().freeMonitors+' مراقبات'} وجدول</b> — واشتراك الترم يفتح المراقبة بلا حد وثلاثة جداول.`
+        :`<b>💡 Free includes ${planInfo().freeMonitors} watches and a schedule</b> — the term plan unlocks unlimited watches and three schedules.`)}</div>`;
 }
 /* الطي والفتح — الحالة في G_OPEN فتبقى بعد تبديل اللغة */
 function gToggle(i){
@@ -8848,14 +9167,6 @@ finPrint:'الاختبارات النهائية',
 pickOne:'— اختر تخصصك —',optAll:'الكل',optMale:'طلاب',optFemale:'طالبات',
 docRefresh:'🔄 حدّث القائمة',uniSoon:'جامعات ثانية — قريباً',
 tgSection:'إشعارات تيليغرام',monSection:'المواد المراقبة',
-proTitle:'اشتراك جدولك',proSub:'فعّل المراقبة والحفظ السحابي',
-proPrice:'19 ريال / سنة',proBtn:'اشترك الحين',
-proFeat1:'<b>مراقبة المواد</b> — إشعار تيليغرام فوري أول ما تنفتح أي شعبة',
-proFeat2:'<b>حفظ سحابي</b> — خطتك وجدولك ومعدلك من أي جهاز',
-proFeat3:'<b>مواد بلا حد</b> — راقب كل المواد اللي تبيها',
-payAmount:'المبلغ',payRiyal:'19 ريال',payTo:'STC Pay / تحويل',payCodeLbl:'كودك',
-payNote:'حوّل المبلغ، ثم أرسل صورة الإيصال مع كودك للبوت على تيليغرام. بيتفعّل حسابك خلال ساعات قليلة.',
-payBot:'📩 أرسل الإيصال للبوت',
 unlocks1:'يفتح مادة وحدة',unlocksN:'يفتح',unlocksN2:'مواد',
 
 sugEmpty:'حدد المواد اللي خلصتها تحت وبيطلع لك المقترح',
@@ -8996,14 +9307,6 @@ finPrint:'Final Exams',
 pickOne:'— Choose your major —',optAll:'All',optMale:'Male',optFemale:'Female',
 docRefresh:'🔄 Refresh list',uniSoon:'More universities — soon',
 tgSection:'Telegram notifications',monSection:'Monitored courses',
-proTitle:'Jadwalik Pro',proSub:'Unlock monitoring and cloud sync',
-proPrice:'SAR 19 / year',proBtn:'Subscribe now',
-proFeat1:'<b>Course monitoring</b> — instant Telegram alert the moment a section opens',
-proFeat2:'<b>Cloud sync</b> — your plan, schedule and GPA on any device',
-proFeat3:'<b>Unlimited courses</b> — watch as many as you want',
-payAmount:'Amount',payRiyal:'SAR 19',payTo:'STC Pay / transfer',payCodeLbl:'Your code',
-payNote:'Transfer the amount, then send the receipt with your code to the bot on Telegram. Your account is activated within a few hours.',
-payBot:'📩 Send receipt to bot',
 unlocks1:'unlocks 1 course',unlocksN:'unlocks',unlocksN2:'courses',
 
 sugEmpty:'Mark the courses you finished below to get your suggestion',
@@ -9688,7 +9991,8 @@ function redrawTodayAfterAuth(){
   AUTH_READY=true;
   setAuthUI();
   redrawTodayAfterAuth();
-  if(USER){await pullCloud();setAuthUI();renderPlan();redrawTodayAfterAuth();
+  if(USER){await pullCloud();setAuthUI();renderPlan();enforceSlotAndRedraw();redrawTodayAfterAuth();
+    loadAccount(true).then(()=>{ try{ if(CUR_TAB==='set')renderSettings() }catch(e){} });
     if(document.getElementById('pageSched').classList.contains('active'))renderSchedule();}
   sb.auth.onAuthStateChange(async(ev,sess)=>{
     const was=!!USER;USER=sess?sess.user:null;

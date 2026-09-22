@@ -22,6 +22,9 @@ border-radius:9px;padding:7px 8px;font-size:12px;font-family:inherit}
 .ttl-b.go{background:var(--ok,#10b981);border-color:transparent;color:#fff}
 .ttl-hint{margin-top:8px;font-size:10.5px;color:var(--dim);line-height:1.7}
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+/* JetBrains Mono بلا حروف عربية، فالمتصفح كان يهبط لخط أحادي عام
+   يفكّك الكلمة ويباعد حروفها: «مـغـلـقـة». إضافة الخط العربي قبل
+   الاحتياطي تُبقي الأرقام واللاتينية كما هي وتصلح العربي. */
 :root{
 --bg:#080b12;--card:#131928;--border:#1e2740;--border2:#253050;
 --accent:#3d6fff;--accent2:#6b8fff;
@@ -29,7 +32,7 @@ border-radius:9px;padding:7px 8px;font-size:12px;font-family:inherit}
 --close:#f43f5e;--close-bg:rgba(244,63,94,.08);
 --warn:#f59e0b;--warn-bg:rgba(245,158,11,.1);
 --text:#e2e8f8;--text2:#8b96b8;--text3:#4a5580;
---mono:'JetBrains Mono',monospace;--sans:'IBM Plex Sans Arabic',sans-serif}
+--mono:'JetBrains Mono','IBM Plex Sans Arabic',monospace;--sans:'IBM Plex Sans Arabic',sans-serif}
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh}
 
@@ -76,6 +79,10 @@ font-size:12px;font-weight:600;padding:12px 2px;cursor:pointer;position:relative
 .tabs6 .tab{font-size:11px;padding:11px 2px}
 .row.dim{opacity:.45}
 .tabs6 .tab{font-size:10.5px;padding:12px 1px}
+/* أي بيئة تتحكم فيها — مفاتيح dev ما تلمس الإنتاج، فلازم تعرف وين أنت */
+.env-badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:8px;margin-inline-start:6px;
+  background:rgba(245,158,11,.15);color:var(--warn,#f59e0b);border:1px solid rgba(245,158,11,.4)}
+.env-badge[hidden]{display:none}
 .tab-badge{display:none;position:absolute;top:6px;inset-inline-end:3px;
 background:var(--accent);color:#fff;font-size:9px;font-family:var(--mono);
 padding:1px 5px;border-radius:20px;line-height:1.5}
@@ -134,6 +141,17 @@ font-size:12px;color:var(--text3)}
 .mon-erow input{background:var(--bg);border:1px solid var(--border);border-radius:9px;
 color:var(--text);font-family:inherit;font-size:12.5px;padding:7px 9px;width:82px}
 .mon-erow input[type=date]{width:132px}
+/* محرر الأسعار — ريال للعرض، هللة في السيرفر */
+.price-grid{display:grid;grid-template-columns:1fr auto;gap:8px 10px;align-items:center;
+  font-size:12.5px;margin-top:10px}
+.price-grid label{color:var(--text2)}
+.price-grid input{width:78px;background:var(--bg);border:1px solid var(--border);border-radius:9px;
+  color:var(--text);padding:7px 9px;font-family:var(--mono);text-align:center;direction:ltr}
+.cr-row{display:flex;justify-content:space-between;gap:10px;padding:7px 0;
+  border-bottom:1px solid var(--border);font-size:12px}
+.cr-row:last-child{border-bottom:none}
+.cr-plus{color:var(--open);font-family:var(--mono);direction:ltr;unicode-bidi:isolate}
+.cr-minus{color:var(--close);font-family:var(--mono);direction:ltr;unicode-bidi:isolate}
 .mon-ehint{font-size:10.5px;color:var(--text3);line-height:1.6;margin-top:3px}
 .watchers{margin-top:9px;padding-top:8px;border-top:1px solid var(--border)}
 .w-row{display:flex;justify-content:space-between;align-items:center;gap:10px;
@@ -343,7 +361,7 @@ padding:1px 6px;border-radius:5px;color:var(--accent2)}
 <div class="topbar">
   <div class="logo">
     <div class="logo-icon">📊</div>
-    <div><div>لوحة التحكم</div><div class="brand-sub">JADWALIK ADMIN</div></div>
+    <div><div>لوحة التحكم <span id="envBadge" class="env-badge" hidden></span></div><div class="brand-sub">JADWALIK ADMIN</div></div>
   </div>
   <div class="tb-actions">
     <button class="icon-btn" onclick="loadAll()">🔄 تحديث</button>
@@ -355,7 +373,7 @@ padding:1px 6px;border-radius:5px;color:var(--accent2)}
 <div class="tabs tabs6">
   <button class="tab active" data-p="over"  onclick="go('over')">نظرة عامة</button>
   <button class="tab"        data-p="users" onclick="go('users')">المستخدمين</button>
-  <button class="tab"        data-p="revs"  onclick="go('revs')">التقييمات</button>
+  <button class="tab"        data-p="revs"  onclick="go('revs')">التقييمات<span class="tab-badge" id="revBadge"></span></button>
   <button class="tab"        data-p="mons"  onclick="go('mons')">المراقبة</button>
   <button class="tab"        data-p="fb"    onclick="go('fb')">تذاكر<span class="tab-badge" id="fbBadge"></span></button>
   <button class="tab"        data-p="msgs"  onclick="go('msgs')">الرسائل</button>
@@ -385,6 +403,7 @@ padding:1px 6px;border-radius:5px;color:var(--accent2)}
   </div>
 
   <div class="page" id="pageRevs">
+    <div id="rrBody"></div>
     <div class="toolbar">
       <input id="revSearch" placeholder="ابحث بالدكتور أو النص..." oninput="renderRevs()">
       <select id="revFilter" onchange="renderRevs()">
@@ -554,7 +573,7 @@ function markRev(key,ok){
   if(ok)REV_OK.add(key); else REV_OK.delete(key);
   try{ localStorage.setItem('revOk',JSON.stringify([...REV_OK])) }catch(e){}
   renderRevs(); renderOver();
-  toast(ok?'✅ علّمتها مراجَعة':'↩︎ رجّعتها للمراجعة');
+  toast(ok?'✅ علّمتها سليمة':'↩︎ رجّعتها للتنبيه');
 }
 
 /* ══════════ تحميل ══════════ */
@@ -588,19 +607,23 @@ async function loadAll(silent){
 async function loadAllInner(silent){
   if(!TOKEN) return;
   try{
-    const [s,u,r,m,h,f,tk,mg,rp,stg,up] = await Promise.all([
+    const [s,u,r,m,h,f,tk,mg,rp,stg,up,rr] = await Promise.all([
       api('stats'), api('users'), api('reviews'), api('monitors'),
       api('health').catch(()=>null), api('feedback').catch(()=>({feedback:[]})),
       api('tickets?status=all').catch(()=>({tickets:[]})),
       api('messages').catch(()=>({messages:[],kinds:[]})),
       api('reports').catch(()=>({reports:[]})),
       api('storage').catch(()=>null),
-      api('uploads').catch(()=>null)
+      api('uploads').catch(()=>null),
+      api('review-requests').catch(()=>({requests:[]}))
     ]);
     STATS=s; USERS=u.users||[]; REVS=r.reviews||[]; MONS=m.monitors||[]; HEALTH=h;
     FB=(f&&f.feedback)||[]; TICKETS=(tk&&tk.tickets)||[]; MSGS=mg||{messages:[],kinds:[]};
     REPS=(rp&&rp.reports)||[]; STORAGE=stg||null; UPLOADS=up||null;
-    renderOver(); renderUsers(); renderRevs(); renderMons(); renderFb();
+    RREQS=(rr&&rr.requests)||[];
+    { const eb=document.getElementById('envBadge'), env=(h&&h.env)||'prod';
+      if(eb){ eb.hidden=env==='prod'; eb.textContent='🧪 '+env } }
+    renderOver(); renderUsers(); renderRRs(); renderRevs(); renderMons(); renderFb();
     renderMsgs(); renderReps(); renderStorage(); renderUploads(); renderSys();
   }catch(e){ toast(e.message,'err') }
 }
@@ -989,14 +1012,13 @@ function renderUsers(){
         ${planVerTag(u)}
         <span>ينتهي <b>${fdate(u.expires)}</b></span>
         <span>مراقبة <b>${u.monitors}</b></span>
+        ${u.creditHalalas?`<span>رصيد <b style="color:var(--open)">${sar(u.creditHalalas)} ريال</b></span>`:''}
         ${u.telegram?`<span>تيليغرام <b>${esc(u.telegram)}</b></span>`:''}
         ${u.createdAt?`<span>انضم <b>${fdate(u.createdAt)}</b></span>`:''}
       </div>
       <div class="row-acts">
         <button class="mini" onclick="openUser('${u.id}')">👁️ جدوله ومعدله</button>
-        <button class="mini go" onclick="grant('${u.id}',365,'${esc(u.name)}')">+ سنة</button>
-        <button class="mini"    onclick="grant('${u.id}',30,'${esc(u.name)}')">+ شهر</button>
-        <button class="mini"    onclick="grant('${u.id}',7,'${esc(u.name)}')">+ أسبوع</button>
+        ${u.active?'':`<button class="mini go" onclick="grant('${u.id}','${esc(u.name)}')">🎓 فعّل للترم</button>`}
         ${u.telegram?`<button class="mini go" onclick="replyTo('','${esc(u.email)}','${esc(u.name)}')">💬 رسالة</button>`:''}
         ${u.active?`<button class="mini no" onclick="revoke('${u.id}','${esc(u.name)}')">إلغاء</button>`:''}
       </div>
@@ -1004,21 +1026,47 @@ function renderUsers(){
   }).join('');
 }
 
-async function grant(id,days,name){
-  const label = days===365?'سنة':days===30?'شهر':'أسبوع';
-  if(!confirm(`تفعيل ${label} لـ ${name}؟`)) return;
+/* الهللة ← ريال للعرض: ١٩٠٠ ← «19»، ٢٥٠ ← «2.50» */
+function sar(h){ const v=(Number(h)||0)/100; return v%1?v.toFixed(2):String(v) }
+const CR_REASON={referral:'دعوة صديق',reviews:'تقييمات',admin:'يدوي',spend:'صُرف',reversal:'تصحيح'};
+const SUB_STATUS={comp:'هدية',paid:'مدفوع',pending:'معلّق',failed:'فشل',refunded:'مسترجع'};
+
+/* التفعيل من هنا هدية أو تجربة أو إصلاح دفعة — لا طريقة دفع، ولا يُحسب
+   في الإيرادات. ينتهي مع نهاية نهائيات الترم الحالي. */
+async function grant(id,name){
+  const note=prompt(`تفعيل ${name} حتى نهاية الترم الحالي — هدية، ما تنحسب دفعاً.\n\nالسبب (يظهر في سجله):`,'');
+  if(note===null) return;
   try{
-    const r=await api('grant',{body:{userId:id,days}});
+    const r=await api('grant',{body:{userId:id,note}});
     if(!r.ok) return toast(r.error||'ما ضبط','err');
-    toast(`فُعّل ${label} — ينتهي ${fdate(r.expires)}`,'ok');
+    toast(r.warning?r.warning:`فُعّل حتى ${fdate(r.expires)}`,r.warning?'err':'ok');
     await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
+/* منح أو سحب رصيد — السبب إلزامي، والمبلغ بالريال */
+async function adjustCredit(id,name,sign){
+  const amt=prompt(`${sign>0?'منح':'سحب'} رصيد ${sign>0?'لـ':'من'} ${name}\n\nالمبلغ بالريال:`,'');
+  if(amt===null) return;
+  const v=Math.round(parseFloat(String(amt).replace(',', '.'))*100);
+  if(!Number.isFinite(v)||v<=0) return toast('مبلغ غير صالح','err');
+  const note=prompt('السبب — إلزامي، يظهر في سجله:','');
+  if(note===null) return;
+  if(note.trim().length<3) return toast('السبب إلزامي','err');
+  try{
+    const r=await api('credit-adjust',{body:{userId:id,amountHalalas:sign*v,note}});
+    if(!r.ok) return toast(r.error||'ما ضبط','err');
+    toast(`${sign>0?'انضاف':'انسحب'} ${sar(v)} ريال`,'ok');
+    await loadAll();
+    openUser(id);
   }catch(e){ toast(e.message,'err') }
 }
 
 async function revoke(id,name){
   if(!confirm(`إلغاء اشتراك ${name}؟\nبيوقف عنه إشعارات المواد فوراً.`)) return;
   try{
-    await api('revoke',{body:{userId:id}});
+    const r=await api('revoke',{body:{userId:id}});
+    if(r&&r.ok===false) return toast(r.error||'ما ضبط','err');
     toast('تم الإلغاء','ok');
     await loadAll();
   }catch(e){ toast(e.message,'err') }
@@ -1059,6 +1107,68 @@ async function openUser(id){
   }
 }
 function closeUser(){ document.getElementById('drawer').classList.remove('open') }
+
+/* التنبيه الطارئ في درج الطالب: حالته وتفعيله هدية للترم */
+async function grantPo(id,name,on){
+  let note='';
+  if(on){
+    note=prompt(`تفعيل التنبيه الطارئ لـ ${name} حتى نهاية الترم — هدية.\n\nالسبب:`,'');
+    if(note===null)return;
+  }else if(!confirm(`إيقاف التنبيه الطارئ لـ ${name}؟`))return;
+  try{
+    const r=await api('grant-pushover',{body:{userId:id,on,note}});
+    if(!r.ok)return toast(r.error||'ما ضبط','err');
+    toast(r.warning?r.warning:(on?`فُعّل حتى ${fdate(r.until)}`:'انوقف'),r.warning?'err':'ok');
+    await loadAll(); openUser(id);
+  }catch(e){ toast(e.message,'err') }
+}
+function poBox(u){
+  return `<div class="kv"><span>🚨 التنبيه الطارئ</span>
+    <b>${u.pushoverAddon?`<span style="color:var(--open)">فعّال${u.pushoverUntil?' حتى '+fdate(u.pushoverUntil):''}</span>`
+                        :'<span style="color:var(--text3)">غير مفعّل</span>'}
+       · ${u.pushoverLinked?'التطبيق مربوط':'التطبيق غير مربوط'}</b></div>
+    <div class="row-meta" style="margin-top:6px">
+      ${u.pushoverAddon
+        ?`<button class="mini no" onclick="grantPo('${u.id}','${esc(u.name)}',false)">إيقاف الإضافة</button>`
+        :`<button class="mini go" onclick="grantPo('${u.id}','${esc(u.name)}',true)">🚨 فعّل للترم</button>`}
+    </div>`;
+}
+
+/* الاشتراك والرصيد في درج الطالب: السجل كاملاً، فأي سؤال «ليش رصيدي
+   كذا؟» جوابه هنا بسطر لكل حركة */
+function subCreditBox(d,u){
+  const subs=d.subscriptions||[];
+  const cr=d.credit||{balance:{available:0,expired:0},rows:[]};
+  const b=cr.balance||{};
+  const subRows=subs.length
+    ? subs.map(x=>`<div class="cr-row">
+        <span>${esc(x.term)} · <b>${esc(SUB_STATUS[x.status]||x.status)}</b>
+          ${x.note?`<span style="color:var(--text3)"> — ${esc(x.note)}</span>`:''}</span>
+        <span>${x.amount_halalas?`${sar(x.amount_halalas)} ريال · `:''}${x.valid_until?'حتى '+fdate(x.valid_until):''}</span>
+      </div>`).join('')
+    : `<div class="dw-empty">ما اشترك من قبل</div>`;
+  const crRows=(cr.rows||[]).length
+    ? cr.rows.slice().reverse().map(r=>`<div class="cr-row">
+        <span>${fdate(r.created_at)} · ${esc(CR_REASON[r.reason]||r.reason)}
+          ${r.note?`<span style="color:var(--text3)"> — ${esc(r.note)}</span>`:''}</span>
+        <span class="${r.amount_halalas>0?'cr-plus':'cr-minus'}">${r.amount_halalas>0?'+':'−'}${sar(Math.abs(r.amount_halalas))}</span>
+      </div>`).join('')
+    : `<div class="dw-empty">ما فيه حركات</div>`;
+  return `<div class="gauge" style="margin:12px 0">
+    ${poBox(u)}
+    <div class="kv"><span>الرصيد المتاح</span>
+      <b style="color:var(--open)">${sar(b.available)} ريال</b></div>
+    ${b.nextExpiry?`<div class="kv"><span>أقرب انتهاء</span><b>${fdate(b.nextExpiry)}</b></div>`:''}
+    ${b.expired?`<div class="kv"><span>انتهى بلا استعمال</span><b>${sar(b.expired)} ريال</b></div>`:''}
+    ${b.overdraft?`<div class="kv"><span>صرف أكثر من المتاح</span><b style="color:var(--close)">${sar(b.overdraft)} ريال</b></div>`:''}
+    <div class="row-meta" style="margin-top:8px">
+      <button class="mini go" onclick="adjustCredit('${u.id}','${esc(u.name)}',1)">+ رصيد</button>
+      ${b.available?`<button class="mini no" onclick="adjustCredit('${u.id}','${esc(u.name)}',-1)">− رصيد</button>`:''}
+    </div>
+    <div class="gauge-sub" style="margin-top:12px"><b>الاشتراكات</b></div>${subRows}
+    <div class="gauge-sub" style="margin-top:12px"><b>حركات الرصيد</b></div>${crRows}
+  </div>`;
+}
 
 function renderUserDetail(d){
   const u=d.user;
@@ -1147,6 +1257,8 @@ function renderUserDetail(d){
       ${u.telegram?`<span>تيليغرام <b>${esc(u.telegram)}</b></span>`:''}
     </div>
 
+    ${subCreditBox(d,u)}
+
     ${gpaBox}
 
     ${(()=>{const ph=d.prepHint||{};
@@ -1165,6 +1277,57 @@ function renderUserDetail(d){
 }
 
 /* ══════════ التقييمات ══════════ */
+/* ═══ طلبات رصيد التقييم ═══
+   الطالب يرسل خمسة تقييمات، تشوفها هنا كاملة، تقبل أو ترفض بسبب يوصله.
+   المقبول يمنح الرصيد ويحتسب الدكاترة للأبد، والمرفوض يقدر يعدّل ويرجع. */
+let RREQS=[];
+function renderRRs(){
+  const box=document.getElementById('rrBody');
+  const badge=document.getElementById('revBadge');
+  if(badge){ badge.textContent=RREQS.length||''; badge.className='tab-badge'+(RREQS.length?' on':'') }
+  if(!box)return;
+  if(!RREQS.length){ box.innerHTML=''; return }
+  const stars=n=>'★'.repeat(Math.max(0,Math.min(5,n)))+'☆'.repeat(Math.max(0,5-n));
+  box.innerHTML=`<div class="gauge-sub" style="margin:4px 0 10px"><b>⭐ طلبات رصيد التقييم (${RREQS.length})</b></div>`+
+    RREQS.map(q=>`<div class="row" style="margin-bottom:12px">
+      <div class="row-meta" style="margin-bottom:8px">
+        <span><b>${esc(q.name)}</b></span><span>${esc(q.email)}</span><span>${fdate(q.createdAt)}</span>
+      </div>
+      ${q.reviews.map(v=>v.missing
+        ?`<div class="cr-row"><span>${esc(v.instructor)}</span><b style="color:var(--close)">محذوف بعد الإرسال</b></div>`
+        :`<div class="cr-row" style="flex-direction:column;align-items:stretch;gap:4px">
+            <div style="display:flex;justify-content:space-between;gap:8px">
+              <span><b>${esc(v.instructor)}</b>${v.course?` · ${esc(v.course)}`:''}
+                ${v.hidden?'<b style="color:var(--close)"> · مخفي</b>':''}
+                ${v.reports?`<b style="color:var(--warn)"> · ${v.reports} بلاغ</b>`:''}</span>
+              <span style="color:var(--warn);letter-spacing:1px">${stars(v.rating)}</span>
+            </div>
+            <div style="color:var(--text2);line-height:1.7">${v.comment?esc(v.comment):'<i style="color:var(--text3)">بلا تعليق</i>'}</div>
+          </div>`).join('')}
+      <div class="row-meta" style="margin-top:10px">
+        <button class="mini go" onclick="decideRR(${q.id},'approve','${esc(q.name)}')">✅ قبول</button>
+        <button class="mini no" onclick="decideRR(${q.id},'reject','${esc(q.name)}')">❌ رفض بسبب</button>
+      </div>
+    </div>`).join('');
+}
+async function decideRR(id,decision,name){
+  let note='';
+  if(decision==='reject'){
+    note=prompt(`سبب رفض طلب ${name} — يوصله على تلقرام:`,'');
+    if(note===null)return;
+    if(note.trim().length<3)return toast('سبب الرفض إلزامي','err');
+  }else{
+    const amt=((HEALTH&&HEALTH.pricing&&HEALTH.pricing.reviewsCreditHalalas)||0)/100;
+    if(!confirm(`قبول تقييمات ${name}${amt?` ومنحه ${amt} ريال رصيد`:''}؟`))return;
+  }
+  try{
+    const r=await api('review-decide',{body:{id,decision,note}});
+    if(!r.ok)return toast(r.error||'ما ضبط','err');
+    toast(r.warning?r.warning:(decision==='approve'?'انقبل ✅':'انرفض — وصله السبب'),r.warning?'err':'ok');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
 function renderRevs(){
   const q=(document.getElementById('revSearch').value||'').trim().toLowerCase();
   const f=document.getElementById('revFilter').value;
@@ -1219,7 +1382,7 @@ function renderRevs(){
       </div>
       <div class="row-acts">
         ${r.reports?`<button class="mini go" onclick="clearRep(${r.id})">✓ ألغِ البلاغ</button>`:''}
-        ${bad?`<button class="mini go" onclick="markRev('${esc(key)}',true)">✓ راجعتها</button>`:''}
+        ${bad?`<button class="mini go" onclick="markRev('${esc(key)}',true)">✓ سليمة</button>`:''}
         ${okd?`<button class="mini" onclick="markRev('${esc(key)}',false)">↩︎ رجّعها للمراجعة</button>`:''}
         <button class="mini" onclick="hideRev(${r.id},${r.hidden?'false':'true'})">
           ${r.hidden?'👁️ أظهرها':'🙈 أخفها'}</button>
@@ -1474,6 +1637,46 @@ async function runSchedSync(){
 }
 
 /* ══════════ جدول الاختبارات النهائية ══════════ */
+const PRICE_FIELDS=[
+  ['termHalalas','اشتراك الترم',1],
+  ['pushoverHalalas','التنبيه الطارئ',1],
+  ['friendDiscountHalalas','خصم الصديق',1],
+  ['referrerCreditHalalas','رصيد الداعي',1],
+  ['reviewsCreditHalalas','رصيد التقييمات',1],
+  ['reviewsNeeded','تقييمات للطلب',0],
+  ['creditTerms','صلاحية الرصيد (ترمات)',0],
+  ['lateDays','أيام الشراء المتأخر',0],
+  ['freeMonitors','مراقبات المجاني',0],
+  ['freeSchedules','جداول المجاني',0]
+];
+async function savePricing(){
+  const pricing={};
+  for(const [k,,money] of PRICE_FIELDS){
+    const el=document.getElementById('pf_'+k);
+    if(!el) continue;
+    const v=parseFloat(el.value);
+    if(!Number.isFinite(v)) return toast('قيمة ناقصة: '+k,'err');
+    pricing[k]=money?Math.round(v*100):Math.round(v);
+  }
+  try{
+    const r=await api('pricing',{body:{pricing}});
+    if(r&&r.error) return toast(r.error,'err');
+    toast('انحفظت الأسعار','ok');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
+async function toggleBeta(on){
+  if(!on&&!confirm('إنهاء الفترة المجانية؟\n\n'+
+    'المجاني يصير مراقبتين وجدولاً واحداً فوراً، والمراقبات الزائدة تتوقف.\n\n'+
+    '⚠️ تأكد إن بوابة الدفع شغّالة — بدونها ما يقدر أحد يشترك.'))return;
+  try{
+    const r=await api('beta-toggle',{body:{on:!!on}});
+    toast(r.on?'الفترة المجانية شغّالة':'الفترة المجانية انتهت','ok');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
 async function toggleFinals(on){
   if(on){
     if(!confirm('تشغيل جدول النهائيات؟ تأكد أن الجامعة نشرت جدول الترم الحالي — وإلا بيشوف الطلاب جدول الترم الماضي.'))return;
@@ -1519,7 +1722,8 @@ function seasonCard(){
         h.windowCustom?' <span style="color:var(--warn,#f59e0b)">يدوية</span>':''}</b></div>
     <div class="kv"><span>التنبيه الطارئ (Pushover)</span>
       <b>${h.pushoverReady
-        ? `${esc(h.pushoverMode||'off')}${h.pushoverMode==='off'?' — مخفيّ':''}`
+        ? `${esc(h.pushoverMode||'off')} — ${({off:'مخفيّ',link:'رابط التجربة فقط',
+             addon:'لمن اشترى الإضافة',all:'للجميع'})[h.pushoverMode||'off']||''}`
         : '<span style="color:var(--text3)">الرابط غير مضبوط في Render</span>'}</b></div>
     <div class="kv"><span>الجرس عند الطلاب</span>
       <b style="color:${open?'var(--open)':'var(--close)'}">${open?'مفتوح':'مقفول'}</b></div>
@@ -1535,12 +1739,13 @@ function seasonCard(){
     </div></div>`;
 }
 
-/* off لا أحد · link لمن يفتح ?pushover=1 · pro للمشتركين · all للجميع */
+/* off لا أحد · link لمن يفتح ?pushover=1 · addon لمن اشترى الإضافة · all للجميع.
+   والسيرفر يطبّق الوضع على الإرسال نفسه، لا على البطاقة وحدها */
 async function setPushover(){
   const cur=((HEALTH&&HEALTH.monitorInfo)||{}).pushoverMode||'off';
-  const m=prompt('وضع Pushover — off / link / pro / all\n\n'+
-    'off: ما يشوفه أحد\nlink: لمن تعطيه رابط ?pushover=1\n'+
-    'pro: للمشتركين\nall: للجميع',cur);
+  const m=prompt('وضع Pushover — off / link / addon / all\n\n'+
+    'off: ما يستلمه أحد\nlink: لمن تعطيه رابط ?pushover=1\n'+
+    'addon: لمن اشترى الإضافة (أو فعّلتها له من درجه)\nall: للجميع',cur);
   if(m===null||m.trim()===cur)return;
   try{
     const r=await api('pushover-mode',{body:{mode:m.trim()}});
@@ -1757,6 +1962,36 @@ function renderSys(){
         ${mOn?'▶️ شغّل الموقع':'⏸️ اقفل الموقع'}</button>
     </div>
     ${mOn&&h.maintenanceMsg?`<div class="maint-msg">${esc(h.maintenanceMsg)}</div>`:''}
+  </div>`;
+
+  /* ── الفترة المجانية ── مفتاح يوم الإطلاق */
+  const bOn=h.freeBeta!==false;
+  const beta=`<div class="maint ${bOn?'':'on'}">
+    <div class="maint-top">
+      <div>
+        <div class="maint-t">${bOn?'🎁 الفترة المجانية شغّالة':'💳 الفترة المجانية منتهية'}</div>
+        <div class="maint-s">${bOn
+          ?'كل الميزات مفتوحة لكل مسجّل. أطفئها يوم إطلاق الاشتراك.'
+          :'الميزات المدفوعة للمشتركين فقط.'}</div>
+      </div>
+      <button class="mini ${bOn?'no':'go'}" onclick="toggleBeta(${bOn?'false':'true'})">
+        ${bOn?'💳 أنهِ الفترة':'🎁 رجّعها'}</button>
+    </div>
+  </div>`;
+
+  /* ── الأسعار ── بالريال هنا وبالهللة في السيرفر */
+  const P=h.pricing||{};
+  const pricing=`<div class="gauge" style="margin-bottom:12px">
+    <div class="maint-t">💰 الأسعار والحدود</div>
+    <div class="gauge-sub">المبالغ بالريال. رصيد الداعي لازم أقل مما يدفعه صديقه.</div>
+    <div class="price-grid">${PRICE_FIELDS.map(([k,l,money])=>
+      `<label for="pf_${k}">${l}</label>
+       <input id="pf_${k}" type="number" step="${money?'0.5':'1'}" min="0"
+         value="${P[k]===undefined?'':(money?sar(P[k]):P[k])}">`).join('')}
+    </div>
+    <div class="row-meta" style="margin-top:10px">
+      <button class="mini go" onclick="savePricing()">حفظ الأسعار</button>
+    </div>
   </div>`;
 
   /* ── جدول الاختبارات النهائية ── */
@@ -2187,7 +2422,7 @@ function renderSys(){
     </div>
   </div>`;
 
-  box.innerHTML=maint+monCard+pwCard+cacheCard+finals+alerts+liveBox+gauge+spark+detail;
+  box.innerHTML=maint+beta+pricing+monCard+pwCard+cacheCard+finals+alerts+liveBox+gauge+spark+detail;
 }
 
 /* ══════════ المراقبة ══════════ */
