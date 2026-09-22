@@ -2003,6 +2003,13 @@ if (!window.PlanLogic) {
     currentPrepSem: _n, retakeList: _e,
     calcGPA: function () { return { gpa: null, hrs: 0, n: 0, pts: 0 } },
     calcProjected: function () { return { gpa: null, hrs: 0, n: 0 } },
+    OFFER_MAJORS: [], NOT_OFFERED: {},
+    nextTermCode: function (c) { return c }, offerKnown: _f, notOfferedIn: _f,
+    skipAhead: _0, nextOffered: _n, offerWarn: _n,
+    suggestNext: function () {
+      return { crit: [], opt: [], hours: 0, internAvailable: false,
+               admOnly: false, prepSem: null };
+    },
   };
 }
 
@@ -2064,8 +2071,11 @@ function planOf(code){ return PlanLogic.planOf(code,PLAN_VER) }
    الفعليتين لا نعيد حسابهما — applyMajor هي من تبنيهما، فنضمن إن
    الحساب يجري على نفس ما يُرسم بالضبط. */
 function planCtx(){
+  /* activeTermCode تقرأ قائمة الترم من الصفحة — تبقى هنا، وقيمتها
+     تدخل السياق. المنطق المشترك ما يلمس DOM أبداً. */
   return PlanLogic.ctxOf({major:MAJOR,planVer:PLAN_VER,prep:prepOn(),
-    completed,grades,sems:PLAN,tech:TECH_ELECTIVES,total:TOTAL_CR});
+    completed,grades,sems:PLAN,tech:TECH_ELECTIVES,total:TOTAL_CR,
+    term:(typeof activeTermCode==='function')?activeTermCode():undefined});
 }
 /* لو غابت الخطط نكمل بقوائم فاضية — العرض يتكفّل بالرسالة، لا انهيار هنا */
 let PLAN=(planOf(MAJOR)||{}).sems||[];
@@ -2186,54 +2196,20 @@ function isInternship(c){return PlanLogic.isInternship(c)}
 /* أول مستوى تحضيري ما خلّصه الطالب — التحضيري متسلسل، مستوى بعد مستوى */
 function currentPrepSem(){return PlanLogic.currentPrepSem(planCtx())}
 
-/* ═══ جدول الطرح المعلن — الميكانيكال ═══
-   الجامعة نشرت «semester-aligned offering plan» يحدد المواد التي
-   **لن تُطرح** في كل ترم حتى 2028/2029. المهم فيه ليس المنع بل
-   العكس: مادة لا تُطرح في الربيع تعني أن الخريف فرصتها الوحيدة،
-   وتفويتها يؤخّر الطالب سنة كاملة لا ترماً.
-
-   ملاحظة على الوثيقة: كُتب «MEEN 2313 Materials Engineering»
-   و«MEEN 2313 Solid Mechanics» بنفس الرقم — خطأ مطبعي واضح،
-   والصحيح 2311 للمواد و2313 للصلبة. صُحّح هنا.
-
-   الترميز: آخر رقمين من كود الترم — 10 خريف · 20 ربيع · 30 صيف. */
-const OFFER_MAJORS=['MEEN','MEEN_OLD'];   /* الجدول يخص الميكانيكال وحده */
-
-/* ترم → المواد التي لا تُطرح فيه */
-const NOT_OFFERED={
-  '202620':['MEEN 2312'],
-  '202710':['MEEN 2311','MEEN 2313'],
-  '202720':['MEEN 2312','MEEN 3394','MEEN 3311','MEEN 3391','MEEN 3101'],
-  '202810':['MEEN 2311','MEEN 2313','MEEN 3432','MEEN 3333','MEEN 3395','MEEN 3111'],
-  '202820':['MEEN 2312','MEEN 3394','MEEN 3311','MEEN 3391','MEEN 3101',
-            'MEEN 4393','MEEN 4392','MEEN 4322','ELEC 1'],
-  '202910':['MEEN 2311','MEEN 2313','MEEN 3432','MEEN 3333','MEEN 3395','MEEN 3111']
-};
+/* ═══ جدول الطرح المعلن — المصدر في shared/plans.js ═══
+   البيانات (OFFER_MAJORS · NOT_OFFERED) والمنطق كلها هناك، وما بقي
+   لهما مستهلك في الصفحة — فما نحتفظ بمرجع ميت. مغلّفات فقط تحت. */
 
 /* الترم الذي يليه مباشرة — للسؤال: هل تُطرح المرة القادمة؟ */
-function nextTermCode(code){
-  const y=String(code).slice(0,4), k=String(code).slice(4);
-  if(k==='10')return y+'20';                    /* خريف ← ربيع نفس السنة */
-  if(k==='20')return y+'30';                    /* ربيع ← صيف */
-  return (parseInt(y,10)+1)+'10';               /* صيف ← خريف السنة الجاية */
-}
-function offerKnown(code){ return Object.prototype.hasOwnProperty.call(NOT_OFFERED,String(code)) }
-function notOfferedIn(code,c){ return (NOT_OFFERED[String(code)]||[]).includes(c) }
+function nextTermCode(code){return PlanLogic.nextTermCode(code)}
+function offerKnown(code){return PlanLogic.offerKnown(code)}
+function notOfferedIn(code,c){return PlanLogic.notOfferedIn(code,c)}
 
 /* متى تُطرح المادة مرة أخرى؟
    نتخطى الصيف في العدّ: الجامعة ما تطرح مواد التخصص فيه عملياً،
    وما ذُكر في الوثيقة أصلاً — فعدّه «ترماً متاحاً» يعطي الطالب
    انطباعاً كاذباً بأن الفرصة قريبة. */
-function skipAhead(courseCode){
-  if(!OFFER_MAJORS.includes(MAJOR))return 0;
-  let code=nextTermCode(activeTermCode()), n=0;
-  while(n<6){
-    if(String(code).slice(4)==='30'){ code=nextTermCode(code); continue; }  /* نتجاوز الصيف */
-    if(!offerKnown(code) || !notOfferedIn(code,courseCode))break;
-    n++; code=nextTermCode(code);
-  }
-  return n;
-}
+function skipAhead(courseCode){return PlanLogic.skipAhead(planCtx(),courseCode)}
 /* الترم المعروض حالياً في البحث — هو مرجع الطالب للتخطيط */
 function activeTermCode(){
   const el=document.getElementById('term');
@@ -2266,28 +2242,9 @@ function termLabel(code){
   return (LANG==='ar'?name:en)+' '+start+'/'+(start+1);
 }
 /* أول ترم قادم تُطرح فيه المادة */
-function nextOffered(courseCode){
-  let code=nextTermCode(activeTermCode());
-  for(let i=0;i<8;i++){
-    if(String(code).slice(4)!=='30' &&
-       (!offerKnown(code) || !notOfferedIn(code,courseCode))) return code;
-    code=nextTermCode(code);
-  }
-  return null;
-}
+function nextOffered(courseCode){return PlanLogic.nextOffered(planCtx(),courseCode)}
 /* تحذير جاهز للعرض، أو فراغ */
-function offerWarn(courseCode){
-  if(!OFFER_MAJORS.includes(MAJOR))return null;
-  /* المادة المنتهية ما يهمّ متى تُطرح — والخطة مليانة منتهيات،
-     فالتحذير عليها ضجيج يغطّي التحذير الذي يهم فعلاً. */
-  if(isPassed(courseCode))return null;
-  const now=activeTermCode();
-  if(notOfferedIn(now,courseCode)){
-    return {kind:'none',next:nextOffered(courseCode)};
-  }
-  const n=skipAhead(courseCode);
-  return n?{kind:'last',n,next:nextOffered(courseCode)}:null;
-}
+function offerWarn(courseCode){return PlanLogic.offerWarn(planCtx(),courseCode)}
 
 /* شارة صغيرة داخل صف المقترح */
 function offerBadge(code){
@@ -2315,48 +2272,11 @@ function offerLine(code){
 }
 
 function suggestNext(){
-  const cands=[]; let intern=null;
-  /* طالب التحضيري يشوف مستواه الحالي فقط.
-     وفي المستوى المتقدم يقدر ينزل معه مواد من تخصصه. */
-  /* ما يبدأ مقترح مواد التخصص إلا بعد ما يخلّص التحضيري كامل — يمنع الخربطة */
-  const pSem=currentPrepSem();
-  PLAN.forEach((sem,si)=>sem.courses.forEach(c=>{
-    /* المادة اللي رسب فيها لازم يعيدها — تبقى في المقترح */
-    if(isPassed(c.c)||c.el)return;   /* الراسب والمنسحب يبقيان في المقترح */
-    if(c.adm)return;                 /* مواد تنزّلها الإدارة — الطالب ما يسجّلها بنفسه */
-    if(c.prep && (!pSem || sem.id!==pSem.id))return;   /* مستوى التحضيري الحالي فقط */
-    if(!c.prep && pSem)return;                         /* مواد التخصص تنتظر إنهاء التحضيري */
-    if(!prereqCheck(c.c).ok)return;
-    const item={...c,order:si,unlocks:unlocksCount(c.c),retake:isFailed(c.c)};
-    if(isInternship(c)){
-      /* ما نعرضه إلا لو وصل ساعات السينيور فعلاً */
-      if(!intern && doneCredits()>=INTERN_MIN_CREDITS)intern=item;
-      return;   /* وفي كل الأحوال ما ينزل ضمن المواد العادية */
-    }
-    cands.push(item);
-  }));
-
-  /* مستوى تحضيري كل مواده تنزّلها الإدارة — نوضّح بدل ما نترك فراغاً */
-  const admOnly = !!pSem && !cands.length &&
-    pSem.courses.every(c=>c.adm||isPassed(c.c));
-
-  /* التطبيق العملي ينزل لحاله — ممنوع معه أي مادة */
-  if(intern && !cands.length)
-    return {crit:[intern],opt:[],hours:intern.h,internOnly:true};
-
-  /* «آخر فرصة» تسبق «يفتح مواد»: تأخير مادة يفتح غيرها يكلّف ترماً،
-     وتأخير مادة لا تُطرح الترم الجاي يكلّف سنة. الأثقل أولاً. */
-  const lastChance=c=>{const w=offerWarn(c.c);return (w&&w.kind==='last')?1:0};
-  cands.forEach(c=>{c.lastChance=lastChance(c)});
-  cands.sort((a,b)=>(b.prep?1:0)-(a.prep?1:0)||(b.retake?1:0)-(a.retake?1:0)
-    ||(b.lastChance-a.lastChance)||(b.unlocks-a.unlocks)||(a.order-b.order));
-  const crit=[],opt=[];let hrs=0;
-  /* مواد التحضيري أساسية دائماً وما يحدّها سقف الساعات */
-  cands.filter(c=>c.prep).forEach(c=>{crit.push(c);hrs+=c.h});
-  cands.filter(c=>!c.prep&&(c.retake||c.lastChance||c.unlocks>0)).forEach(c=>{if(hrs+c.h<=20){crit.push(c);hrs+=c.h}});
-  cands.filter(c=>!c.prep&&!c.retake&&c.unlocks===0).forEach(c=>{if(hrs+c.h<=20){opt.push(c);hrs+=c.h}});
-  return {crit,opt,hours:hrs,internAvailable:!!intern,admOnly,
-          prepLevel:pSem?(t('sem')[pSem.id]||pSem.label):null};
+  /* المشترك يرجع معرّف مستوى التحضيري؛ الترجمة هنا لأنها نص يُعرض */
+  const r=PlanLogic.suggestNext(planCtx());
+  if(r.internOnly)return r;
+  return Object.assign({},r,{prepLevel:r.prepSem
+    ?(t('sem')[r.prepSem.id]||r.prepSem.label):null});
 }
 
 /* ===== Tabs ===== */
