@@ -1508,6 +1508,7 @@ const OPS = {
   searchesCached: 0,   // منها المخدومة من الكاش
   searchStale: 0,      // مخدومة من نسخة قديمة (الجامعة واقعة)
   cacheFromMonitor: 0, // نسخ عبّأتها دورة المراقبة مجاناً للبحث
+  remindersSent: 0,    // تذكيرات وصلت أصحابها
   aiFails: 0,          // نداءات المساعد اللي فشلت
   aiUnlogged: 0,       // استهلاك انصرف وما انكتب سطره
   lastError: null
@@ -5610,6 +5611,11 @@ function aiMatchNames(q, names) {
   return out.sort((a, b) => b.score - a.score);
 }
 
+/* حدود التذكير */
+const AI_REMIND_MAX = 20;    /* معلّق لكل طالب */
+const AI_REMIND_DAYS = 200;  /* أبعد وقت */
+const AI_REMIND_LEN = 200;   /* أطول نص */
+
 /* تاريخ اليوم بتوقيت الرياض — تستعمله أدوات الاقتراح وكتلة المحادثة */
 const aiToday = () => riyadhNow().toISOString().slice(0, 10);
 
@@ -6168,6 +6174,59 @@ const AI_TOOLS = {
     },
   },
 
+
+
+  propose_reminder: {
+    tier: 'pro',
+    description: 'يقترح تذكيراً بوقت — توصل الطالب رسالة تلقرام في وقته. '
+      + '**ما يجدول شيئاً** — الطالب يضغط «تأكيد». لما يقول «ذكّرني بكذا '
+      + 'بكرة الساعة ٧» — حوّل كلامه لتاريخ ووقت بتوقيت الرياض.',
+    input_schema: { type: 'object', properties: {
+      date: { type: 'string', description: 'التاريخ YYYY-MM-DD' },
+      time: { type: 'string', description: 'الوقت HH:MM بتوقيت الرياض، ٢٤ ساعة' },
+      body: { type: 'string', description: 'نص التذكير — قصير وواضح' },
+      code: { type: 'string', description: 'كود مادة يخصّها التذكير — اختياري' } },
+      required: ['date', 'time', 'body'] },
+    run: async (ctx, a) => {
+      const d = String(a.date || '').trim(), tm = String(a.time || '').trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return { error: 'التاريخ بصيغة YYYY-MM-DD' };
+      const m = /^(\d{1,2}):(\d{2})$/.exec(tm);
+      if (!m) return { error: 'الوقت بصيغة HH:MM' };
+      const hh = +m[1], mi = +m[2];
+      if (hh > 23 || mi > 59) return { error: 'وقت غير صحيح' };
+      const body = String(a.body || '').trim().slice(0, AI_REMIND_LEN);
+      if (!body) return { error: 'وش أذكّرك فيه؟' };
+      /* الرياض +03:00 ثابتة بلا توقيت صيفي — فالتحويل مباشر */
+      const at = Date.parse(`${d}T${String(hh).padStart(2, '0')}:`
+        + `${String(mi).padStart(2, '0')}:00+03:00`);
+      if (!Number.isFinite(at)) return { error: 'ما فهمت الوقت' };
+      const now = Date.now();
+      if (at <= now) return { error: 'الوقت راح — حدّد وقتاً جاياً' };
+      if (at > now + AI_REMIND_DAYS * 86400000)
+        return { error: `أقصى شي ${AI_REMIND_DAYS} يوماً من اليوم` };
+      /* حد المعلّق: ما نخلّيه يكدّس تذكيرات بلا نهاية */
+      const mine = await sb('GET', 'reminders', { query:
+        `?user_id=eq.${encodeURIComponent(ctx.userId)}&sent_at=is.null` +
+        `&select=id&limit=${AI_REMIND_MAX + 1}` });
+      if (Array.isArray(mine) && mine.length >= AI_REMIND_MAX)
+        return { error: `عندك ${AI_REMIND_MAX} تذكيرات معلّقة — احذف واحداً أول` };
+      /* مادة من جدوله — للربط لا أكثر */
+      let crn = null, code = null;
+      if (a.code) {
+        const want = String(a.code).toUpperCase().replace(/\s+/g, ' ').trim();
+        const rows = await aiSchedule(ctx);
+        const hit = rows.find(r =>
+          String(r.course_code || '').toUpperCase().replace(/\s+/g, ' ').trim() === want);
+        if (hit) { crn = String(hit.crn); code = hit.course_code }
+      }
+      /* البيئة من السيرفر لا من المتصفح: هو اللي يعرفها بيقين، وهو
+         اللي بيرسل. القاعدة مشتركة فالصف لازم يعرف من يخدمه. */
+      return { proposal: { action: 'reminder', at: new Date(at).toISOString(),
+          atLocal: `${d} ${String(hh).padStart(2, '0')}:${String(mi).padStart(2, '0')}`,
+          body, crn, code, env: SITE_ENV },
+        note: 'اقتراح — ما انجدول شي. ويحتاج تلقرام مربوطاً ليوصله.' };
+    },
+  },
 
   propose_add_section: {
     tier: 'free',
@@ -6964,6 +7023,62 @@ async function aiStatus(userId) {
 
 /* ═══ نهاية كتلة المحادثة ═══
    الاختبارات تقتطع ما بين العلامتين وتشغّله — لا تغيّر العلامتين. */
+
+/* ═══ دورة التذكيرات (CLAUDE.md §٩-أ-٤) ═══
+   الطالب يطلب تذكيراً بوقت، ونرسله له على تلقرام. تُفحص كل دقيقة
+   لأن التذكير بدقيقته — بخلاف بقية الدوريات.
+
+   البيئتان تتشاركان القاعدة، فكل بيئة ترسل **تذكيرات صفوفها وحدها**
+   (`env` في الصف): بلا هذا يوصل الطالب رسالتين، أو تجرّب على dev
+   فيستلم طلاب الإنتاج. وهذا بدل حرس `SITE_ENV === 'prod'` المعتاد،
+   لأن التذكير طلب صريح من صاحبه لا إشعاراً جماعياً — فلازم يُجرَّب.
+
+   والحجز قبل الإرسال: تحديث مشروط بـ`sent_at is null`، ولو رجع صف
+   فنحن من حجزه. بلا هذا تُرسل مرتين عند إعادة النشر أو تداخل دورتين. */
+const REMIND_TICK = 60 * 1000;
+const REMIND_BATCH = 50;
+let REMIND_BUSY = false;
+
+async function remindersTick() {
+  if (REMIND_BUSY || !SB_URL) return;
+  REMIND_BUSY = true;
+  try {
+    const now = new Date().toISOString();
+    const due = await sb('GET', 'reminders', { query:
+      `?sent_at=is.null&at=lte.${encodeURIComponent(now)}` +
+      `&env=eq.${encodeURIComponent(SITE_ENV)}` +
+      `&select=id,user_id,body,crn,at&order=at.asc&limit=${REMIND_BATCH}` });
+    if (!Array.isArray(due) || !due.length) return;
+
+    /* ملفات أصحابها دفعة واحدة — لا قراءة لكل صف */
+    const ids = [...new Set(due.map(r => r.user_id))]
+      .filter(x => /^[0-9a-f-]{36}$/i.test(String(x)));
+    const profs = ids.length ? await sb('GET', 'profiles', { query:
+      `?id=in.(${ids.join(',')})&select=id,telegram_chat_id,notif_prefs` }) : [];
+    const byId = {};
+    if (Array.isArray(profs)) profs.forEach(p => { byId[p.id] = p });
+
+    for (const r of due) {
+      /* الحجز أولاً: لو ما رجع صف فغيرنا سبقنا — ما نرسل */
+      const claim = await sb('PATCH', 'reminders', {
+        query: `?id=eq.${encodeURIComponent(r.id)}&sent_at=is.null`,
+        body: { sent_at: new Date().toISOString() },
+        prefer: 'return=representation' }).catch(() => null);
+      if (!Array.isArray(claim) || !claim.length) continue;
+
+      const p = byId[r.user_id];
+      /* المفتاح الرئيسي وربط تلقرام — بـwants وحدها لا بفحص ثانٍ.
+         ولا نوع فرعي للتذكير: طلبه الطالب بنفسه. */
+      if (!wants(p, 'on')) continue;
+      OPS.remindersSent = (OPS.remindersSent || 0) + 1;
+      await sendMsg(p.telegram_chat_id,
+        '⏰ <b>تذكير</b>\n\n' + esc(String(r.body || '').slice(0, 300))
+        + '\n\n<i>طلبته من مساعد جدولك</i>').catch(() => {});
+    }
+  } catch (e) {
+    console.log('remindersTick: ' + (e && e.message));
+  } finally { REMIND_BUSY = false }
+}
 
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -8292,6 +8407,8 @@ server.listen(PORT, () => {
   setInterval(() => { notifyTick().catch(() => {}) }, 10 * 60 * 1000);
   /* البلاغات: فحص خفيف كل 3 دقائق — صف واحد لا أكثر */
   setInterval(() => { reportsWatch().catch(() => {}) }, 3 * 60 * 1000);
+  /* التذكيرات بدقيقتها، وكل بيئة ترسل صفوفها وحدها */
+  setInterval(() => { remindersTick().catch(() => {}) }, REMIND_TICK);
   reportsWatch().catch(() => {});
 
   /* الاستعادة أولاً، ثم نسمح بالكتابة — وإلا ضاعفنا ما استعدناه */

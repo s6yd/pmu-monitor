@@ -432,6 +432,38 @@ const openSheet = async page => {
        'والمراقبة تمرّ لدالة الموقع نفسها بصف الشعبة — بحدودها كما هي');
     ok(/تم/.test(await lastCard()), 'والبطاقة تصير «تم»');
 
+    /* التذكير: يحتاج تلقرام مربوطاً، والبيئة تجي من السيرفر */
+    await page.evaluate(() => {
+      window.__tg = false;
+      window.tgLinked = () => window.__tg;
+      window.addReminderDirect = (at, body, crn, env) => {
+        if (!window.__tg) return Promise.resolve(false);
+        window.__ran.push(['reminder', at, body, env]);
+        return Promise.resolve(true);
+      };
+    });
+    ST.answer.proposal = { action: 'reminder', at: '2099-03-01T16:00:00.000Z',
+      atLocal: '2099-03-01 19:00', body: 'ذاكر للكويز', env: 'dev' };
+    await page.fill('#aiQ', 'ذكّرني');
+    await page.evaluate(() => aiSend());
+    await page.waitForTimeout(450);
+    ok(/ذاكر للكويز/.test(await lastCard()), 'بطاقة التذكير بنصّه');
+    ok(/19:00/.test(await lastCard()), 'وبوقته بتوقيت الرياض لا UTC');
+    await page.click('#aiLog .ai-act-go');
+    await page.waitForTimeout(300);
+    eq(await page.evaluate(() => window.__ran.length), 3,
+       '**بلا تلقرام ما ينجدول شي**');
+    /* نربط تلقرام ونعيد */
+    await page.evaluate(() => { window.__tg = true });
+    await page.fill('#aiQ', 'ذكّرني');
+    await page.evaluate(() => aiSend());
+    await page.waitForTimeout(450);
+    await page.click('#aiLog .ai-act-go');
+    await page.waitForTimeout(300);
+    eq(await page.evaluate(() => window.__ran[window.__ran.length - 1]),
+       ['reminder', '2099-03-01T16:00:00.000Z', 'ذاكر للكويز', 'dev'],
+       'وبالربط ينجدول — **والبيئة من السيرفر لا من المتصفح**');
+
     /* والنص المحقون في الملاحظة يُهرَّب */
     ST.answer.proposal = { action: 'event', crn: '10002', kind: 'quiz',
       date: '2099-03-01', note: '<img src=x onerror=alert(1)>', code: 'MATH 1422' };
