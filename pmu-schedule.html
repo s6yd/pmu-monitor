@@ -788,15 +788,21 @@ transition:opacity .25s ease}
 .ai-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px}
 .ai-t{font-size:16px;font-weight:700}
 .ai-sub{font-size:11.5px;color:var(--text3);line-height:1.6}
-.ai-log{max-height:44vh;overflow-y:auto;margin:14px 0 10px}
+/* dvh لا vh: مع لوحة المفاتيح المفتوحة يبقى الحقل والأزرار ظاهرة.
+   vh تحسب الشاشة كاملة فينزل النصف تحت اللوحة. */
+.ai-log{max-height:44vh;max-height:38dvh;overflow-y:auto;margin:14px 0 10px}
 .ai-msg{display:flex;margin-bottom:10px}
 .ai-msg.me{justify-content:flex-end}
-.ai-b{max-width:88%;border-radius:14px;padding:9px 12px;font-size:13.5px;
-line-height:1.85;white-space:pre-wrap;overflow-wrap:anywhere}
+/* break-word لا anywhere: anywhere تخلّي المتصفح يحسب أضيق عرض ممكن
+   من الحرف لا الكلمة، فالفقاعة تنضغط ويطلع السطر مكسوراً في نصّه.
+   break-word تكسر الكلمة الطويلة عند الحاجة وحدها. */
+.ai-b{max-width:88%;border-radius:14px;padding:10px 13px;font-size:14px;
+line-height:1.8;white-space:pre-wrap;overflow-wrap:break-word}
 .ai-msg.me .ai-b{background:var(--accent);color:#fff}
 .ai-msg.bot .ai-b{background:var(--card);border:1px solid var(--border)}
 .ai-msg.bot .ai-b.warn{border-color:var(--warn);color:var(--warn)}
-.ai-tools{font-size:10.5px;color:var(--text3);margin-top:4px;font-family:var(--mono)}
+/* أسماء الأدوات تبقى في لوحة التجربة وحدها — الطالب ما يهمّه
+   find_course ولا sections، وتشوّش أكثر ما تفيد. */
 /* بطاقة الفعل: ما ينفّذ شي إلا بضغط الطالب */
 .ai-act{background:var(--card);border:1px solid var(--accent);border-radius:14px;
 padding:11px 12px;margin:0 0 10px}
@@ -804,7 +810,7 @@ padding:11px 12px;margin:0 0 10px}
 .ai-act.done.err{border-color:var(--close);color:var(--close)}
 .ai-act-t{font-size:13px;font-weight:700;line-height:1.7}
 .ai-act-n{font-size:12px;color:var(--text3);margin-top:4px;line-height:1.6;
-overflow-wrap:anywhere}
+overflow-wrap:break-word}
 .ai-act-b{display:flex;gap:8px;margin-top:10px}
 .ai-act-go{flex:1;background:var(--accent);color:#fff;border:none;border-radius:11px;
 padding:9px;font-size:13px;font-weight:700;font-family:var(--sans);cursor:pointer}
@@ -814,8 +820,10 @@ border-radius:11px;padding:9px 14px;font-size:13px;font-family:var(--sans);curso
 .ai-ex button{background:var(--card);border:1px solid var(--border2);color:var(--text2);
 border-radius:20px;padding:6px 12px;font-size:12px;font-family:var(--sans);cursor:pointer}
 .ai-bar{display:flex;gap:8px;align-items:center}
+/* 16px بالضبط: سفاري iOS يزوّم الصفحة تلقائياً عند التركيز على أي
+   حقل خطه أصغر من ذلك — فتنخبص الواجهة وما ترجع. */
 .ai-bar input{flex:1;background:var(--card);border:1px solid var(--border2);color:var(--text);
-border-radius:12px;padding:11px 13px;font-size:14px;font-family:var(--sans)}
+border-radius:12px;padding:11px 13px;font-size:16px;font-family:var(--sans)}
 .ai-bar input:focus{outline:none;border-color:var(--accent)}
 .ai-bar button{background:var(--accent);color:#fff;border:none;border-radius:12px;
 padding:11px 15px;font-size:13px;font-weight:600;font-family:var(--sans);cursor:pointer}
@@ -5879,6 +5887,7 @@ function renderAiSheet(keepLog){
   const u=st.used||null;
   const left=u?Math.max(0,(u.dayCap||0)-(u.day||0)):null;
   box.innerHTML=
+    '<div class="guide-grip"></div>'+
     '<div class="ai-head"><div><div class="ai-t">'+escapeHtml(t('aiTitle'))+'</div>'+
     '<div class="ai-sub">'+escapeHtml(t('aiSub'))+'</div></div>'+
     '<button onclick="closeAi()" aria-label="'+escapeHtml(t('aiClose'))+'"'+
@@ -5913,11 +5922,11 @@ function renderAiLog(){
     m.role==='act' ? aiActCard(m,i)
     : m.role==='me'
       ? '<div class="ai-msg me"><div class="ai-b">'+escapeHtml(m.text)+'</div></div>'
-      : '<div class="ai-msg bot"><div><div class="ai-b'+(m.bad?' warn':'')+'">'+
-        escapeHtml(m.text)+'</div>'+
-        (m.tools&&m.tools.length
-          ? '<div class="ai-tools" dir="ltr">'+escapeHtml(m.tools.join(' · '))+'</div>':'')+
-        '</div></div>').join('');
+      /* بلا div وسيط: كان يلفّ الفقاعة مع سطر الأدوات، وبعد حذفه بقي
+         وحده عنصرَ الـflex — فـmax-width:88% تُحسب منه لا من السجل،
+         وهو ينضغط لأضيق عرض فينكسر النص في نصّه (١٧٣px من ٣٥٢). */
+      : '<div class="ai-msg bot"><div class="ai-b'+(m.bad?' warn':'')+'">'+
+        escapeHtml(m.text)+'</div></div>').join('');
   log.scrollTop=log.scrollHeight;
 }
 

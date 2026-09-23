@@ -59,6 +59,12 @@ function makeServer(st) {
       }
       if (u.endsWith('/ai-top')) return res.end(JSON.stringify(st.top));
       if (u.endsWith('/ai-ping')) return res.end(JSON.stringify(st.ping));
+      if (u.endsWith('/cache-warm')) {
+        st.warms.push(req.method);
+        return res.end(JSON.stringify(st.warm || { ok: true, term: '202710',
+          pulls: [{ gender: 'M1', count: 900 }, { gender: 'F1', count: 800 }],
+          aiReady: true }));
+      }
       if (u.endsWith('/ai-ask')) {
         st.asks.push(JSON.parse(body || '{}'));
         return res.end(JSON.stringify(st.ask));
@@ -102,7 +108,7 @@ const openAi = async page => {
 
   /* ── ١) التبويب يفتح ويعرض ما يرجّعه السيرفر ── */
   {
-    const st = { ai: aiState(), top: topState(), posts: [], asks: [],
+    const st = { ai: aiState(), top: topState(), posts: [], asks: [], warms: [],
                  ping: { ok: true, model: 'claude-haiku-4-5', ms: 300 },
                  ask: { ok: true, answer: 'تمام' } };
     const { page, errs, close } = await open(browser, st);
@@ -122,7 +128,8 @@ const openAi = async page => {
     ok(/25/.test(t) && /200/.test(t), 'والسقوف');
     ok(/ما أُرسل/.test(t), 'وحالة تنبيه ٧٥٪');
     /* الأزرار الأربعة */
-    for (const fn of ['aiSetMode()', 'aiSetModel()', 'aiSetCaps()', 'aiPingBtn()'])
+    for (const fn of ['aiSetMode()', 'aiSetModel()', 'aiSetCaps()',
+                      'aiPingBtn()', 'aiWarmBtn()'])
       ok(await page.$(`#aiBody button[onclick="${fn}"]`) !== null, `زر ${fn}`);
     /* أكثر ١٠ طلاب */
     ok(/نورة/.test(t), 'أكثر الطلاب: الاسم');
@@ -144,7 +151,7 @@ const openAi = async page => {
                    fails: 3, unlogged: 2,
                    spend: { monthSar: 205, todaySar: 9, questions: 9000, pct: 102,
                             byEnv: { prod: 205 } } }),
-                 top: topState({ truncated: true }), posts: [], asks: [],
+                 top: topState({ truncated: true }), posts: [], asks: [], warms: [],
                  ping: {}, ask: {} };
     const { page, errs, close } = await open(browser, st);
     await openAi(page);
@@ -166,7 +173,7 @@ const openAi = async page => {
 
   /* ── ٣) الأزرار ترسل الحقول الصحيحة ── */
   {
-    const st = { ai: aiState(), top: topState(), posts: [], asks: [],
+    const st = { ai: aiState(), top: topState(), posts: [], asks: [], warms: [],
                  ping: { ok: false, error: 'model: not_found', type: 'not_found_error' },
                  ask: {} };
     const { page, errs, close } = await open(browser, st);
@@ -190,6 +197,13 @@ const openAi = async page => {
     eq(st.posts[2], { caps: { day: 30, dayFree: 6, term: 300, monthSar: 250 } },
        'والسقوف أرقاماً لا نصوصاً');
 
+    /* ملء الكاش: فعل إداري بضغطة — أدوات الشعب على dev كاشها بارد */
+    await page.click('#aiBody button[onclick="aiWarmBtn()"]');
+    await page.waitForTimeout(350);
+    eq(st.warms, ['POST'], 'زر ملء الكاش يرسل POST — فعل لا قراءة');
+    ok(/900|1700|جاهز/.test(await page.textContent('#toast').catch(() => '')),
+       'ويعرض كم شعبة وصلت');
+
     /* زر الاتصال يعرض خطأ المزوّد كما هو لا «تعذّر» */
     await page.click('#aiBody button[onclick="aiPingBtn()"]');
     await page.waitForTimeout(300);
@@ -201,7 +215,7 @@ const openAi = async page => {
 
   /* ── ٤) مربّع التجربة ── */
   {
-    const st = { ai: aiState({ mode: 'admin' }), top: topState(), posts: [], asks: [],
+    const st = { ai: aiState({ mode: 'admin' }), top: topState(), posts: [], asks: [], warms: [],
                  ping: {},
                  ask: { ok: true, answer: 'عندك MATH 1422 الساعة 10',
                         tools: ['my_day'], calls: 2, model: 'claude-haiku-4-5',
@@ -231,7 +245,7 @@ const openAi = async page => {
   /* ── ٥) وضع off يشرح للوحة، وجواب النموذج يُهرَّب ── */
   {
     const st = { ai: aiState({ mode: 'off' }), top: topState({ top: [] }),
-                 posts: [], asks: [], ping: {},
+                 posts: [], asks: [], warms: [], ping: {},
                  ask: { ok: false, why: 'off', answer: '<b>مقفل</b>' } };
     const { page, errs, close } = await open(browser, st);
     await openAi(page);

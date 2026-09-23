@@ -408,6 +408,33 @@ function fakeModel(ctx) {
        '**ولا كتابة واحدة في كل اقتراحات هذا القسم**');
   }
 
+  /* ══════ توقّع التخرج ══════ */
+  {
+    const g = await call('graduation_forecast', '{}');
+    ok(g.termsLeft > 0, 'التوقّع يرجّع ترمات — ' + g.termsLeft);
+    ok(!!g.graduatesIn && /^\d{6}$/.test(g.graduatesIn.term), 'وترم تخرّجه');
+    eq(g.graduatesIn.season, ({ '10': 'fall', '20': 'spring', '30': 'summer' })
+       [g.graduatesIn.term.slice(4)], 'وموسمه مطابق لرمزه');
+    ok(g.hoursLeft > 0, 'وساعاته الباقية');
+    ok(Array.isArray(g.plan) && g.plan.length === g.termsLeft,
+       'وخطة الترمات بعددها');
+    ok(g.plan.every(x => x.courses.length && x.hours > 0), 'وكل ترم بمواده');
+    /* **المسجّل الآن يُحسب** — u-pro عنده ALIS 1212 و MATH 1422 و COMM 1311 */
+    ok(g.countingNow.includes('MATH 1422'),
+       '**والمسجّل هذا الترم مذكور إنه محسوب**');
+    ok(!g.plan.some(x => x.courses.some(c => c.code === 'MATH 1422')),
+       'وما يتكرر في الترمات القادمة');
+    ok(/تقدير/.test(g.note || ''), 'ويقول إنه تقدير لا وعد');
+    eq(g.blocked, [], 'وما فيه مادة محجوبة');
+    /* الصيفي عند طلبه */
+    const gs = await call('graduation_forecast', '{"summer":true}');
+    ok(gs.plan.some(x => x.season === 'summer'), 'وبطلب الصيفي يدخل');
+    ok(!g.plan.some(x => x.season === 'summer'), 'وبدونه ما يدخل');
+    /* للمشتركين */
+    const gf = await callFree('graduation_forecast', '{}');
+    ok(!gf.termsLeft && /اشتراك/.test(gf.error || ''), 'والتوقّع للمشتركين');
+  }
+
   /* ══════ التذكير بوقت ══════ */
   {
     const n0 = SB_CALLS.length;
