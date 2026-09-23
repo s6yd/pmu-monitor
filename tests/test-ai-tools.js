@@ -56,6 +56,7 @@ const DB = {
     'u-nosched':{ id: 'u-nosched', major: 'COSC', plan_ver: 'new', is_pro: true },
     /* جدوله فيه محاضرة ومعمل بنفس كود المادة — لفحص جمع الساعات */
     'u-lab':{ id: 'u-lab', major: 'COSC', plan_ver: 'new', is_pro: true },
+    'u-meen':{ id: 'u-meen', major: 'MEEN', plan_ver: 'new', is_pro: true },
   },
   completed: {
     'u-pro':  [{ course_code: 'ALIS 1211', grade: 'A' }, { course_code: 'MATH 1422', grade: 'F' },
@@ -69,6 +70,7 @@ const DB = {
     'u-prep-null':[{ course_code: 'PRPC 0002', grade: 'A' }],
     'u-nosched':[{ course_code: 'ALIS 1211', grade: 'A' }, { course_code: 'MATH 1422', grade: 'F' }],
     'u-lab':[],
+    'u-meen':[],
   },
   /* جدول الطالب وغيابه ومواعيده — ولصاحبنا وللطالب الثاني،
      حتى نثبت إن ولا صف من الثاني يتسرّب. */
@@ -76,31 +78,31 @@ const DB = {
     'u-pro': [
       { user_id:'u-pro', slot:1, crn:'10001', course_code:'ALIS 1212', course_title:'Islamic Culture II',
         section:'01', course_date:'UT', course_timing:'0800 - 0850', room:'M-COBA - G034',
-        instructor:'د. أحمد', term:'202710' },
+        instructor:'Ahmad Salem', term:'202710' },
       { user_id:'u-pro', slot:1, crn:'10002', course_code:'MATH 1422', course_title:'Calculus I',
         section:'02', course_date:'UT', course_timing:'1000 - 1050', room:'M-COBA - G040',
-        instructor:'د. سارة', term:'202710' },
+        instructor:'Sara Nasser', term:'202710' },
       { user_id:'u-pro', slot:1, crn:'10003', course_code:'COMM 1311', course_title:'Communication',
         section:'03', course_date:'MW', course_timing:'0900 - 0950', room:'M-COBA - G012',
-        instructor:'د. خالد', term:'202710' },
+        instructor:'Khalid Aldhahr', term:'202710' },
       /* جدول ثانٍ — ما يظهر إلا لو طُلب */
       { user_id:'u-pro', slot:2, crn:'20001', course_code:'PHYS 1421', course_title:'Physics I',
         section:'01', course_date:'R', course_timing:'1200 - 1250', room:'M-SCI - 101',
-        instructor:'د. نورة', term:'202710' },
+        instructor:'Noura Faisal', term:'202710' },
     ],
     /* محاضرة ومعمل بنفس الكود (§٦: يُضافان ويُحذفان معاً) */
     'u-lab': [
       { user_id:'u-lab', slot:1, crn:'11001', course_code:'MATH 1422', course_title:'Calculus I',
         section:'01', course_date:'MW', course_timing:'0930 - 1045', room:'G001',
-        instructor:'د. سارة', term:'202710' },
+        instructor:'Sara Nasser', term:'202710' },
       { user_id:'u-lab', slot:1, crn:'11002', course_code:'MATH 1422', course_title:'Calculus I Lab',
         section:'L1', course_date:'R', course_timing:'1300 - 1545', room:'LAB-2',
-        instructor:'د. سارة', term:'202710' },
+        instructor:'Sara Nasser', term:'202710' },
     ],
     'u-other': [
       { user_id:'u-other', slot:1, crn:'90001', course_code:'MEEN 3311', course_title:'سرّ الطالب الثاني',
         section:'99', course_date:'MW', course_timing:'1400 - 1450', room:'F-ENG - 999',
-        instructor:'د. لا أحد', term:'202710' },
+        instructor:'Nobody Here', term:'202710' },
     ],
   },
   absences: {
@@ -125,14 +127,19 @@ const DB = {
   },
   /* التقييمات عامة — مجهولة الكاتب. صف مخفي لازم ما يرجع. */
   reviews: [
-    { user_id:'u-pro',  instructor_name:'د. أحمد', rating:5, course_code:'ALIS 1212',
+    { user_id:'u-pro',  instructor_name:'Ahmad Salem', rating:5, course_code:'ALIS 1212',
       comment:'شرحه ممتاز', tags:['واضح','متعاون'], agree:3, disagree:0, hidden:false },
-    { user_id:'u-other',instructor_name:'د. أحمد', rating:3, course_code:'ALIS 1212',
+    { user_id:'u-other',instructor_name:'Ahmad Salem', rating:3, course_code:'ALIS 1212',
       comment:'الاختبارات صعبة', tags:['صعب'], agree:1, disagree:1, hidden:false },
-    { user_id:'u-free', instructor_name:'د. أحمد', rating:1, course_code:'ALIS 1212',
+    { user_id:'u-free', instructor_name:'Ahmad Salem', rating:1, course_code:'ALIS 1212',
       comment:'تعليق مخفي ما يرجع', tags:['سيء'], agree:0, disagree:9, hidden:true },
-    { user_id:'u-other',instructor_name:'د. سارة', rating:4, course_code:'MATH 1422',
+    { user_id:'u-other',instructor_name:'Sara Nasser', rating:4, course_code:'MATH 1422',
       comment:'ممتازة', tags:['واضح'], agree:2, disagree:0, hidden:false },
+    /* اسم مركّب يُكتب كلمة واحدة لاتينياً وكلمتين عربياً — هذي بالضبط
+       اللي فشلت مع محمد: «ابو محمد معين الدين» */
+    { user_id:'u-pro', instructor_name:'Abumuhammad Moinuddeen', rating:3,
+      course_code:'COMM 1311', comment:'واجبات كثيرة', tags:['صارم'],
+      agree:1, disagree:0, hidden:false },
   ],
 };
 let SB_CALLS = [];
@@ -355,6 +362,59 @@ function fakeModel(ctx) {
     ok(r.known === true && r.count === 5, 'GEIT 1412 تفتح ٥ — ' + r.count);
     ok(r.unlocks.every(c => c.code && c.name), 'وترجع أسماءها لا عددها فقط');
   }
+  /* ══════ جسر العربي: الطالب ما يكتب كأسماء الجامعة ══════ */
+  {
+    /* ── المواد بلغة الطالب ── */
+    const one = async q => {
+      const r = await call('find_course', JSON.stringify({ query: q }));
+      return (r.matches && r.matches[0]) ? r.matches[0].code : ('— ' + (r.error || ''));
+    };
+    eq(await one('تفاضل ١'), 'MATH 1422', '«تفاضل ١» ⇒ Calculus I');
+    eq(await one('تفاضل ٢'), 'MATH 1423', '«تفاضل ٢» ⇒ Calculus II — لا III');
+    eq(await one('تفاضل 3'), 'MATH 1324', 'والرقم اللاتيني مثل الهندي');
+    eq(await one('فيزياء ٢'), 'PHYS 1422', '«فيزياء ٢» ⇒ Physics II');
+    /* كيمياء وثيرمو في خطة الميكانيكال لا الحاسب — كل طالب وخطته */
+    const MEEN = await aiStudentCtx('u-meen');
+    const oneM = async q => {
+      const r = await aiRunTool('find_course', { query: q }, MEEN);
+      return (r.matches && r.matches[0]) ? r.matches[0].code : ('— ' + (r.error || ''));
+    };
+    eq(await oneM('كيمياء'), 'CHEM 1421', '«كيمياء» ⇒ Chemistry');
+    eq(await oneM('thermo'), 'GEEN 2313', 'والإنجليزي المختصر كذلك');
+    eq(await oneM('دوائر'), 'GEEN 3314', 'و«دوائر» ⇒ Electric Circuits');
+    eq(await oneM('موائع'), 'GEEN 3311', 'و«موائع» ⇒ Fluid Mechanics');
+    eq(await oneM('مشروع التخرج'), 'MEEN 4396', 'و«مشروع التخرج» ⇒ Senior Design');
+    ok((await one('كيمياء')).startsWith('—'),
+       'وما نرجّع مادة مو في خطة الطالب — خطة الحاسب ما فيها كيمياء');
+    eq(await one('MATH 1422'), 'MATH 1422', 'والكود نفسه يبقى أدق مطابقة');
+    /* الهمزة: arNorm يحذفها، فمفاتيح الخريطة تُطبَّع برمجياً لا بيدي */
+    ok((await one('مبادئ')).startsWith('—') === false, '«مبادئ» بهمزة تُطابق');
+    const no = await call('find_course', '{"query":"مادة ما لها وجود"}');
+    eq(no.found, 0, 'وما نخترع: نص غير معروف يرجع صفر');
+    ok(/ما لقيت|كود/.test(no.error || ''), 'ومعه رسالة «ما أعرف»');
+    const many = await call('find_course', '{"query":"تفاضل"}');
+    ok(many.found >= 2, 'و«تفاضل» وحدها ترجع أكثر من مرشّح');
+    eq(many.confident, false, 'وتقول إنها مو واثقة فيسأل الطالب');
+
+    /* ── الدكاترة بلغة الطالب ── */
+    const who = async q => {
+      const r = await call('instructor_reviews', JSON.stringify({ instructor: q }));
+      return r.matchedName || (r.instructors && r.instructors[0] && r.instructors[0].name)
+             || ('— ' + (r.error || ''));
+    };
+    eq(await who('ابو محمد معين الدين'), 'Abumuhammad Moinuddeen',
+       '**«ابو محمد معين الدين» ⇒ Abumuhammad Moinuddeen** — الحالة اللي فشلت');
+    eq(await who('معين الدين'), 'Abumuhammad Moinuddeen',
+       'وجزء الاسم يكفي — الاسم كلمتان عربياً وكلمة لاتينياً');
+    eq(await who('احمد سالم'), 'Ahmad Salem', 'و«احمد سالم» ⇒ Ahmad Salem');
+    eq(await who('سارة ناصر'), 'Sara Nasser', 'و«سارة ناصر» ⇒ Sara Nasser');
+    eq(await who('Moinuddeen'), 'Abumuhammad Moinuddeen',
+       'واللاتيني يشتغل كما كان — ما كسرنا القديم');
+    const bad = await call('instructor_reviews', '{"instructor":"فلان الفلاني"}');
+    eq(bad.found, 0, 'واسم ما له وجود يرجع صفر لا أقرب شبيه عشوائي');
+
+  }
+
   /* ── جمع الساعات: المعمل ما يُحسب مرتين ── */
   {
     const LAB = await aiStudentCtx('u-lab');
@@ -579,13 +639,13 @@ function fakeModel(ctx) {
     /* ٦ب) نسخّن الكاش بأيدينا — كما تسخّنه الدورة */
     ctxObj.coursesCache.set('202710|ALL|M1', { at: Date.now(), courses: [
       { crn:'10002', courseCode:'MATH 1422', courseTitle:'Calculus I', section:'02',
-        instructor:'د. سارة', courseDate:'UT', courseTiming:'10:00 - 10:50',
+        instructor:'Sara Nasser', courseDate:'UT', courseTiming:'10:00 - 10:50',
         room:'M-COBA - G040', status:'OPEN', seats:5 },
       { crn:'10009', courseCode:'MATH 1422', courseTitle:'Calculus I', section:'09',
-        instructor:'د. سارة', courseDate:'MW', courseTiming:'08:00 - 08:50',
+        instructor:'Sara Nasser', courseDate:'MW', courseTiming:'08:00 - 08:50',
         room:'M-COBA - G041', status:'CLOSE', seats:0 },
       { crn:'10001', courseCode:'ALIS 1212', courseTitle:'Islamic Culture II', section:'01',
-        instructor:'د. أحمد', courseDate:'UT', courseTiming:'08:00 - 08:50',
+        instructor:'Ahmad Salem', courseDate:'UT', courseTiming:'08:00 - 08:50',
         room:'M-COBA - G034', status:'OPEN', seats:12 },
     ] });
 
@@ -600,8 +660,15 @@ function fakeModel(ctx) {
     eq(open.found, 1, 'المفتوحة فقط: وحدة');
     eq(open.sections[0].crn, '10002', 'وهي المفتوحة');
 
-    const byWho = await callFree('sections', '{"instructor":"سارة"}');
+    const byWho = await callFree('sections', '{"instructor":"Sara"}');
     eq(byWho.found, 2, 'البحث بالدكتور يرجع شعبه');
+    /* والاسم عربياً كذلك — الكاش لاتيني والطالب يكتب «سارة» */
+    const byAr = await callFree('sections', '{"instructor":"سارة"}');
+    eq(byAr.found, 2, 'والبحث باسم الدكتور عربياً يرجع نفس شعبه');
+    ok((byAr.sections || []).every(x => x.instructor === 'Sara Nasser'),
+       'وشعبه هو لا غيره');
+    const arNo = await callFree('sections', '{"instructor":"فلان الفلاني"}');
+    eq(arNo.found, 0, 'واسم عربي ما له وجود يرجع صفر لا أقرب شبيه');
 
     const ghostSec = await callFree('sections', '{"code":"ZZZZ 9999"}');
     eq(ghostSec.found, 0, 'مادة مجهولة: صفر');
@@ -618,7 +685,7 @@ function fakeModel(ctx) {
 
     /* ٦د) التقييمات — ملخّص مجهول الكاتب */
     const rv = await callFree('instructor_reviews', '{"instructor":"أحمد"}');
-    eq(rv.found, 2, 'تقييمان ظاهران لـد. أحمد (المخفي ما رجع)');
+    eq(rv.found, 2, 'تقييمان ظاهران لـAhmad Salem (المخفي ما رجع)');
     const A = rv.instructors[0];
     eq(A.average, 4, 'المتوسط ٤ — (٥+٣)÷٢');
     eq(A.reviews, 2, 'وعددها ٢');
@@ -659,10 +726,10 @@ function fakeModel(ctx) {
     /* ٦و) النهائيات */
     ctxObj.finalsCache.M = { at: Date.now(), exams: [
       { crn:'10002', code:'MATH 1422', title:'Calculus I', section:'02',
-        instructor:'د. سارة', building:'COBA', room:'G040',
+        instructor:'Sara Nasser', building:'COBA', room:'G040',
         day:'Sunday', date:'2099-01-20', hour:'08:00', gender:'M' },
       { crn:'10001', code:'ALIS 1212', title:'Islamic Culture II', section:'01',
-        instructor:'د. أحمد', building:'COBA', room:'G034',
+        instructor:'Ahmad Salem', building:'COBA', room:'G034',
         day:'Monday', date:'2099-01-21', hour:'10:00', gender:'M' },
     ] };
     PULLED = [];
