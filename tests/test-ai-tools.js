@@ -556,6 +556,49 @@ function fakeModel(ctx) {
     const wno = await call('propose_watch', '{"crn":"99999"}');
     ok(!wno.proposal, 'ورقم ما له وجود ما يُقترح');
 
+
+    /* ── تذكرة الدعم بالسياق (§٩-أ-٥) ── */
+    {
+      const n1 = SB_CALLS.length;
+      const sup = await call('propose_support_ticket',
+        '{"text":"تبويب خطتي ما يفتح من الجوال","category":"bug"}');
+      ok(!!sup.proposal, 'اقتراح تذكرة رجع');
+      const SP = sup.proposal || {};
+      eq(SP.action, 'support', 'نوعه');
+      eq(SP.category, 'bug', 'وتصنيفه كما حدّده');
+      ok(/خطتي/.test(SP.text || ''), 'وبنص الشكوى');
+      /* **السياق من الجلسة لا من النموذج** */
+      const cx = SP.context || {};
+      eq(cx.major, 'COSC', '**التخصص من حسابه لا من كلام النموذج**');
+      eq(cx.planVer, 'new', 'ونسخة خطته');
+      eq(cx.pro, true, 'وحالة اشتراكه');
+      eq(cx.term, '202710', 'وترمه');
+      eq(cx.env, 'prod', 'والبيئة — dev وprod يتشاركان القاعدة');
+      ok(/تخصصك/.test(SP.note || ''),
+         'ويقول للطالب وش يروح معها قبل ما يضغط');
+      /* **ولا كتابة**: الصفحة ترسلها بعد التأكيد */
+      ok(SB_CALLS.slice(n1).every(c => c.method === 'GET'),
+         '**ولا كتابة — اقتراح فقط**');
+      /* تصنيف غير معروف يصير other لا يمرّ كما هو */
+      const bad = await call('propose_support_ticket',
+        '{"text":"نص كافٍ هنا","category":"other"}');
+      eq((bad.proposal || {}).category, 'other', 'والتصنيف المعروف يمر');
+      /* نص قصير يُرفض */
+      const shrt = await call('propose_support_ticket', '{"text":"اي"}');
+      ok(!shrt.proposal && !!shrt.error, 'ونص قصير يُرفض بلا اقتراح');
+      /* **متاحة للمجاني**: الدعم ما ينحجب خلف اشتراك */
+      const fr = await callFree('propose_support_ticket', '{"text":"عندي مشكلة في الدخول"}');
+      ok(!!fr.proposal, '**والمجاني يقدر يوصل الدعم** — ما ينحجب');
+      eq(((fr.proposal || {}).context || {}).pro, false, 'وسياقه يقول إنه مجاني');
+      eq(((fr.proposal || {}).context || {}).major, 'COSC', 'وتخصصه كذلك');
+      /* ولا هوية من الوسائط */
+      const idArg = await call('propose_support_ticket',
+        '{"text":"نص كافٍ هنا","user_id":"u-other"}');
+      ok(/معرّف مستخدم/.test(idArg.error || ''), 'وما تقبل هوية من الوسائط');
+      /* ولا تسريب لبيانات طالب ثانٍ */
+      ok(JSON.stringify(sup).indexOf('u-other') < 0, 'ولا أثر لطالب ثانٍ');
+    }
+
     /* **ولا كتابة، ولا سحبة** */
     ok(SB_CALLS.slice(n0).every(c => c.method === 'GET'),
        '**ولا كتابة واحدة — اقتراح فقط**');

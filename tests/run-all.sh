@@ -56,7 +56,7 @@ run test-sched-builder  "$S"
 run test-ai-tools       "$S"
 run test-ai-chat        "$S"
 run test-reminders      "$S"
-run test-tg-ai          "$S"
+run test-tg-ai          "$S" "$F"
 run test-prep-sync      "$F"
 run test-ai-page        "$F"
 

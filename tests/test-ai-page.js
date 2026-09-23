@@ -27,7 +27,7 @@ const ST = { status: { on: true, why: '', msg: '', pro: true,
                        used: { day: 2, dayCap: 25, term: 9, termCap: 200 } },
              answer: { ok: true, answer: 'عندك محاضرتين بكرة', tools: ['my_day'],
                        used: { day: 3, dayCap: 25, term: 10, termCap: 200 } },
-             code: 200, posts: [], heads: [], gets: 0 };
+             code: 200, posts: [], heads: [], gets: 0, fb: [] };
 
 const server = http.createServer((req, res) => {
   const u = req.url.split('?')[0];
@@ -53,6 +53,15 @@ const server = http.createServer((req, res) => {
       ST.gets++;
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(ST.status));
+    });
+  }
+  if (u === '/api/feedback') {
+    let body = '';
+    req.on('data', c => { body += c });
+    return req.on('end', () => {
+      try { ST.fb.push(JSON.parse(body || '{}')) } catch (e) { ST.fb.push({ bad: body }) }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
     });
   }
   if (u.endsWith('.js')) { res.writeHead(404); return res.end('') }
@@ -467,6 +476,43 @@ const openSheet = async page => {
     eq(await page.evaluate(() => window.__ran[window.__ran.length - 1]),
        ['reminder', '2099-03-01T16:00:00.000Z', 'ذاكر للكويز', 'dev'],
        'وبالربط ينجدول — **والبيئة من السيرفر لا من المتصفح**');
+
+    /* ── تذكرة الدعم بالسياق (§٩-أ-٥) ── */
+    ST.fb = [];
+    ST.answer.proposal = { action: 'support', category: 'bug',
+      text: 'تبويب خطتي ما يفتح من الجوال',
+      context: { major: 'COSC', planVer: 'new', prep: false, pro: true,
+                 term: '202710', env: 'dev' },
+      note: 'ومعها: تخصصك ونسخة خطتك وترمك' };
+    await page.fill('#aiQ', 'فيه مشكلة');
+    await page.evaluate(() => aiSend());
+    await page.waitForTimeout(450);
+    ok(/فريق جدولك|Jadwalik team/.test(await lastCard()), 'بطاقة تذكرة الدعم ظهرت');
+    ok(/خطتي ما يفتح/.test(await lastCard()),
+       '**وفيها نص الرسالة نفسه** — يراجع ما يُرسل لا ما لخّصه النموذج');
+    ok(/تخصصك/.test(await lastCard()),
+       '**وتقول للطالب وش يروح معها** قبل ما يضغط');
+    eq(ST.fb.length, 0, '**وما انرسل شي قبل التأكيد**');
+    await page.click('#aiLog .ai-act-go');
+    await page.waitForTimeout(400);
+    eq(ST.fb.length, 1, 'وبالتأكيد تنرسل مرة واحدة');
+    const F = ST.fb[0] || {};
+    ok(/خطتي ما يفتح/.test(F.text || ''), 'بنص الشكوى');
+    ok(/COSC/.test(F.text || '') && /202710/.test(F.text || ''),
+       '**والسياق ملصوق بالرسالة** — ' + String(F.text || '').slice(-60));
+    ok(/مشترك/.test(F.text || ''), 'وحالة اشتراكه');
+    ok(/dev/.test(F.text || ''), 'والبيئة — البيئتان تتشاركان القاعدة');
+    eq(F.category, 'bug', 'وتصنيفها');
+    ok(/تم/.test(await page.textContent('#aiLog .ai-act')), 'والبطاقة تصير «تم»');
+    /* ورفضها ما يرسل شيئاً */
+    ST.answer.proposal = { action: 'support', category: 'idea',
+      text: 'اقتراح ثانٍ', context: { major: 'COSC' } };
+    await page.fill('#aiQ', 'اقتراح');
+    await page.evaluate(() => aiSend());
+    await page.waitForTimeout(450);
+    await page.click('#aiLog .ai-act-no');
+    await page.waitForTimeout(300);
+    eq(ST.fb.length, 1, '**والرفض ما يرسل شيئاً**');
 
     /* والنص المحقون في الملاحظة يُهرَّب */
     ST.answer.proposal = { action: 'event', crn: '10002', kind: 'quiz',

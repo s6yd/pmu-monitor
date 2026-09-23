@@ -4824,25 +4824,53 @@ function pickFb(el){
   el.classList.add('active');
   FB_CAT=el.dataset.c;
 }
+/* الإرسال الفعلي — النموذج (§٩-أ-٥) ونموذج الملاحظات يستعملانها معاً،
+   فما فيه طريقان يفترقان. ترمي عند الفشل عشان من يناديها يعرف. */
+async function sendFeedbackGo(txt,cat,extra){
+  const r=await fetch(API_BASE+'/api/feedback',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(Object.assign({
+      text:txt, category:cat,
+      email:USER?USER.email:(document.getElementById('fbEmail')?.value||'').trim()||null,
+      telegram:USER?null:(document.getElementById('fbTg')?.value||'').trim()||null,
+      name:USER?(USER.user_metadata?.name||null):null,
+      major:majorChosen()?MAJOR:null, lang:LANG
+    },extra||{}))
+  });
+  let d=null;
+  try{ d=await r.json(); }catch(_){ }
+  if(!r.ok||!d||!d.ok)throw new Error((d&&d.error)||('HTTP '+r.status));
+  return true;
+}
+
+/* من المساعد: النص جاهز والسياق من السيرفر — لا من الصفحة ولا من
+   النموذج. نلصقه بالرسالة سطراً واحداً عشان يوصل مع الشكوى لا منفصلاً. */
+async function sendFeedbackDirect(txt,cat,cx){
+  const t2=String(txt||'').trim();
+  if(t2.length<5){ showToast(t('fbShort'),'warn'); return false }
+  const c=cx||{};
+  const bits=[];
+  if(c.major)bits.push('تخصص '+c.major);
+  if(c.planVer)bits.push('خطة '+c.planVer);
+  bits.push('تحضيري '+(c.prep?'نعم':'لا'));
+  bits.push(c.pro?'مشترك':'مجاني');
+  if(c.term)bits.push('ترم '+c.term);
+  if(c.env)bits.push(c.env);
+  try{
+    await sendFeedbackGo(t2+'\n\n— '+bits.join(' · '),
+      ['idea','bug','other'].includes(cat)?cat:'other');
+    showToast(t('fbThanks'),'success');
+    return true;
+  }catch(e){ showToast(t('fbFail')+' — '+e.message,'err'); return false }
+}
+
 async function sendFeedback(){
   const ta=document.getElementById('fbText'), btn=document.getElementById('fbSend');
   const txt=(ta.value||'').trim();
   if(txt.length<5){ showToast(t('fbShort'),'warn'); return }
   btn.disabled=true;
   try{
-    const r=await fetch(API_BASE+'/api/feedback',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        text:txt, category:FB_CAT,
-        email:USER?USER.email:(document.getElementById('fbEmail')?.value||'').trim()||null,
-        telegram:USER?null:(document.getElementById('fbTg')?.value||'').trim()||null,
-        name:USER?(USER.user_metadata?.name||null):null,
-        major:majorChosen()?MAJOR:null, lang:LANG
-      })
-    });
-    let d=null;
-    try{ d=await r.json(); }catch(_){ }
-    if(!r.ok||!d||!d.ok)throw new Error((d&&d.error)||('HTTP '+r.status));
+    await sendFeedbackGo(txt,FB_CAT);
     ta.value=''; updateFbCount();
     ['fbEmail','fbTg'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
     showToast(t('fbThanks'),'success');
@@ -6009,6 +6037,13 @@ const AI_ACTS={
   reminder:{
     label:p=>t('aiActRem').replace('%d',p.atLocal||'').replace('%b',p.body||''),
     run:p=>addReminderDirect(p.at,p.body,p.crn,p.env),
+  },
+  support:{
+    /* نصّها في البطاقة لا في الجواب فوقها: الطالب يراجع **ما يُرسل
+       فعلاً** قبل ما يضغط، لا ما لخّصه النموذج. */
+    label:p=>t('aiActSup').replace('%t',String(p.text||'').slice(0,200)),
+    /* تمرّ على دالة الملاحظات نفسها — ما فيه نقطة إرسال ثانية */
+    run:p=>sendFeedbackDirect(p.text,p.category,p.context),
   },
   watch:{
     label:p=>t('aiActWatch').replace('%c',p.code||p.crn)
@@ -7785,6 +7820,7 @@ aiRemOk:'ضبطت التذكير — بيوصلك على تلقرام',
 aiRemNoTg:'اربط تلقرام أول عشان يوصلك التذكير',
 aiActAdd:'أضيف %c شعبة %s (%n) لجدولك؟',
 aiActWatch:'أراقب %c شعبة %s (%n) وأنبّهك أول ما تفتح؟',
+aiActSup:'أرسل لفريق جدولك: «%t»؟',
 aiActAbs:'أسجّل غياب في %c يوم %d؟',aiActEv:'أضيف %k في %c يوم %d؟',
 aiActOk:'تأكيد',aiActNo:'لا شكراً',aiActDone:'تم',aiActSkip:'ما سوّينا شي',
 aiActErr:'ما قدرنا نسوّيه — شوف الرسالة فوق',
@@ -7940,6 +7976,7 @@ aiRemOk:'Reminder set — it will reach you on Telegram',
 aiRemNoTg:'Link Telegram first so the reminder can reach you',
 aiActAdd:'Add %c section %s (%n) to your schedule?',
 aiActWatch:'Watch %c section %s (%n) and alert you when it opens?',
+aiActSup:'Send to the Jadwalik team: "%t"?',
 aiActAbs:'Log an absence in %c on %d?',aiActEv:'Add %k in %c on %d?',
 aiActOk:'Confirm',aiActNo:'No thanks',aiActDone:'Done',aiActSkip:'Nothing done',
 aiActErr:'Could not do it — see the message above',
