@@ -5961,6 +5961,22 @@ async function aiSend(){
   }
 }
 
+/* التذكير: صف في reminders، والسيرفر يرسله على تلقرام في وقته.
+   `env` في الصف لأن البيئتين تتشاركان القاعدة — كل بيئة ترسل صفوفها،
+   وإلا وصلت الرسالة مرتين أو وصلت من نسخة التجربة. */
+async function addReminderDirect(at,body,crn,env){
+  if(!USER)return false;
+  if(!at||!body){ showToast(t('errSave'),'err'); return false }
+  /* بلا تلقرام ما يوصله شي — نقولها قبل ما نكتب صفاً ميتاً */
+  if(!tgLinked()){ showToast(t('aiRemNoTg'),'warn'); return false }
+  const row={user_id:USER.id,env:env||'prod',at,body:String(body).slice(0,200),
+             crn:crn?String(crn):null};
+  const {error}=await sb.from('reminders').insert(row);
+  if(error){ showToast(t('errSave'),'err'); return false }
+  showToast(t('aiRemOk'),'ok');
+  return true;
+}
+
 /* ═══ الأفعال بتأكيد الطالب (§٩-أ-٤) ═══
    المساعد يقترح، والطالب يضغط. والتنفيذ بدوال الصفحة نفسها — نفس
    اللي تشتغل لما يسجّل من صفحة المادة، بكل حراساتها. */
@@ -5980,6 +5996,10 @@ const AI_ACTS={
     /* الجلسات تجي مع الاقتراح من كاش السيرفر: الشعبة قد تكون مو في
        نتائج البحث المعروضة، والدالة تفحص المتطلب والتعارض كالعادة. */
     run:p=>addSessionsDirect(p.sessions)===true,
+  },
+  reminder:{
+    label:p=>t('aiActRem').replace('%d',p.atLocal||'').replace('%b',p.body||''),
+    run:p=>addReminderDirect(p.at,p.body,p.crn,p.env),
   },
   watch:{
     label:p=>t('aiActWatch').replace('%c',p.code||p.crn)
@@ -7750,6 +7770,9 @@ aiNote:'ما يغيّر شي إلا بتأكيدك',aiLeft:'باقي لك الي
 aiHello:'اسألني عن جدولك أو خطتك أو الدكاترة.',
 aiEx1:'وش عندي بكرة؟',aiEx2:'كم ساعة باقية لي؟',aiEx3:'مين يدرّس ثيرمو ١؟',
 aiEx4:'كم غياب باقي لي؟',aiEx5:'وش أنزل الترم الجاي؟',aiEx6:'وين قاعة فاضية الحين؟',
+aiActRem:'أذكّرك يوم %d بـ«%b»؟',
+aiRemOk:'ضبطت التذكير — بيوصلك على تلقرام',
+aiRemNoTg:'اربط تلقرام أول عشان يوصلك التذكير',
 aiActAdd:'أضيف %c شعبة %s (%n) لجدولك؟',
 aiActWatch:'أراقب %c شعبة %s (%n) وأنبّهك أول ما تفتح؟',
 aiActAbs:'أسجّل غياب في %c يوم %d؟',aiActEv:'أضيف %k في %c يوم %d؟',
@@ -7901,6 +7924,9 @@ aiNote:'Changes nothing without your confirmation',aiLeft:'left today',
 aiHello:'Ask me about your schedule, plan or instructors. I answer in Arabic.',
 aiEx1:'وش عندي بكرة؟',aiEx2:'كم ساعة باقية لي؟',aiEx3:'مين يدرّس ثيرمو ١؟',
 aiEx4:'كم غياب باقي لي؟',aiEx5:'وش أنزل الترم الجاي؟',aiEx6:'وين قاعة فاضية الحين؟',
+aiActRem:'Remind you on %d about "%b"?',
+aiRemOk:'Reminder set — it will reach you on Telegram',
+aiRemNoTg:'Link Telegram first so the reminder can reach you',
 aiActAdd:'Add %c section %s (%n) to your schedule?',
 aiActWatch:'Watch %c section %s (%n) and alert you when it opens?',
 aiActAbs:'Log an absence in %c on %d?',aiActEv:'Add %k in %c on %d?',

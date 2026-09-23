@@ -151,6 +151,7 @@ const ctxObj = {
   get PULLED() { return PULLED },
   PLANS_DATA, ACAD_CAL,
   FREE_BETA: false,
+  SITE_ENV: 'prod',   /* أداة التذكير تختم البيئة في الاقتراح */
   regTerm: () => '202710',
   riyadhNow: () => new Date('2099-01-01T09:00:00Z'),
   /* schedDays و schedTime تُقتطعان من السيرفر لا تُنسخان هنا: النسخة
@@ -405,6 +406,49 @@ function fakeModel(ctx) {
     /* ولا كتابة في كل ما سبق */
     ok(SB_CALLS.slice(before).every(c => c.method === 'GET'),
        '**ولا كتابة واحدة في كل اقتراحات هذا القسم**');
+  }
+
+  /* ══════ التذكير بوقت ══════ */
+  {
+    const n0 = SB_CALLS.length;
+    const soon = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+    const r = await call('propose_reminder',
+      JSON.stringify({ date: soon, time: '19:30', body: 'ذاكر للكويز' }));
+    ok(!!r.proposal, 'اقتراح تذكير رجع — ' + JSON.stringify(r).slice(0, 70));
+    eq(r.proposal.action, 'reminder', 'نوعه');
+    eq(r.proposal.body, 'ذاكر للكويز', 'ونصّه');
+    eq(r.proposal.atLocal, soon + ' 19:30', 'ووقته المحلي كما كتبه');
+    /* ١٩:٣٠ بالرياض = ١٦:٣٠ عالمي — الرياض +٣ ثابتة بلا توقيت صيفي */
+    eq(new Date(r.proposal.at).toISOString().slice(11, 16), '16:30',
+       '**والمخزَّن عالمي: ١٩:٣٠ بالرياض = ١٦:٣٠ UTC**');
+    eq(r.proposal.env, 'prod', 'والبيئة من السيرفر لا من النموذج');
+    /* الأخطاء */
+    const past = await call('propose_reminder',
+      '{"date":"2020-01-01","time":"10:00","body":"x"}');
+    ok(!past.proposal && /راح/.test(past.error || ''), 'ووقت راح يُرفض');
+    const far = await call('propose_reminder',
+      '{"date":"2099-01-01","time":"10:00","body":"x"}');
+    ok(!far.proposal, 'ووقت بعيد مرة يُرفض');
+    const badT = await call('propose_reminder',
+      JSON.stringify({ date: soon, time: '99:99', body: 'x' }));
+    ok(!badT.proposal, 'ووقت غير صحيح يُرفض');
+    const noB = await call('propose_reminder',
+      JSON.stringify({ date: soon, time: '10:00', body: '   ' }));
+    ok(!noB.proposal, 'وبلا نص يُرفض');
+    /* الربط بمادة من جدوله */
+    const wc = await call('propose_reminder',
+      JSON.stringify({ date: soon, time: '10:00', body: 'x', code: 'MATH 1422' }));
+    eq(wc.proposal.crn, '10002', 'ومادة من جدوله تُربط بشعبتها');
+    const wrong = await call('propose_reminder',
+      JSON.stringify({ date: soon, time: '10:00', body: 'x', code: 'MEEN 3311' }));
+    eq(wrong.proposal.crn, null, 'ومادة مو في جدوله ما تُربط — ولا تُختلق');
+    /* المجاني */
+    const fr = await callFree('propose_reminder',
+      JSON.stringify({ date: soon, time: '10:00', body: 'x' }));
+    ok(!fr.proposal && /اشتراك/.test(fr.error || ''), 'والتذكير للمشتركين');
+    /* ولا كتابة */
+    ok(SB_CALLS.slice(n0).every(c => c.method === 'GET'),
+       '**ولا كتابة واحدة — اقتراح فقط**');
   }
 
   /* ══════ إضافة شعبة ومراقبة — من الكاش ══════ */
