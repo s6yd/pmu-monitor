@@ -6505,6 +6505,12 @@ async function aiPing() {
 /* حالة المساعد لصاحب الجلسة — الصفحة تسألها مرة عند الفتح لتعرف
    هل تعرض التبويب أصلاً، وكم بقي له اليوم. */
 async function aiStatus(userId) {
+  /* الصفحة تسألها مرة كل تحميل. لو المفتاح ناقص أو الوضع off نرد بلا
+     أي قراءة من القاعدة — وإلا صارت أربع قراءات لكل طالب على الفاضي.
+     وضع admin وحده يحتاج صفّه عشان نعرف هل هو صاحب الموقع. */
+  const pre = aiGate(null);
+  if (!pre.ok && pre.why !== 'admin')
+    return { on: false, why: pre.why, msg: pre.msg };
   const ctx = await aiStudentCtx(userId);
   const gate = aiGate(ctx.profile);
   if (!gate.ok) return { on: false, why: gate.why, msg: gate.msg };
