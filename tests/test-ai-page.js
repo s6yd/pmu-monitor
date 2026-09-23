@@ -88,10 +88,13 @@ async function open(browser, signedIn) {
   await page.waitForTimeout(400);
   return { page, errs };
 }
+/* مدخلان بدل الزر العائم: أعلى لوح المساعدة، وصفحة اليوم */
 const fabOn = page => page.evaluate(() => {
-  const f = document.getElementById('aiFab');
-  return !!f && f.classList.contains('on');
+  const e = document.getElementById('aiEntry');
+  return !!e && !e.hidden;
 });
+const askBarOn = page => page.evaluate(() =>
+  !!document.querySelector('#todayBody .ai-ask'));
 const openSheet = async page => {
   await page.evaluate(() => openAi());
   await page.waitForTimeout(350);
@@ -105,7 +108,9 @@ const openSheet = async page => {
   {
     const { page, errs } = await open(browser, false);
     ok(typeof await page.evaluate(() => typeof aiProbe) === 'string', 'الدوال موجودة');
-    eq(await fabOn(page), false, 'بلا دخول: الزر مخفي');
+    eq(await fabOn(page), false, 'بلا دخول: مدخل المساعدة مخفي');
+    eq(await askBarOn(page), false, 'وشريط صفحة اليوم كذلك');
+    ok(await page.$('#aiFab') === null, 'وما فيه زر عائم — انتقل للمكانين');
     eq(ST.gets, 0, 'وبلا دخول ما نسأل السيرفر أصلاً');
     eq(errs, [], 'بلا أخطاء');
     await page.close();
@@ -113,14 +118,29 @@ const openSheet = async page => {
   for (const why of ['off', 'admin', 'nokey']) {
     ST.status = { on: false, why, msg: 'مقفل' };
     const { page, errs } = await open(browser, true);
-    eq(await fabOn(page), false, `الوضع ${why}: الزر مخفي تماماً`);
+    eq(await fabOn(page), false, `الوضع ${why}: مدخل المساعدة مخفي`);
+    eq(await askBarOn(page), false, `الوضع ${why}: وشريط اليوم مخفي`);
     eq(errs, [], 'بلا أخطاء');
     await page.close();
   }
   {
     ST.status = { on: true, why: '', used: { day: 2, dayCap: 25 } };
     const { page, errs } = await open(browser, true);
-    eq(await fabOn(page), true, 'الوضع all: الزر يظهر للمسجّل');
+    eq(await fabOn(page), true, 'الوضع all: مدخل المساعدة يظهر للمسجّل');
+    eq(await askBarOn(page), true, 'وشريط اليوم كذلك');
+    /* الاسم علامة تجارية — يبقى Jadwalik AI في اللغتين */
+    ok(/Jadwalik AI/.test(await page.textContent('#aiEntry')), 'باسم Jadwalik AI');
+    ok(/Jadwalik AI/.test(await page.textContent('#todayBody .ai-ask')),
+       'ونفس الاسم في شريط اليوم');
+    /* الشريط فوق مبدّل اليوم/الأسبوع */
+    const order = await page.evaluate(() => {
+      const b = document.getElementById('todayBody');
+      const a = b.querySelector('.ai-ask'), v = b.querySelector('.vw-switch');
+      if (!a || !v) return 'ناقص';
+      return (a.compareDocumentPosition(v) & Node.DOCUMENT_POSITION_FOLLOWING)
+        ? 'فوق' : 'تحت';
+    });
+    eq(order, 'فوق', 'والشريط فوق زرّي اليوم/الأسبوع');
     eq(errs, [], 'بلا أخطاء');
     await page.close();
   }
@@ -130,7 +150,8 @@ const openSheet = async page => {
     ST.status = { on: false, why: 'day', msg: 'خلصت أسئلتك لهذا اليوم (25). ترجع لي بكرة.',
                   used: { day: 25, dayCap: 25 } };
     const { page, errs } = await open(browser, true);
-    eq(await fabOn(page), true, 'عند السقف: الزر يظهر — الطالب يستاهل يعرف ليش');
+    eq(await fabOn(page), true, 'عند السقف: المدخل يظهر — الطالب يستاهل يعرف ليش');
+    eq(await askBarOn(page), true, 'وشريط اليوم كذلك');
     await openSheet(page);
     const log = await page.textContent('#aiLog');
     ok(/خلصت أسئلتك لهذا اليوم/.test(log), 'ونص السيرفر هو المعروض حرفياً');
@@ -237,6 +258,42 @@ const openSheet = async page => {
     await page.close();
   }
 
+  /* ── الجمل تتبدّل: الطالب ما يعرف وش يقدر يسأل ── */
+  {
+    ST.status = { on: true, why: '', used: { day: 0, dayCap: 25 } };
+    const { page, errs } = await open(browser, true);
+    const hint = () => page.textContent('#aiHint');
+    const first = await hint();
+    ok(!!first && first.length > 3, 'الشريط فيه جملة مقترحة — ' + first);
+    /* تتبدّل خلال دورتين على الأكثر */
+    let changed = false;
+    for (let i = 0; i < 12 && !changed; i++) {
+      await page.waitForTimeout(800);
+      if (await hint() !== first) changed = true;
+    }
+    ok(changed, 'والجملة تتبدّل لغيرها');
+    /* والضغط يفتح لوح المساعد — نقفل الدليل أولاً، يفتح تلقائياً
+       بعد ٩٠٠ م.ث أول زيارة ويعترض الضغط */
+    await page.evaluate(() => closeGuide());
+    await page.waitForTimeout(150);
+    await page.click('#todayBody .ai-ask');
+    await page.waitForTimeout(300);
+    eq(await page.evaluate(() =>
+      document.getElementById('aiOv').classList.contains('open')), true,
+      'والضغط على الشريط يفتح المساعد');
+    /* ومن لوح المساعدة كذلك */
+    await page.evaluate(() => closeAi());
+    await page.evaluate(() => openGuide());
+    await page.waitForTimeout(150);
+    await page.click('#aiEntry');
+    await page.waitForTimeout(300);
+    eq(await page.evaluate(() =>
+      document.getElementById('aiOv').classList.contains('open')), true,
+      'ومن مدخل لوح المساعدة كذلك');
+    eq(errs, [], 'بلا أخطاء');
+    await page.close();
+  }
+
   /* ── ٧) لوحان ما يفتحان معاً ── */
   {
     /* الدليل يفتح تلقائياً بعد ٩٠٠ م.ث أول زيارة، وعنصره بعد عنصرنا في
@@ -274,12 +331,131 @@ const openSheet = async page => {
     await page.close();
   }
 
+  /* ── الأفعال: ما ينفّذ شي إلا بضغط الطالب ── */
+  {
+    ST.status = { on: true, why: '', used: { day: 0, dayCap: 25 } };
+    ST.answer = { ok: true, answer: 'جهّزت لك التسجيل', tools: ['propose_absence'],
+      proposal: { action: 'absence', crn: '10001', date: '2026-09-20',
+                  code: 'ALIS 1212', title: 'Islamic Culture II' } };
+    const { page, errs } = await open(browser, true);
+    /* ننادي دالة التنفيذ الحقيقية ونسجّل ما وصلها بدل ما نكتب في القاعدة */
+    await page.evaluate(() => {
+      window.__ran = [];
+      window.markAbsent = (crn, date) => { window.__ran.push(['absence', crn, date]);
+        return Promise.resolve(true) };
+      window.addEvDirect = (crn, k, d, n) => { window.__ran.push(['event', crn, k, d, n]);
+        return Promise.resolve(true) };
+    });
+    await openSheet(page);
+    await page.fill('#aiQ', 'سجّل لي غياب');
+    await page.evaluate(() => aiSend());
+    await page.waitForTimeout(450);
+
+    ok(await page.$('#aiLog .ai-act') !== null, 'بطاقة التأكيد ظهرت');
+    const card = await page.textContent('#aiLog .ai-act');
+    ok(/ALIS 1212/.test(card), 'وفيها اسم المادة — ' + card.trim().slice(0, 50));
+    ok(/2026-09-20/.test(card), 'وتاريخها');
+    eq(await page.evaluate(() => window.__ran.length), 0,
+       '**وما انفّذ شي قبل الضغط**');
+
+    await page.click('#aiLog .ai-act-go');
+    await page.waitForTimeout(300);
+    eq(await page.evaluate(() => window.__ran), [['absence', '10001', '2026-09-20']],
+       'والضغط ينفّذ بدالة الصفحة نفسها — بشعبتها وتاريخها');
+    ok(/تم/.test(await page.textContent('#aiLog .ai-act')), 'والبطاقة تصير «تم»');
+    ok(await page.$('#aiLog .ai-act-go') === null, 'وما يبقى زر يُضغط مرتين');
+
+    /* «لا شكراً» ما ينفّذ */
+    ST.answer.proposal = { action: 'event', crn: '10002', kind: 'quiz',
+      date: '2099-03-01', note: 'الفصل الرابع', code: 'MATH 1422' };
+    await page.fill('#aiQ', 'ضف كويز');
+    await page.evaluate(() => aiSend());
+    await page.waitForTimeout(450);
+    const cards = await page.$$('#aiLog .ai-act');
+    ok(cards.length >= 1, 'بطاقة ثانية');
+    ok(/الفصل الرابع/.test(await page.textContent('#aiLog')), 'وفيها الملاحظة');
+    await page.click('#aiLog .ai-act-no');
+    await page.waitForTimeout(250);
+    eq(await page.evaluate(() => window.__ran.length), 1,
+       '**و«لا شكراً» ما ينفّذ شيئاً**');
+
+    /* فعل ما نعرفه ما يرسم بطاقة أصلاً */
+    ST.answer.proposal = { action: 'delete_everything', crn: '1' };
+    await page.fill('#aiQ', 'احذف كل شي');
+    await page.evaluate(() => aiSend());
+    await page.waitForTimeout(450);
+    eq(await page.evaluate(() =>
+      document.querySelectorAll('#aiLog .ai-act').length), 2,
+      '**فعل ما نعرفه ما يصير بطاقة** — الصفحة تعرف أفعالها لا النموذج');
+    eq(await page.evaluate(() => window.__ran.length), 1, 'وما انفّذ');
+
+    /* إضافة شعبة: الجلستان تنضافان معاً */
+    await page.evaluate(() => {
+      window.addSessionsDirect = ss => { window.__ran.push(['add', ss.length,
+        ss[0] && ss[0].crn]); return true };
+      window.__watched = [];
+      window.isMonitored = crn => window.__watched.indexOf(crn) > -1;
+      window.toggleMonitorCourse = (crn, row) => {
+        window.__ran.push(['watch', crn, row && row.courseCode]);
+        window.__watched.push(crn);
+        return Promise.resolve();
+      };
+    });
+    ST.answer.proposal = { action: 'add_section', crn: '30001', code: 'PHYS 1421',
+      section: '05', title: 'Physics I', sessions: [{ crn: '30001' }, { crn: '30001' }] };
+    await page.fill('#aiQ', 'ضف الشعبة');
+    await page.evaluate(() => aiSend());
+    await page.waitForTimeout(450);
+    /* البطاقات السابقة صارت «تم» وباقية في السجل — نقرأ الأخيرة */
+    const lastCard = async () => {
+      const all = await page.$$('#aiLog .ai-act');
+      return all.length ? all[all.length - 1].textContent() : '';
+    };
+    ok(/PHYS 1421/.test(await lastCard()), 'بطاقة إضافة الشعبة');
+    ok(/30001/.test(await lastCard()), 'وفيها رقمها');
+    await page.click('#aiLog .ai-act-go');
+    await page.waitForTimeout(300);
+    eq(await page.evaluate(() => window.__ran[window.__ran.length - 1]),
+       ['add', 2, '30001'],
+       '**والجلستان تمرّان معاً** — المحاضرة والمعمل وحدة واحدة');
+
+    /* مراقبة: تمرّ لدالة الموقع نفسها بصف الشعبة */
+    ST.answer.proposal = { action: 'watch', crn: '30001', code: 'PHYS 1421',
+      section: '05', title: 'Physics I', status: 'CLOSE' };
+    await page.fill('#aiQ', 'راقبها');
+    await page.evaluate(() => aiSend());
+    await page.waitForTimeout(450);
+    await page.click('#aiLog .ai-act-go');
+    await page.waitForTimeout(300);
+    eq(await page.evaluate(() => window.__ran[window.__ran.length - 1]),
+       ['watch', '30001', 'PHYS 1421'],
+       'والمراقبة تمرّ لدالة الموقع نفسها بصف الشعبة — بحدودها كما هي');
+    ok(/تم/.test(await lastCard()), 'والبطاقة تصير «تم»');
+
+    /* والنص المحقون في الملاحظة يُهرَّب */
+    ST.answer.proposal = { action: 'event', crn: '10002', kind: 'quiz',
+      date: '2099-03-01', note: '<img src=x onerror=alert(1)>', code: 'MATH 1422' };
+    await page.fill('#aiQ', 'ضف');
+    await page.evaluate(() => aiSend());
+    await page.waitForTimeout(450);
+    ok(await page.$('#aiLog img') === null, 'وملاحظة فيها وسم تُهرَّب');
+    eq(errs, [], 'ولا خطأ ولا نافذة تنبيه');
+    await page.close();
+  }
+
   /* ── ٨) فحص ثابت ── */
   {
-    ok(/id="aiFab"/.test(SRC) && /id="aiOv"/.test(SRC), 'العنصران في الصفحة');
-    ok(/\.ai-fab\{/.test(SRC), 'وتنسيق الزر معرّف');
+    ok(/id="aiEntry"/.test(SRC) && /id="aiOv"/.test(SRC), 'العناصر في الصفحة');
+    ok(/\.ai-entry\{/.test(SRC) && /\.ai-ask\{/.test(SRC), 'وتنسيقهما معرّف');
+    ok(!/ai-fab/.test(SRC), 'ولا أثر للزر العائم القديم — لا HTML ولا CSS');
+    /* الأفعال: الصفحة تعرف أفعالها، وتنفّذها بدوالها الموجودة */
+    ok(/const AI_ACTS=\{/.test(SRC), 'قائمة الأفعال المعروفة موجودة');
+    ok(/run:p=>markAbsent\(/.test(SRC) && /run:p=>addEvDirect\(/.test(SRC),
+       'وتنفّذ بدوال الصفحة نفسها — لا نقطة كتابة جديدة');
+    ok(!/\/api\/me\/ai-do|\/api\/me\/act/.test(SRC),
+       'ولا نقطة تنفيذ جديدة في السيرفر — ما وسّعنا سطح الكتابة');
     /* ولا صنف CSS مستعمل بلا تعريف */
-    const js = SRC.slice(SRC.indexOf('function renderAiSheet'),
+    const js = SRC.slice(SRC.indexOf('const aiShown ='),
                          SRC.indexOf('/* ═══ رصيد تقييم الدكاترة ═══'));
     const used = new Set();
     js.replace(/class="([a-z][a-z0-9 \-]*)"/g, (_, c) =>
