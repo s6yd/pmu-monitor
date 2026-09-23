@@ -5396,6 +5396,35 @@ function aiCourse(ctx, code) {
            prep: !!c.prep };
 }
 
+/* جدول الطالب — صفوفه هو، بترتيب ثابت. slot الافتراضي هو الأول.
+   الصفحة تحفظ الجدول النشط في تخزين المتصفح وحده، فما نعرفه هنا؛
+   الأداة تقبل رقم الجدول صريحاً والافتراضي الأول. */
+async function aiSchedule(ctx, slot) {
+  const id = encodeURIComponent(ctx.userId);
+  const rows = await sb('GET', 'user_schedule',
+    { query: `?user_id=eq.${id}&select=*&order=crn.asc` });
+  if (!Array.isArray(rows)) return [];
+  const want = Number.isFinite(slot) ? Number(slot) : null;
+  const pick = want === null
+    ? Math.min(...rows.map(r => Number(r.slot) || 1).concat([1]))
+    : want;
+  return rows.filter(r => (Number(r.slot) || 1) === pick);
+}
+
+/* صف جدول → ما يراه النموذج. ولا حقل يخصّ طالباً آخر. */
+function aiSchedRow(r) {
+  return { code: r.course_code, title: r.course_title, crn: r.crn,
+    section: r.section, days: r.course_date, time: r.course_timing,
+    room: r.room, instructor: r.instructor,
+    changedAt: r.changed_at || null, missingSince: r.missing_since || null };
+}
+
+/* دقيقة من منتصف الليل → 08:50 */
+function aiHHMM(m) {
+  const h = Math.floor(m / 60), x = m % 60;
+  return String(h).padStart(2, '0') + ':' + String(x).padStart(2, '0');
+}
+
 /* ═══ سجل الأدوات ═══
    كل أداة: وصفها للنموذج · مخطط وسائطها · حصتها · ودالتها.
    المخطط هو نفسه اللي يُرسل للنموذج في §٩-أ-٣. */
@@ -5577,6 +5606,149 @@ const AI_TOOLS = {
           credits: p.hrs, addedCourses: p.n };
       }
       return out;
+    },
+  },
+
+
+  /* ═══ أدوات بيانات الطالب — من صفوفه وحدها ═══
+     ولا واحدة منها تلمس كاش الجامعة ولا تسحب منها: كلها من
+     user_schedule و absences و course_events لصاحب السؤال. */
+
+  my_schedule: {
+    tier: 'pro',
+    description: 'جدول الطالب: مواده المسجّلة بأوقاتها وأيامها وقاعاتها ودكاترتها، '
+      + 'ومجموع ساعاته. للسؤال عن «وش عندي هالترم».',
+    input_schema: { type: 'object', properties: {
+      slot: { type: 'integer', description: 'رقم الجدول ١–٣ — اتركه للجدول الأول' } },
+      required: [] },
+    run: async (ctx, a) => {
+      const rows = await aiSchedule(ctx, a.slot);
+      if (!rows.length) return { count: 0, courses: [],
+        note: 'ما فيه مواد في هذا الجدول' };
+      return { count: rows.length, term: rows[0].term || null,
+        totalCredits: rows.reduce((s, r) =>
+          s + PLANS_DATA.creditsOf(ctx.plan, r.course_code || ''), 0),
+        courses: rows.map(aiSchedRow) };
+    },
+  },
+
+  my_day: {
+    tier: 'pro',
+    description: 'محاضرات الطالب في يوم معيّن بالترتيب، ومعها الفراغات بينها '
+      + 'بالدقائق. للسؤال عن «وش عندي اليوم» أو «كم فراغ عندي الثلاثاء».',
+    input_schema: { type: 'object', properties: {
+      day: { type: 'string', enum: ['U', 'M', 'T', 'W', 'R', 'F', 'S'],
+             description: 'U أحد · M اثنين · T ثلاثاء · W أربعاء · R خميس' },
+      slot: { type: 'integer', description: 'رقم الجدول ١–٣' } },
+      required: ['day'] },
+    run: async (ctx, a) => {
+      const day = String(a.day || '').toUpperCase();
+      if (!'UMTWRFS'.includes(day) || day.length !== 1)
+        return { error: 'يوم غير معروف — استعمل U M T W R F S' };
+      const rows = await aiSchedule(ctx, a.slot);
+      const today = rows
+        .filter(r => schedDays(r.course_date).includes(day))
+        .map(r => ({ row: r, t: schedTime(r.course_timing) }))
+        .filter(x => x.t)
+        .sort((x, y) => x.t.start - y.t.start);
+
+      if (!today.length) return { day, count: 0, lectures: [], gaps: [],
+        note: 'ما فيه محاضرات هذا اليوم' };
+
+      /* الفراغ بين نهاية محاضرة وبداية اللي بعدها — بالدقيقة لا بالساعة،
+         فمحاضرة تنتهي ٨:٥٠ وأخرى تبدأ ٩:٠٠ فراغها ١٠ دقائق لا صفر. */
+      const gaps = [];
+      for (let i = 1; i < today.length; i++) {
+        const mins = today[i].t.start - today[i - 1].t.end;
+        if (mins > 0) gaps.push({
+          afterCourse: today[i - 1].row.course_code || today[i - 1].row.crn,
+          beforeCourse: today[i].row.course_code || today[i].row.crn,
+          from: aiHHMM(today[i - 1].t.end), to: aiHHMM(today[i].t.start),
+          minutes: mins });
+      }
+      const first = today[0].t.start, last = today[today.length - 1].t.end;
+      return { day, count: today.length,
+        firstAt: aiHHMM(first), lastEndsAt: aiHHMM(last),
+        onCampusMinutes: last - first,
+        gapMinutes: gaps.reduce((s, g) => s + g.minutes, 0),
+        lectures: today.map(x => Object.assign(aiSchedRow(x.row),
+          { startsAt: aiHHMM(x.t.start), endsAt: aiHHMM(x.t.end) })),
+        gaps };
+    },
+  },
+
+  my_absences: {
+    tier: 'pro',
+    description: 'غياب الطالب المسجّل لكل مادة، وكم يتبقّى له قبل الحرمان. '
+      + 'الحد ١٥٪ من محاضرات الترم. الحساب إرشادي والمرجع سجل الجامعة.',
+    input_schema: { type: 'object', properties: {
+      code: { type: 'string', description: 'كود مادة بعينها — اتركه لكل المواد' } },
+      required: [] },
+    run: async (ctx, a) => {
+      const rows = await aiSchedule(ctx);
+      if (!rows.length) return { count: 0, courses: [], note: 'ما فيه مواد مسجّلة' };
+      const id = encodeURIComponent(ctx.userId);
+      const term = rows[0].term || regTerm();
+      const abs = await sb('GET', 'absences',
+        { query: `?user_id=eq.${id}&term=eq.${encodeURIComponent(term)}&select=crn,on_date` });
+      const A = Array.isArray(abs) ? abs : [];
+
+      const today = riyadhNow().toISOString().slice(0, 10);
+      const out = rows.map(r => {
+        const mine = A.filter(x => String(x.crn) === String(r.crn));
+        const allowed = absAllowedFor(r.course_date, today);
+        return { code: r.course_code, title: r.course_title, crn: r.crn,
+          absences: mine.length, allowed,
+          remaining: Math.max(0, allowed - mine.length),
+          atRisk: allowed > 0 && mine.length >= allowed,
+          dates: mine.map(x => x.on_date).sort() };
+      }).filter(x => !a.code || x.code === a.code);
+
+      if (a.code && !out.length)
+        return { known: false, error: AI_UNKNOWN + ' في جدولك', code: a.code };
+      return { term, count: out.length, courses: out,
+        note: 'الحساب إرشادي — المرجع الرسمي سجل الحضور لدى الجامعة' };
+    },
+  },
+
+  my_appointments: {
+    tier: 'pro',
+    description: 'مواعيد الطالب: الكويزات والواجبات والمشاريع اللي سجّلها على مواده، '
+      + 'بتواريخها. للسؤال عن «وش عندي هالأسبوع».',
+    input_schema: { type: 'object', properties: {
+      days: { type: 'integer', description: 'كم يوماً قدّام — الافتراضي ١٤' },
+      code: { type: 'string', description: 'كود مادة بعينها' } },
+      required: [] },
+    run: async (ctx, a) => {
+      const rows = await aiSchedule(ctx);
+      const term = (rows[0] && rows[0].term) || regTerm();
+      const id = encodeURIComponent(ctx.userId);
+      const ev = await sb('GET', 'course_events',
+        { query: `?user_id=eq.${id}&term=eq.${encodeURIComponent(term)}`
+               + `&select=crn,kind,on_date,note&order=on_date.asc` });
+      const E = Array.isArray(ev) ? ev : [];
+
+      const byCrn = {};
+      rows.forEach(r => { byCrn[String(r.crn)] = r });
+
+      const today = riyadhNow().toISOString().slice(0, 10);
+      const span = Number.isFinite(a.days) ? Math.max(1, Math.min(120, a.days)) : 14;
+      const until = new Date(Date.parse(today + 'T00:00:00Z') + span * 86400000)
+        .toISOString().slice(0, 10);
+
+      const out = E
+        .filter(e => e.on_date >= today && e.on_date <= until)
+        .map(e => {
+          const r = byCrn[String(e.crn)];
+          return { date: e.on_date, kind: e.kind, crn: e.crn,
+            code: r ? r.course_code : null, title: r ? r.course_title : null,
+            /* ملاحظة الطالب نص منه — بيانات لا أوامر */
+            note: e.note || null,
+            inDays: Math.round((Date.parse(e.on_date) - Date.parse(today)) / 86400000) };
+        })
+        .filter(x => !a.code || x.code === a.code);
+
+      return { term, from: today, to: until, count: out.length, appointments: out };
     },
   },
 
