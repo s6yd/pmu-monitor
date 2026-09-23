@@ -19,7 +19,12 @@ const ok = (c, m) => { if (c) { pass++ } else { fail++; console.log('  ✗ ' + m
 
 /* ── قاعدة وهمية ── */
 const DB = { monitored_courses: [], profiles: [], app_events: [], notif_approvals: [] };
-const TG = [];                      /* كل ما أُرسل عبر تيليغرام */
+const TG = [];                      /* كل نداء راح لتيليغرام — بطريقته */
+/* **الرسائل وحدها**: نداء تيليغرام مو كله رسالة لطالب. `setMyCommands`
+   يضبط قائمة أوامر البوت عند الإقلاع وما فيه `chat_id` أصلاً — فعدّه
+   رسالةً يخلّي «ولا رسالة راحت» تفشل على شي ما وصل أحداً.
+   نسجّل الكل (المحاكي يبقى أمينًا) ونعدّ ما له مستقبِل. */
+const msgs = () => TG.filter(x => x.body && x.body.chat_id !== undefined);
 let nextId = 1;
 
 for (let u = 1; u <= 4; u++) {
@@ -54,7 +59,8 @@ https.request = function (opts, cb) {
       const body = chunks.join('');
       let out = '[]';
       if (host === 'api.telegram.org') {
-        TG.push(JSON.parse(body || '{}'));
+        TG.push({ method: String(opts.path || '').split('/').pop(),
+                  body: JSON.parse(body || '{}') });
         out = JSON.stringify({ ok: true, result: { message_id: TG.length } });
       } else {
         out = JSON.stringify(supabase(opts.method, opts.path, body));
@@ -161,7 +167,14 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     ok(t1 && t1.rows === TOTAL - 1, `تفصيل ترم 202710: ${t1 && t1.rows} والمتوقع ${TOTAL - 1}`);
     ok(t2 && t2.rows === 1, 'الصف الشارد بترم 202720 ظاهر في التفصيل');
     ok(DB.monitored_courses.length === TOTAL, 'GET ما حذف ولا صفاً');
-    ok(TG.length === 0, 'GET ما أرسل ولا رسالة');
+    ok(msgs().length === 0, 'GET ما أرسل ولا رسالة');
+    /* وضبط قائمة الأوامر عند الإقلاع نداء إعداد لا رسالة — نثبته هنا
+       بدل ما نتركه يتنكّر في عدّ الرسائل */
+    ok(TG.some(x => x.method === 'setMyCommands'),
+       'وقائمة أوامر البوت انضبطت عند الإقلاع');
+    ok(!TG.filter(x => x.method === 'setMyCommands')
+        .some(x => x.body.chat_id !== undefined),
+       'وهي بلا مستقبِل — إعداد للبوت لا رسالة لطالب');
   }
 
   /* ── ٣) ترم واحد فقط ── */
@@ -169,7 +182,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     const r = await call('monitor-season-end', 'POST', { term: '202720', notify: false });
     ok(r.body.stopped === 1, 'حذف صف الترم المحدد وحده');
     ok(DB.monitored_courses.length === TOTAL - 1, 'الباقي سليم');
-    ok(TG.length === 0, 'notify=false: صفر رسالة');
+    ok(msgs().length === 0, 'notify=false: صفر رسالة');
   }
 
   /* ── ٤) إنهاء الموسم كاملاً ── */
@@ -182,19 +195,20 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     ok(DB.monitored_courses.length === 0, 'الجدول صار فاضياً');
 
     await wait(2500);                       /* الرسائل تنطلق بالخلفية */
-    const toStudents = TG.filter(m => ['901', '902', '903'].includes(String(m.chat_id)));
+    const toStudents = msgs().filter(m => ['901', '902', '903'].includes(String(m.body.chat_id)));
     ok(toStudents.length === 3,
        `رسالة واحدة لكل طالب مربوط — وصلت ${toStudents.length} لا ${before}`);
-    const u1 = toStudents.find(m => String(m.chat_id) === '901');
+    const u1 = (toStudents.find(m => String(m.body.chat_id) === '901') || {}).body;
     ok(u1 && (u1.text.match(/^•/gm) || []).length === 5,
        'رسالة صاحب الخمس مواد تجمعها كلها في رسالة واحدة');
     ok(u1 && /كل الشعب/.test(u1.text), 'تفرّق بين «كل الشعب» والشعبة');
     ok(u1 && /CRN 20001/.test(u1.text), 'وتذكر رقم الشعبة');
     ok(u1 && /شكراً لكم/.test(u1.text), 'والسطر الإضافي وصل');
     ok(u1 && /ترجّعها من الجرس/.test(u1.text), 'وفيها كيف يرجّعها');
-    ok(!TG.some(m => String(m.chat_id) === 'null'),
+    ok(!msgs().some(m => String(m.body.chat_id) === 'null'),
        'من لم يربط تيليغرام لم تُحاول له رسالة');
-    ok(TG.some(m => String(m.chat_id) === '5555' && /انتهى موسم المراقبة/.test(m.text)),
+    ok(msgs().some(m => String(m.body.chat_id) === '5555'
+        && /انتهى موسم المراقبة/.test(m.body.text)),
        'وصل تقرير الإدارة');
     const ev = DB.app_events.filter(e => e.kind === 'season-end');
     ok(ev.length === 2, 'حدث واحد لكل تنفيذ لا حدث لكل صف — ' + ev.length);
