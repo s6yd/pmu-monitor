@@ -57,6 +57,11 @@ const DB = {
     /* جدوله فيه محاضرة ومعمل بنفس كود المادة — لفحص جمع الساعات */
     'u-lab':{ id: 'u-lab', major: 'COSC', plan_ver: 'new', is_pro: true },
     'u-meen':{ id: 'u-meen', major: 'MEEN', plan_ver: 'new', is_pro: true },
+    /* أرقام شعب كما ترجع من الجامعة فعلاً: ثلاث خانات، 1xx طلاب و2xx
+       طالبات. الفِخاخ القديمة هنا كانت '01' و'02' — وما فيها الخانة
+       اللي يُستنتج منها الجنس، فباني الجداول ما كان ينفلتر أصلاً. */
+    'u-sched':  { id: 'u-sched',  major: 'COSC', plan_ver: 'new', is_pro: true },
+    'u-schedf': { id: 'u-schedf', major: 'COSC', plan_ver: 'new', is_pro: true },
   },
   completed: {
     'u-pro':  [{ course_code: 'ALIS 1211', grade: 'A' }, { course_code: 'MATH 1422', grade: 'F' },
@@ -71,6 +76,8 @@ const DB = {
     'u-nosched':[{ course_code: 'ALIS 1211', grade: 'A' }, { course_code: 'MATH 1422', grade: 'F' }],
     'u-lab':[],
     'u-meen':[],
+    'u-sched':[],
+    'u-schedf':[],
   },
   /* جدول الطالب وغيابه ومواعيده — ولصاحبنا وللطالب الثاني،
      حتى نثبت إن ولا صف من الثاني يتسرّب. */
@@ -103,6 +110,17 @@ const DB = {
       { user_id:'u-other', slot:1, crn:'90001', course_code:'MEEN 3311', course_title:'سرّ الطالب الثاني',
         section:'99', course_date:'MW', course_timing:'1400 - 1450', room:'F-ENG - 999',
         instructor:'Nobody Here', term:'202710' },
+    ],
+    /* جدول بأرقام شعب حقيقية — منه يُستنتج جنس الطالب */
+    'u-sched': [
+      { user_id:'u-sched', slot:1, crn:'11156', course_code:'CHEM 1421',
+        course_title:'Chemistry for Engineers I', section:'101', course_date:'UTR',
+        course_timing:'1200 - 1250', room:'M-CORE - F155', instructor:'A', term:'202710' },
+    ],
+    'u-schedf': [
+      { user_id:'u-schedf', slot:1, crn:'10041', course_code:'CHEM 1421',
+        course_title:'Chemistry for Engineers I', section:'201', course_date:'MW',
+        course_timing:'0930 - 1045', room:'F-CORE - F053', instructor:'N', term:'202710' },
     ],
   },
   absences: {
@@ -218,6 +236,18 @@ vm.createContext(ctxObj);
   if (i < 0 || j <= i) { ok(false, 'ما لقيت schedDays/schedTime في السيرفر'); }
   else vm.runInContext(L.slice(i, j).join('\n'), ctxObj);
 }
+/* tagGender كذلك تُقتطع لا تُنسخ: هي قاعدة الجنس الوحيدة في الموقع
+   (1xx طلاب · 2xx طالبات)، وباني الجداول يبني عليها. نسخة هنا تعني
+   قاعدتين تفترقان بصمت. */
+{
+  const L = src.split('\n');
+  const i = L.findIndex(x => x.startsWith('function tagGender('));
+  const j = L.findIndex((x, n) => n > i && x === '}');
+  if (i < 0 || j <= i) ok(false, 'ما لقيت tagGender في السيرفر');
+  else vm.runInContext(L.slice(i, j + 1).join('\n'), ctxObj);
+}
+ok(typeof ctxObj.tagGender === 'function', 'tagGender الحقيقية محمّلة');
+ok(typeof ctxObj.buildSchedules === 'function', 'buildSchedules الحقيقية محمّلة');
 ok(typeof ctxObj.schedTime === 'function', 'schedTime الحقيقية محمّلة');
 {
   const T = ctxObj.schedTime;
@@ -937,6 +967,106 @@ function fakeModel(ctx) {
 
     /* ٦ح) الخلاصة: ولا أداة سحبت من الجامعة في كل الجولة */
     eq(PULLED, [], 'بعد كل أدوات الكاش: ولا سحبة — ' + PULLED.join(','));
+  }
+
+
+  /* ══════ ٧) باني الجداول — أداة (§٩-أ-٥) ══════
+     الحساب نفسه مُختبَر في tests/test-sched-builder.js. هنا نثبت
+     الوصلة: الحصة · الكاش وحده · الجنس من جدول الطالب · ولا سحبة. */
+  {
+    ctxObj.coursesCache.clear();
+    ctxObj.ROOM_INDEX = null;
+    PULLED = [];
+
+    const SCHED = await aiStudentCtx('u-sched');
+    const SCHEDF = await aiStudentCtx('u-schedf');
+    const callS = fakeModel(SCHED), callF = fakeModel(SCHEDF);
+
+    /* كاش بارد: ما نبني ولا نسحب */
+    const cold = await callS('build_schedule', '{"codes":["CHEM 1421"]}');
+    eq(cold.available, false, 'الكاش بارد ⇒ ما نبني جدولاً');
+    ok(!cold.options, 'ولا نخترع خيارات');
+    eq(PULLED, [], '**ولا سحبة من الجامعة**');
+
+    /* نسخّنه بصفوف الجامعة كما ترجع فعلاً */
+    const SEC = (crn, code, title, section, d, t, room, ins, st) => ({
+      crn, courseCode: code, courseTitle: title, section, courseDate: d,
+      courseTiming: t, room, instructor: ins, status: st || 'OPEN' });
+    ctxObj.coursesCache.set('202710|ALL|M1', { at: Date.now(), courses: [
+      SEC('11156','CHEM 1421','Chemistry for Engineers I','101','UTR','1200 - 1250','M-CORE - F155','A'),
+      SEC('11157','CHEM 1421','Chemistry for Engineers I','102','MW','1100 - 1215','M-CCES - F051','A'),
+      SEC('11163','CHEM 1421','Chemistry for Engineers I LAB','112','T','1300 - 1550','M-CORE - G039','A'),
+      SEC('11165','CHEM 1421','Chemistry for Engineers I LAB','114','U','1300 - 1550','M-CORE - G039','A'),
+      SEC('11181','PHYS 1421','Physics for Engineers I','102','UTR','1400 - 1450','M-COBA - G026','S'),
+      SEC('11185','PHYS 1421','Physics for Engineers I','106','MW','1600 - 1715','M-CORE - G051','S'),
+      SEC('11192','PHYS 1421','Physics for Engineers I LAB','116','W','1300 - 1550','M-CORE - G041','S'),
+      SEC('11130','MATH 1422','Calculus I','109','UT','1000 - 1115','M-CORE - S3','O'),
+    ] });
+    ctxObj.coursesCache.set('202710|ALL|F1', { at: Date.now(), courses: [
+      SEC('10041','CHEM 1421','Chemistry for Engineers I','201','MW','0930 - 1045','F-CORE - F053','N'),
+      SEC('10055','CHEM 1421','Chemistry for Engineers I LAB','211','U','1400 - 1650','F-CORE - G023','N'),
+    ] });
+
+    const n0 = SB_CALLS.length;
+    const b = await callS('build_schedule', '{"codes":["CHEM 1421","PHYS 1421","MATH 1422"]}');
+    ok(b.ok && b.options.length === 3, 'ركّب ثلاثة خيارات — ' + JSON.stringify({o:b.options.length,m:b.missing,c:b.conflicts}));
+    eq(b.term, '202710', 'ومن ترم التسجيل');
+    ok(b.cacheAgeMin >= 0, 'ومعها عمر الكاش');
+    ok(/الشعب المطروحة/.test(b.note || ''), 'ومعها إن المقاعد تتغيّر');
+    ok(b.options.every(o => o.picks.length === 5),
+       '**وكل خيار خمس شعب** — الكيمياء بمعملها والفيزياء بمعملها والرياضيات');
+    ok(b.options.every(o => o.picks.filter(p => p.part === 'lab').length === 2),
+       'ومعملان في كل خيار');
+
+    /* **الجنس من جدوله هو** — الشعبة 101 في جدوله ⇒ طالب */
+    ok(!/1004|1005|F-CORE/.test(JSON.stringify(b)),
+       '**ولا شعبة طالبات في جدول طالب**');
+    const f = await callF('build_schedule', '{"codes":["CHEM 1421"]}');
+    ok(f.ok, 'والطالبة يُبنى لها');
+    eq(f.options[0].crns.slice().sort(), ['10041', '10055'],
+       '**وشعبها هي لا شعب الطلاب**');
+    ok(!/M-CORE|M-CCES|1115[67]/.test(JSON.stringify(f)),
+       'ولا شعبة طلاب في جدول طالبة');
+
+    /* تفضيلات: تُمرَّر كما هي، والساعة نصاً */
+    const av = await callS('build_schedule',
+      '{"codes":["CHEM 1421"],"avoidDays":["R"],"labs":false}');
+    ok(av.ok && av.options.every(o => !o.days.includes('R')),
+       'يوم يبغاه فاضياً: تفاديناه');
+    const hr = await callS('build_schedule',
+      '{"codes":["CHEM 1421"],"noEarlier":"1100","labs":false}');
+    ok(hr.ok && hr.options.every(o => o.firstStart >= '11:00'),
+       'والساعة نصاً "1100" تُفهم — ' + JSON.stringify(hr.options.map(o => o.firstStart)));
+    const hr2 = await callS('build_schedule',
+      '{"codes":["CHEM 1421"],"noEarlier":"11:00","labs":false}');
+    eq(hr2.options.map(o => o.firstStart), hr.options.map(o => o.firstStart),
+       'و"11:00" مثل "1100"');
+
+    /* المثبّت: يبني حول جدوله الحالي */
+    const kc = await callS('build_schedule', '{"codes":["MATH 1422"],"keepCurrent":true}');
+    eq(kc.kept, 1, 'جدوله الحالي مثبّت — صف واحد');
+    ok(kc.ok, 'ومع ذلك بنى');
+    /* CHEM 101 عنده UTR 1200-1250، فالرياضيات UT 1000-1115 ما تصادمه */
+    ok(kc.options[0].crns.includes('11130'), 'والشعبة اللي ما تصادمه مرشحة');
+
+    /* بلا مواد: من مقترح خطته لا من الهواء */
+    const auto = await callS('build_schedule', '{}');
+    ok(/مقترح/.test(auto.source || ''), 'بلا مواد: يبني من المقترح — ' + auto.source);
+    ok(Array.isArray(auto.requested) && auto.requested.length > 0,
+       'وسمّى المواد اللي اختارها — ' + (auto.requested || []).join(','));
+
+    /* الحصة والخصوصية */
+    const free = await callFree('build_schedule', '{"codes":["CHEM 1421"]}');
+    ok(!!free.error && free.tier === 'pro', 'ممنوعة على المجاني');
+    const idArg = await callS('build_schedule',
+      '{"codes":["CHEM 1421"],"user_id":"u-other"}');
+    ok(/معرّف مستخدم/.test(idArg.error || ''), 'وما تقبل هوية من الوسائط');
+
+    /* ولا كتابة، ولا سحبة */
+    ok(SB_CALLS.slice(n0).every(c => c.method === 'GET'),
+       '**ولا كتابة واحدة — قراءة فقط**');
+    eq(PULLED, [], '**ولا سحبة من الجامعة في كل القسم**');
+    ctxObj.coursesCache.clear();
   }
 
   console.log(`\n${pass} نجحت · ${fail} فشلت`);
