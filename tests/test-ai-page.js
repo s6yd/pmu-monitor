@@ -191,7 +191,11 @@ const openSheet = async page => {
     const log = await page.textContent('#aiLog');
     ok(/وش عندي بكرة/.test(log), 'السؤال يظهر');
     ok(/عندك محاضرتين بكرة/.test(log), 'والجواب');
-    ok(/my_day/.test(log), 'والأدوات اللي استُعملت');
+    /* **قاعدة تغيّرت عمداً:** أسماء الأدوات بالإنجليزي كانت تظهر للطالب
+       تحت كل جواب (find_course · sections) وتشوّشه. صارت في لوحة
+       التجربة وحدها — هي مفيدة لصاحب الموقع لا للطالب. */
+    ok(!/my_day/.test(log), 'وأسماء الأدوات ما تظهر للطالب');
+    ok(await page.$('#aiLog .ai-tools') === null, 'ولا عنصرها');
     eq(await page.inputValue('#aiQ'), '', 'والمربّع يفضى');
     ok(/22/.test(await page.textContent('.ai-foot')), 'والباقي تحدّث من رد السيرفر');
     ok(await page.$('.ai-foot span[dir="ltr"]') !== null,
