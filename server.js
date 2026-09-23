@@ -6733,6 +6733,8 @@ const AI_SYSTEM = `أنت «مساعد جدولك» — مساعد داخل مو
 - **لا تفسّر نتيجة أداة بما ليس فيها.** الأداة ما رجّعت شعباً؟ معناها ما
   عندنا بياناتها الآن — لا «لأنك خلّصت المادة» ولا «لأنها ما تُطرح».
   السبب الوحيد اللي تقوله هو السبب المكتوب في النتيجة نفسها.
+- **تعرف التاريخ والساعة** من سياق الرسالة — لا تسأل الطالب عنهما.
+  «بعد ٣ دقايق» و«بكرة الساعة ٧» تحسبها بنفسك من الوقت المكتوب لك.
 - **الطالب ما يسمّي المواد كأسماء الجامعة.** يقول «ثيرمو ١» و«دوائر»
   و«تفاضل». استعمل أداة البحث عن المادة أول شي — لا تخمّن الكود ولا
   تسأله عنه قبل ما تحاول. ولو رجّعت أكثر من مرشّح ومو واضح أيّها يقصد،
@@ -6878,7 +6880,11 @@ function aiHeader(ctx, th) {
     + ` · نسخة الخطة ${p.planVer || '—'} · تحضيري ${ctx.prep ? 'نعم' : 'لا'}`
     + `${ctx.prepInferred ? ' (مستنتجة)' : ''} · مشترك ${ctx.pro ? 'نعم' : 'لا'}`
     + ` · ترم التسجيل ${regTerm()} · اليوم ${aiToday()} `
-    + `${AI_DAYS_AR[riyadhNow().getUTCDay()]}]\n`;
+    + `${AI_DAYS_AR[riyadhNow().getUTCDay()]} `
+    /* الساعة لازمة: بدونها ما يقدر يحسب «ذكّرني بعد ٣ دقايق» فيسأل
+       الطالب عن ساعته — وهي عندنا أصلاً. */
+    + `الساعة ${String(riyadhNow().getUTCHours()).padStart(2, '0')}:`
+    + `${String(riyadhNow().getUTCMinutes()).padStart(2, '0')} بتوقيت الرياض]\n`;
   if (th && th.summary) h += `[سألني قبل عن:\n${th.summary}]\n`;
   return h + 'سؤالي: ';
 }
@@ -7629,6 +7635,28 @@ const server = http.createServer(async (req, res) => {
 
       /* زر «جرّب»: نداء واحد صغير يثبت المفتاح واسم النموذج */
       if (act === 'ai-ping') return send(200, await aiPing());
+
+      /* ملء الكاش بضغطة — لأدوات الشعب والدكاترة.
+         على dev المراقبة مطفأة (SITE_ENV) فالتسخين ما يشتغل والكاش
+         بارد دائماً، فتقول أدوات الشعب «بيانات الجامعة مو جاهزة» ولا
+         يمكن تجربتها أصلاً. هذا **فعل إداري بضغطة** لا استجابة لسؤال
+         طالب — فما يخالف «لا سحب إلا من الدورة والكاش» (§٦): سحبتان
+         تشتغلان لما تضغط أنت، لا كل ما سأل أحد. */
+      if (act === 'cache-warm') {
+        if (req.method !== 'POST')
+          return send(200, { size: coursesCache.size, term: activeTerm() });
+        const term = activeTerm();
+        const out = [];
+        for (const g of ['M1', 'F1']) {
+          const r = await getCourses(term, 'ALL', g, true).catch(e => ({ error: e && e.message }));
+          out.push({ gender: g, count: (r && r.courses) ? r.courses.length : 0,
+                     error: (r && r.error) || null });
+        }
+        const c = aiCache();
+        return send(200, { ok: out.every(x => !x.error && x.count > 0),
+          term, pulls: out, cacheSize: coursesCache.size,
+          aiReady: !!c.available, ageMin: c.ageMin || 0 });
+      }
 
       /* مربّع التجربة في اللوحة — يسأل بحسابك أنت، فالأدوات تشتغل
          على بياناتك الحقيقية. والوضع يطبَّق كما هو: off يمنع حتى هنا. */
