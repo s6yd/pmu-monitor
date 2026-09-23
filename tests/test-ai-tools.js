@@ -165,7 +165,7 @@ let PULLED = [];        /* كل نداء يسحب من الجامعة يُسجَ
 
 const ctxObj = {
   console: { log() {} }, Promise, JSON, Object, Array, String, Number, Math, Date,
-  RegExp, Error, encodeURIComponent, setTimeout, Map, Set,
+  RegExp, Error, encodeURIComponent, setTimeout, clearTimeout, Map, Set, Promise,
   get PULLED() { return PULLED },
   PLANS_DATA, ACAD_CAL,
   FREE_BETA: false,
@@ -186,6 +186,7 @@ const ctxObj = {
   getCourses: () => { PULLED.push('getCourses'); return Promise.resolve({ courses: [] }) },
   buildRoomIndex: () => { PULLED.push('buildRoomIndex'); return Promise.resolve(null) },
   fetchPage: () => { PULLED.push('fetchPage'); return Promise.resolve('') },
+  getFinals: () => { PULLED.push('getFinals'); return Promise.resolve([]) },
   freeRooms: (idx, o) => {
     const rooms = [...idx.rooms.entries()]
       .filter(([, r]) => !o.gender || r.gender === o.gender)
@@ -274,7 +275,17 @@ ok(typeof ctxObj.schedTime === 'function', 'schedTime الحقيقية محمّ�
      'ومحاضرتان متتاليتان ما تتعارضان');
 }
 vm.runInContext(REGION + '\nthis.aiStudentCtx=aiStudentCtx; this.aiRunTool=aiRunTool;'
-  + 'this.aiToolSchemas=aiToolSchemas; this.AI_TOOLS=AI_TOOLS;', ctxObj);
+  + 'this.aiToolSchemas=aiToolSchemas; this.AI_TOOLS=AI_TOOLS;'
+  /* حالة التسخين: نقرأها ونصفّرها بين الحالات — من داخل المنطقة
+     نفسها لا بنسخة، فما نختبر متغيّراً غير اللي يشتغل.
+     وداخل try: على كود قديم بلا تسخين نبلّغ فشلاً مرتّباً بدل انهيار
+     يخفي سطر الملخّص عن run-all.sh. */
+  + 'try{this.aiWarmState=aiWarmState;'
+  + 'this.__resetWarm=()=>{AI_WARM_FAIL_AT=0;AI_WARM_BUSY.clear();'
+  + 'AI_WARM.tries=AI_WARM.ok=AI_WARM.fail=AI_WARM.skipped=0;'
+  + 'AI_WARM.lastAt=0;AI_WARM.lastErr=null};'
+  + 'this.__setWarm=v=>{AI_WARM_ON=!!v}}catch(e){'
+  + 'this.__resetWarm=()=>{};this.__setWarm=()=>{}}', ctxObj);
 
 const { aiStudentCtx, aiRunTool, aiToolSchemas, AI_TOOLS } = ctxObj;
 ok(typeof aiRunTool === 'function', 'aiRunTool متاحة');
@@ -510,11 +521,12 @@ function fakeModel(ctx) {
 
   /* ══════ إضافة شعبة ومراقبة — من الكاش ══════ */
   {
-    /* الكاش بارد: ما نسحب من الجامعة ولا نقترح من الهواء */
+    /* الكاش بارد: نحاول نسخّنه، وإن ما جا شي ما نقترح من الهواء */
+    PULLED = [];
     const cold = await call('propose_add_section', '{"crn":"30001"}');
-    eq(cold.available, false, 'الكاش بارد ⇒ ما فيه اقتراح');
-    ok(!cold.proposal, 'ولا نخترع شعبة');
-    eq(PULLED, [], '**ولا سحبة من الجامعة**');
+    eq(cold.available, false, 'الكاش بارد وما رجع شي ⇒ ما فيه اقتراح');
+    ok(!cold.proposal, '**ولا نخترع شعبة** — التسخين ما يعني الاختراع');
+    eq(PULLED, ['getCourses', 'getCourses'], 'لكنه حاول يسخّن مرة');
 
     /* نسخّن الكاش بنفس طريقة قسم الشعب */
     ctxObj.coursesCache.set('202710|ALL|M1', { at: Date.now(), courses: [
@@ -528,6 +540,7 @@ function fakeModel(ctx) {
         courseDate:'UT', courseTiming:'0800 - 0850', instructor:'Ahmad Salem',
         room:'G034', status:'CLOSE', seats:'0', gender:'M' } ] });
 
+    PULLED = [];                 /* من هنا: الكاش دافئ، فالمتوقع صفر سحبات */
     const n0 = SB_CALLS.length;
     const add = await call('propose_add_section', '{"crn":"30001"}');
     ok(!!add.proposal, 'اقتراح إضافة رجع — ' + JSON.stringify(add).slice(0, 70));
@@ -599,11 +612,91 @@ function fakeModel(ctx) {
       ok(JSON.stringify(sup).indexOf('u-other') < 0, 'ولا أثر لطالب ثانٍ');
     }
 
-    /* **ولا كتابة، ولا سحبة** */
+    /* **ولا كتابة**، و**ولا سحبة والكاش دافئ** */
     ok(SB_CALLS.slice(n0).every(c => c.method === 'GET'),
        '**ولا كتابة واحدة — اقتراح فقط**');
-    eq(PULLED, [], 'ولا سحبة من الجامعة في كل القسم');
+    eq(PULLED, [], '**ولا سحبة والكاش دافئ** — التسخين للبارد وحده');
     ctxObj.coursesCache.clear();
+  }
+
+
+  /* ══════ حرّاس التسخين (قرار محمد) ══════
+     التسخين بلا حرّاس = سؤال كل طالب ضغطة على موقع الجامعة.
+     أربعة أخطار هنا، وكل واحد منها وحده يكفي ليحجبونا. */
+  {
+    const W = typeof ctxObj.aiWarmState === 'function'
+      ? ctxObj.aiWarmState : () => ({});
+    ok(typeof ctxObj.aiWarmState === 'function', 'حالة التسخين متاحة للوحة');
+
+    /* ١) خمسون سؤالاً في نفس اللحظة = محاولة واحدة */
+    ctxObj.coursesCache.clear();
+    ctxObj.__resetWarm();
+    PULLED = [];
+    let slow = null;
+    ctxObj.getCourses = () => { PULLED.push('getCourses');
+      return new Promise(r => { slow = () => r({ courses: [] }) }) };
+    const many = Array.from({ length: 12 }, () => callFree('sections', '{"code":"X 1"}'));
+    await new Promise(r => setTimeout(r, 30));
+    eq(PULLED.length, 2,
+       '**اثنا عشر سؤالاً معاً = سحبة لكل جنس لا أكثر** — ' + PULLED.length);
+    if (slow) slow();
+    await Promise.all(many);
+
+    /* ٢) فشل ⇒ صمت: ما نضرب موقعاً متعثّراً مع كل سؤال */
+    ctxObj.coursesCache.clear();
+    ctxObj.__resetWarm();
+    PULLED = [];
+    ctxObj.getCourses = () => { PULLED.push('getCourses');
+      return Promise.reject(new Error('الجامعة ما ردّت')) };
+    const f1 = await callFree('sections', '{"code":"X 1"}');
+    ok(f1.available === false, 'الجامعة ما ردّت ⇒ نرد بالرسالة الهادئة');
+    const after = PULLED.length;
+    ok(after >= 1, 'وحاولنا فعلاً — ' + after);
+    await callFree('sections', '{"code":"X 2"}');
+    await callFree('sections', '{"code":"X 3"}');
+    eq(PULLED.length, after,
+       '**وبعد الفشل ما حاولنا ثانية** — فترة صمت لا محاولة كل سؤال');
+    ok(W().coolMin > 0, 'واللوحة تشوف مدة الصمت — ' + W().coolMin);
+    ok(W().fail > 0, 'وتعدّ الفشل');
+
+    /* ٣) المفتاح مطفأ ⇒ ولا سحبة إطلاقاً */
+    ctxObj.__resetWarm();
+    ctxObj.__setWarm(false);
+    PULLED = [];
+    const off = await callFree('sections', '{"code":"X 1"}');
+    ok(off.available === false, 'والمفتاح مطفأ: نرد بالرسالة الهادئة');
+    eq(PULLED, [], '**ولا سحبة والمفتاح مطفأ** — مفتاح الأمان يشتغل');
+    ok(W().on === false, 'واللوحة تشوفه مطفأ');
+    ctxObj.__setWarm(true);
+
+    /* ٤) نجح التسخين ⇒ الجواب يجي من المسخَّن لا من الهواء */
+    ctxObj.coursesCache.clear();
+    ctxObj.__resetWarm();
+    PULLED = [];
+    ctxObj.getCourses = (term, college, gender) => {
+      PULLED.push('getCourses');
+      const rows = [{ crn:'77001', courseCode:'CHEM 1421',
+        courseTitle:'Chemistry for Engineers I', section: gender === 'F1' ? '201' : '101',
+        courseDate:'MW', courseTiming:'0930 - 1045', instructor:'Ali',
+        room:'G1', status:'OPEN' }];
+      ctxObj.coursesCache.set(`${term}|${college}|${gender}`,
+        { at: Date.now(), courses: rows });
+      return Promise.resolve({ courses: rows });
+    };
+    const got = await callFree('sections', '{"code":"CHEM 1421"}');
+    eq(got.found, 2, '**بعد التسخين الجواب يجي** — شعبة لكل جنس');
+    eq(PULLED, ['getCourses', 'getCourses'], 'بسحبة لكل جنس');
+    ok(W().ok > 0, 'واللوحة تعدّ النجاح');
+    /* والسؤال الثاني يقرأ من الكاش بلا سحبة */
+    PULLED = [];
+    const again = await callFree('sections', '{"code":"CHEM 1421"}');
+    eq(again.found, 2, 'والسؤال الثاني يجاوب');
+    eq(PULLED, [], '**بلا سحبة — صار الكاش دافئاً**');
+
+    /* رجّعنا المحاكي الأصلي */
+    ctxObj.getCourses = () => { PULLED.push('getCourses'); return Promise.resolve({ courses: [] }) };
+    ctxObj.coursesCache.clear();
+    ctxObj.__resetWarm();
   }
 
   /* ══════ جسر العربي: الطالب ما يكتب كأسماء الجامعة ══════ */
@@ -862,23 +955,29 @@ function fakeModel(ctx) {
     ok(JSON.stringify(osc).indexOf('ALIS 1212') < 0, 'وما يشوف جدول صاحبنا');
   }
 
-  /* ── ٦) أدوات الكاش — ولا سحبة من الجامعة ── */
+  /* ── ٦) أدوات الكاش: بارد ⇒ نسخّن، دافئ ⇒ ما نلمس الجامعة ── */
   if (!AI_TOOLS.sections) {
     for (const t of ['sections', 'instructor_reviews', 'free_rooms', 'finals', 'schedule_changes'])
       ok(false, `${t} موجودة في السجل`);
   } else {
-    /* ٦أ) الكاش بارد: تقول «مو جاهزة» ولا تسحب */
+    /* **قاعدة تغيّرت بقرار محمد:** كانت «سؤال طالب ما يسحب أبداً»،
+       فيجيه «البيانات مو جاهزة» ويوقف — طريق مسدود، وعلى dev دائم
+       (ما فيه مراقبة فكاشه بارد أبداً). صرنا نسخّن **بنفس `getCourses`**
+       اللي يستعملها بحث الطالب — لا مسار سحب ثانٍ. والحرّاس هي اللي
+       تُختبر هنا: مرة واحدة · فشل يسكت · دافئ ما يسحب · ومفتاح يطفي. */
     PULLED = [];
     const cold = await callFree('sections', '{"code":"MATH 1422"}');
-    ok(cold.available === false, 'الكاش بارد ⇒ available:false');
+    ok(cold.available === false, 'الكاش بارد وما رجع شي ⇒ available:false');
     ok(/مو جاهزة/.test(cold.error || ''), 'وترجع رسالة واضحة');
-    eq(PULLED, [], 'ولا سحبة من الجامعة — ' + PULLED.join(','));
+    eq(PULLED, ['getCourses', 'getCourses'],
+       '**لكنه حاول يسخّن** — سحبة لكل جنس، بـgetCourses نفسها');
 
     const coldRooms = await callFree('free_rooms', '{"day":"U","from":500,"to":600}');
-    ok(coldRooms.available === false, 'القاعات والكاش بارد ⇒ غير متاحة');
+    ok(coldRooms.available === false, 'القاعات ما بُنيت ⇒ غير متاحة');
     const coldFinals = await callFree('finals', '{"code":"MATH 1422"}');
-    ok(coldFinals.available === false, 'النهائيات والكاش بارد ⇒ غير متاحة');
-    eq(PULLED, [], 'وبعد الثلاثة: ولا سحبة واحدة');
+    ok(coldFinals.available === false, 'والنهائيات كذلك');
+    eq(PULLED, ['getCourses', 'getCourses', 'buildRoomIndex', 'getFinals'],
+       '**وكل نوع حاول مرة واحدة لا أكثر**');
 
     /* ٦ب) نسخّن الكاش بأيدينا — كما تسخّنه الدورة */
     ctxObj.coursesCache.set('202710|ALL|M1', { at: Date.now(), courses: [
@@ -922,10 +1021,12 @@ function fakeModel(ctx) {
     /* ٦ج) كاش قديم جداً = غير متاح */
     ctxObj.coursesCache.set('202710|ALL|M1',
       { at: Date.now() - 20 * 60 * 60 * 1000, courses: [{ crn:'1', courseCode:'X 1111' }] });
+    PULLED = [];
     const stale = await callFree('sections', '{"code":"X 1111"}');
     ok(stale.available === false, 'كاش عمره ٢٠ ساعة ⇒ غير متاح');
     ok(stale.staleMin > 600, 'ويقول كم عمره — ' + stale.staleMin);
-    eq(PULLED, [], 'وما سحب ليجدّده');
+    eq(PULLED, ['getCourses', 'getCourses'],
+       '**وحاول يجدّده** — كاش نصف يوم في موسم التسجيل يضلّل');
 
     /* ٦د) التقييمات — ملخّص مجهول الكاتب */
     const rv = await callFree('instructor_reviews', '{"instructor":"أحمد"}');
@@ -1025,11 +1126,11 @@ function fakeModel(ctx) {
     const SCHEDF = await aiStudentCtx('u-schedf');
     const callS = fakeModel(SCHED), callF = fakeModel(SCHEDF);
 
-    /* كاش بارد: ما نبني ولا نسحب */
+    /* كاش بارد: نحاول نسخّنه، وإن ما جا شي ما نبني من الهواء */
     const cold = await callS('build_schedule', '{"codes":["CHEM 1421"]}');
-    eq(cold.available, false, 'الكاش بارد ⇒ ما نبني جدولاً');
-    ok(!cold.options, 'ولا نخترع خيارات');
-    eq(PULLED, [], '**ولا سحبة من الجامعة**');
+    eq(cold.available, false, 'الكاش بارد وما رجع شي ⇒ ما نبني جدولاً');
+    ok(!cold.options, '**ولا نخترع خيارات**');
+    eq(PULLED, ['getCourses', 'getCourses'], 'لكنه حاول يسخّن مرة');
 
     /* نسخّنه بصفوف الجامعة كما ترجع فعلاً */
     const SEC = (crn, code, title, section, d, t, room, ins, st) => ({
@@ -1050,6 +1151,7 @@ function fakeModel(ctx) {
       SEC('10055','CHEM 1421','Chemistry for Engineers I LAB','211','U','1400 - 1650','F-CORE - G023','N'),
     ] });
 
+    PULLED = [];                 /* من هنا: الكاش دافئ، فالمتوقع صفر سحبات */
     const n0 = SB_CALLS.length;
     const b = await callS('build_schedule', '{"codes":["CHEM 1421","PHYS 1421","MATH 1422"]}');
     ok(b.ok && b.options.length === 3, 'ركّب ثلاثة خيارات — ' + JSON.stringify({o:b.options.length,m:b.missing,c:b.conflicts}));
@@ -1105,10 +1207,10 @@ function fakeModel(ctx) {
       '{"codes":["CHEM 1421"],"user_id":"u-other"}');
     ok(/معرّف مستخدم/.test(idArg.error || ''), 'وما تقبل هوية من الوسائط');
 
-    /* ولا كتابة، ولا سحبة */
+    /* ولا كتابة، ولا سحبة والكاش دافئ */
     ok(SB_CALLS.slice(n0).every(c => c.method === 'GET'),
        '**ولا كتابة واحدة — قراءة فقط**');
-    eq(PULLED, [], '**ولا سحبة من الجامعة في كل القسم**');
+    eq(PULLED, [], '**ولا سحبة والكاش دافئ** — التسخين للبارد وحده');
     ctxObj.coursesCache.clear();
   }
 

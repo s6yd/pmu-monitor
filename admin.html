@@ -694,6 +694,15 @@ function renderAi(){
       <div class="kv"><span>الترمي</span><b><span class="ltr">${cap.term}</span></b></div>
       <div class="kv"><span>تنبيه ٧٥٪</span>
         <b>${AI.alerted?('أُرسل لشهر '+esc(AI.alerted)):'ما أُرسل'}</b></div>
+      ${(function(w){ if(!w) return '';
+        const cool=w.coolMin>0?` <span style="color:var(--warn)">صامت ${w.coolMin} د</span>`:'';
+        return `<div class="kv"><span>تسخين الكاش عند السؤال</span>
+          <b class="${w.on?'good':'bad'}">${w.on?'مفعّل':'مطفأ'}${cool}</b></div>
+        ${w.tries?`<div class="kv"><span>محاولات التسخين</span>
+          <b><span class="ltr">${w.ok}/${w.tries}</span>${
+            w.fail?` <span style="color:var(--close)">فشل ${w.fail}</span>`:''}${
+            w.lastErr?` <span style="color:var(--text3)">${esc(w.lastErr)}</span>`:''}</b></div>`:''}`;
+      })(AI.warm)}
       ${AI.unlogged?`<div class="kv"><span>استهلاك ما انكتب</span>
         <b class="bad"><span class="ltr">${AI.unlogged}</span></b></div>`:''}
       ${envs?`<div class="kv"><span>الإنفاق لكل بيئة</span>
@@ -708,6 +717,8 @@ function renderAi(){
         <button class="mini" onclick="aiSetCaps()">تعديل السقوف</button>
         <button class="mini go" onclick="aiPingBtn()">جرّب الاتصال</button>
         <button class="mini" onclick="aiWarmBtn()">املأ الكاش</button>
+        <button class="mini" onclick="aiSetWarm()">${
+          (AI.warm&&AI.warm.on)?'أطفئ التسخين':'شغّل التسخين'}</button>
       </div>
     </div>
 
@@ -828,6 +839,24 @@ async function aiSetMode(){
     const r=await api('ai',{body:{mode:m.trim()}});
     if(!r.ready)toast('الوضع '+r.mode+' — لكن ANTHROPIC_API_KEY ناقص في Render','err');
     else toast('وضع المساعد صار '+r.mode,'ok');
+    AI=r; renderAi();
+  }catch(e){ toast(e.message,'err') }
+}
+
+/* مفتاح الأمان: الطالب يسأل والكاش بارد ⇒ نسحب من الجامعة مرة.
+   لو تعثّرنا معهم، أطفئه من هنا بلا نشر — والمساعد يرجع يقول
+   «البيانات مو جاهزة». */
+async function aiSetWarm(){
+  const on=!!(AI&&AI.warm&&AI.warm.on);
+  if(!confirm(on
+    ? 'أطفئ تسخين الكاش؟\n\nالطالب يسأل والكاش بارد ⇒ بيجيه «البيانات مو جاهزة» '
+      + 'بدل ما نسحب من الجامعة.'
+    : 'شغّل تسخين الكاش؟\n\nالطالب يسأل والكاش بارد ⇒ نسحب من الجامعة مرة '
+      + 'ونحفظها. (سحبة واحدة مهما كثر السائلون، وفشل الجامعة يوقفنا ١٠ دقائق.)'))
+    return;
+  try{
+    const r=await api('ai',{body:{warm:!on}});
+    toast('تسخين الكاش صار '+((r.warm&&r.warm.on)?'مفعّلاً':'مطفأً'),'ok');
     AI=r; renderAi();
   }catch(e){ toast(e.message,'err') }
 }

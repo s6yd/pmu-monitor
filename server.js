@@ -1321,7 +1321,7 @@ async function saveState() {
                  termOverride: TERM_OVERRIDE, windowOverride: WINDOW_OVERRIDE,
                  hoursOverride: HOURS_OVERRIDE, pushoverMode: PUSHOVER_MODE,
                  freeBeta: FREE_BETA, pricing: PRICING,
-                 aiMode: AI_MODE, aiModel: AI_MODEL_OVERRIDE,
+                 aiMode: AI_MODE, aiModel: AI_MODEL_OVERRIDE, aiWarmOn: AI_WARM_ON,
                  aiCaps: AI_CAPS, aiAlerted: AI_ALERTED },
       ops: { searches: OPS.searches, feedback: OPS.feedback,
              pmuFails: OPS.pmuFails, tgFails: OPS.tgFails,
@@ -1367,6 +1367,7 @@ async function restoreState() {
   /* المساعد: الوضع يبدأ off، فالمحفوظ وحده يشغّله. والنموذج من اللوحة
      يتقدّم على متغيّر Render (null = ارجع لمتغيّر Render). */
   if ('aiMode' in g && AI_MODES.includes(g.aiMode)) AI_MODE = g.aiMode;
+  if ('aiWarmOn' in g) AI_WARM_ON = !!g.aiWarmOn;
   if ('aiModel' in g) AI_MODEL_OVERRIDE = String(g.aiModel || '').trim() || null;
   if (g.aiCaps && typeof g.aiCaps === 'object') {
     const merged = Object.assign({}, AI_CAPS_DEFAULT, g.aiCaps);
@@ -6114,6 +6115,95 @@ function aiCache(wantTerm) {
            ageMin: Math.round((Date.now() - newest) / 60000) };
 }
 
+/* ═══ تسخين الكاش عند سؤال الطالب — قرار محمد ═══
+   القاعدة القديمة كانت «سؤال طالب ما يصير سبباً لضغطة على موقع
+   الجامعة»، والواقع إن الطالب يسأل «وش شعب ثيرمو؟» فيجيه «البيانات
+   مو جاهزة» ويوقف — طريق مسدود. وأكثر ما يصير على dev (ما فيه
+   مراقبة فكاشه بارد دائماً) وخارج موسم التسجيل.
+
+   **ما فيه مسار سحب جديد**: نستعمل `getCourses` و`buildRoomIndex`
+   و`getFinals` — نفس الدوال اللي يستعملها بحث الطالب في الموقع.
+   وأربعة حرّاس تخلّيها آمنة:
+   ١) **منع التكرار**: `getCourses` فيها `inFlight`، فخمسون سؤالاً في
+      نفس اللحظة = سحبة واحدة. ونضيف فوقها خريطة لكل نوع.
+   ٢) **فشل ⇒ صمت**: الجامعة متعثّرة؟ نحاول مرة ونسكت عشر دقائق —
+      وإلا صار كل سؤال محاولة جديدة على موقع واقع.
+   ٣) **سقف انتظار**: الطالب ما ينتظر أكثر من عشرين ثانية، وبعدها
+      نرد بالرسالة الهادئة كالسابق.
+   ٤) **مفتاح في اللوحة** يطفيها لو تعثّرنا مع الجامعة (§٧: القرار
+      قرار محمد، والمفتاح يرجّعه بلا نشر). */
+const AI_WARM_COOL = 10 * 60 * 1000;   /* صمت بعد الفشل */
+const AI_WARM_MS   = 20 * 1000;        /* سقف انتظار الطالب */
+let AI_WARM_ON = true;                 /* يُطفأ من اللوحة */
+let AI_WARM_FAIL_AT = 0;               /* آخر فشل — بداية الصمت */
+const AI_WARM_BUSY = new Map();        /* نوع → وعد المحاولة الجارية */
+const AI_WARM = { tries: 0, ok: 0, fail: 0, skipped: 0, lastAt: 0, lastErr: null };
+
+function aiWarmState() {
+  return { on: AI_WARM_ON,
+    coolMin: AI_WARM_FAIL_AT
+      ? Math.max(0, Math.round((AI_WARM_COOL - (Date.now() - AI_WARM_FAIL_AT)) / 60000)) : 0,
+    tries: AI_WARM.tries, ok: AI_WARM.ok, fail: AI_WARM.fail,
+    skipped: AI_WARM.skipped,
+    lastMin: AI_WARM.lastAt ? Math.round((Date.now() - AI_WARM.lastAt) / 60000) : null,
+    lastErr: AI_WARM.lastErr };
+}
+
+/* ترجع true لو صار تسخين (أو انتهت محاولة جارية)، وfalse لو تخطّينا */
+async function aiWarmOnce(kind, fn) {
+  if (!AI_WARM_ON) { AI_WARM.skipped++; return false }
+  if (Date.now() - AI_WARM_FAIL_AT < AI_WARM_COOL) { AI_WARM.skipped++; return false }
+  /* محاولة جارية لنفس النوع؟ ننتظرها بدل ما نبدأ ثانية */
+  const live = AI_WARM_BUSY.get(kind);
+  if (live) { try { await live } catch (e) {} return true }
+
+  AI_WARM.tries++;
+  let timer = null;
+  const p = Promise.race([
+    Promise.resolve().then(fn),
+    new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('تجاوز المهلة')), AI_WARM_MS) }),
+  ]);
+  AI_WARM_BUSY.set(kind, p);
+  try {
+    await p;
+    AI_WARM.ok++; AI_WARM.lastAt = Date.now(); AI_WARM.lastErr = null;
+    return true;
+  } catch (e) {
+    AI_WARM.fail++; AI_WARM_FAIL_AT = Date.now();
+    AI_WARM.lastErr = String((e && e.message) || e).slice(0, 120);
+    console.log(`تسخين المساعد فشل (${kind}): ${AI_WARM.lastErr}`);
+    return false;
+  } finally {
+    if (timer) clearTimeout(timer);
+    if (AI_WARM_BUSY.get(kind) === p) AI_WARM_BUSY.delete(kind);
+  }
+}
+
+/* الكاش بارد ⇒ سخّن مرة واقرأ ثانية. والقراءة تبقى `aiCache` وحدها. */
+async function aiCacheWarm(term) {
+  const c = aiCache(term);
+  if (c.available) return c;
+  const t = term ? String(term) : activeTerm();
+  const ok = await aiWarmOnce('courses|' + t,
+    () => Promise.all(['M1', 'F1'].map(g => getCourses(t, 'ALL', g))));
+  if (!ok) return c;
+  const c2 = aiCache(term);
+  return c2.available ? c2 : c;
+}
+
+/* فهرس القاعات يُبنى من نفس `getCourses`، فتسخينه يسخّن الاثنين */
+async function aiRoomsWarm() {
+  if (ROOM_INDEX && ROOM_INDEX.rooms) return ROOM_INDEX;
+  await aiWarmOnce('rooms', () => buildRoomIndex());
+  return ROOM_INDEX;
+}
+
+/* النهائيات صفحة ثانية عند الجامعة — نفس الحرّاس */
+async function aiFinalsWarm() {
+  if (finalsCache.M || finalsCache.F) return;
+  await aiWarmOnce('finals', () => getFinals());
+}
+
 /* صف امتحان → ما يراه النموذج */
 function aiExam(e) {
   return { crn: e.crn, code: e.code, title: e.title, section: e.section,
@@ -6523,10 +6613,10 @@ const AI_TOOLS = {
       instructor: { type: 'string', description: 'اسم الدكتور أو جزء منه — بدل كود المادة' },
       openOnly: { type: 'boolean', description: 'المفتوحة فقط' } },
       required: [] },
-    run: (ctx, a) => {
+    run: async (ctx, a) => {
       if (!a.code && !a.instructor)
         return { error: 'حدّد كود مادة أو اسم دكتور' };
-      const c = aiCache();
+      const c = await aiCacheWarm();
       if (!c.available) return c;
       const want = String(a.code || '').toUpperCase().replace(/\s+/g, ' ').trim();
       const who = String(a.instructor || '').trim();
@@ -6586,8 +6676,8 @@ const AI_TOOLS = {
       /* ترم **التسجيل** هو اللي يبني له، لا ترم الدراسة — ويختلفان في
          التسجيل المبكر للصيفي. وإن كان كاشه بارداً رجعنا لترم الدراسة،
          والترم يرجع في الرد فالنموذج يقوله للطالب. */
-      let c = aiCache(regTerm());
-      if (!c.available && regTerm() !== activeTerm()) c = aiCache();
+      let c = await aiCacheWarm(regTerm());
+      if (!c.available && regTerm() !== activeTerm()) c = await aiCacheWarm();
       if (!c.available) return c;
 
       let codes = (Array.isArray(a.codes) ? a.codes : []).map(String)
@@ -6767,7 +6857,7 @@ const AI_TOOLS = {
     run: async (ctx, a) => {
       const crn = String(a.crn || '').trim();
       if (!crn) return { error: 'حدّد رقم الشعبة' };
-      const c = aiCache();
+      const c = await aiCacheWarm();
       if (!c.available) return c;
       /* المحاضرة والمعمل صفّان بنفس CRN ويُضافان معاً (§٦) */
       const sess = c.courses.filter(x => String(x.crn) === crn);
@@ -6797,7 +6887,7 @@ const AI_TOOLS = {
     run: async (ctx, a) => {
       const crn = String(a.crn || '').trim();
       if (!crn) return { error: 'حدّد رقم الشعبة' };
-      const c = aiCache();
+      const c = await aiCacheWarm();
       if (!c.available) return c;
       const sec = c.courses.find(x => String(x.crn) === crn);
       if (!sec) return { known: false,
@@ -6940,7 +7030,7 @@ const AI_TOOLS = {
       gender: { type: 'string', enum: ['M', 'F'] },
       limit: { type: 'integer', description: 'كم قاعة ترجع — الافتراضي ٥' } },
       required: ['day', 'from', 'to'] },
-    run: (ctx, a) => {
+    run: async (ctx, a) => {
       const day = String(a.day || '').toUpperCase();
       const from = parseInt(a.from, 10), to = parseInt(a.to, 10);
       if (!'UMTWRFS'.includes(day) || day.length !== 1)
@@ -6948,7 +7038,8 @@ const AI_TOOLS = {
       if (!Number.isFinite(from) || !Number.isFinite(to) ||
           from < 0 || to > 1440 || to <= from)
         return { error: 'نافذة وقت غير صحيحة' };
-      /* الفهرس المبني مسبقاً فقط — buildRoomIndex تسحب، فما نناديها */
+      /* بارد ⇒ نبنيه مرة (بحرّاس aiWarmOnce)، وإلا الرسالة الهادئة */
+      await aiRoomsWarm();
       if (!ROOM_INDEX || !ROOM_INDEX.rooms)
         return { available: false, error: AI_CACHE_COLD };
       const r = freeRooms(ROOM_INDEX, { day, from, to,
@@ -6970,7 +7061,8 @@ const AI_TOOLS = {
       required: [] },
     run: async (ctx, a) => {
       if (!FINALS_ON) return { available: false, error: 'جدول النهائيات مو معروضاً الآن' };
-      /* الكاش المبني مسبقاً فقط — getOne تسحب لو بارد */
+      /* بارد ⇒ نسحبه مرة (بحرّاس aiWarmOnce) */
+      await aiFinalsWarm();
       const all = [];
       let at = 0;
       for (const g of ['M', 'F']) {
@@ -8248,6 +8340,9 @@ const server = http.createServer(async (req, res) => {
               return send(400, { error: 'الوضع: ' + AI_MODES.join(' أو ') });
             AI_MODE = m;
           }
+          /* تسخين الكاش من سؤال الطالب — مفتاح الأمان: لو تعثّرنا مع
+             الجامعة نطفيه بلا نشر، والمساعد يرجع يقول «مو جاهزة». */
+          if ('warm' in p) AI_WARM_ON = !!p.warm;
           if ('model' in p) {
             const m = String(p.model || '').trim();
             if (m && !/^[a-z0-9.-]{3,60}$/i.test(m))
@@ -8270,6 +8365,7 @@ const server = http.createServer(async (req, res) => {
           model: aiModel(), modelEnv: AI_MODEL_ENV,
           modelCustom: !!AI_MODEL_OVERRIDE, modelKnown: aiKnownModel(aiModel()),
           caps: AI_CAPS, defaults: AI_CAPS_DEFAULT, alerted: AI_ALERTED,
+          warm: aiWarmState(),
           fails: OPS.aiFails || 0, unlogged: OPS.aiUnlogged || 0,
           spend: sp ? {
             monthSar: Number(aiSar(sp.micro)), todaySar: Number(aiSar(sp.today)),
