@@ -4451,6 +4451,296 @@ function schedClash(a, b) {
   return ta.start < tb.end && tb.start < ta.end;
 }
 
+/* ═══ باني الجداول (CLAUDE.md §٩-أ-٥) ═══
+   دالة **صافية**: تاخذ صفوف الشعب المطروحة وقائمة المواد وتفضيلات
+   الطالب، وترجّع أفضل التوليفات بلا تعارض. النموذج **يشرح ولا يركّب**:
+   تركيب الجدول عدّ لا رأي، ونموذج يركّبه بنفسه يخترع شعبة ما تُطرح
+   أو يمرّر تعارضاً ما انتبه له.
+
+   أربع قواعد هنا:
+   ١) **التعارض بـschedClash وحدها** — ما نكتب فحص وقت ثانياً (§١٠).
+      نحسب مصفوفة التعارض بين المرشحين مرة واحدة، والبحث بعدها
+      لمسات فهرس لا تحليل نصوص.
+   ٢) **المعمل من عنوان الجامعة لا من التخمين**: العنوان ينتهي بـ" LAB"
+      — "Chemistry for Engineers I LAB". رقم الشعبة يخدع (١٠٥ محاضرة
+      و١١٣ معمل في مادة، و٢٠١ و٢١١ في ثانية)، والعنوان لا يخدع.
+      ومادة لها محاضرة ومعمل: نختار من كل قسم واحدة.
+      ("LEC/LAB" ما قبلها مسافة فتبقى محاضرة — وهي شعبة واحدة تكفي.)
+   ٣) **التفضيلات تُشدَّد أولاً وتُرخى ثانياً**: لو ما طلع ولا جدول
+      بتفضيلاته، نعيد بالتفضيلات نقاطاً لا شروطاً ونقول له وش تنازلنا
+      عنه بالضبط. جدول فيه يوم ما كان يبغاه خير من «ما فيه حل».
+   ٤) **بلا حل = نقول ليش**: أي مادتين كل شعبهما متعارضة نسمّيهما. */
+
+const SCHED_LAB_RE = /\sLAB$/i;
+const schedIsLab = r => SCHED_LAB_RE.test(
+  String(r.courseTitle || r.course_title || '').replace(/&#x27;/g, "'").trim());
+
+/* أوزان الترتيب. اليوم بالدقائق: «يوم أقل» تساوي عند الطالب ساعتين
+   ونصف انتظار — ومن يبغى العكس يطلبه صراحةً فيتبدّل الوزن. */
+const SCHED_PREFER = {
+  balanced: { day: 150, gap: 1 },
+  days:     { day: 400, gap: 1 },   /* أقل أيام حضور */
+  gaps:     { day: 60,  gap: 2 },   /* أقل فراغات بين المحاضرات */
+};
+const SCHED_DAY_ORDER = ['U', 'M', 'T', 'W', 'R', 'F', 'S'];
+const SCHED_VIOL_DAY = 300;   /* يوم طلب يفضّيه واضطررنا له */
+const SCHED_VIOL_MIN = 2;     /* كل دقيقة قبل/بعد الوقت اللي حدّده */
+const SCHED_CLOSED   = 500;   /* شعبة مقفلة دخلت التوليفة */
+
+function buildSchedules(rows, opts) {
+  const o = opts || {};
+  const norm = c => String(c || '').toUpperCase().replace(/\s+/g, ' ').trim();
+  const codes = [...new Set((o.codes || []).map(norm).filter(Boolean))];
+  const limit = Math.max(1, Math.min(5, Number(o.limit) || 3));
+  const want = o.gender === 'F' ? 'F' : o.gender === 'M' ? 'M' : null;
+  const wantLabs = o.labs !== false;
+  const openOnly = o.openOnly !== false;
+  const avoid = new Set((Array.isArray(o.avoidDays) ? o.avoidDays : [])
+    .map(d => String(d).toUpperCase()).filter(d => SCHED_DAY_ORDER.includes(d)));
+  const noEarlier = Number.isFinite(o.noEarlier) ? Number(o.noEarlier) : null;
+  const noLater = Number.isFinite(o.noLater) ? Number(o.noLater) : null;
+  const W = SCHED_PREFER[o.prefer] || SCHED_PREFER.balanced;
+  const maxNodes = Math.max(1000, Number(o.maxNodes) || 200000);
+
+  if (!codes.length) return { ok: false, error: 'ما فيه مواد نركّب منها',
+    requested: [], slots: [], missing: [], options: [], conflicts: [] };
+
+  /* المثبّت: صفوف يُبنى الجدول حولها. مادة طلبها الطالب تُشال منه
+     حتى ما نحجز مكانها مرتين — يبدّلها لا يزيدها. */
+  const keep = (Array.isArray(o.keep) ? o.keep : [])
+    .filter(r => !codes.includes(norm(r.courseCode || r.course_code)));
+
+  /* ── وحدة الاختيار: صفوف نفس الـCRN شعبة واحدة (§٦) ── */
+  const units = new Map();
+  (rows || []).forEach(r => {
+    const code = norm(r.courseCode || r.course_code);
+    if (!codes.includes(code)) return;
+    const crn = String(r.crn || '').trim();
+    if (!crn) return;
+    const k = code + '|' + crn;
+    let u = units.get(k);
+    if (!u) {
+      u = { crn, code, title: String(r.courseTitle || r.course_title || ''),
+        section: String(r.section || ''), instructor: String(r.instructor || ''),
+        rooms: [], status: String(r.status || '').toUpperCase(),
+        gender: r.gender || null, lab: false, rows: [] };
+      units.set(k, u);
+    }
+    u.rows.push(r);
+    const room = r.room || '';
+    if (room && !u.rooms.includes(room)) u.rooms.push(room);
+  });
+
+  const list = [...units.values()];
+  list.forEach(u => {
+    /* الوحدة معمل لو **كل** صفوفها معمل. محاضرة ومعمل بنفس الـCRN
+       شعبة واحدة تُسجَّل مرة (§٦) — فما تصير خانة معمل مستقلة،
+       ولا يعتمد التصنيف على ترتيب الصفوف في الكاش. */
+    u.lab = u.rows.every(schedIsLab);
+    u.meets = [];
+    u.rows.forEach(r => {
+      const t = schedTime(r.courseTiming || r.course_timing);
+      const d = schedDays(r.courseDate || r.course_date);
+      if (t && d.length) u.meets.push({ days: d, start: t.start, end: t.end });
+    });
+    u.days = SCHED_DAY_ORDER.filter(d => u.meets.some(m => m.days.includes(d)));
+    u.start = u.meets.length ? Math.min(...u.meets.map(m => m.start)) : null;
+    /* مخالفات التفضيل — تُحسب للوحدة، وتُجمَّع للجدول كاملاً بعدين */
+    u.viol = [];
+    u.days.forEach(d => { if (avoid.has(d)) u.viol.push('day:' + d) });
+    if (noEarlier !== null && u.meets.some(m => m.start < noEarlier)) u.viol.push('early');
+    if (noLater !== null && u.meets.some(m => m.end > noLater)) u.viol.push('late');
+    /* الاستبعاد النهائي — هذي ما تُرخى في الجولة الثانية */
+    u.out = (want && u.gender && u.gender !== want) ? 'gender'
+      : (openOnly && u.status === 'CLOSE') ? 'closed'
+      : keep.some(k => u.rows.some(r => schedClash(r, k))) ? 'keep' : null;
+  });
+
+  /* ── الخانات: لكل مادة محاضرة، وإن كان لها معمل فمعمل كذلك ── */
+  const missing = [], slots = [];
+  codes.forEach(code => {
+    const mine = list.filter(u => u.code === code);
+    if (!mine.length) { missing.push({ code, reason: 'ما لقينا لها شعباً مطروحة' }); return }
+    const lab = mine.filter(u => u.lab), lec = mine.filter(u => !u.lab);
+    const parts = [];
+    if (lec.length) parts.push({ kind: 'lecture', all: lec });
+    if (lab.length && (wantLabs || !lec.length)) parts.push({ kind: 'lab', all: lab });
+    parts.forEach(p => {
+      const usable = p.all.filter(u => !u.out);
+      if (!usable.length) {
+        const why = w => p.all.every(u => u.out === w);
+        missing.push({ code, part: p.kind,
+          reason: why('gender') ? 'ما فيها شعب لجنسه'
+            : why('closed') ? 'كل شعبها مقفلة'
+            : why('keep') ? 'كل شعبها تتعارض مع المثبّت في جدوله'
+            : 'ما بقيت لها شعبة صالحة' });
+        return;
+      }
+      slots.push({ code, kind: p.kind, all: usable });
+    });
+  });
+
+  const partName = s => s.code + (s.kind === 'lab' ? ' (معمل)' : '');
+  const head = { requested: codes, kept: keep.length,
+    slots: slots.map(s => ({ code: s.code, part: s.kind, choices: s.all.length })),
+    missing };
+
+  if (!slots.length) return Object.assign({ ok: false, options: [], conflicts: [],
+    relaxed: false, tried: 0, capped: false }, head);
+
+  /* ── مصفوفة التعارض: schedClash مرة لكل زوج وحدات ── */
+  const N = list.length;
+  const at = new Map();
+  list.forEach((u, i) => at.set(u, i));
+  const CL = list.map(() => new Uint8Array(N));
+  for (let i = 0; i < N; i++) {
+    for (let j = i + 1; j < N; j++) {
+      let c = 0;
+      for (const x of list[i].rows) {
+        for (const y of list[j].rows) if (schedClash(x, y)) { c = 1; break }
+        if (c) break;
+      }
+      CL[i][j] = CL[j][i] = c;
+    }
+  }
+  /* شعبتان من نفس الخانة ما تجتمعان ولو ما تعارضتا وقتاً */
+  slots.forEach(s => s.all.forEach(a => s.all.forEach(b => {
+    if (a !== b) CL[at.get(a)][at.get(b)] = 1;
+  })));
+
+  /* ── نقاط الجدول الكامل ── */
+  const scoreOf = sol => {
+    const byDay = {};
+    sol.forEach(u => u.meets.forEach(m => m.days.forEach(d =>
+      (byDay[d] = byDay[d] || []).push(m))));
+    const dayList = SCHED_DAY_ORDER.filter(d => byDay[d]);
+    let gap = 0, first = null, last = null, early = 0, late = 0;
+    const perDay = [];
+    dayList.forEach(d => {
+      const L = byDay[d].slice().sort((a, b) => a.start - b.start);
+      for (let i = 1; i < L.length; i++) gap += Math.max(0, L[i].start - L[i - 1].end);
+      const s = L[0].start, e = L[L.length - 1].end;
+      if (first === null || s < first) first = s;
+      if (last === null || e > last) last = e;
+      if (noEarlier !== null && s < noEarlier) early += (noEarlier - s);
+      if (noLater !== null && e > noLater) late += (e - noLater);
+      perDay.push({ day: d, start: s, end: e, classes: L.length });
+    });
+    const hitDays = dayList.filter(d => avoid.has(d));
+    const closed = sol.filter(u => u.status === 'CLOSE').length;
+    const violations = hitDays.map(d => 'day:' + d);
+    if (early) violations.push('early');
+    if (late) violations.push('late');
+    return {
+      score: W.day * dayList.length + W.gap * gap + SCHED_VIOL_DAY * hitDays.length
+        + SCHED_VIOL_MIN * (early + late) + SCHED_CLOSED * closed,
+      days: dayList, perDay, gapMin: gap, firstStart: first, lastEnd: last,
+      closed, violations,
+      key: sol.map(u => u.crn).slice().sort().join(','),
+    };
+  };
+
+  /* ── البحث: الخانة الأضيق أولاً، وقطع مبكر على عدد الأيام ── */
+  const run = strict => {
+    const pools = slots.map(s => ({ s,
+      pool: strict ? s.all.filter(u => !u.viol.length) : s.all.slice() }));
+    if (pools.some(p => !p.pool.length)) return null;
+    pools.forEach(p => p.pool.sort((a, b) =>
+      a.viol.length - b.viol.length || a.days.length - b.days.length
+      || (a.start === null ? 1e9 : a.start) - (b.start === null ? 1e9 : b.start)
+      || (a.crn < b.crn ? -1 : a.crn > b.crn ? 1 : 0)));
+    const order = pools.slice().sort((a, b) => a.pool.length - b.pool.length
+      || (partName(a.s) < partName(b.s) ? -1 : 1));
+
+    const best = [];
+    const chosen = [], dayN = {};
+    let nodes = 0, tried = 0, capped = false, days = 0;
+    const worst = () => best.length < limit ? Infinity : best[best.length - 1].score;
+
+    const dfs = k => {
+      if (capped) return;
+      if (k === order.length) {
+        tried++;
+        const r = scoreOf(chosen);
+        if (best.length < limit || r.score < worst()
+            || (r.score === worst() && r.key < best[best.length - 1].key)) {
+          best.push(Object.assign({ picks: chosen.slice() }, r));
+          best.sort((a, b) => a.score - b.score || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+          if (best.length > limit) best.length = limit;
+        }
+        return;
+      }
+      for (const u of order[k].pool) {
+        if (++nodes > maxNodes) { capped = true; return }
+        const ui = at.get(u);
+        let bad = false;
+        for (const c of chosen) if (CL[ui][at.get(c)]) { bad = true; break }
+        if (bad) continue;
+        const fresh = u.days.filter(d => !dayN[d]);
+        /* حد أدنى أكيد: الأيام تزيد ولا تنقص */
+        if (best.length >= limit && W.day * (days + fresh.length) >= worst()) continue;
+        u.days.forEach(d => { dayN[d] = (dayN[d] || 0) + 1 });
+        days += fresh.length;
+        chosen.push(u);
+        dfs(k + 1);
+        chosen.pop();
+        days -= fresh.length;
+        u.days.forEach(d => { if (!--dayN[d]) delete dayN[d] });
+        if (capped) return;
+      }
+    };
+    dfs(0);
+    return { options: best, tried, capped };
+  };
+
+  let res = run(true);
+  if (!res || !res.options.length) {
+    const r2 = run(false);
+    if (r2 && (r2.options.length || !res)) res = r2;
+  }
+  if (!res) res = { options: [], tried: 0, capped: false };
+
+  /* ── بلا حل: أي خانتين كل شعبهما متعارضة ── */
+  const conflicts = [];
+  if (!res.options.length) {
+    for (let a = 0; a < slots.length; a++) {
+      for (let b = a + 1; b < slots.length; b++) {
+        const A = slots[a], B = slots[b];
+        if (A.all.every(x => B.all.every(y => CL[at.get(x)][at.get(y)])))
+          conflicts.push({ a: partName(A), b: partName(B) });
+      }
+    }
+  }
+
+  const hhmm = m => m === null || m === undefined ? null
+    : String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+
+  return Object.assign({
+    ok: res.options.length > 0,
+    relaxed: res.options.some(x => x.violations.length > 0),
+    tried: res.tried, capped: res.capped,
+    conflicts,
+    options: res.options.map((x, i) => ({
+      rank: i + 1, score: x.score,
+      days: x.days, daysOff: SCHED_DAY_ORDER.filter(d => !x.days.includes(d)),
+      gapMin: x.gapMin, firstStart: hhmm(x.firstStart), lastEnd: hhmm(x.lastEnd),
+      perDay: x.perDay.map(d => ({ day: d.day, from: hhmm(d.start),
+        to: hhmm(d.end), classes: d.classes })),
+      violations: x.violations, closedSections: x.closed,
+      crns: x.picks.map(u => u.crn),
+      picks: x.picks.map(u => ({ crn: u.crn, code: u.code, title: u.title,
+        section: u.section, part: u.lab ? 'lab' : 'lecture',
+        instructor: u.instructor, days: u.days.join(''),
+        from: hhmm(u.meets.length ? Math.min(...u.meets.map(m => m.start)) : null),
+        to: hhmm(u.meets.length ? Math.max(...u.meets.map(m => m.end)) : null),
+        meets: u.rows.map(r => ({ days: r.courseDate || r.course_date || '',
+          time: r.courseTiming || r.course_timing || '', room: r.room || '' })),
+        status: u.status, gender: u.gender })),
+    })),
+  }, head);
+}
+/* ═══ نهاية باني الجداول ═══ */
+
 /* ═══ إشعار تغيّر الجدول ═══
    يُرسل بعد التأكيد فقط. التغيير يمسّ كل من في جدوله تلك الشعبة،
    فنجمّع لكل طالب رسالة واحدة مهما تعددت مواده المتغيّرة في الدورة. */
@@ -5664,6 +5954,33 @@ function aiHHMM(m) {
   return String(h).padStart(2, '0') + ':' + String(x).padStart(2, '0');
 }
 
+/* "1000" · "10:00" · "10" ← دقيقة من منتصف الليل. وغيرها null فما نفلتر
+   بوقت ما فهمناه — الفلتر الخاطئ يخفي جداول صالحة بلا ما يدري الطالب. */
+function aiClock(s) {
+  const t = String(s == null ? '' : s).trim();
+  if (!t) return null;
+  let m = /^(\d{1,2}):(\d{2})$/.exec(t);
+  if (m) return +m[1] * 60 + +m[2];
+  m = /^(\d{3,4})$/.exec(t);
+  if (m) {
+    const p = m[1].padStart(4, '0');
+    return parseInt(p.slice(0, 2), 10) * 60 + parseInt(p.slice(2), 10);
+  }
+  m = /^(\d{1,2})$/.exec(t);
+  if (m) return +m[1] * 60;
+  return null;
+}
+
+/* جنس الطالب: ما فيه عمود له في profiles، ونستنتجه من أرقام شعب جدوله.
+   والقاعدة واحدة في الموقع كله — tagGender (1xx طلاب · 2xx طالبات) —
+   فما نكتبها هنا مرة ثانية. وما بان؟ null، وبناء الجدول بلا فلتر جنس
+   خير من فلتر مقلوب يخفي كل شعبه. */
+function aiGender(rows) {
+  const g = new Set(tagGender((rows || []).map(r => ({ section: r.section })), null)
+    .map(x => x.gender).filter(Boolean));
+  return g.size === 1 ? [...g][0] : null;
+}
+
 /* ═══ قارئ الكاش — ما يسحب من الجامعة أبداً ═══
    getCourses تسحب لو الكاش بارد، فما نناديها من أداة: سؤال طالب
    ما يصير سبباً لضغطة على موقع الجامعة (§٩-أ · §١٠). نقرأ الخريطة
@@ -5676,8 +5993,10 @@ function aiHHMM(m) {
 const AI_CACHE_MAX_AGE = 12 * 60 * 60 * 1000;
 const AI_CACHE_COLD = 'بيانات الجامعة مو جاهزة الآن — جرّب بعد شوي';
 
-function aiCache() {
-  const term = activeTerm();
+function aiCache(wantTerm) {
+  /* الترم اختياري: باني الجداول يبغى ترم **التسجيل** لا ترم الدراسة،
+     وهما يختلفان في التسجيل المبكر للصيفي. والافتراضي ما تغيّر. */
+  const term = wantTerm ? String(wantTerm) : activeTerm();
   let newest = null;
   /* الجنسان يُسحبان منفصلين — نضمّهما ونأخذ أحدثهما زمناً */
   const parts = [];
@@ -6136,6 +6455,75 @@ const AI_TOOLS = {
     },
   },
 
+
+  /* ═══ باني الجداول (§٩-أ-٥) ═══
+     الحساب في buildSchedules — دالة صافية خارج هذي المنطقة — والنموذج
+     يشرح ما رجع. سبب الفصل: تركيب الجدول عدّ، والعدّ ما يُترك لنموذج. */
+  build_schedule: {
+    tier: 'pro',
+    description: 'باني الجداول: يركّب أفضل ٣ جداول **بلا تعارض** من الشعب المطروحة، '
+      + 'بتفضيلات الطالب (أيام يبغاها فاضية · ما قبل/بعد ساعة · بدون معامل · '
+      + 'أقل أيام ولا أقل فراغات). من كاش جدولك — ما نسحب من الجامعة. '
+      + 'وبلا مواد يبني من مقترح الترم الجاي. '
+      + '**اشرح اللي رجع ولا تركّب بنفسك**: لا تخترع شعبة، ولا تبدّل CRN، '
+      + 'ولا تخلط شعباً من خيارين مختلفين — الخيار يُؤخذ كاملاً.',
+    input_schema: { type: 'object', properties: {
+      codes: { type: 'array', items: { type: 'string' },
+        description: 'أكواد المواد مثل ["CHEM 1421","MATH 1422"] — اتركه فاضياً ليبني من المقترح' },
+      avoidDays: { type: 'array',
+        items: { type: 'string', enum: ['U', 'M', 'T', 'W', 'R', 'F', 'S'] },
+        description: 'أيام يبغاها فاضية: U الأحد · M الإثنين · T الثلاثاء · W الأربعاء · R الخميس' },
+      noEarlier: { type: 'string', description: 'ما يبغى شي قبل هذي الساعة، مثل "1000"' },
+      noLater: { type: 'string', description: 'ما يبغى شي بعد هذي الساعة، مثل "1600"' },
+      prefer: { type: 'string', enum: ['balanced', 'days', 'gaps'],
+        description: 'balanced الافتراضي · days أقل أيام حضور · gaps أقل فراغ بين المحاضرات' },
+      labs: { type: 'boolean', description: 'يضمّ المعمل مع المادة اللي لها معمل — الافتراضي نعم' },
+      openOnly: { type: 'boolean', description: 'المفتوحة فقط — الافتراضي نعم' },
+      keepCurrent: { type: 'boolean',
+        description: 'يبني حول مواد جدوله الحالي بدل ما يبدأ من فاضي' } },
+      required: [] },
+    run: async (ctx, a) => {
+      /* ترم **التسجيل** هو اللي يبني له، لا ترم الدراسة — ويختلفان في
+         التسجيل المبكر للصيفي. وإن كان كاشه بارداً رجعنا لترم الدراسة،
+         والترم يرجع في الرد فالنموذج يقوله للطالب. */
+      let c = aiCache(regTerm());
+      if (!c.available && regTerm() !== activeTerm()) c = aiCache();
+      if (!c.available) return c;
+
+      let codes = (Array.isArray(a.codes) ? a.codes : []).map(String)
+        .map(x => x.trim()).filter(Boolean);
+      let source = 'مواد طلبها الطالب';
+      if (!codes.length) {
+        const s = PLANS_DATA.suggestNext(ctx.plan);
+        codes = s.crit.concat(s.opt).map(x => x.c);
+        source = 'مقترح الترم الجاي من خطته';
+        if (!codes.length) return { error: AI_UNKNOWN + ' — حدّد المواد اللي تبغاها' };
+      }
+      /* سقف: ثماني مواد أكثر من أي ترم، والبحث يكبر أسّياً بعدها */
+      const over = codes.length > 8;
+      if (over) codes = codes.slice(0, 8);
+
+      const mine = await aiSchedule(ctx);
+      const r = buildSchedules(c.courses, {
+        codes,
+        gender: aiGender(mine),
+        labs: a.labs !== false,
+        openOnly: a.openOnly !== false,
+        avoidDays: Array.isArray(a.avoidDays) ? a.avoidDays : [],
+        noEarlier: aiClock(a.noEarlier),
+        noLater: aiClock(a.noLater),
+        prefer: a.prefer,
+        keep: a.keepCurrent ? mine : [],
+        limit: 3,
+      });
+      return Object.assign({ term: c.term, cacheAgeMin: c.ageMin, source,
+        truncated: over || undefined,
+        note: 'خيارات من الشعب المطروحة وقت آخر تحديث للكاش — المقاعد تتغيّر، '
+          + 'والتسجيل نفسه من بانر الجامعة لا من هنا. '
+          + (r.relaxed ? 'ما طلع جدول بكل تفضيلاته، فرخّينا وقلنا وش تنازلنا عنه في violations. ' : '')
+          + 'ولو ودّه بشعبة منها في جدوله، نادِ propose_add_section برقمها.' }, r);
+    },
+  },
 
   /* ═══ أدوات الاقتراح — تقترح ولا تنفّذ (§٩-أ-٤) ═══
      ولا واحدة منها تكتب صفاً. ترجّع وصف الفعل، والصفحة تعرضه للطالب
@@ -6749,6 +7137,11 @@ const AI_SYSTEM = `أنت «مساعد جدولك» — مساعد داخل مو
   كيف أضيف موعد)؟ استعمل أداة الدليل — لا تجاوب من عندك ولا تقول
   «ما عندي أداة» قبل ما تجرّبها.
 - الأداة تقول إن بيانات الجامعة مو جاهزة؟ قل له يجرّب بعد شوي — ولا تعطيه رقماً قديماً من عندك.
+- **ما تركّب جدولاً بنفسك.** «ابن لي جدول» · «رتّب لي مواد الترم» · «وش
+  أنسب توليفة» · «أبي جدول بدون خميس» ⇒ باني الجداول. تعارض الأوقات
+  **عدّ لا تقدير**، وأنت تغلط فيه وهو ما يغلط. اعرض خياراته كما رجعت
+  بأرقام شعبها، ولا تبدّل شعبة ولا تخلط شعباً من خيارين — الخيار
+  يُؤخذ كاملاً. وقال إنه تنازل (relaxed)؟ قل للطالب وش تنازل عنه.
 
 حدودك:
 - ترد على صاحب السؤال ببياناته هو فقط. ما عندك أي طريقة توصل بيانات طالب ثاني، ولا تحاول، ولا تعد بذلك.
