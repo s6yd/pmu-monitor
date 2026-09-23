@@ -4421,9 +4421,20 @@ function esc(v) {
 function schedDays(s) {
   return String(s || '').toUpperCase().split('').filter(c => 'UMTWRFS'.includes(c));
 }
+/* الجامعة ترجّع الوقت **بلا نقطتين**: "0930 - 1045". النمط القديم كان
+   يطلب HH:MM فيرجع null على كل صف حقيقي — فـmy_day يطلع فاضي دائماً،
+   وقائمة التعارض في إشعار تغيّر الجدول تطلع فاضية دائماً كذلك.
+   الصفحة كانت تفهمها من البداية (parseTime)، والسيرفر لا. نقبل
+   الصيغتين: المحفوظ القديم بنقطتين وارد. */
 function schedTime(s) {
-  const m = String(s || '').match(/(\d+):(\d+)\s*-\s*(\d+):(\d+)/);
-  return m ? { start: +m[1] * 60 + +m[2], end: +m[3] * 60 + +m[4] } : null;
+  const str = String(s || '');
+  let m = str.match(/(\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})/);
+  if (m) return { start: +m[1] * 60 + +m[2], end: +m[3] * 60 + +m[4] };
+  m = str.match(/(\d{3,4})\s*[-–]\s*(\d{3,4})/);
+  if (!m) return null;
+  const t = x => { const p = String(x).padStart(4, '0');
+    return parseInt(p.slice(0, 2), 10) * 60 + parseInt(p.slice(2), 10) };
+  return { start: t(m[1]), end: t(m[2]) };
 }
 function schedClash(a, b) {
   const da = schedDays(a.courseDate || a.course_date);
@@ -5620,13 +5631,28 @@ const AI_TOOLS = {
     description: 'المقترح للترم الجاي: المواد الأساسية والاختيارية بترتيبها، '
       + 'وساعاتها، وليش كل مادة (إعادة/تفتح مواد/آخر فرصة).',
     input_schema: { type: 'object', properties: {}, required: [] },
-    run: (ctx) => {
+    run: async (ctx) => {
       const s = PLANS_DATA.suggestNext(ctx.plan);
+      /* المسجّل هذا الترم مو «منجزاً» في الخطة — درجته ما طلعت بعد —
+         فالمقترح يرجّعه كأنه ناقص، ونقترح على الطالب مواد هو قاعد
+         ياخذها الحين. نقرأ جدوله ونستبعدها، ونسمّيها له صريحاً.
+         ما نلمس suggestNext نفسها: الصفحة تشاركها وتبويب «خطتي»
+         يرسم منها لكل طالب. */
+      const rows = await aiSchedule(ctx);
+      const now = new Set(rows.map(r =>
+        String(r.course_code || '').trim().toUpperCase()).filter(Boolean));
       const map = c => ({ code: c.c, name: c.n, credits: c.h,
         unlocks: c.unlocks || 0, retake: !!c.retake,
         lastChance: !!c.lastChance, prep: !!c.prep });
-      return { critical: s.crit.map(map), optional: s.opt.map(map),
-        hours: s.hours, internshipOnly: !!s.internOnly,
+      const taking = c => now.has(String(c.c || '').trim().toUpperCase());
+      const crit = s.crit.filter(c => !taking(c)).map(map);
+      const opt = s.opt.filter(c => !taking(c)).map(map);
+      const hrs = l => l.reduce((n, c) => n + (Number(c.credits) || 0), 0);
+      return { critical: crit, optional: opt,
+        hours: hrs(crit) + hrs(opt),
+        alreadyTaking: s.crit.concat(s.opt).filter(taking).map(c => c.c),
+        planHours: s.hours,
+        internshipOnly: !!s.internOnly,
         internshipAvailable: !!s.internAvailable,
         adminPlacedOnly: !!s.admOnly,
         prepLevel: s.prepSem ? s.prepSem.id : null };
@@ -5683,9 +5709,18 @@ const AI_TOOLS = {
       const rows = await aiSchedule(ctx, a.slot);
       if (!rows.length) return { count: 0, courses: [],
         note: 'ما فيه مواد في هذا الجدول' };
+      /* المحاضرة والمعمل صفّان بنفس كود المادة (§٦)، فجمع الساعات صفاً
+         صفاً يعدّها مرتين: ٢٥ ساعة لطالب عنده ٢٠. نعدّ الأكواد الفريدة. */
+      const seen = new Set();
+      let totalCredits = 0;
+      rows.forEach(r => {
+        const code = String(r.course_code || '').trim().toUpperCase();
+        if (!code || seen.has(code)) return;
+        seen.add(code);
+        totalCredits += PLANS_DATA.creditsOf(ctx.plan, code);
+      });
       return { count: rows.length, term: rows[0].term || null,
-        totalCredits: rows.reduce((s, r) =>
-          s + PLANS_DATA.creditsOf(ctx.plan, r.course_code || ''), 0),
+        distinctCourses: seen.size, totalCredits,
         courses: rows.map(aiSchedRow) };
     },
   },
@@ -6202,15 +6237,30 @@ const aiUsedOf = q => ({ day: q.day, dayCap: q.cap.day,
 const AI_SYSTEM = `أنت «مساعد جدولك» — مساعد داخل موقع جدولك لطلاب جامعة الأمير محمد بن فهد (PMU).
 
 كيف تتكلم:
-- عربي بلهجة الطلاب، قصير ومباشر. جملتين أو ثلاث غالباً.
+- **لهجة سعودية/خليجية**، قصير ومباشر. جملتين أو ثلاث غالباً.
+  قل: وش · كم · عندك · تبي · ما فيه · شوف · زين · باقي لك · خلّص.
+  لا تقل أبداً: «ما فيش» · «بدك» · «هاي» · «دي» · «عايز» · «كده» ·
+  «إزاي» · «شوية» بمعنى قليل — هذي مصرية أو شامية وتبيّن إنك غريب.
+- **بلا أي تنسيق Markdown.** الموقع يعرض ردك **نصاً خاماً**، فالنجمتان
+  تظهران نجمتين للطالب لا خطاً غامقاً. ممنوع: ** و ## و * في أول السطر.
+  للقوائم استعمل سطراً لكل عنصر يبدأ بـ«- » أو برقم لاتيني.
+- إيموجي واحد على الأكثر، وأحياناً فقط — لا في كل رسالة.
 - الأكواد والأرقام والتواريخ لاتينية وميلادية: MATH 1422 · 2026-09-23.
-- بلا تنسيق كثير: سطور قصيرة أو نقاط قليلة.
+- لا تعتذر كثير ولا تكرّر «معذرة». صحّح وكمّل.
 
 من وين تجيب المعلومة:
 - من الأدوات وحدها. ما عندك أي معرفة عن الجامعة أو خططها أو دكاترتها غير اللي ترجّعه الأدوات.
 - ما لقيت الجواب في أداة؟ قل «ما أعرف» بصراحة، واقترح عليه وش يسوي.
 - ممنوع تخترع: مادة، متطلب، ساعات، وقت، قاعة، دكتور، تاريخ، رقم شعبة، مقعد.
 - رجّعت الأداة خطأ أو «ما لقيتها»؟ انقلها للطالب ولا تكمّل من عندك.
+- **لا تفسّر نتيجة أداة بما ليس فيها.** الأداة ما رجّعت شعباً؟ معناها ما
+  عندنا بياناتها الآن — لا «لأنك خلّصت المادة» ولا «لأنها ما تُطرح».
+  السبب الوحيد اللي تقوله هو السبب المكتوب في النتيجة نفسها.
+- ما تعرف كود المادة من اسمها الدارج؟ لا تخمّنه ولا تسأل الطالب مباشرة
+  قبل ما تحاول: دوّر عليه بأدوات الخطة أولاً، وإن ما طلع اسأله عن الكود.
+- سؤال عن **استعمال الموقع** (كيف أثبّته على الجوال، كيف أراقب شعبة،
+  كيف أضيف موعد)؟ استعمل أداة الدليل — لا تجاوب من عندك ولا تقول
+  «ما عندي أداة» قبل ما تجرّبها.
 - الأداة تقول إن بيانات الجامعة مو جاهزة؟ قل له يجرّب بعد شوي — ولا تعطيه رقماً قديماً من عندك.
 
 حدودك:

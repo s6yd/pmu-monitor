@@ -51,6 +51,11 @@ const DB = {
     'u-prep-on':  { id: 'u-prep-on',  major: 'COSC', plan_ver: 'new', is_pro: true, prep: true },
     'u-prep-off': { id: 'u-prep-off', major: 'COSC', plan_ver: 'new', is_pro: true, prep: false },
     'u-prep-null':{ id: 'u-prep-null',major: 'COSC', plan_ver: 'new', is_pro: true },
+    /* نفس منجزات u-pro (فيها MATH 1422 راسب) لكن **بلا جدول** —
+       لعزل أثر الجدول الحالي على المقترح */
+    'u-nosched':{ id: 'u-nosched', major: 'COSC', plan_ver: 'new', is_pro: true },
+    /* جدوله فيه محاضرة ومعمل بنفس كود المادة — لفحص جمع الساعات */
+    'u-lab':{ id: 'u-lab', major: 'COSC', plan_ver: 'new', is_pro: true },
   },
   completed: {
     'u-pro':  [{ course_code: 'ALIS 1211', grade: 'A' }, { course_code: 'MATH 1422', grade: 'F' },
@@ -62,28 +67,39 @@ const DB = {
     'u-prep-on':  [{ course_code: 'PRPC 0002', grade: 'A' }],
     'u-prep-off': [{ course_code: 'PRPC 0002', grade: 'A' }],
     'u-prep-null':[{ course_code: 'PRPC 0002', grade: 'A' }],
+    'u-nosched':[{ course_code: 'ALIS 1211', grade: 'A' }, { course_code: 'MATH 1422', grade: 'F' }],
+    'u-lab':[],
   },
   /* جدول الطالب وغيابه ومواعيده — ولصاحبنا وللطالب الثاني،
      حتى نثبت إن ولا صف من الثاني يتسرّب. */
   schedule: {
     'u-pro': [
       { user_id:'u-pro', slot:1, crn:'10001', course_code:'ALIS 1212', course_title:'Islamic Culture II',
-        section:'01', course_date:'UT', course_timing:'08:00 - 08:50', room:'M-COBA - G034',
+        section:'01', course_date:'UT', course_timing:'0800 - 0850', room:'M-COBA - G034',
         instructor:'د. أحمد', term:'202710' },
       { user_id:'u-pro', slot:1, crn:'10002', course_code:'MATH 1422', course_title:'Calculus I',
-        section:'02', course_date:'UT', course_timing:'10:00 - 10:50', room:'M-COBA - G040',
+        section:'02', course_date:'UT', course_timing:'1000 - 1050', room:'M-COBA - G040',
         instructor:'د. سارة', term:'202710' },
       { user_id:'u-pro', slot:1, crn:'10003', course_code:'COMM 1311', course_title:'Communication',
-        section:'03', course_date:'MW', course_timing:'09:00 - 09:50', room:'M-COBA - G012',
+        section:'03', course_date:'MW', course_timing:'0900 - 0950', room:'M-COBA - G012',
         instructor:'د. خالد', term:'202710' },
       /* جدول ثانٍ — ما يظهر إلا لو طُلب */
       { user_id:'u-pro', slot:2, crn:'20001', course_code:'PHYS 1421', course_title:'Physics I',
-        section:'01', course_date:'R', course_timing:'12:00 - 12:50', room:'M-SCI - 101',
+        section:'01', course_date:'R', course_timing:'1200 - 1250', room:'M-SCI - 101',
         instructor:'د. نورة', term:'202710' },
+    ],
+    /* محاضرة ومعمل بنفس الكود (§٦: يُضافان ويُحذفان معاً) */
+    'u-lab': [
+      { user_id:'u-lab', slot:1, crn:'11001', course_code:'MATH 1422', course_title:'Calculus I',
+        section:'01', course_date:'MW', course_timing:'0930 - 1045', room:'G001',
+        instructor:'د. سارة', term:'202710' },
+      { user_id:'u-lab', slot:1, crn:'11002', course_code:'MATH 1422', course_title:'Calculus I Lab',
+        section:'L1', course_date:'R', course_timing:'1300 - 1545', room:'LAB-2',
+        instructor:'د. سارة', term:'202710' },
     ],
     'u-other': [
       { user_id:'u-other', slot:1, crn:'90001', course_code:'MEEN 3311', course_title:'سرّ الطالب الثاني',
-        section:'99', course_date:'MW', course_timing:'14:00 - 14:50', room:'F-ENG - 999',
+        section:'99', course_date:'MW', course_timing:'1400 - 1450', room:'F-ENG - 999',
         instructor:'د. لا أحد', term:'202710' },
     ],
   },
@@ -130,9 +146,10 @@ const ctxObj = {
   FREE_BETA: false,
   regTerm: () => '202710',
   riyadhNow: () => new Date('2099-01-01T09:00:00Z'),
-  schedDays: v => String(v || '').toUpperCase().split('').filter(c => 'UMTWRFS'.includes(c)),
-  schedTime: v => { const m = String(v || '').match(/(\d+):(\d+)\s*-\s*(\d+):(\d+)/);
-    return m ? { start: +m[1] * 60 + +m[2], end: +m[3] * 60 + +m[4] } : null },
+  /* schedDays و schedTime تُقتطعان من السيرفر لا تُنسخان هنا: النسخة
+     المزيّفة القديمة كانت تطلب HH:MM بنقطتين مثل الأصل المكسور، فما
+     رأت أبداً أن الجامعة ترجّع "0930 - 1045" — وmy_day كان يطلع فاضياً
+     في الإنتاج والاختبار أخضر. */
   absAllowedFor: () => 4,          /* حد ثابت — منطقه مُختبَر في مكانه */
   activeTerm: () => '202710',
   FINALS_ON: true,
@@ -186,6 +203,38 @@ const ctxObj = {
   },
 };
 vm.createContext(ctxObj);
+{
+  const L = src.split('\n');
+  const i = L.findIndex(x => x.startsWith('function schedDays('));
+  const j = L.findIndex(x => x.startsWith('/* ═══ إشعار تغيّر الجدول ═══'));
+  if (i < 0 || j <= i) { ok(false, 'ما لقيت schedDays/schedTime في السيرفر'); }
+  else vm.runInContext(L.slice(i, j).join('\n'), ctxObj);
+}
+ok(typeof ctxObj.schedTime === 'function', 'schedTime الحقيقية محمّلة');
+{
+  const T = ctxObj.schedTime;
+  /* صيغة الجامعة الفعلية في user_schedule — تأكدنا منها من القاعدة */
+  eq(T('0930 - 1045'), { start: 570, end: 645 }, 'صيغة الجامعة "0930 - 1045"');
+  eq(T('0800 - 0850'), { start: 480, end: 530 }, 'وبصفر في المقدمة');
+  eq(T('1300 - 1545'), { start: 780, end: 945 }, 'وبعد الظهر');
+  /* والمحفوظ القديم بنقطتين ما ينكسر */
+  eq(T('09:30 - 10:45'), { start: 570, end: 645 }, 'والصيغة بنقطتين كذلك');
+  eq(T(''), null, 'وفاضي = null');
+  eq(T('غير معروف'), null, 'ونص غير معروف = null');
+  /* schedClash تعتمد عليها — وكانت ترجع false دائماً على بيانات الإنتاج،
+     فقائمة التعارض في إشعار تغيّر الجدول تطلع فاضية للطلاب. */
+  const C = ctxObj.schedClash;
+  ok(typeof C === 'function', 'schedClash محمّلة');
+  ok(C({ course_date: 'MW', course_timing: '0930 - 1045' },
+       { course_date: 'MW', course_timing: '1000 - 1050' }),
+     '**تعارض حقيقي بصيغة الجامعة يُكتشف** — كان يمرّ بصمت');
+  ok(!C({ course_date: 'MW', course_timing: '0930 - 1045' },
+        { course_date: 'UT', course_timing: '1000 - 1050' }),
+     'ويومان مختلفان ما يتعارضان');
+  ok(!C({ course_date: 'MW', course_timing: '0800 - 0850' },
+        { course_date: 'MW', course_timing: '0900 - 0950' }),
+     'ومحاضرتان متتاليتان ما تتعارضان');
+}
 vm.runInContext(REGION + '\nthis.aiStudentCtx=aiStudentCtx; this.aiRunTool=aiRunTool;'
   + 'this.aiToolSchemas=aiToolSchemas; this.AI_TOOLS=AI_TOOLS;', ctxObj);
 
@@ -306,11 +355,48 @@ function fakeModel(ctx) {
     ok(r.known === true && r.count === 5, 'GEIT 1412 تفتح ٥ — ' + r.count);
     ok(r.unlocks.every(c => c.code && c.name), 'وترجع أسماءها لا عددها فقط');
   }
+  /* ── جمع الساعات: المعمل ما يُحسب مرتين ── */
+  {
+    const LAB = await aiStudentCtx('u-lab');
+    const r = await aiRunTool('my_schedule', {}, LAB);
+    eq(r.count, 2, 'صفّان في جدوله: محاضرة ومعمل');
+    eq(r.distinctCourses, 1, 'لكنها مادة واحدة');
+    const h = PLANS_DATA.creditsOf(LAB.plan, 'MATH 1422');
+    eq(r.totalCredits, h,
+       'وساعاتها تُحسب **مرة واحدة** — المعمل صف ثانٍ بنفس الكود لا مادة ثانية');
+    ok(r.totalCredits !== h * 2, 'وما تنضاعف — هذا اللي كان يطلع ٢٥ لطالب عنده ٢٠');
+    /* وبعدها my_day ما يخلط: كل صف بيومه */
+    const mw = await aiRunTool('my_day', { day: 'M' }, LAB);
+    eq(mw.count, 1, 'الاثنين: المحاضرة وحدها');
+    const th = await aiRunTool('my_day', { day: 'R' }, LAB);
+    eq(th.count, 1, 'والخميس: المعمل وحده');
+    eq(th.lectures[0].startsAt, '13:00', 'بوقته الصحيح من صيغة الجامعة');
+  }
+
   {
     const r = await call('next_term_suggestion', '{}');
     ok(Array.isArray(r.critical), 'المقترح يرجع أساسية');
     ok(r.hours <= 20, 'بسقف ٢٠ ساعة — ' + r.hours);
-    ok(r.critical.some(c => c.retake), 'وفيه الإعادة');
+    /* **قاعدة تغيّرت عمداً:** المقترح ما يقترح مادة الطالب مسجّلها الحين.
+       المسجّل مو «منجزاً» في الخطة (الدرجة ما طلعت)، فكان يرجع كأنه ناقص
+       ونقترح على الطالب مواد هو قاعد ياخذها. MATH 1422 إعادة **وفي
+       جدول u-pro**، فمكانها alreadyTaking لا critical. */
+    ok(!r.critical.some(c => c.code === 'MATH 1422'),
+       'المادة اللي في جدوله الحين ما تُقترح له — ولو كانت إعادة');
+    ok((r.alreadyTaking || []).includes('MATH 1422'),
+       'وتُسمّى له صريحاً في alreadyTaking');
+    ok(r.critical.every(c => !['ALIS 1212', 'MATH 1422', 'COMM 1311']
+       .includes(c.code)), 'ولا واحدة من مواد جدوله في المقترح');
+    ok(r.hours === r.critical.concat(r.optional)
+       .reduce((n, c) => n + (Number(c.credits) || 0), 0),
+       'والساعات محسوبة من المقترح بعد الاستبعاد لا قبله');
+    ok(typeof r.planHours === 'number', 'وساعات الخطة الأصلية باقية للمرجع');
+    /* والاتجاه الثاني: نفس المنجزات بلا جدول ⇒ الإعادة تظهر */
+    const NO = await aiStudentCtx('u-nosched');
+    const r2 = await aiRunTool('next_term_suggestion', {}, NO);
+    ok(r2.critical.some(c => c.retake), 'وبلا جدول ترجع الإعادة للمقترح');
+    ok(r2.critical.some(c => c.code === 'MATH 1422'), 'وهي MATH 1422 بعينها');
+    ok((r2.alreadyTaking || []).length === 0, 'وما فيه مسجّل يُستبعد');
   }
   {
     const r = await call('plan_overview', '{}');
