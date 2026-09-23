@@ -5610,6 +5610,9 @@ function aiMatchNames(q, names) {
   return out.sort((a, b) => b.score - a.score);
 }
 
+/* تاريخ اليوم بتوقيت الرياض — تستعمله أدوات الاقتراح وكتلة المحادثة */
+const aiToday = () => riyadhNow().toISOString().slice(0, 10);
+
 /* نص «ما أعرف» موحّد — الأداة تقولها، والنموذج ينقلها */
 const AI_UNKNOWN = 'ما لقيتها في بيانات جدولك';
 const AI_PRO_ONLY = 'هذي تحتاج اشتراك — الحساب والدرجات للمشتركين';
@@ -6086,6 +6089,85 @@ const AI_TOOLS = {
     },
   },
 
+
+  /* ═══ أدوات الاقتراح — تقترح ولا تنفّذ (§٩-أ-٤) ═══
+     ولا واحدة منها تكتب صفاً. ترجّع وصف الفعل، والصفحة تعرضه للطالب
+     وتنفّذه **بدوالها الموجودة** بعد ما يضغط «تأكيد» — فحارس الصحة
+     يبقى واحداً في مكانه ولا نكتب فحصاً ثانياً (§١٠).
+     والطالب يقدر يسوي هذي الأفعال من الموقع أصلاً، فما فيه صلاحية
+     جديدة هنا — الجديد إنها تصير بجملة، وبعد تأكيده. */
+
+  propose_absence: {
+    tier: 'pro',
+    description: 'يقترح تسجيل غياب في مادة بيوم معيّن. **ما يسجّل شيئاً** — '
+      + 'الطالب يضغط «تأكيد» في الموقع. لما يقول «سجّل لي غياب في كذا».',
+    input_schema: { type: 'object', properties: {
+      code: { type: 'string', description: 'كود المادة مثل "MATH 1422"' },
+      crn: { type: 'string', description: 'رقم الشعبة — بدل الكود' },
+      date: { type: 'string', description: 'التاريخ YYYY-MM-DD — الافتراضي اليوم' } },
+      required: [] },
+    run: async (ctx, a) => {
+      const rows = await aiSchedule(ctx);
+      if (!rows.length) return { error: 'ما فيه مواد في جدولك' };
+      const code = String(a.code || '').toUpperCase().replace(/\s+/g, ' ').trim();
+      const crn = String(a.crn || '').trim();
+      if (!code && !crn) return { error: 'حدّد المادة بكودها أو برقم شعبتها' };
+      const hit = rows.find(r => crn
+        ? String(r.crn) === crn
+        : String(r.course_code || '').toUpperCase().replace(/\s+/g, ' ').trim() === code);
+      if (!hit) return { known: false,
+        error: AI_UNKNOWN + ' في جدولك', code: code || crn };
+      const on = /^\d{4}-\d{2}-\d{2}$/.test(String(a.date || ''))
+        ? String(a.date) : aiToday();
+      if (on > aiToday()) return { error: 'ما نسجّل غياباً في يوم ما جاء بعد' };
+      /* اليوم لازم يكون من أيام هذي الجلسة — نقولها قبل ما نتعب الطالب */
+      const letter = 'UMTWRFS'[new Date(on + 'T00:00:00Z').getUTCDay()];
+      if (!schedDays(hit.course_date).includes(letter))
+        return { error: `${hit.course_code} ما لها محاضرة هذا اليوم`,
+                 days: hit.course_date };
+      return { proposal: { action: 'absence', crn: String(hit.crn), date: on,
+          code: hit.course_code, title: hit.course_title },
+        note: 'اقتراح — ما انسجّل شي. قل للطالب يضغط «تأكيد» لو يبيه.' };
+    },
+  },
+
+  propose_event: {
+    tier: 'pro',
+    description: 'يقترح إضافة موعد (كويز · واجب · مشروع · ميدتيرم) على مادة '
+      + 'بتاريخه. **ما يضيف شيئاً** — الطالب يضغط «تأكيد». لما يقول '
+      + '«عندي كويز الأحد» أو «ذكّرني بواجب كذا».',
+    input_schema: { type: 'object', properties: {
+      code: { type: 'string', description: 'كود المادة' },
+      crn: { type: 'string', description: 'رقم الشعبة — بدل الكود' },
+      kind: { type: 'string', enum: ['quiz', 'hw', 'project', 'midterm', 'other'],
+              description: 'نوع الموعد' },
+      date: { type: 'string', description: 'التاريخ YYYY-MM-DD' },
+      note: { type: 'string', description: 'ملاحظة قصيرة — اختيارية' } },
+      required: ['date'] },
+    run: async (ctx, a) => {
+      const rows = await aiSchedule(ctx);
+      if (!rows.length) return { error: 'ما فيه مواد في جدولك' };
+      const code = String(a.code || '').toUpperCase().replace(/\s+/g, ' ').trim();
+      const crn = String(a.crn || '').trim();
+      if (!code && !crn) return { error: 'حدّد المادة بكودها أو برقم شعبتها' };
+      const hit = rows.find(r => crn
+        ? String(r.crn) === crn
+        : String(r.course_code || '').toUpperCase().replace(/\s+/g, ' ').trim() === code);
+      if (!hit) return { known: false,
+        error: AI_UNKNOWN + ' في جدولك', code: code || crn };
+      const on = String(a.date || '');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(on)) return { error: 'التاريخ بصيغة YYYY-MM-DD' };
+      if (on < aiToday()) return { error: 'التاريخ راح — تبي تاريخاً جاياً' };
+      const KINDS = ['quiz', 'hw', 'project', 'midterm', 'other'];
+      const kind = KINDS.includes(String(a.kind)) ? String(a.kind) : 'other';
+      /* ملاحظة الطالب نص منه — تمرّ كما هي وتُهرَّب في الصفحة */
+      const note = String(a.note || '').trim().slice(0, 300);
+      return { proposal: { action: 'event', crn: String(hit.crn), date: on,
+          kind, note, code: hit.course_code, title: hit.course_title },
+        note: 'اقتراح — ما انضاف شي. قل للطالب يضغط «تأكيد» لو يبيه.' };
+    },
+  },
+
   find_course: {
     tier: 'free',
     description: 'يلقى كود المادة من اسمها بلغة الطالب: «ثيرمو ١» · «دوائر» · '
@@ -6383,7 +6465,8 @@ function aiCostMicro(model, u) {
 }
 const aiSar = micro => (Number(micro || 0) / 1e6).toFixed(2);
 
-const aiToday = () => riyadhNow().toISOString().slice(0, 10);
+/* aiToday في كتلة الأدوات — أدوات الاقتراح تحتاجها، واختبار الأدوات
+   يقتطع كتلته وحدها فما توصله كتلة المحادثة. */
 const aiYM = () => aiToday().slice(0, 7);
 const aiMonthStart = () => aiYM() + '-01';
 
@@ -6514,7 +6597,9 @@ const AI_SYSTEM = `أنت «مساعد جدولك» — مساعد داخل مو
 
 حدودك:
 - ترد على صاحب السؤال ببياناته هو فقط. ما عندك أي طريقة توصل بيانات طالب ثاني، ولا تحاول، ولا تعد بذلك.
-- هذي النسخة **قراءة فقط**: ما تسجّل ولا تحذف ولا تراقب ولا تحجز ولا تغيّر أي شي. طلب منك فعلاً؟ دلّه على مكانه في الموقع.
+- **ما تنفّذ شيئاً بنفسك.** أدوات الاقتراح تجهّز الفعل والطالب يضغط «تأكيد» في الموقع.
+  فلا تقول «سجّلت» ولا «ضفت» ولا «تم» — قل «جهّزت لك التسجيل، اضغط تأكيد».
+  والأفعال اللي ما لها أداة اقتراح (المراقبة، إضافة شعبة، التذكير) دلّه على مكانها في الموقع.
 - ما تحل واجبات ولا كويزات ولا اختبارات ولا تعطي حلولها، ولا تلخّص حلاً لعمل مقيّم.
 - الدكاترة: تلخّص تقييمات الطلاب الموجودة فقط. ما تضيف رأيك ولا تفاضل بين دكتور ودكتور من عندك.
 - الغياب والمعدل حساب إرشادي — ذكّره إن المرجع الرسمي سجل الجامعة.
@@ -6697,7 +6782,7 @@ async function aiChat(userId, question, opt) {
   const usage = { input_tokens: 0, output_tokens: 0,
                   cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
   const tools_used = [];
-  let calls = 0, answer = '', why = '';
+  let calls = 0, answer = '', why = '', proposal = null;
 
   for (let step = 0; step < AI_MAX_STEPS; step++) {
     if (Date.now() - t0 > AI_TURN_MS) { why = 'timeout'; break }
@@ -6728,7 +6813,12 @@ async function aiChat(userId, question, opt) {
     for (const c of wants) {
       tools_used.push(c.name);
       /* ctx من الجلسة — النموذج ما يمرّر هوية، والمنفّذ يرفضها أصلاً */
-      out.push(aiToolResult(c.id, await aiRunTool(c.name, c.input, ctx)));
+      const res = await aiRunTool(c.name, c.input, ctx);
+      /* اقتراح فعل: يوصل الصفحة ليعرضه على الطالب. واحد لكل رد —
+         بطاقتا تأكيد في رسالة واحدة تربك أكثر ما تساعد. */
+      if (res && res.proposal && typeof res.proposal === 'object')
+        proposal = res.proposal;
+      out.push(aiToolResult(c.id, res));
     }
     messages.push({ role: 'user', content: out });
   }
@@ -6765,7 +6855,7 @@ async function aiChat(userId, question, opt) {
     await aiThreadSave(userId, th, q, answer);
   }
 
-  return { ok: !why, why, answer, tools: tools_used, calls,
+  return { ok: !why, why, answer, tools: tools_used, calls, proposal,
            model, cost, tokens: usage, used: aiUsedOf(quota) };
 }
 
@@ -7348,6 +7438,7 @@ const server = http.createServer(async (req, res) => {
         const r = await aiChat(uid, p.q, { fresh: !!p.fresh });
         return send(200, { ok: r.ok, why: r.why || '', answer: r.answer,
           tools: r.tools || [], used: r.used || null, calls: r.calls || 0,
+          proposal: r.proposal || null,
           model: r.model || aiModel(), sar: Number(aiSar(r.cost || 0)),
           tokens: r.tokens || null });
       }
@@ -7736,7 +7827,8 @@ const server = http.createServer(async (req, res) => {
       /* ما يوصل الطالب: الجواب وحصته. التكلفة والرموز للوحة وحدها. */
       res.writeHead(200);
       res.end(JSON.stringify({ ok: r.ok, answer: r.answer, why: r.why || '',
-                               tools: r.tools || [], used: r.used || null }));
+                               tools: r.tools || [], used: r.used || null,
+                               proposal: r.proposal || null }));
     } catch (e) {
       res.writeHead(500); res.end(JSON.stringify({ error: 'تعذّر' }));
     }

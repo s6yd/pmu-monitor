@@ -331,11 +331,86 @@ const openSheet = async page => {
     await page.close();
   }
 
+  /* ── الأفعال: ما ينفّذ شي إلا بضغط الطالب ── */
+  {
+    ST.status = { on: true, why: '', used: { day: 0, dayCap: 25 } };
+    ST.answer = { ok: true, answer: 'جهّزت لك التسجيل', tools: ['propose_absence'],
+      proposal: { action: 'absence', crn: '10001', date: '2026-09-20',
+                  code: 'ALIS 1212', title: 'Islamic Culture II' } };
+    const { page, errs } = await open(browser, true);
+    /* ننادي دالة التنفيذ الحقيقية ونسجّل ما وصلها بدل ما نكتب في القاعدة */
+    await page.evaluate(() => {
+      window.__ran = [];
+      window.markAbsent = (crn, date) => { window.__ran.push(['absence', crn, date]);
+        return Promise.resolve(true) };
+      window.addEvDirect = (crn, k, d, n) => { window.__ran.push(['event', crn, k, d, n]);
+        return Promise.resolve(true) };
+    });
+    await openSheet(page);
+    await page.fill('#aiQ', 'سجّل لي غياب');
+    await page.evaluate(() => aiSend());
+    await page.waitForTimeout(450);
+
+    ok(await page.$('#aiLog .ai-act') !== null, 'بطاقة التأكيد ظهرت');
+    const card = await page.textContent('#aiLog .ai-act');
+    ok(/ALIS 1212/.test(card), 'وفيها اسم المادة — ' + card.trim().slice(0, 50));
+    ok(/2026-09-20/.test(card), 'وتاريخها');
+    eq(await page.evaluate(() => window.__ran.length), 0,
+       '**وما انفّذ شي قبل الضغط**');
+
+    await page.click('#aiLog .ai-act-go');
+    await page.waitForTimeout(300);
+    eq(await page.evaluate(() => window.__ran), [['absence', '10001', '2026-09-20']],
+       'والضغط ينفّذ بدالة الصفحة نفسها — بشعبتها وتاريخها');
+    ok(/تم/.test(await page.textContent('#aiLog .ai-act')), 'والبطاقة تصير «تم»');
+    ok(await page.$('#aiLog .ai-act-go') === null, 'وما يبقى زر يُضغط مرتين');
+
+    /* «لا شكراً» ما ينفّذ */
+    ST.answer.proposal = { action: 'event', crn: '10002', kind: 'quiz',
+      date: '2099-03-01', note: 'الفصل الرابع', code: 'MATH 1422' };
+    await page.fill('#aiQ', 'ضف كويز');
+    await page.evaluate(() => aiSend());
+    await page.waitForTimeout(450);
+    const cards = await page.$$('#aiLog .ai-act');
+    ok(cards.length >= 1, 'بطاقة ثانية');
+    ok(/الفصل الرابع/.test(await page.textContent('#aiLog')), 'وفيها الملاحظة');
+    await page.click('#aiLog .ai-act-no');
+    await page.waitForTimeout(250);
+    eq(await page.evaluate(() => window.__ran.length), 1,
+       '**و«لا شكراً» ما ينفّذ شيئاً**');
+
+    /* فعل ما نعرفه ما يرسم بطاقة أصلاً */
+    ST.answer.proposal = { action: 'delete_everything', crn: '1' };
+    await page.fill('#aiQ', 'احذف كل شي');
+    await page.evaluate(() => aiSend());
+    await page.waitForTimeout(450);
+    eq(await page.evaluate(() =>
+      document.querySelectorAll('#aiLog .ai-act').length), 2,
+      '**فعل ما نعرفه ما يصير بطاقة** — الصفحة تعرف أفعالها لا النموذج');
+    eq(await page.evaluate(() => window.__ran.length), 1, 'وما انفّذ');
+
+    /* والنص المحقون في الملاحظة يُهرَّب */
+    ST.answer.proposal = { action: 'event', crn: '10002', kind: 'quiz',
+      date: '2099-03-01', note: '<img src=x onerror=alert(1)>', code: 'MATH 1422' };
+    await page.fill('#aiQ', 'ضف');
+    await page.evaluate(() => aiSend());
+    await page.waitForTimeout(450);
+    ok(await page.$('#aiLog img') === null, 'وملاحظة فيها وسم تُهرَّب');
+    eq(errs, [], 'ولا خطأ ولا نافذة تنبيه');
+    await page.close();
+  }
+
   /* ── ٨) فحص ثابت ── */
   {
     ok(/id="aiEntry"/.test(SRC) && /id="aiOv"/.test(SRC), 'العناصر في الصفحة');
     ok(/\.ai-entry\{/.test(SRC) && /\.ai-ask\{/.test(SRC), 'وتنسيقهما معرّف');
     ok(!/ai-fab/.test(SRC), 'ولا أثر للزر العائم القديم — لا HTML ولا CSS');
+    /* الأفعال: الصفحة تعرف أفعالها، وتنفّذها بدوالها الموجودة */
+    ok(/const AI_ACTS=\{/.test(SRC), 'قائمة الأفعال المعروفة موجودة');
+    ok(/run:p=>markAbsent\(/.test(SRC) && /run:p=>addEvDirect\(/.test(SRC),
+       'وتنفّذ بدوال الصفحة نفسها — لا نقطة كتابة جديدة');
+    ok(!/\/api\/me\/ai-do|\/api\/me\/act/.test(SRC),
+       'ولا نقطة تنفيذ جديدة في السيرفر — ما وسّعنا سطح الكتابة');
     /* ولا صنف CSS مستعمل بلا تعريف */
     const js = SRC.slice(SRC.indexOf('const aiShown ='),
                          SRC.indexOf('/* ═══ رصيد تقييم الدكاترة ═══'));
