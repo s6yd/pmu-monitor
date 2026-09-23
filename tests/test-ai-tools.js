@@ -63,6 +63,50 @@ const DB = {
     'u-prep-off': [{ course_code: 'PRPC 0002', grade: 'A' }],
     'u-prep-null':[{ course_code: 'PRPC 0002', grade: 'A' }],
   },
+  /* جدول الطالب وغيابه ومواعيده — ولصاحبنا وللطالب الثاني،
+     حتى نثبت إن ولا صف من الثاني يتسرّب. */
+  schedule: {
+    'u-pro': [
+      { user_id:'u-pro', slot:1, crn:'10001', course_code:'ALIS 1212', course_title:'Islamic Culture II',
+        section:'01', course_date:'UT', course_timing:'08:00 - 08:50', room:'M-COBA - G034',
+        instructor:'د. أحمد', term:'202710' },
+      { user_id:'u-pro', slot:1, crn:'10002', course_code:'MATH 1422', course_title:'Calculus I',
+        section:'02', course_date:'UT', course_timing:'10:00 - 10:50', room:'M-COBA - G040',
+        instructor:'د. سارة', term:'202710' },
+      { user_id:'u-pro', slot:1, crn:'10003', course_code:'COMM 1311', course_title:'Communication',
+        section:'03', course_date:'MW', course_timing:'09:00 - 09:50', room:'M-COBA - G012',
+        instructor:'د. خالد', term:'202710' },
+      /* جدول ثانٍ — ما يظهر إلا لو طُلب */
+      { user_id:'u-pro', slot:2, crn:'20001', course_code:'PHYS 1421', course_title:'Physics I',
+        section:'01', course_date:'R', course_timing:'12:00 - 12:50', room:'M-SCI - 101',
+        instructor:'د. نورة', term:'202710' },
+    ],
+    'u-other': [
+      { user_id:'u-other', slot:1, crn:'90001', course_code:'MEEN 3311', course_title:'سرّ الطالب الثاني',
+        section:'99', course_date:'MW', course_timing:'14:00 - 14:50', room:'F-ENG - 999',
+        instructor:'د. لا أحد', term:'202710' },
+    ],
+  },
+  absences: {
+    'u-pro': [
+      { user_id:'u-pro', term:'202710', crn:'10001', on_date:'2026-09-01' },
+      { user_id:'u-pro', term:'202710', crn:'10001', on_date:'2026-09-08' },
+      { user_id:'u-pro', term:'202710', crn:'10002', on_date:'2026-09-02' },
+    ],
+    'u-other': [{ user_id:'u-other', term:'202710', crn:'90001', on_date:'2026-09-01' }],
+  },
+  events: {
+    'u-pro': [
+      { user_id:'u-pro', term:'202710', crn:'10002', kind:'quiz',
+        on_date:'2099-01-05', note:'الفصل الثالث' },
+      { user_id:'u-pro', term:'202710', crn:'10001', kind:'assignment',
+        on_date:'2099-01-02', note:null },
+      { user_id:'u-pro', term:'202710', crn:'10003', kind:'project',
+        on_date:'2000-01-01', note:'قديم — خارج النافذة' },
+    ],
+    'u-other': [{ user_id:'u-other', term:'202710', crn:'90001', kind:'quiz',
+        on_date:'2099-01-05', note:'سرّ الطالب الثاني' }],
+  },
 };
 let SB_CALLS = [];
 
@@ -72,6 +116,11 @@ const ctxObj = {
   PLANS_DATA, ACAD_CAL,
   FREE_BETA: false,
   regTerm: () => '202710',
+  riyadhNow: () => new Date('2099-01-01T09:00:00Z'),
+  schedDays: v => String(v || '').toUpperCase().split('').filter(c => 'UMTWRFS'.includes(c)),
+  schedTime: v => { const m = String(v || '').match(/(\d+):(\d+)\s*-\s*(\d+):(\d+)/);
+    return m ? { start: +m[1] * 60 + +m[2], end: +m[3] * 60 + +m[4] } : null },
+  absAllowedFor: () => 4,          /* حد ثابت — منطقه مُختبَر في مكانه */
   hasAccess: p => !!(p && p.is_pro),
   sb: (method, table, opt) => {
     SB_CALLS.push({ method, table, query: (opt && opt.query) || '' });
@@ -80,6 +129,22 @@ const ctxObj = {
     const id = m ? decodeURIComponent(m[1]) : null;
     if (table === 'profiles') return Promise.resolve(DB.profiles[id] ? [DB.profiles[id]] : []);
     if (table === 'completed_courses') return Promise.resolve(DB.completed[id] || []);
+    /* PostgREST الحقيقي يحترم order= — والمحاكي لازم يطابقه، وإلا مرّت
+       أداة تعتمد على ترتيب ما يجي فعلاً في الإنتاج. */
+    const ord = (/[?&]order=([a-z_]+)\.(asc|desc)/.exec(q) || []).slice(1);
+    const sort = rows => {
+      if (!ord.length) return rows;
+      const [col, dir] = ord;
+      return rows.slice().sort((x, y) => {
+        const a = x[col], b = y[col];
+        if (a === b) return 0;
+        const r = (a > b ? 1 : -1);
+        return dir === 'desc' ? -r : r;
+      });
+    };
+    if (table === 'user_schedule') return Promise.resolve(sort(DB.schedule[id] || []));
+    if (table === 'absences') return Promise.resolve(sort(DB.absences[id] || []));
+    if (table === 'course_events') return Promise.resolve(sort(DB.events[id] || []));
     return Promise.resolve([]);
   },
 };
@@ -285,6 +350,89 @@ function fakeModel(ctx) {
     const FRESH = await aiStudentCtx('u-fresh');
     ok(FRESH.prep === false && FRESH.prepInferred === true,
        'طالب بلا مواد تحضيري وبلا قيمة: مستنتَج «لا»');
+  }
+
+  /* ── ٥) أدوات بيانات الطالب ── */
+  /* لو الأدوات مو موجودة بعد (كود قديم) نبلّغ فشلاً مرتّباً بدل انهيار */
+  if (!AI_TOOLS.my_schedule) {
+    for (const t of ['my_schedule', 'my_day', 'my_absences', 'my_appointments'])
+      ok(false, `${t} موجودة في السجل`);
+  } else {
+    /* الجدول */
+    const sc = await call('my_schedule', '{}');
+    eq(sc.count, 3, 'الجدول الأول فيه ٣ مواد');
+    ok(sc.courses.every(c => c.code && c.time), 'لكل مادة كود ووقت');
+    ok(JSON.stringify(sc).indexOf('سرّ الطالب الثاني') < 0,
+       'ولا أثر لجدول الطالب الثاني');
+    ok(JSON.stringify(sc).indexOf('90001') < 0, 'ولا CRN من الثاني');
+
+    const sc2 = await call('my_schedule', '{"slot":2}');
+    eq(sc2.count, 1, 'الجدول الثاني فيه مادة وحدة');
+    eq(sc2.courses[0].code, 'PHYS 1421', 'وهي مادة الجدول الثاني');
+
+    /* اليوم والفراغات — الأحد فيه محاضرتان بينهما فراغ */
+    const d = await call('my_day', '{"day":"U"}');
+    eq(d.count, 2, 'الأحد فيه محاضرتان');
+    eq(d.lectures.map(x => x.code), ['ALIS 1212', 'MATH 1422'], 'بالترتيب الزمني');
+    eq(d.firstAt, '08:00', 'أول محاضرة ٨:٠٠');
+    eq(d.lastEndsAt, '10:50', 'وآخرها تنتهي ١٠:٥٠');
+    eq(d.gaps.length, 1, 'بينهما فراغ واحد');
+    eq(d.gaps[0].minutes, 70, 'طوله ٧٠ دقيقة — من ٨:٥٠ إلى ١٠:٠٠');
+    eq([d.gaps[0].from, d.gaps[0].to], ['08:50', '10:00'], 'بحدوده');
+    eq(d.onCampusMinutes, 170, 'ومدة بقائه في الحرم ١٧٠ دقيقة');
+
+    const d2 = await call('my_day', '{"day":"M"}');
+    eq(d2.count, 1, 'الاثنين محاضرة وحدة');
+    eq(d2.gaps.length, 0, 'بلا فراغات');
+
+    const d3 = await call('my_day', '{"day":"S"}');
+    eq(d3.count, 0, 'السبت فاضي');
+    ok(/ما فيه محاضرات/.test(d3.note || ''), 'ويقولها صراحة');
+
+    const dBad = await call('my_day', '{"day":"Z"}');
+    ok(!!dBad.error, 'يوم غير معروف يُرفض');
+
+    /* الغياب */
+    const ab = await call('my_absences', '{}');
+    eq(ab.count, 3, 'الغياب يغطي مواد الجدول الثلاث');
+    const a1 = ab.courses.find(c => c.code === 'ALIS 1212');
+    eq([a1.absences, a1.allowed, a1.remaining], [2, 4, 2], 'ALIS 1212: غابَ ٢ من ٤');
+    ok(a1.atRisk === false, 'وما وصل الحرمان');
+    const a3 = ab.courses.find(c => c.code === 'COMM 1311');
+    eq(a3.absences, 0, 'COMM 1311: ولا غياب');
+    ok(/إرشادي/.test(ab.note || ''), 'ومعها تنبيه إن الحساب إرشادي');
+    ok(JSON.stringify(ab).indexOf('90001') < 0, 'ولا غياب من الطالب الثاني');
+
+    const abOne = await call('my_absences', '{"code":"ALIS 1212"}');
+    eq(abOne.count, 1, 'الفلترة بمادة تشتغل');
+    const abGhost = await call('my_absences', '{"code":"ZZZZ 9999"}');
+    ok(abGhost.known === false, 'مادة مو في جدوله: «ما لقيتها»');
+
+    /* المواعيد */
+    const ap = await call('my_appointments', '{"days":400}');
+    ok(ap.count >= 2, 'المواعيد القادمة ترجع — ' + ap.count);
+    ok(ap.appointments.every(x => x.date >= ap.from), 'كلها في المستقبل');
+    ok(!ap.appointments.some(x => x.date === '2000-01-01'), 'والقديم ما يرجع');
+    eq(ap.appointments[0].kind, 'assignment', 'أقربها أولاً');
+    ok(ap.appointments.every(x => x.code), 'ولكل موعد كود مادته من جدوله');
+    ok(JSON.stringify(ap).indexOf('سرّ الطالب الثاني') < 0,
+       'ولا موعد من الطالب الثاني');
+
+    const apOne = await call('my_appointments', '{"days":400,"code":"MATH 1422"}');
+    ok(apOne.appointments.every(x => x.code === 'MATH 1422'), 'الفلترة بمادة تشتغل');
+
+    /* الحصة: كلها للمشتركين */
+    for (const t of ['my_schedule', 'my_day', 'my_absences', 'my_appointments']) {
+      const args = t === 'my_day' ? '{"day":"U"}' : '{}';
+      const r = await callFree(t, args);
+      ok(!!r.error && r.tier === 'pro', `${t} ممنوعة على المجاني`);
+    }
+
+    /* الطالب الثاني يشوف صفوفه هو */
+    const OTHER = await aiStudentCtx('u-other');
+    const osc = await fakeModel(OTHER)('my_schedule', '{}');
+    eq(osc.count, 1, 'الطالب الثاني يشوف جدوله هو');
+    ok(JSON.stringify(osc).indexOf('ALIS 1212') < 0, 'وما يشوف جدول صاحبنا');
   }
 
   console.log(`\n${pass} نجحت · ${fail} فشلت`);
