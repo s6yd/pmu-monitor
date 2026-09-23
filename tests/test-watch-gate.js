@@ -20,6 +20,13 @@ const server = http.createServer((req, res) => {
   }
   if (u.startsWith('/api/')) {
     /* /calendar.js صار يُطلب من الصفحة — ما نرد عليه بـJSON فيُنفَّذ كسكربت */
+    /* الصفحة صارت تحمّل الخطط من /plans.js — نخدم الملف الحقيقي.
+       تغيير بنية لا تسهيل: قبله كان المحاكي يرد 404 على كل .js، فالصفحة
+       تفقد PLANS وتبويب خطتي يعرض رسالة العطل بدل الخطة. */
+    if (req.url.split('?')[0] === '/plans.js') {
+      res.writeHead(200, { 'Content-Type': 'application/javascript' });
+      return res.end(fs.readFileSync(path.join(__dirname, '..', 'shared', 'plans.js')));
+    }
     if (req.url.split('?')[0].endsWith('.js')) { res.writeHead(404); return res.end('') }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ courses: [], cached: false, age: 0 }));

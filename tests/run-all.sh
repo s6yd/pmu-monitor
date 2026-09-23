@@ -49,6 +49,11 @@ run test-referral       "$S" "$F"
 run test-review-credit  "$S" "$F" "$A"
 run test-pushover-addon "$S" "$F" "$A"
 run test-static-pages   "$S"
+run test-plans          "$S" "$F"
+run test-plan-logic     "$S" "$F"
+run test-ai-tools       "$S"
+run test-ai-chat        "$S"
+run test-prep-sync      "$F"
 
 echo
 if [ ${#failed[@]} -eq 0 ]; then
