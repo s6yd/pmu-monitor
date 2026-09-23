@@ -52,6 +52,7 @@ run test-static-pages   "$S"
 run test-plans          "$S" "$F"
 run test-plan-logic     "$S" "$F"
 run test-ai-tools       "$S"
+run test-ai-chat        "$S"
 run test-prep-sync      "$F"
 
 echo
