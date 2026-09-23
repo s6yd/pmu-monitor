@@ -7676,9 +7676,20 @@ async function aiTgAnswer(chatId, q) {
      بشي — فما نتركه في طريق مسدود: نفس المعلومة موجودة في الموقع. */
   if (!r.ok && ['off', 'admin', 'nokey'].includes(r.why))
     out += '\n\nتلقاها في الموقع: jadwalik.com';
+  /* ═══ جواب ناجح ⇒ يدخل الوضع ═══
+     المساعد **يسأل أسئلة متابعة**: «تبي أبني لك جدول بهالمواد؟».
+     وقبل هذا كان `/ai بسؤال` يجاوب مرة وحدة بلا وضع، فرد الطالب
+     الطبيعي («استثني المواد المسجّلة») يروح للدعم **كتذكرة** —
+     شفناها تصير على dev: تذكرة #74 كانت جواباً للمساعد لا شكوى.
+     من كلّم المساعد قبل دقيقة يقصده، والخروج زر ظاهر أمامه. */
+  const key = String(chatId);
+  if (r.ok) {
+    if (AI_TG_MODE.size > 3000) AI_TG_MODE.clear();   /* قبل الإضافة لا بعدها */
+    AI_TG_MODE.set(key, Date.now() + AI_TG_TTL);
+  }
   /* داخل الوضع: اللوحة هي التذكير بالخروج، فما نكرّر سطراً في كل رد.
      ونعيد إرسالها مع كل جواب حتى ما تختفي لو أخفاها بنفسه. */
-  const inMode = (AI_TG_MODE.get(String(chatId)) || 0) > Date.now();
+  const inMode = (AI_TG_MODE.get(key) || 0) > Date.now();
   return sendMsg(chatId, out, inMode ? AI_TG_KB : undefined);
 }
 
@@ -7710,8 +7721,8 @@ async function aiTgRoute(chatId, text) {
       raw === '/اسأل' || raw.startsWith('/اسأل ')) {
     const q = raw.replace(/^\/(ai|اسأل)\s*/i, '').trim();
     if (q) { await aiTgAnswer(chatId, q); return true }
-    AI_TG_MODE.set(key, Date.now() + AI_TG_TTL);
     if (AI_TG_MODE.size > 3000) AI_TG_MODE.clear();
+    AI_TG_MODE.set(key, Date.now() + AI_TG_TTL);
     await sendMsg(chatId,
       '✨ <b>مساعد جدولك</b>\n\n'
       + 'اسألني بلغتك عن أي شي في جدولك — كل جوابي من بياناتك في الموقع، وما أخترع.\n\n'
