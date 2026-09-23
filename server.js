@@ -5425,6 +5425,44 @@ function aiHHMM(m) {
   return String(h).padStart(2, '0') + ':' + String(x).padStart(2, '0');
 }
 
+/* ═══ قارئ الكاش — ما يسحب من الجامعة أبداً ═══
+   getCourses تسحب لو الكاش بارد، فما نناديها من أداة: سؤال طالب
+   ما يصير سبباً لضغطة على موقع الجامعة (§٩-أ · §١٠). نقرأ الخريطة
+   مباشرة، ونرجع available:false لو ما فيه شي — والنموذج يقول
+   «مو جاهزة الآن» بدل ما نسخّن.
+
+   ما نطبّق TTL القصير: الكاش القديم أنفع من لا شي، والعمر يرجع
+   في cacheAgeMin فالنموذج يقدر يقول «من ساعتين». لكن بعد نصف يوم
+   يصير مضلّلاً في موسم التسجيل، فنعتبره غير متاح. */
+const AI_CACHE_MAX_AGE = 12 * 60 * 60 * 1000;
+const AI_CACHE_COLD = 'بيانات الجامعة مو جاهزة الآن — جرّب بعد شوي';
+
+function aiCache() {
+  const term = activeTerm();
+  let newest = null;
+  /* الجنسان يُسحبان منفصلين — نضمّهما ونأخذ أحدثهما زمناً */
+  const parts = [];
+  for (const g of ['M1', 'F1']) {
+    const hit = coursesCache.get(`${term}|ALL|${g}`);
+    if (hit && Array.isArray(hit.courses)) {
+      parts.push(...hit.courses.map(c => Object.assign({ gender: g === 'F1' ? 'F' : 'M' }, c)));
+      if (!newest || hit.at > newest) newest = hit.at;
+    }
+  }
+  if (!parts.length || !newest) return { available: false, error: AI_CACHE_COLD };
+  if (Date.now() - newest > AI_CACHE_MAX_AGE)
+    return { available: false, error: AI_CACHE_COLD, staleMin: Math.round((Date.now() - newest) / 60000) };
+  return { available: true, term, courses: parts, at: newest,
+           ageMin: Math.round((Date.now() - newest) / 60000) };
+}
+
+/* صف امتحان → ما يراه النموذج */
+function aiExam(e) {
+  return { crn: e.crn, code: e.code, title: e.title, section: e.section,
+    instructor: e.instructor, building: e.building, room: e.room,
+    day: e.day, date: e.date, hour: e.hour, gender: e.gender || null };
+}
+
 /* ═══ سجل الأدوات ═══
    كل أداة: وصفها للنموذج · مخطط وسائطها · حصتها · ودالتها.
    المخطط هو نفسه اللي يُرسل للنموذج في §٩-أ-٣. */
@@ -5749,6 +5787,184 @@ const AI_TOOLS = {
         .filter(x => !a.code || x.code === a.code);
 
       return { term, from: today, to: until, count: out.length, appointments: out };
+    },
+  },
+
+
+  /* ═══ أدوات الكاش — قراءة فقط، ولا سحبة واحدة من الجامعة ═══
+     كل واحدة تمر عبر قارئ الكاش تحت. لو الكاش بارد ترجع
+     available:false — ما نسخّن ولا نسحب لأن الطالب سأل. */
+
+  sections: {
+    tier: 'free',
+    description: 'شعب مادة من جدول الجامعة: رقم الشعبة والدكتور والوقت والقاعة '
+      + 'والمقاعد. من كاش جدولك — لا نسحب من الجامعة عند السؤال.',
+    input_schema: { type: 'object', properties: {
+      code: { type: 'string', description: 'كود المادة مثل "MATH 1422"' },
+      instructor: { type: 'string', description: 'اسم الدكتور أو جزء منه — بدل كود المادة' },
+      openOnly: { type: 'boolean', description: 'المفتوحة فقط' } },
+      required: [] },
+    run: (ctx, a) => {
+      if (!a.code && !a.instructor)
+        return { error: 'حدّد كود مادة أو اسم دكتور' };
+      const c = aiCache();
+      if (!c.available) return c;
+      const want = String(a.code || '').toUpperCase().replace(/\s+/g, ' ').trim();
+      const who = String(a.instructor || '').trim();
+      let rows = c.courses.filter(x => {
+        if (want) return String(x.courseCode || '').toUpperCase().replace(/\s+/g, ' ').trim() === want;
+        return String(x.instructor || '').includes(who);
+      });
+      if (a.openOnly) rows = rows.filter(x => String(x.status || '').toUpperCase() !== 'CLOSE');
+      if (!rows.length) return { found: 0, sections: [],
+        note: AI_UNKNOWN + ' في جدول ' + c.term, term: c.term, cacheAgeMin: c.ageMin };
+      return { found: rows.length, term: c.term, cacheAgeMin: c.ageMin,
+        sections: rows.slice(0, 40).map(x => ({
+          crn: x.crn, code: x.courseCode, title: x.courseTitle, section: x.section,
+          instructor: x.instructor, days: x.courseDate, time: x.courseTiming,
+          room: x.room, status: x.status, seats: x.seats, gender: x.gender })) };
+    },
+  },
+
+  instructor_reviews: {
+    tier: 'free',
+    description: 'ملخّص تقييمات الطلاب لدكتور: المتوسط وعددها وأكثر الوسوم، '
+      + 'ومقتطفات من التعليقات. **ملخّص لما كُتب فقط — لا حكم جديد.**',
+    input_schema: { type: 'object', properties: {
+      instructor: { type: 'string', description: 'اسم الدكتور أو جزء منه' } },
+      required: ['instructor'] },
+    run: async (ctx, a) => {
+      const who = String(a.instructor || '').trim();
+      if (who.length < 3) return { error: 'اكتب اسم الدكتور كاملاً أو أكثر من حرفين' };
+      /* بلا user_id في select ولا في الناتج — التقييم مجهول للقارئ */
+      const r = await sb('GET', 'instructor_reviews', {
+        query: `?instructor_name=ilike.*${encodeURIComponent(who)}*`
+             + `&hidden=is.false&select=instructor_name,rating,course_code,comment,tags,agree,disagree`
+             + `&limit=500` });
+      if (!Array.isArray(r)) return { error: 'تعذّر قراءة التقييمات' };
+      if (!r.length) return { found: 0, error: AI_UNKNOWN, instructor: who };
+
+      const byName = {};
+      r.forEach(x => {
+        const n = x.instructor_name || who;
+        byName[n] = byName[n] || { name: n, n: 0, sum: 0, tags: {}, comments: [], courses: {} };
+        const g = byName[n];
+        g.n++;
+        if (Number.isFinite(x.rating)) g.sum += x.rating;
+        (Array.isArray(x.tags) ? x.tags : []).forEach(t => { g.tags[t] = (g.tags[t] || 0) + 1 });
+        if (x.course_code) g.courses[x.course_code] = (g.courses[x.course_code] || 0) + 1;
+        /* تعليق الطالب نص منه — بيانات لا أوامر، ويُمرَّر كما هو بلا هوية كاتبه */
+        if (x.comment && g.comments.length < 8)
+          g.comments.push({ text: String(x.comment).slice(0, 400),
+                            agree: x.agree || 0, disagree: x.disagree || 0 });
+      });
+
+      return { found: r.length,
+        instructors: Object.values(byName).map(g => ({
+          name: g.name, reviews: g.n,
+          average: g.n ? Number((g.sum / g.n).toFixed(2)) : null,
+          topTags: Object.entries(g.tags).sort((x, y) => y[1] - x[1])
+            .slice(0, 6).map(([t, n]) => ({ tag: t, count: n })),
+          courses: Object.keys(g.courses),
+          comments: g.comments })),
+        note: 'ملخّص لتقييمات الطلاب — رأيهم لا رأينا، ولا نضيف حكماً' };
+    },
+  },
+
+  free_rooms: {
+    tier: 'free',
+    description: 'القاعات اللي ما فيها محاضرة في نافذة وقت من يوم معيّن. '
+      + 'للسؤال «وين أذاكر بين محاضرتين».',
+    input_schema: { type: 'object', properties: {
+      day: { type: 'string', enum: ['U', 'M', 'T', 'W', 'R', 'F', 'S'] },
+      from: { type: 'integer', description: 'بداية النافذة بالدقائق من منتصف الليل — ٨:٥٠ = 530' },
+      to: { type: 'integer', description: 'نهايتها بالدقائق' },
+      gender: { type: 'string', enum: ['M', 'F'] },
+      limit: { type: 'integer', description: 'كم قاعة ترجع — الافتراضي ٥' } },
+      required: ['day', 'from', 'to'] },
+    run: (ctx, a) => {
+      const day = String(a.day || '').toUpperCase();
+      const from = parseInt(a.from, 10), to = parseInt(a.to, 10);
+      if (!'UMTWRFS'.includes(day) || day.length !== 1)
+        return { error: 'يوم غير معروف' };
+      if (!Number.isFinite(from) || !Number.isFinite(to) ||
+          from < 0 || to > 1440 || to <= from)
+        return { error: 'نافذة وقت غير صحيحة' };
+      /* الفهرس المبني مسبقاً فقط — buildRoomIndex تسحب، فما نناديها */
+      if (!ROOM_INDEX || !ROOM_INDEX.rooms)
+        return { available: false, error: AI_CACHE_COLD };
+      const r = freeRooms(ROOM_INDEX, { day, from, to,
+        gender: a.gender === 'F' ? 'F' : a.gender === 'M' ? 'M' : null,
+        near: null, limit: Math.min(20, Number(a.limit) || 5) });
+      return { day, from, to, total: r.total, rooms: r.rooms,
+        cacheAgeMin: Math.round((Date.now() - ROOM_INDEX.at) / 60000) };
+    },
+  },
+
+  finals: {
+    tier: 'free',
+    description: 'جدول الاختبارات النهائية: تاريخ المادة ووقتها وقاعتها. '
+      + 'بكود المادة أو برقم الشعبة، أو كل نهائيات جدول الطالب.',
+    input_schema: { type: 'object', properties: {
+      code: { type: 'string', description: 'كود المادة' },
+      crn: { type: 'string', description: 'رقم الشعبة' },
+      mine: { type: 'boolean', description: 'نهائيات مواد جدولي — للمشتركين' } },
+      required: [] },
+    run: async (ctx, a) => {
+      if (!FINALS_ON) return { available: false, error: 'جدول النهائيات مو معروضاً الآن' };
+      /* الكاش المبني مسبقاً فقط — getOne تسحب لو بارد */
+      const all = [];
+      let at = 0;
+      for (const g of ['M', 'F']) {
+        const c = finalsCache[g];
+        if (c && Array.isArray(c.exams)) { all.push(...c.exams); at = Math.max(at, c.at) }
+      }
+      if (!all.length) return { available: false, error: AI_CACHE_COLD };
+
+      if (a.mine) {
+        if (!ctx.pro) return { error: AI_PRO_ONLY, tier: 'pro' };
+        const rows = await aiSchedule(ctx);
+        const crns = new Set(rows.map(r => String(r.crn)));
+        const mine = all.filter(e => crns.has(String(e.crn)));
+        return { scope: 'mine', count: mine.length, exams: mine.map(aiExam),
+          cacheAgeMin: Math.round((Date.now() - at) / 60000),
+          missing: rows.filter(r => !all.some(e => String(e.crn) === String(r.crn)))
+            .map(r => r.course_code).filter(Boolean) };
+      }
+      const want = String(a.code || '').toUpperCase().replace(/\s+/g, ' ').trim();
+      const crn = String(a.crn || '').trim();
+      if (!want && !crn) return { error: 'حدّد كود مادة أو رقم شعبة أو mine' };
+      const rows = all.filter(e => crn
+        ? String(e.crn) === crn
+        : String(e.code || '').toUpperCase().replace(/\s+/g, ' ').trim() === want);
+      if (!rows.length) return { count: 0, exams: [], error: AI_UNKNOWN };
+      return { count: rows.length, exams: rows.map(aiExam),
+        cacheAgeMin: Math.round((Date.now() - at) / 60000) };
+    },
+  },
+
+  schedule_changes: {
+    tier: 'pro',
+    description: 'وش غيّرت الجامعة على مواد الطالب: تغيّر وقت أو قاعة أو دكتور، '
+      + 'ومواد اختفت من جدول الجامعة. من صفوفه هو.',
+    input_schema: { type: 'object', properties: {
+      slot: { type: 'integer', description: 'رقم الجدول' } },
+      required: [] },
+    run: async (ctx, a) => {
+      const rows = await aiSchedule(ctx, a.slot);
+      const changed = rows.filter(r => r.changed_at || r.missing_since);
+      if (!changed.length) return { count: 0, changes: [],
+        note: 'ما فيه تغيّرات على مواد جدولك' };
+      return { count: changed.length, changes: changed.map(r => ({
+        code: r.course_code, title: r.course_title, crn: r.crn,
+        changedAt: r.changed_at || null,
+        /* أي الحقول تغيّرت — من change_note اللي تكتبها دورة التأكيد */
+        fields: (r.change_note && Array.isArray(r.change_note.fields))
+          ? r.change_note.fields : [],
+        missingSince: r.missing_since || null,
+        gone: !!r.missing_since,
+        now: { days: r.course_date, time: r.course_timing,
+               room: r.room, instructor: r.instructor } })) };
     },
   },
 
