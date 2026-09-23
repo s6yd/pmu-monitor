@@ -797,6 +797,19 @@ line-height:1.85;white-space:pre-wrap;overflow-wrap:anywhere}
 .ai-msg.bot .ai-b{background:var(--card);border:1px solid var(--border)}
 .ai-msg.bot .ai-b.warn{border-color:var(--warn);color:var(--warn)}
 .ai-tools{font-size:10.5px;color:var(--text3);margin-top:4px;font-family:var(--mono)}
+/* بطاقة الفعل: ما ينفّذ شي إلا بضغط الطالب */
+.ai-act{background:var(--card);border:1px solid var(--accent);border-radius:14px;
+padding:11px 12px;margin:0 0 10px}
+.ai-act.done{border-color:var(--border2);color:var(--text3);font-size:12.5px}
+.ai-act.done.err{border-color:var(--close);color:var(--close)}
+.ai-act-t{font-size:13px;font-weight:700;line-height:1.7}
+.ai-act-n{font-size:12px;color:var(--text3);margin-top:4px;line-height:1.6;
+overflow-wrap:anywhere}
+.ai-act-b{display:flex;gap:8px;margin-top:10px}
+.ai-act-go{flex:1;background:var(--accent);color:#fff;border:none;border-radius:11px;
+padding:9px;font-size:13px;font-weight:700;font-family:var(--sans);cursor:pointer}
+.ai-act-no{background:none;border:1px solid var(--border2);color:var(--text3);
+border-radius:11px;padding:9px 14px;font-size:13px;font-family:var(--sans);cursor:pointer}
 .ai-ex{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
 .ai-ex button{background:var(--card);border:1px solid var(--border2);color:var(--text2);
 border-radius:20px;padding:6px 12px;font-size:12px;font-family:var(--sans);cursor:pointer}
@@ -2628,18 +2641,31 @@ function toggleCourse(crn){
     saveSchedules();pushSchedule();updateBadge();renderResults();
     showToast(`${t('removed')} ${r.courseCode}`);return;
   }
-  const sess=sessionsOf(crn);
-  const c=sess[0];if(!c)return;
+  const ok=addSessionsDirect(sessionsOf(crn));
+  if(ok===null)return;
+}
+
+/* الإضافة نفسها بجلسات صريحة. المساعد يقترح شعبة قد تكون مو في نتائج
+   البحث المعروضة، وsessionsOf تقرأ منها — فنمرّر الجلسات كما هي.
+   وكل الحراسات تبقى هنا: المتطلب والتعارض. */
+function addSessionsDirect(sess){
+  const c=sess&&sess[0];
+  if(!c)return null;
+  if(schedule.some(s=>s.crn===c.crn)){
+    showToast(`${t('addedTo')} ${c.courseCode} ${t('toSchedule')}`,'warn');
+    return false;
+  }
   const pre=prereqCheck(c.courseCode);
   if(pre.known&&!pre.ok){
     showToast(`${t('cantAdd')} ${pre.missing.join('، ')||pre.needCr+' '+t('hrsUnit')}`,'err');
-    return;
+    return false;
   }
   const clash=findConflicts(c,schedule);
   sess.forEach(s=>schedule.push(s));
   saveSchedules();pushSchedule();updateBadge();renderResults();
   if(clash.length)showToast(`${t('addedButClash')} ${clash[0].courseCode}`,'warn');
   else showToast(`${t('addedTo')} ${c.courseCode} ${t('toSchedule')}`);
+  return true;
 }
 function removeFromSchedule(crn){
   const i=schedule.findIndex(s=>s.crn===crn);
@@ -3636,26 +3662,29 @@ function absOf(crn){ return ABS.filter(a=>String(a.crn)===String(crn)) }
 
 /* الطالب يتذكّر غيابه بعد يومين، أو يفتح الموقع مساءً وقد نسي — فيختار
    التاريخ. المستقبل ممنوع: غياب لم يقع بعد لا معنى له. */
+/* ترجّع هل انسجّل فعلاً — بطاقة التأكيد في المساعد تحتاج تعرف.
+   كل الحراسات تبقى هنا: ما نكتب فحصاً ثانياً في الأداة (§١٠). */
 async function markAbsent(crn,date){
-  if(!USER)return;
+  if(!USER)return false;
   const today=ksaNow().date;
   const on=date||today;
-  if(on>today){ showToast(t('absFuture')); return }
+  if(on>today){ showToast(t('absFuture')); return false }
   const b=termBounds();
-  if(b&&on<b.start){ showToast(t('absBefore')); return }
+  if(b&&on<b.start){ showToast(t('absBefore')); return false }
   /* اليوم لازم يكون من أيام هذي الجلسة أصلاً */
   const c=(schedule||[]).find(x=>String(x.crn)===String(crn));
   if(c){
     const letter=WEEK_ORDER[new Date(on+'T00:00:00Z').getUTCDay()];
     if(!parseDays(c.courseDate).includes(letter)){
-      showToast(t('absNoClass')); return }
+      showToast(t('absNoClass')); return false }
   }
-  if(absOf(crn).some(a=>a.on_date===on)){ showToast(t('absDup')); return }
+  if(absOf(crn).some(a=>a.on_date===on)){ showToast(t('absDup')); return false }
   const row={user_id:USER.id,term:activeTermCode(),crn:String(crn),on_date:on};
   const {data,error}=await sb.from('absences').insert(row).select().single();
-  if(error){ showToast(t('errSave')); return }
+  if(error){ showToast(t('errSave')); return false }
   ABS.push(data);
   redrawCourse();
+  return true;
 }
 async function unmarkAbsent(id){
   if(!confirm(t('absDel')))return;
@@ -3754,18 +3783,28 @@ function nextEv(crn){
   return evsOf(crn).find(e=>e.on_date>=today)||null;
 }
 
+/* الحفظ نفسه بلا DOM — النموذج يقترح والطالب يأكّد، فنحتاجها بوسائط
+   صريحة. addEv تبقى كما هي وتناديها، فالمنطق واحد في مكان واحد. */
+async function addEvDirect(crn,kind,date,note,share){
+  if(!USER)return false;
+  if(!date){ showToast(t('evPickDate')); return false }
+  const row={user_id:USER.id,term:activeTermCode(),crn:String(crn),
+             kind,on_date:date,note:(note||'').trim().slice(0,300)||null,
+             note_shared:!!share};
+  const {data,error}=await sb.from('course_events').insert(row).select().single();
+  if(error){ showToast(t('errSave')); return false }
+  EVS.push(data);
+  return true;
+}
+
 async function addEv(crn){
   if(!USER)return;
   const kind=document.getElementById('evKind').value;
   const date=document.getElementById('evDate').value;
   const note=(document.getElementById('evNote').value||'').trim().slice(0,300);
-  if(!date){ showToast(t('evPickDate')); return }
-  const row={user_id:USER.id,term:activeTermCode(),crn:String(crn),
-             kind,on_date:date,note:note||null,
-             note_shared:!!(EV_NOTE_SHARE&&note)};
-  const {data,error}=await sb.from('course_events').insert(row).select().single();
-  if(error){ showToast(t('errSave')); return }
-  EVS.push(data); EV_FORM=null;
+  const ok=await addEvDirect(crn,kind,date,note,!!(EV_NOTE_SHARE&&note));
+  if(!ok)return;
+  EV_FORM=null;
   showToast(t('evSaved'));
   redrawCourse();
 }
@@ -5870,8 +5909,9 @@ function renderAiLog(){
         '<button onclick="aiAsk(this.textContent)">'+escapeHtml(x)+'</button>').join('')+'</div>');
     return;
   }
-  log.innerHTML=AI_MSGS.map(m=>
-    m.role==='me'
+  log.innerHTML=AI_MSGS.map((m,i)=>
+    m.role==='act' ? aiActCard(m,i)
+    : m.role==='me'
       ? '<div class="ai-msg me"><div class="ai-b">'+escapeHtml(m.text)+'</div></div>'
       : '<div class="ai-msg bot"><div><div class="ai-b'+(m.bad?' warn':'')+'">'+
         escapeHtml(m.text)+'</div>'+
@@ -5906,6 +5946,9 @@ async function aiSend(){
     else{
       AI_MSGS.push({role:'bot',text:r.answer||t('aiErr'),bad:!r.ok,
                     tools:Array.isArray(r.tools)?r.tools:[]});
+      /* اقتراح فعل: بطاقة بزرّين. ما ينفّذ شي إلا بضغطه. */
+      if(r.proposal&&AI_ACTS[r.proposal.action])
+        AI_MSGS.push({role:'act',p:r.proposal});
       if(r.used&&AI_ST)AI_ST.used=r.used;
     }
   }catch(e){
@@ -5916,6 +5959,79 @@ async function aiSend(){
     if(btn)btn.disabled=false;
     renderAiSheet(true);
   }
+}
+
+/* ═══ الأفعال بتأكيد الطالب (§٩-أ-٤) ═══
+   المساعد يقترح، والطالب يضغط. والتنفيذ بدوال الصفحة نفسها — نفس
+   اللي تشتغل لما يسجّل من صفحة المادة، بكل حراساتها. */
+const AI_ACTS={
+  absence:{
+    label:p=>t('aiActAbs').replace('%c',p.code||p.crn).replace('%d',p.date),
+    run:p=>markAbsent(p.crn,p.date),
+  },
+  event:{
+    label:p=>t('aiActEv').replace('%k',evLabel(p.kind))
+      .replace('%c',p.code||p.crn).replace('%d',p.date),
+    run:p=>addEvDirect(p.crn,p.kind,p.date,p.note,false),
+  },
+  add_section:{
+    label:p=>t('aiActAdd').replace('%c',p.code||p.crn)
+      .replace('%s',p.section||'').replace('%n',p.crn),
+    /* الجلسات تجي مع الاقتراح من كاش السيرفر: الشعبة قد تكون مو في
+       نتائج البحث المعروضة، والدالة تفحص المتطلب والتعارض كالعادة. */
+    run:p=>addSessionsDirect(p.sessions)===true,
+  },
+  watch:{
+    label:p=>t('aiActWatch').replace('%c',p.code||p.crn)
+      .replace('%s',p.section||'').replace('%n',p.crn),
+    /* نمرّر صف الشعبة لنفس دالة المراقبة — الباقة وربط تلقرام
+       والنافذة تُفحص فيها كما هي (§١٠: ما نكتب فحصاً ثانياً). */
+    run:async p=>{
+      if(isMonitored(p.crn)){
+        showToast(LANG==='ar'?'مراقبة أصلاً':'Already watched','warn'); return false }
+      await toggleMonitorCourse(p.crn,{crn:p.crn,courseCode:p.code,
+        courseTitle:p.title,section:p.section,status:p.status});
+      /* «هل صارت مراقبة؟» لا «هل زاد العدد؟» — الدالة قد ترفض بالباقة
+         أو بربط تلقرام وتعرض السبب بنفسها. */
+      return isMonitored(p.crn);
+    },
+  },
+};
+
+function aiActCard(m,i){
+  const a=AI_ACTS[m.p&&m.p.action];
+  if(!a)return '';
+  if(m.done==='ok')
+    return '<div class="ai-act done">✅ '+escapeHtml(t('aiActDone'))+'</div>';
+  if(m.done==='no')
+    return '<div class="ai-act done">'+escapeHtml(t('aiActSkip'))+'</div>';
+  if(m.done==='err')
+    return '<div class="ai-act done err">'+escapeHtml(t('aiActErr'))+'</div>';
+  return '<div class="ai-act"><div class="ai-act-t">'+escapeHtml(a.label(m.p))+'</div>'+
+    (m.p.note?'<div class="ai-act-n">'+escapeHtml(m.p.note)+'</div>':'')+
+    '<div class="ai-act-b"><button class="ai-act-go" onclick="aiDo('+i+')">'+
+    escapeHtml(t('aiActOk'))+'</button>'+
+    '<button class="ai-act-no" onclick="aiSkip('+i+')">'+
+    escapeHtml(t('aiActNo'))+'</button></div></div>';
+}
+
+async function aiDo(i){
+  const m=AI_MSGS[i];
+  if(!m||m.role!=='act'||m.done||m.busy)return;
+  const a=AI_ACTS[m.p&&m.p.action];
+  if(!a){ m.done='err'; renderAiLog(); return }
+  m.busy=true; renderAiLog();
+  let ok=false;
+  try{ ok=await a.run(m.p) }catch(e){ ok=false }
+  m.busy=false;
+  /* الدوال نفسها تعرض سبب الرفض بـtoast — ما نكرّره هنا */
+  m.done=ok?'ok':'err';
+  renderAiLog();
+}
+function aiSkip(i){
+  const m=AI_MSGS[i];
+  if(!m||m.role!=='act'||m.done)return;
+  m.done='no'; renderAiLog();
 }
 
 async function aiNew(){
@@ -6480,13 +6596,15 @@ async function toggleMonitorAllGo(code){
   renderResults();renderSettings();
 }
 
-async function toggleMonitorCourse(crn){
+async function toggleMonitorCourse(crn,secRow){
   if(!isMonitored(crn)&&!needTelegram())return;      /* بلا ربط ما نفعّل */
-  return toggleMonitorCourseGo(crn);
+  return toggleMonitorCourseGo(crn,secRow);
 }
-async function toggleMonitorCourseGo(crn){
+async function toggleMonitorCourseGo(crn,secRow){
   if(!USER){showToast(LANG==='ar'?'سجّل دخول أول':'Sign in first','warn');return}
-  const c=allCourses.find(x=>x.crn===crn);if(!c)return;
+  /* secRow: صف الشعبة من المساعد — قد تكون مو في نتائج البحث المعروضة.
+     وبدونه نقرأ من allCourses كالعادة. كل الحراسات تحت تبقى كما هي. */
+  const c=secRow||allCourses.find(x=>x.crn===crn);if(!c)return;
   const ex=monitored.find(m=>m.crn===crn);
   if(!ex){
     const g=watchGate(document.getElementById('term').value);
@@ -7628,10 +7746,15 @@ const I18N={
 ar:{aiTitle:'مساعد جدولك',aiSub:'يجاوبك من جدولك وخطتك وبيانات الموقع — وما يخترع',
 aiPh:'اسأل عن جدولك أو خطتك...',aiSend:'إرسال',aiNew:'محادثة جديدة',aiClose:'إغلاق',
 aiThinking:'أفكّر…',aiErr:'ما وصل رد — جرّب بعد شوي',
-aiNote:'يقرأ فقط وما يغيّر شي في حسابك',aiLeft:'باقي لك اليوم',
+aiNote:'ما يغيّر شي إلا بتأكيدك',aiLeft:'باقي لك اليوم',
 aiHello:'اسألني عن جدولك أو خطتك أو الدكاترة.',
 aiEx1:'وش عندي بكرة؟',aiEx2:'كم ساعة باقية لي؟',aiEx3:'مين يدرّس ثيرمو ١؟',
 aiEx4:'كم غياب باقي لي؟',aiEx5:'وش أنزل الترم الجاي؟',aiEx6:'وين قاعة فاضية الحين؟',
+aiActAdd:'أضيف %c شعبة %s (%n) لجدولك؟',
+aiActWatch:'أراقب %c شعبة %s (%n) وأنبّهك أول ما تفتح؟',
+aiActAbs:'أسجّل غياب في %c يوم %d؟',aiActEv:'أضيف %k في %c يوم %d؟',
+aiActOk:'تأكيد',aiActNo:'لا شكراً',aiActDone:'تم',aiActSkip:'ما سوّينا شي',
+aiActErr:'ما قدرنا نسوّيه — شوف الرسالة فوق',
 aiEntrySub:'اسأل عن جدولك وخطتك وغيابك',
 svList:'قائمة',svGrid:'شبكة',csTime:'الوقت',csDays:'الأيام',csRoom:'القاعة',
 csDoc:'الدكتور',csSib1:'🔁 لهذي المادة جلسة أخرى:',csSib2:'🔁 لهذي المادة جلسات أخرى:',
@@ -7774,10 +7897,15 @@ PP1:'المستوى التأسيسي — Pre-Beginner',PP2:'المستوى ال�
 en:{aiTitle:'Jadwalik Assistant',aiSub:'Answers from your schedule, plan and site data — it replies in Arabic',
 aiPh:'Ask about your schedule or plan...',aiSend:'Send',aiNew:'New chat',aiClose:'Close',
 aiThinking:'Thinking…',aiErr:'No reply — try again shortly',
-aiNote:'Read-only — it changes nothing in your account',aiLeft:'left today',
+aiNote:'Changes nothing without your confirmation',aiLeft:'left today',
 aiHello:'Ask me about your schedule, plan or instructors. I answer in Arabic.',
 aiEx1:'وش عندي بكرة؟',aiEx2:'كم ساعة باقية لي؟',aiEx3:'مين يدرّس ثيرمو ١؟',
 aiEx4:'كم غياب باقي لي؟',aiEx5:'وش أنزل الترم الجاي؟',aiEx6:'وين قاعة فاضية الحين؟',
+aiActAdd:'Add %c section %s (%n) to your schedule?',
+aiActWatch:'Watch %c section %s (%n) and alert you when it opens?',
+aiActAbs:'Log an absence in %c on %d?',aiActEv:'Add %k in %c on %d?',
+aiActOk:'Confirm',aiActNo:'No thanks',aiActDone:'Done',aiActSkip:'Nothing done',
+aiActErr:'Could not do it — see the message above',
 aiEntrySub:'Ask about your schedule, plan and absences',
 svList:'List',svGrid:'Grid',csTime:'Time',csDays:'Days',csRoom:'Room',
 csDoc:'Instructor',csSib1:'🔁 This course has another session:',

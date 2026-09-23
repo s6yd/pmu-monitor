@@ -362,6 +362,106 @@ function fakeModel(ctx) {
     ok(r.known === true && r.count === 5, 'GEIT 1412 تفتح ٥ — ' + r.count);
     ok(r.unlocks.every(c => c.code && c.name), 'وترجع أسماءها لا عددها فقط');
   }
+  /* ══════ الأفعال: تقترح ولا تنفّذ (§٩-أ-٤) ══════ */
+  {
+    const before = SB_CALLS.length;
+    /* غياب في يوم فيه محاضرة فعلاً — ALIS 1212 أيامها UT */
+    const r = await call('propose_absence', '{"code":"ALIS 1212","date":"2098-12-30"}');
+    ok(!!r.proposal, 'اقتراح غياب رجع — ' + JSON.stringify(r).slice(0, 80));
+    eq(r.proposal.action, 'absence', 'نوعه');
+    eq(r.proposal.crn, '10001', 'وبرقم شعبة المادة من جدوله');
+    eq(r.proposal.date, '2098-12-30', 'وبتاريخه');
+    ok(!!r.note && /تأكيد/.test(r.note), 'ومعه تذكير بالتأكيد');
+    /* **ولا كتابة واحدة** */
+    ok(SB_CALLS.slice(before).every(c => c.method === 'GET'),
+       '**الأداة ما كتبت صفاً** — اقتراح فقط');
+
+    /* يوم ما فيه محاضرة يُرفض قبل ما يتعب الطالب */
+    const wrong = await call('propose_absence', '{"code":"ALIS 1212","date":"2098-12-31"}');
+    ok(!wrong.proposal && /محاضرة/.test(wrong.error || ''),
+       'ويوم ما فيه محاضرة يُرفض — ' + (wrong.error || ''));
+    /* مادة مو في جدوله */
+    const nope = await call('propose_absence', '{"code":"MEEN 3311"}');
+    ok(!nope.proposal && nope.known === false, 'ومادة مو في جدوله ترجع «ما أعرف»');
+    /* يوم جاي */
+    const fut = await call('propose_absence', '{"code":"ALIS 1212","date":"2099-06-01"}');
+    ok(!fut.proposal, 'وغياب في المستقبل يُرفض');
+
+    /* موعد */
+    const e = await call('propose_event',
+      '{"code":"MATH 1422","kind":"quiz","date":"2099-03-01","note":"الفصل الرابع"}');
+    ok(!!e.proposal, 'اقتراح موعد رجع');
+    eq(e.proposal.action, 'event', 'نوعه');
+    eq(e.proposal.kind, 'quiz', 'ونوع الموعد');
+    eq(e.proposal.crn, '10002', 'وشعبة المادة');
+    eq(e.proposal.note, 'الفصل الرابع', 'وملاحظته كما كتبها');
+    const bad = await call('propose_event', '{"code":"MATH 1422","date":"2000-01-01"}');
+    ok(!bad.proposal, 'وتاريخ راح يُرفض');
+    const k = await call('propose_event', '{"code":"MATH 1422","date":"2099-03-01","kind":"شي"}');
+    eq(k.proposal.kind, 'other', 'ونوع غير معروف يصير other لا يُخترع');
+    /* المجاني ما توصله — أفعال على بياناته */
+    const fr = await callFree('propose_absence', '{"code":"ALIS 1212"}');
+    ok(!fr.proposal && /اشتراك/.test(fr.error || ''), 'وأداة الأفعال للمشتركين');
+    /* ولا كتابة في كل ما سبق */
+    ok(SB_CALLS.slice(before).every(c => c.method === 'GET'),
+       '**ولا كتابة واحدة في كل اقتراحات هذا القسم**');
+  }
+
+  /* ══════ إضافة شعبة ومراقبة — من الكاش ══════ */
+  {
+    /* الكاش بارد: ما نسحب من الجامعة ولا نقترح من الهواء */
+    const cold = await call('propose_add_section', '{"crn":"30001"}');
+    eq(cold.available, false, 'الكاش بارد ⇒ ما فيه اقتراح');
+    ok(!cold.proposal, 'ولا نخترع شعبة');
+    eq(PULLED, [], '**ولا سحبة من الجامعة**');
+
+    /* نسخّن الكاش بنفس طريقة قسم الشعب */
+    ctxObj.coursesCache.set('202710|ALL|M1', { at: Date.now(), courses: [
+      { crn:'30001', courseCode:'PHYS 1421', courseTitle:'Physics I', section:'05',
+        courseDate:'MW', courseTiming:'0930 - 1045', instructor:'Ali Noor',
+        room:'G100', status:'OPEN', seats:'3', gender:'M' },
+      { crn:'30001', courseCode:'PHYS 1421', courseTitle:'Physics I Lab', section:'05L',
+        courseDate:'R', courseTiming:'1300 - 1545', instructor:'Ali Noor',
+        room:'LAB-9', status:'OPEN', seats:'3', gender:'M' },
+      { crn:'10001', courseCode:'ALIS 1212', courseTitle:'Islamic Culture II', section:'01',
+        courseDate:'UT', courseTiming:'0800 - 0850', instructor:'Ahmad Salem',
+        room:'G034', status:'CLOSE', seats:'0', gender:'M' } ] });
+
+    const n0 = SB_CALLS.length;
+    const add = await call('propose_add_section', '{"crn":"30001"}');
+    ok(!!add.proposal, 'اقتراح إضافة رجع — ' + JSON.stringify(add).slice(0, 70));
+    eq(add.proposal.action, 'add_section', 'نوعه');
+    eq(add.proposal.sessions.length, 2,
+       '**ومعه الجلستان: المحاضرة والمعمل بنفس CRN (§٦)**');
+    eq(add.proposal.sessions[0].courseTiming, '0930 - 1045',
+       'وبصيغة الجامعة كما هي — الصفحة تفهمها');
+    ok(add.proposal.sessions.every(x => x.courseCode && x.courseDate),
+       'وكل جلسة بحقولها اللي تحتاجها الصفحة');
+    /* شعبة في جدوله أصلاً */
+    const dup = await call('propose_add_section', '{"crn":"10001"}');
+    ok(!dup.proposal && /أصلاً/.test(dup.error || ''),
+       'وشعبة في جدوله ما تُقترح — ' + (dup.error || ''));
+    /* رقم ما له وجود */
+    const no = await call('propose_add_section', '{"crn":"99999"}');
+    ok(!no.proposal && no.known === false, 'ورقم ما له وجود يرجع «ما أعرف»');
+
+    /* المراقبة */
+    const w = await call('propose_watch', '{"crn":"30001"}');
+    ok(!!w.proposal, 'اقتراح مراقبة رجع');
+    eq(w.proposal.action, 'watch', 'نوعه');
+    eq(w.proposal.code, 'PHYS 1421', 'وبمادته');
+    eq(w.proposal.status, 'OPEN', 'وحالتها وقت الاقتراح');
+    ok(/الباقة/.test(w.note || ''), 'ويقول إن الحدود تُفحص عند التأكيد');
+    const wno = await call('propose_watch', '{"crn":"99999"}');
+    ok(!wno.proposal, 'ورقم ما له وجود ما يُقترح');
+
+    /* **ولا كتابة، ولا سحبة** */
+    ok(SB_CALLS.slice(n0).every(c => c.method === 'GET'),
+       '**ولا كتابة واحدة — اقتراح فقط**');
+    eq(PULLED, [], 'ولا سحبة من الجامعة في كل القسم');
+    ctxObj.coursesCache.clear();
+  }
+
   /* ══════ جسر العربي: الطالب ما يكتب كأسماء الجامعة ══════ */
   {
     /* ── المواد بلغة الطالب ── */
