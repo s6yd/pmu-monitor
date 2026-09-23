@@ -389,6 +389,49 @@ const openSheet = async page => {
       '**فعل ما نعرفه ما يصير بطاقة** — الصفحة تعرف أفعالها لا النموذج');
     eq(await page.evaluate(() => window.__ran.length), 1, 'وما انفّذ');
 
+    /* إضافة شعبة: الجلستان تنضافان معاً */
+    await page.evaluate(() => {
+      window.addSessionsDirect = ss => { window.__ran.push(['add', ss.length,
+        ss[0] && ss[0].crn]); return true };
+      window.__watched = [];
+      window.isMonitored = crn => window.__watched.indexOf(crn) > -1;
+      window.toggleMonitorCourse = (crn, row) => {
+        window.__ran.push(['watch', crn, row && row.courseCode]);
+        window.__watched.push(crn);
+        return Promise.resolve();
+      };
+    });
+    ST.answer.proposal = { action: 'add_section', crn: '30001', code: 'PHYS 1421',
+      section: '05', title: 'Physics I', sessions: [{ crn: '30001' }, { crn: '30001' }] };
+    await page.fill('#aiQ', 'ضف الشعبة');
+    await page.evaluate(() => aiSend());
+    await page.waitForTimeout(450);
+    /* البطاقات السابقة صارت «تم» وباقية في السجل — نقرأ الأخيرة */
+    const lastCard = async () => {
+      const all = await page.$$('#aiLog .ai-act');
+      return all.length ? all[all.length - 1].textContent() : '';
+    };
+    ok(/PHYS 1421/.test(await lastCard()), 'بطاقة إضافة الشعبة');
+    ok(/30001/.test(await lastCard()), 'وفيها رقمها');
+    await page.click('#aiLog .ai-act-go');
+    await page.waitForTimeout(300);
+    eq(await page.evaluate(() => window.__ran[window.__ran.length - 1]),
+       ['add', 2, '30001'],
+       '**والجلستان تمرّان معاً** — المحاضرة والمعمل وحدة واحدة');
+
+    /* مراقبة: تمرّ لدالة الموقع نفسها بصف الشعبة */
+    ST.answer.proposal = { action: 'watch', crn: '30001', code: 'PHYS 1421',
+      section: '05', title: 'Physics I', status: 'CLOSE' };
+    await page.fill('#aiQ', 'راقبها');
+    await page.evaluate(() => aiSend());
+    await page.waitForTimeout(450);
+    await page.click('#aiLog .ai-act-go');
+    await page.waitForTimeout(300);
+    eq(await page.evaluate(() => window.__ran[window.__ran.length - 1]),
+       ['watch', '30001', 'PHYS 1421'],
+       'والمراقبة تمرّ لدالة الموقع نفسها بصف الشعبة — بحدودها كما هي');
+    ok(/تم/.test(await lastCard()), 'والبطاقة تصير «تم»');
+
     /* والنص المحقون في الملاحظة يُهرَّب */
     ST.answer.proposal = { action: 'event', crn: '10002', kind: 'quiz',
       date: '2099-03-01', note: '<img src=x onerror=alert(1)>', code: 'MATH 1422' };

@@ -6168,6 +6168,59 @@ const AI_TOOLS = {
     },
   },
 
+
+  propose_add_section: {
+    tier: 'free',
+    description: 'يقترح إضافة شعبة لجدول الطالب برقمها (CRN). **ما يضيف شيئاً** — '
+      + 'الطالب يضغط «تأكيد». لما يقول «ضف لي شعبة كذا» أو «حط MATH 1422 في جدولي».',
+    input_schema: { type: 'object', properties: {
+      crn: { type: 'string', description: 'رقم الشعبة من نتائج sections' } },
+      required: ['crn'] },
+    run: async (ctx, a) => {
+      const crn = String(a.crn || '').trim();
+      if (!crn) return { error: 'حدّد رقم الشعبة' };
+      const c = aiCache();
+      if (!c.available) return c;
+      /* المحاضرة والمعمل صفّان بنفس CRN ويُضافان معاً (§٦) */
+      const sess = c.courses.filter(x => String(x.crn) === crn);
+      if (!sess.length) return { known: false,
+        error: AI_UNKNOWN + ' — ما فيه شعبة بهذا الرقم في جدول ' + c.term, crn };
+      const rows = await aiSchedule(ctx);
+      if (rows.some(r => String(r.crn) === crn))
+        return { error: 'الشعبة في جدولك أصلاً', crn, code: sess[0].courseCode };
+      return { proposal: { action: 'add_section', crn,
+          code: sess[0].courseCode, title: sess[0].courseTitle,
+          section: sess[0].section, term: c.term,
+          sessions: sess.map(x => ({ crn: String(x.crn), courseCode: x.courseCode,
+            courseTitle: x.courseTitle, section: x.section, courseDate: x.courseDate,
+            courseTiming: x.courseTiming, instructor: x.instructor, room: x.room,
+            status: x.status, seats: x.seats, gender: x.gender })) },
+        note: 'اقتراح — ما انضاف شي. الموقع يفحص المتطلب والتعارض عند التأكيد.' };
+    },
+  },
+
+  propose_watch: {
+    tier: 'free',
+    description: 'يقترح مراقبة شعبة برقمها — يوصل الطالب إشعار تلقرام لما تفتح. '
+      + '**ما يراقب شيئاً** — الطالب يضغط «تأكيد». والحدود يفحصها الموقع.',
+    input_schema: { type: 'object', properties: {
+      crn: { type: 'string', description: 'رقم الشعبة' } },
+      required: ['crn'] },
+    run: async (ctx, a) => {
+      const crn = String(a.crn || '').trim();
+      if (!crn) return { error: 'حدّد رقم الشعبة' };
+      const c = aiCache();
+      if (!c.available) return c;
+      const sec = c.courses.find(x => String(x.crn) === crn);
+      if (!sec) return { known: false,
+        error: AI_UNKNOWN + ' — ما فيه شعبة بهذا الرقم في جدول ' + c.term, crn };
+      return { proposal: { action: 'watch', crn,
+          code: sec.courseCode, title: sec.courseTitle, section: sec.section,
+          status: sec.status, seats: sec.seats, term: c.term },
+        note: 'اقتراح — ما انفعّلت مراقبة. الموقع يفحص الباقة وربط تلقرام عند التأكيد.' };
+    },
+  },
+
   find_course: {
     tier: 'free',
     description: 'يلقى كود المادة من اسمها بلغة الطالب: «ثيرمو ١» · «دوائر» · '

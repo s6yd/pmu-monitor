@@ -2641,18 +2641,31 @@ function toggleCourse(crn){
     saveSchedules();pushSchedule();updateBadge();renderResults();
     showToast(`${t('removed')} ${r.courseCode}`);return;
   }
-  const sess=sessionsOf(crn);
-  const c=sess[0];if(!c)return;
+  const ok=addSessionsDirect(sessionsOf(crn));
+  if(ok===null)return;
+}
+
+/* الإضافة نفسها بجلسات صريحة. المساعد يقترح شعبة قد تكون مو في نتائج
+   البحث المعروضة، وsessionsOf تقرأ منها — فنمرّر الجلسات كما هي.
+   وكل الحراسات تبقى هنا: المتطلب والتعارض. */
+function addSessionsDirect(sess){
+  const c=sess&&sess[0];
+  if(!c)return null;
+  if(schedule.some(s=>s.crn===c.crn)){
+    showToast(`${t('addedTo')} ${c.courseCode} ${t('toSchedule')}`,'warn');
+    return false;
+  }
   const pre=prereqCheck(c.courseCode);
   if(pre.known&&!pre.ok){
     showToast(`${t('cantAdd')} ${pre.missing.join('، ')||pre.needCr+' '+t('hrsUnit')}`,'err');
-    return;
+    return false;
   }
   const clash=findConflicts(c,schedule);
   sess.forEach(s=>schedule.push(s));
   saveSchedules();pushSchedule();updateBadge();renderResults();
   if(clash.length)showToast(`${t('addedButClash')} ${clash[0].courseCode}`,'warn');
   else showToast(`${t('addedTo')} ${c.courseCode} ${t('toSchedule')}`);
+  return true;
 }
 function removeFromSchedule(crn){
   const i=schedule.findIndex(s=>s.crn===crn);
@@ -5961,6 +5974,28 @@ const AI_ACTS={
       .replace('%c',p.code||p.crn).replace('%d',p.date),
     run:p=>addEvDirect(p.crn,p.kind,p.date,p.note,false),
   },
+  add_section:{
+    label:p=>t('aiActAdd').replace('%c',p.code||p.crn)
+      .replace('%s',p.section||'').replace('%n',p.crn),
+    /* الجلسات تجي مع الاقتراح من كاش السيرفر: الشعبة قد تكون مو في
+       نتائج البحث المعروضة، والدالة تفحص المتطلب والتعارض كالعادة. */
+    run:p=>addSessionsDirect(p.sessions)===true,
+  },
+  watch:{
+    label:p=>t('aiActWatch').replace('%c',p.code||p.crn)
+      .replace('%s',p.section||'').replace('%n',p.crn),
+    /* نمرّر صف الشعبة لنفس دالة المراقبة — الباقة وربط تلقرام
+       والنافذة تُفحص فيها كما هي (§١٠: ما نكتب فحصاً ثانياً). */
+    run:async p=>{
+      if(isMonitored(p.crn)){
+        showToast(LANG==='ar'?'مراقبة أصلاً':'Already watched','warn'); return false }
+      await toggleMonitorCourse(p.crn,{crn:p.crn,courseCode:p.code,
+        courseTitle:p.title,section:p.section,status:p.status});
+      /* «هل صارت مراقبة؟» لا «هل زاد العدد؟» — الدالة قد ترفض بالباقة
+         أو بربط تلقرام وتعرض السبب بنفسها. */
+      return isMonitored(p.crn);
+    },
+  },
 };
 
 function aiActCard(m,i){
@@ -6561,13 +6596,15 @@ async function toggleMonitorAllGo(code){
   renderResults();renderSettings();
 }
 
-async function toggleMonitorCourse(crn){
+async function toggleMonitorCourse(crn,secRow){
   if(!isMonitored(crn)&&!needTelegram())return;      /* بلا ربط ما نفعّل */
-  return toggleMonitorCourseGo(crn);
+  return toggleMonitorCourseGo(crn,secRow);
 }
-async function toggleMonitorCourseGo(crn){
+async function toggleMonitorCourseGo(crn,secRow){
   if(!USER){showToast(LANG==='ar'?'سجّل دخول أول':'Sign in first','warn');return}
-  const c=allCourses.find(x=>x.crn===crn);if(!c)return;
+  /* secRow: صف الشعبة من المساعد — قد تكون مو في نتائج البحث المعروضة.
+     وبدونه نقرأ من allCourses كالعادة. كل الحراسات تحت تبقى كما هي. */
+  const c=secRow||allCourses.find(x=>x.crn===crn);if(!c)return;
   const ex=monitored.find(m=>m.crn===crn);
   if(!ex){
     const g=watchGate(document.getElementById('term').value);
@@ -7713,6 +7750,8 @@ aiNote:'ما يغيّر شي إلا بتأكيدك',aiLeft:'باقي لك الي
 aiHello:'اسألني عن جدولك أو خطتك أو الدكاترة.',
 aiEx1:'وش عندي بكرة؟',aiEx2:'كم ساعة باقية لي؟',aiEx3:'مين يدرّس ثيرمو ١؟',
 aiEx4:'كم غياب باقي لي؟',aiEx5:'وش أنزل الترم الجاي؟',aiEx6:'وين قاعة فاضية الحين؟',
+aiActAdd:'أضيف %c شعبة %s (%n) لجدولك؟',
+aiActWatch:'أراقب %c شعبة %s (%n) وأنبّهك أول ما تفتح؟',
 aiActAbs:'أسجّل غياب في %c يوم %d؟',aiActEv:'أضيف %k في %c يوم %d؟',
 aiActOk:'تأكيد',aiActNo:'لا شكراً',aiActDone:'تم',aiActSkip:'ما سوّينا شي',
 aiActErr:'ما قدرنا نسوّيه — شوف الرسالة فوق',
@@ -7862,6 +7901,8 @@ aiNote:'Changes nothing without your confirmation',aiLeft:'left today',
 aiHello:'Ask me about your schedule, plan or instructors. I answer in Arabic.',
 aiEx1:'وش عندي بكرة؟',aiEx2:'كم ساعة باقية لي؟',aiEx3:'مين يدرّس ثيرمو ١؟',
 aiEx4:'كم غياب باقي لي؟',aiEx5:'وش أنزل الترم الجاي؟',aiEx6:'وين قاعة فاضية الحين؟',
+aiActAdd:'Add %c section %s (%n) to your schedule?',
+aiActWatch:'Watch %c section %s (%n) and alert you when it opens?',
 aiActAbs:'Log an absence in %c on %d?',aiActEv:'Add %k in %c on %d?',
 aiActOk:'Confirm',aiActNo:'No thanks',aiActDone:'Done',aiActSkip:'Nothing done',
 aiActErr:'Could not do it — see the message above',
