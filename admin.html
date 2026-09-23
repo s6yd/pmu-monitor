@@ -75,7 +75,7 @@ display:grid;grid-template-columns:repeat(4,1fr)}
 .tab{background:none;border:none;color:var(--text3);font-family:var(--sans);
 font-size:12px;font-weight:600;padding:12px 2px;cursor:pointer;position:relative}
 .tab.active{color:var(--accent2)}
-.tabs6{grid-template-columns:repeat(9,1fr)}
+.tabs6{grid-template-columns:repeat(10,1fr)}
 .tabs6 .tab{font-size:11px;padding:11px 2px}
 .row.dim{opacity:.45}
 .tabs6 .tab{font-size:10.5px;padding:12px 1px}
@@ -379,6 +379,7 @@ padding:1px 6px;border-radius:5px;color:var(--accent2)}
   <button class="tab"        data-p="msgs"  onclick="go('msgs')">الرسائل</button>
   <button class="tab"        data-p="rep"   onclick="go('rep')">بلاغات<span class="tab-badge" id="repBadge"></span></button>
   <button class="tab"        data-p="stg"   onclick="go('stg')">التخزين</button>
+  <button class="tab"        data-p="ai"    onclick="go('ai')">المساعد</button>
   <button class="tab"        data-p="sys"   onclick="go('sys')">النظام<span class="tab-dot" id="sysDot"></span></button>
 </div>
 
@@ -452,6 +453,10 @@ padding:1px 6px;border-radius:5px;color:var(--accent2)}
     <div id="upBody"></div>
   </div>
 
+  <div class="page" id="pageAi">
+    <div id="aiBody"><div class="spinner"></div></div>
+  </div>
+
   <div class="page" id="pageSys">
     <div id="sysBody"><div class="spinner"></div></div>
   </div>
@@ -523,9 +528,12 @@ function logout(){
 function go(p){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.p===p));
   const ids={over:'pageOver',users:'pageUsers',revs:'pageRevs',mons:'pageMons',
-             fb:'pageFb',msgs:'pageMsgs',rep:'pageReps',stg:'pageStg',sys:'pageSys'};
+             fb:'pageFb',msgs:'pageMsgs',rep:'pageReps',stg:'pageStg',sys:'pageSys',
+             ai:'pageAi'};
   document.querySelectorAll('.page').forEach(el=>el.classList.remove('active'));
   document.getElementById(ids[p]).classList.add('active');
+  /* المساعد يُحمَّل عند فتحه لا مع كل تحديث — قراءتان زايدتان كل مرة */
+  if(p==='ai'&&!AI)loadAi();
 }
 
 /* ══════════ أدوات ══════════ */
@@ -625,6 +633,237 @@ async function loadAllInner(silent){
       if(eb){ eb.hidden=env==='prod'; eb.textContent='🧪 '+env } }
     renderOver(); renderUsers(); renderRRs(); renderRevs(); renderMons(); renderFb();
     renderMsgs(); renderReps(); renderStorage(); renderUploads(); renderSys();
+  }catch(e){ toast(e.message,'err') }
+}
+
+/* ══════════ مساعد جدولك ══════════
+   الوضع والنموذج والسقوف والإنفاق ومربّع تجربة. كل شي من هنا بلا نشر:
+   اسم النموذج يتقدّم على متغيّر Render، والسقوف تُحفظ في القاعدة.
+   التكلفة تجي محسوبة من السيرفر — اللوحة تعرض ما يُرجعه ولا تحسب سعراً. */
+let AI=null, AITOP=null, AIMSGS=[], AIBUSY=false;
+
+async function loadAi(){
+  try{
+    const [a,t]=await Promise.all([api('ai'),api('ai-top').catch(()=>null)]);
+    AI=a; AITOP=t; renderAi();
+  }catch(e){ toast(e.message,'err'); }
+}
+
+const AI_MODE_AR={off:'مقفل — ما يشوفه أحد',admin:'لك أنت فقط',all:'لكل الطلاب'};
+
+function renderAi(){
+  const box=document.getElementById('aiBody');
+  if(!box)return;
+  if(!AI){ box.innerHTML='<div class="spinner"></div>'; return }
+  const sp=AI.spend||{monthSar:0,todaySar:0,questions:0,pct:0,byEnv:{}};
+  const cap=AI.caps||{};
+  const pct=Math.min(100,sp.pct||0);
+  const hot=pct>=100?'bad':pct>=75?'warn':'good';
+  const envs=Object.keys(sp.byEnv||{}).sort()
+    .map(k=>`${esc(k)} ${sp.byEnv[k]}`).join(' · ');
+
+  box.innerHTML=`
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-num">${sp.todaySar}</div>
+        <div class="kpi-label">ريال اليوم</div></div>
+      <div class="kpi"><div class="kpi-num ${hot}">${sp.monthSar}</div>
+        <div class="kpi-label">ريال هذا الشهر</div>
+        <div class="kpi-sub"><span class="ltr">${pct}% / ${cap.monthSar}</span></div></div>
+      <div class="kpi"><div class="kpi-num">${sp.questions||0}</div>
+        <div class="kpi-label">سؤال هذا الشهر</div></div>
+      <div class="kpi"><div class="kpi-num ${AI.fails?'warn':''}">${AI.fails||0}</div>
+        <div class="kpi-label">نداء فشل</div></div>
+    </div>
+
+    <div class="gauge" style="margin-bottom:12px">
+      <div class="kv"><span>الوضع</span>
+        <b class="${AI.mode==='all'?'good':AI.mode==='admin'?'warn':'bad'}">${
+          esc(AI.mode)} — ${esc(AI_MODE_AR[AI.mode]||'')}</b></div>
+      <div class="kv"><span>النموذج</span>
+        <b><span class="ltr">${esc(AI.model)}</span>${
+          AI.modelCustom?' <span style="color:var(--warn)">من اللوحة</span>'
+                        :' <span style="color:var(--text3)">من Render</span>'}${
+          AI.modelKnown?'':' <span style="color:var(--close)">سعره مجهول</span>'}</b></div>
+      <div class="kv"><span>المفتاح</span>
+        <b class="${AI.ready?'good':'bad'}">${
+          AI.ready?'مضبوط':'ANTHROPIC_API_KEY ناقص في Render'}</b></div>
+      <div class="kv"><span>السقف الشهري</span>
+        <b><span class="ltr">${cap.monthSar} ريال</span></b></div>
+      <div class="kv"><span>اليومي · للمجاني</span>
+        <b><span class="ltr">${cap.day} · ${cap.dayFree}</span></b></div>
+      <div class="kv"><span>الترمي</span><b><span class="ltr">${cap.term}</span></b></div>
+      <div class="kv"><span>تنبيه ٧٥٪</span>
+        <b>${AI.alerted?('أُرسل لشهر '+esc(AI.alerted)):'ما أُرسل'}</b></div>
+      ${AI.unlogged?`<div class="kv"><span>استهلاك ما انكتب</span>
+        <b class="bad"><span class="ltr">${AI.unlogged}</span></b></div>`:''}
+      ${envs?`<div class="kv"><span>الإنفاق لكل بيئة</span>
+        <b><span class="ltr">${esc(envs)}</span></b></div>`:''}
+      <div class="gauge-sub">
+        السقف الشهري يشمل prod و dev معاً — فاتورة واحدة عند المزوّد.
+        وعند ٧٥٪ يوصلك تنبيه تلقرام، وعند ١٠٠٪ يتوقّف المساعد ويشرح للطالب.
+      </div>
+      <div class="row-meta" style="margin-top:10px">
+        <button class="mini" onclick="aiSetMode()">تبديل الوضع</button>
+        <button class="mini" onclick="aiSetModel()">تغيير النموذج</button>
+        <button class="mini" onclick="aiSetCaps()">تعديل السقوف</button>
+        <button class="mini go" onclick="aiPingBtn()">جرّب الاتصال</button>
+      </div>
+    </div>
+
+    ${aiTopCard()}
+    ${aiChatCard()}`;
+  renderAiChat();
+}
+
+/* أكثر ١٠ طلاب استهلاكاً — رقمه الحقيقي بالريال لا عدد أسئلته وحده */
+function aiTopCard(){
+  const T=AITOP&&AITOP.top;
+  if(!T||!T.length)
+    return `<div class="sec-title">أكثر الطلاب استهلاكاً</div>
+      <div class="empty" style="padding:24px"><div class="empty-icon">📊</div>
+      <div class="empty-t">ما فيه استهلاك هذا الشهر</div></div>`;
+  const max=Math.max(...T.map(x=>x.sar))||1;
+  return `<div class="sec-title">أكثر ١٠ طلاب استهلاكاً — ${esc(AITOP.ym)}</div>
+    ${AITOP.truncated?`<div class="gauge-sub" style="margin-bottom:8px;color:var(--warn)">
+      القائمة مقصوصة عند ١٠٠٠ صف — الأرقام أقل من الحقيقة.</div>`:''}
+    ${T.map(u=>`<div class="row">
+      <div class="row-top"><b>${esc(u.name||u.email||u.id)}</b>
+        <span class="ltr" style="font-family:var(--mono)">${u.sar} ريال</span></div>
+      <div style="height:4px;border-radius:3px;background:var(--border);margin:7px 0">
+        <div style="height:4px;border-radius:3px;background:var(--accent);
+                    width:${Math.round(u.sar/max*100)}%"></div></div>
+      <div class="row-meta">
+        <span>الأسئلة <b><span class="ltr">${u.questions}</span></b></span>
+        <span>آخر سؤال <b><span class="ltr">${esc(u.last||'—')}</span></b></span>
+        ${u.email?`<span><span class="ltr">${esc(u.email)}</span></span>`:''}
+      </div></div>`).join('')}`;
+}
+
+/* مربّع التجربة: يسأل بحسابك أنت، فالأدوات تشتغل على بياناتك الحقيقية.
+   والوضع يطبَّق كما هو — off يمنع حتى هنا، وهذا مقصود. */
+function aiChatCard(){
+  return `<div class="sec-title">جرّب المساعد</div>
+    <div class="gauge">
+      ${AI.mode==='off'?`<div class="gauge-sub" style="color:var(--warn);margin:0 0 9px">
+        الوضع off — حوّله إلى admin عشان تجرّب بنفسك بلا ما يشوفه أحد.</div>`:''}
+      <div id="aiChatLog"></div>
+      <div class="toolbar" style="margin:10px 0 0">
+        <input id="aiQ" placeholder="اسأل مثل ما يسأل الطالب..."
+               onkeydown="if(event.key==='Enter')aiSend()">
+      </div>
+      <div class="row-meta">
+        <button class="mini go" onclick="aiSend()">إرسال</button>
+        <button class="mini" onclick="aiNewChat()">محادثة جديدة</button>
+      </div>
+      <div class="gauge-sub">
+        يسأل بحسابك أنت ويُحسب من سقفك. نداء «جرّب الاتصال» ما يُحسب — أقل من هللة.
+      </div>
+    </div>`;
+}
+
+function renderAiChat(){
+  const box=document.getElementById('aiChatLog');
+  if(!box)return;
+  if(!AIMSGS.length){
+    box.innerHTML=`<div class="gauge-sub" style="margin:0">
+      ما بدأت محادثة بعد. جرّب: «وش عندي بكرة؟» أو «كم باقي لي عن التخرج؟»</div>`;
+    return;
+  }
+  box.innerHTML=AIMSGS.map(m=>{
+    if(m.role==='user')
+      return `<div style="margin:0 0 9px;text-align:end">
+        <span style="display:inline-block;background:var(--accent);color:#fff;
+          border-radius:12px;padding:7px 11px;font-size:13px;max-width:85%">
+          ${esc(m.text)}</span></div>`;
+    const meta=[m.model?esc(m.model):'',m.calls?('نداءات '+m.calls):'',
+                (m.sar!=null?m.sar+' ريال':''),
+                (m.tools&&m.tools.length?'أدوات: '+esc(m.tools.join(' · ')):'')]
+      .filter(Boolean).join(' · ');
+    return `<div style="margin:0 0 9px">
+      <div style="display:inline-block;background:var(--border);
+        border-radius:12px;padding:7px 11px;font-size:13px;max-width:92%;
+        white-space:pre-wrap;line-height:1.7${m.bad?';color:var(--close)':''}">
+        ${esc(m.text)}</div>
+      ${meta?`<div class="gauge-sub" style="margin-top:4px">${meta}</div>`:''}</div>`;
+  }).join('');
+  box.scrollTop=box.scrollHeight;
+}
+
+async function aiSend(){
+  const inp=document.getElementById('aiQ');
+  if(!inp||AIBUSY)return;
+  const q=inp.value.trim();
+  if(!q)return;
+  AIBUSY=true; inp.value='';
+  AIMSGS.push({role:'user',text:q});
+  AIMSGS.push({role:'ai',text:'…'});
+  renderAiChat();
+  try{
+    const r=await api('ai-ask',{body:{q}});
+    AIMSGS.pop();
+    AIMSGS.push({role:'ai',text:r.answer||'(بلا جواب)',bad:!r.ok,
+                 model:r.model,calls:r.calls,sar:r.sar,tools:r.tools});
+    if(!r.ok&&r.why)toast('توقّف: '+r.why,'err');
+    loadAi();
+  }catch(e){
+    AIMSGS.pop();
+    AIMSGS.push({role:'ai',text:e.message,bad:true});
+    renderAiChat();
+  }finally{ AIBUSY=false; renderAiChat() }
+}
+
+async function aiNewChat(){
+  try{ await api('ai-ask',{body:{reset:true}}); AIMSGS=[]; renderAiChat();
+       toast('بدأنا محادثة جديدة','ok');
+  }catch(e){ toast(e.message,'err') }
+}
+
+async function aiSetMode(){
+  const m=prompt('وضع المساعد — off / admin / all\n\n'+
+    'off: مقفل، ما يشوفه أحد\nadmin: لك أنت فقط (حسابك المربوط بتلقرام)\n'+
+    'all: لكل الطلاب',(AI&&AI.mode)||'off');
+  if(m===null||m.trim()===((AI&&AI.mode)||''))return;
+  try{
+    const r=await api('ai',{body:{mode:m.trim()}});
+    if(!r.ready)toast('الوضع '+r.mode+' — لكن ANTHROPIC_API_KEY ناقص في Render','err');
+    else toast('وضع المساعد صار '+r.mode,'ok');
+    AI=r; renderAi();
+  }catch(e){ toast(e.message,'err') }
+}
+
+async function aiSetModel(){
+  const m=prompt('اسم النموذج (اتركه فاضي للرجوع لقيمة Render: '+
+    ((AI&&AI.modelEnv)||'—')+')',(AI&&AI.model)||'');
+  if(m===null)return;
+  try{
+    const r=await api('ai',{body:{model:m.trim()}});
+    AI=r; renderAi();
+    if(!r.modelKnown)toast('النموذج '+r.model+' — سعره مجهول، بنحسبه بأغلى سعر','err');
+    else toast('النموذج صار '+r.model,'ok');
+  }catch(e){ toast(e.message,'err') }
+}
+
+async function aiSetCaps(){
+  const c=(AI&&AI.caps)||{};
+  const ask=(t,v)=>{ const x=prompt(t,String(v)); return x===null?null:x.trim() };
+  const day=ask('كم سؤالاً باليوم للمشترك؟',c.day); if(day===null)return;
+  const free=ask('وكم للمجاني؟',c.dayFree); if(free===null)return;
+  const term=ask('وكم في الترم كله؟ (٩٠٠ حد أقصى)',c.term); if(term===null)return;
+  const sar=ask('والسقف الشهري بالريال؟',c.monthSar); if(sar===null)return;
+  try{
+    const r=await api('ai',{body:{caps:{day:Number(day),dayFree:Number(free),
+      term:Number(term),monthSar:Number(sar)}}});
+    AI=r; renderAi(); toast('حفظت السقوف','ok');
+  }catch(e){ toast(e.message,'err') }
+}
+
+/* نداء واحد صغير: يثبت المفتاح واسم النموذج، ويعرض خطأ المزوّد كما هو */
+async function aiPingBtn(){
+  toast('نجرّب…','ok');
+  try{
+    const r=await api('ai-ping');
+    if(r.ok)toast('تمام — '+r.model+' ردّ في '+r.ms+' م.ث','ok');
+    else toast('فشل: '+(r.error||'—')+(r.type?' ('+r.type+')':''),'err');
   }catch(e){ toast(e.message,'err') }
 }
 
