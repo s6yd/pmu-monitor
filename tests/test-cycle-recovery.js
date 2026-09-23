@@ -8,7 +8,10 @@ const http = require('http');
 const { Readable } = require('stream');
 
 const SRV = path.resolve(process.argv[2] || path.join(__dirname, '..', 'server.js'));
-const PORT = 45873;
+/* المنفذ يتغيّر مع كل تشغيل: منفذ ثابت يبقى محجوزاً بعد انتهاء
+   العملية (TIME_WAIT أو بقايا جلسة)، فيفشل التشغيل التالي بـEADDRINUSE
+   والاختبار يطلع أحمر بلا علاقة بالكود. النطاق ١٠٠ لكل ملف فما يتصادمان. */
+const PORT = 46000 + (process.pid % 100);
 const TOKEN = 'admin-token-for-tests';
 
 let pass = 0, fail = 0;

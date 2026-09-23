@@ -10,7 +10,10 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const SRV = path.resolve(process.argv[2] || path.join(__dirname, '..', 'server.js'));
 const ROOT = path.dirname(SRV);
-const PORT = 45899;
+/* المنفذ يتغيّر مع كل تشغيل: منفذ ثابت يبقى محجوزاً بعد انتهاء
+   العملية (TIME_WAIT أو بقايا جلسة)، فيفشل التشغيل التالي بـEADDRINUSE
+   والاختبار يطلع أحمر بلا علاقة بالكود. النطاق ١٠٠ لكل ملف فما يتصادمان. */
+const PORT = 46800 + (process.pid % 100);
 
 /* المسارات اللي لازم تُخدم — قوقل وبوابات الدفع وiOS يطلبونها */
 const ROUTES = [

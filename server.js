@@ -2397,6 +2397,10 @@ async function handleTelegramUpdate(update) {
     return sendMsg(chatId, `🔕 وقفت الإشعارات. تقدر ترجع تربط حسابك من الموقع أي وقت.`);
   }
 
+  /* المساعد قبل الدعم: يحتاج /ai أو وضعاً يدخله الطالب، فما يزاحم
+     الكلام الحر اللي يوصلك كتذكرة. */
+  if (await aiTgRoute(chatId, text)) return;
+
   /* ═══ أي كلام حر من طالب = رسالة توصل المشرف ═══
      نخليها آخر شي بعد الأوامر، فما تتعارض معها. */
   if (!text.startsWith('/') && !(isAdmin && msg.reply_to_message)) {
@@ -7066,6 +7070,76 @@ async function aiStatus(userId) {
 
 /* ═══ نهاية كتلة المحادثة ═══
    الاختبارات تقتطع ما بين العلامتين وتشغّله — لا تغيّر العلامتين. */
+
+/* ═══ المساعد داخل البوت (CLAUDE.md §٩-أ-٥) ═══
+   نفس aiChat ونفس السقوف والأوضاع — الجديد هو المدخل فقط.
+
+   **لا يزاحم الدعم:** الكلام الحر في البوت يوصلك كتذكرة، وهذا يبقى
+   كما هو. المساعد يحتاج `/ai` صريحاً، أو وضعاً يدخله الطالب ويخرج منه.
+   بلا هذا الفصل ما عاد أحد يقدر يكلّمك.
+
+   و`/stop` محجوز لإيقاف الإشعارات — فالخروج بـ`/خروج` أو `/end`. */
+const AI_TG_MODE = new Map();          /* chatId → متى ينتهي الوضع */
+const AI_TG_TTL = 20 * 60 * 1000;
+
+async function aiTgUser(chatId) {
+  const rows = await sb('GET', 'profiles', { query:
+    `?telegram_chat_id=eq.${encodeURIComponent(chatId)}&select=id&limit=1` })
+    .catch(() => null);
+  return (Array.isArray(rows) && rows[0]) ? rows[0].id : null;
+}
+
+async function aiTgAnswer(chatId, q) {
+  const uid = await aiTgUser(chatId);
+  if (!uid) return sendMsg(chatId,
+    '🔗 اربط حسابك من الموقع أول عشان أعرف جدولك.\n\njadwalik.com');
+  let r;
+  try { r = await aiChat(uid, String(q || '')) }
+  catch (e) {
+    console.log('aiTgAnswer: ' + (e && e.message));
+    return sendMsg(chatId, 'صار خلل عندي — جرّب بعد شوي.');
+  }
+  let out = esc(r.answer || '');
+  /* الأفعال تحتاج تأكيداً، وحراسات التأكيد في الصفحة لا هنا — فما
+     ننفّذ من البوت ولا نكرّر الفحوص (§١٠). نحيله للموقع. */
+  if (r.proposal) out += '\n\n<i>🔸 هذا يحتاج تأكيدك — افتح jadwalik.com واضغط «تأكيد»</i>';
+  if (r.ok && (AI_TG_MODE.get(String(chatId)) || 0) > Date.now())
+    out += '\n\n<i>اكتب سؤالك الجاي، أو /خروج للخروج.</i>';
+  return sendMsg(chatId, out);
+}
+
+/* ترجع true لو تعاملت مع الرسالة — والمعالج يتوقف عندها */
+async function aiTgRoute(chatId, text) {
+  const key = String(chatId);
+  const low = String(text || '').toLowerCase();
+  const inMode = (AI_TG_MODE.get(key) || 0) > Date.now();
+
+  if (low === '/خروج' || low === '/end') {
+    if (!inMode) return false;
+    AI_TG_MODE.delete(key);
+    await sendMsg(chatId, '👋 خرجت من المساعد. كلامك بعد كذا يوصل الدعم.');
+    return true;
+  }
+  if (low === '/ai' || low.startsWith('/ai ') ||
+      text === '/اسأل' || text.startsWith('/اسأل ')) {
+    const q = text.replace(/^\/(ai|اسأل)\s*/i, '').trim();
+    if (q) { await aiTgAnswer(chatId, q); return true }
+    AI_TG_MODE.set(key, Date.now() + AI_TG_TTL);
+    if (AI_TG_MODE.size > 3000) AI_TG_MODE.clear();
+    await sendMsg(chatId,
+      '✨ <b>مساعد جدولك</b>\n\nاسألني عن جدولك أو خطتك أو الدكاترة.\n\n'
+      + '• وش عندي بكرة؟\n• كم باقي لي أتخرج؟\n• مين يدرّس ثيرمو ١؟\n\n'
+      + '<i>/خروج لما تخلص — وبعدها كلامك يوصل الدعم عادي.</i>');
+    return true;
+  }
+  /* داخل الوضع: كل نص غير أمر يروح للمساعد */
+  if (inMode && !String(text || '').startsWith('/')) {
+    AI_TG_MODE.set(key, Date.now() + AI_TG_TTL);
+    await aiTgAnswer(chatId, text);
+    return true;
+  }
+  return false;
+}
 
 /* ═══ دورة التذكيرات (CLAUDE.md §٩-أ-٤) ═══
    الطالب يطلب تذكيراً بوقت، ونرسله له على تلقرام. تُفحص كل دقيقة

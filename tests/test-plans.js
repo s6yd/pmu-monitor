@@ -16,7 +16,10 @@ const SRV = path.resolve(process.argv[2] || path.join(__dirname, '..', 'server.j
 const PAGE = path.resolve(process.argv[3] || path.join(__dirname, '..', 'pmu-schedule.html'));
 const ROOT = path.dirname(SRV);
 const SHARED = path.join(ROOT, 'shared', 'plans.js');
-const PORT = 45901;
+/* المنفذ يتغيّر مع كل تشغيل: منفذ ثابت يبقى محجوزاً بعد انتهاء
+   العملية (TIME_WAIT أو بقايا جلسة)، فيفشل التشغيل التالي بـEADDRINUSE
+   والاختبار يطلع أحمر بلا علاقة بالكود. النطاق ١٠٠ لكل ملف فما يتصادمان. */
+const PORT = 46300 + (process.pid % 100);
 
 /* ═══ الابن: السيرفر الحقيقي، نطلب منه /plans.js والبصمة ═══ */
 if (process.argv[2] === '--child') {
