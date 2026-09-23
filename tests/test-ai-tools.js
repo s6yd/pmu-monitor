@@ -107,12 +107,25 @@ const DB = {
     'u-other': [{ user_id:'u-other', term:'202710', crn:'90001', kind:'quiz',
         on_date:'2099-01-05', note:'سرّ الطالب الثاني' }],
   },
+  /* التقييمات عامة — مجهولة الكاتب. صف مخفي لازم ما يرجع. */
+  reviews: [
+    { user_id:'u-pro',  instructor_name:'د. أحمد', rating:5, course_code:'ALIS 1212',
+      comment:'شرحه ممتاز', tags:['واضح','متعاون'], agree:3, disagree:0, hidden:false },
+    { user_id:'u-other',instructor_name:'د. أحمد', rating:3, course_code:'ALIS 1212',
+      comment:'الاختبارات صعبة', tags:['صعب'], agree:1, disagree:1, hidden:false },
+    { user_id:'u-free', instructor_name:'د. أحمد', rating:1, course_code:'ALIS 1212',
+      comment:'تعليق مخفي ما يرجع', tags:['سيء'], agree:0, disagree:9, hidden:true },
+    { user_id:'u-other',instructor_name:'د. سارة', rating:4, course_code:'MATH 1422',
+      comment:'ممتازة', tags:['واضح'], agree:2, disagree:0, hidden:false },
+  ],
 };
 let SB_CALLS = [];
+let PULLED = [];        /* كل نداء يسحب من الجامعة يُسجَّل هنا */
 
 const ctxObj = {
   console: { log() {} }, Promise, JSON, Object, Array, String, Number, Math, Date,
-  RegExp, Error, encodeURIComponent, setTimeout,
+  RegExp, Error, encodeURIComponent, setTimeout, Map, Set,
+  get PULLED() { return PULLED },
   PLANS_DATA, ACAD_CAL,
   FREE_BETA: false,
   regTerm: () => '202710',
@@ -121,6 +134,22 @@ const ctxObj = {
   schedTime: v => { const m = String(v || '').match(/(\d+):(\d+)\s*-\s*(\d+):(\d+)/);
     return m ? { start: +m[1] * 60 + +m[2], end: +m[3] * 60 + +m[4] } : null },
   absAllowedFor: () => 4,          /* حد ثابت — منطقه مُختبَر في مكانه */
+  activeTerm: () => '202710',
+  FINALS_ON: true,
+  coursesCache: new Map(),
+  ROOM_INDEX: null,
+  finalsCache: { M: null, F: null },
+  /* لو أداة نادت واحدة من هذي فقد سحبت من الجامعة — نمسكها متلبّسة */
+  getCourses: () => { PULLED.push('getCourses'); return Promise.resolve({ courses: [] }) },
+  buildRoomIndex: () => { PULLED.push('buildRoomIndex'); return Promise.resolve(null) },
+  fetchPage: () => { PULLED.push('fetchPage'); return Promise.resolve('') },
+  freeRooms: (idx, o) => {
+    const rooms = [...idx.rooms.entries()]
+      .filter(([, r]) => !o.gender || r.gender === o.gender)
+      .filter(([, r]) => !r.slots.some(s => s.day === o.day && s.start < o.to && s.end > o.from))
+      .map(([name, r]) => ({ room: name, building: r.building, freeUntil: null }));
+    return { total: rooms.length, rooms: rooms.slice(0, o.limit || 5) };
+  },
   hasAccess: p => !!(p && p.is_pro),
   sb: (method, table, opt) => {
     SB_CALLS.push({ method, table, query: (opt && opt.query) || '' });
@@ -145,6 +174,14 @@ const ctxObj = {
     if (table === 'user_schedule') return Promise.resolve(sort(DB.schedule[id] || []));
     if (table === 'absences') return Promise.resolve(sort(DB.absences[id] || []));
     if (table === 'course_events') return Promise.resolve(sort(DB.events[id] || []));
+    if (table === 'instructor_reviews') {
+      /* PostgREST: ilike.*x* و hidden=is.false */
+      const like = (/instructor_name=ilike\.\*([^*&]+)\*/.exec(q) || [])[1];
+      const who = like ? decodeURIComponent(like) : '';
+      let rows = DB.reviews.filter(r => !r.hidden);
+      if (who) rows = rows.filter(r => String(r.instructor_name).includes(who));
+      return Promise.resolve(sort(rows));
+    }
     return Promise.resolve([]);
   },
 };
@@ -433,6 +470,149 @@ function fakeModel(ctx) {
     const osc = await fakeModel(OTHER)('my_schedule', '{}');
     eq(osc.count, 1, 'الطالب الثاني يشوف جدوله هو');
     ok(JSON.stringify(osc).indexOf('ALIS 1212') < 0, 'وما يشوف جدول صاحبنا');
+  }
+
+  /* ── ٦) أدوات الكاش — ولا سحبة من الجامعة ── */
+  if (!AI_TOOLS.sections) {
+    for (const t of ['sections', 'instructor_reviews', 'free_rooms', 'finals', 'schedule_changes'])
+      ok(false, `${t} موجودة في السجل`);
+  } else {
+    /* ٦أ) الكاش بارد: تقول «مو جاهزة» ولا تسحب */
+    PULLED = [];
+    const cold = await callFree('sections', '{"code":"MATH 1422"}');
+    ok(cold.available === false, 'الكاش بارد ⇒ available:false');
+    ok(/مو جاهزة/.test(cold.error || ''), 'وترجع رسالة واضحة');
+    eq(PULLED, [], 'ولا سحبة من الجامعة — ' + PULLED.join(','));
+
+    const coldRooms = await callFree('free_rooms', '{"day":"U","from":500,"to":600}');
+    ok(coldRooms.available === false, 'القاعات والكاش بارد ⇒ غير متاحة');
+    const coldFinals = await callFree('finals', '{"code":"MATH 1422"}');
+    ok(coldFinals.available === false, 'النهائيات والكاش بارد ⇒ غير متاحة');
+    eq(PULLED, [], 'وبعد الثلاثة: ولا سحبة واحدة');
+
+    /* ٦ب) نسخّن الكاش بأيدينا — كما تسخّنه الدورة */
+    ctxObj.coursesCache.set('202710|ALL|M1', { at: Date.now(), courses: [
+      { crn:'10002', courseCode:'MATH 1422', courseTitle:'Calculus I', section:'02',
+        instructor:'د. سارة', courseDate:'UT', courseTiming:'10:00 - 10:50',
+        room:'M-COBA - G040', status:'OPEN', seats:5 },
+      { crn:'10009', courseCode:'MATH 1422', courseTitle:'Calculus I', section:'09',
+        instructor:'د. سارة', courseDate:'MW', courseTiming:'08:00 - 08:50',
+        room:'M-COBA - G041', status:'CLOSE', seats:0 },
+      { crn:'10001', courseCode:'ALIS 1212', courseTitle:'Islamic Culture II', section:'01',
+        instructor:'د. أحمد', courseDate:'UT', courseTiming:'08:00 - 08:50',
+        room:'M-COBA - G034', status:'OPEN', seats:12 },
+    ] });
+
+    PULLED = [];
+    const sec = await callFree('sections', '{"code":"MATH 1422"}');
+    eq(sec.found, 2, 'شعبتان لـMATH 1422');
+    eq(sec.sections.map(x => x.crn).sort(), ['10002', '10009'], 'بالأرقام الصحيحة');
+    ok(sec.cacheAgeMin >= 0, 'ومعها عمر الكاش — ' + sec.cacheAgeMin);
+    eq(PULLED, [], 'ولا سحبة رغم إن الكاش دافئ');
+
+    const open = await callFree('sections', '{"code":"MATH 1422","openOnly":true}');
+    eq(open.found, 1, 'المفتوحة فقط: وحدة');
+    eq(open.sections[0].crn, '10002', 'وهي المفتوحة');
+
+    const byWho = await callFree('sections', '{"instructor":"سارة"}');
+    eq(byWho.found, 2, 'البحث بالدكتور يرجع شعبه');
+
+    const ghostSec = await callFree('sections', '{"code":"ZZZZ 9999"}');
+    eq(ghostSec.found, 0, 'مادة مجهولة: صفر');
+    ok(/ما لقيتها/.test(ghostSec.note || ''), 'وتقولها صراحة لا تخترع');
+    ok(!!(await callFree('sections', '{}')).error, 'بلا كود ولا دكتور: يُرفض');
+
+    /* ٦ج) كاش قديم جداً = غير متاح */
+    ctxObj.coursesCache.set('202710|ALL|M1',
+      { at: Date.now() - 20 * 60 * 60 * 1000, courses: [{ crn:'1', courseCode:'X 1111' }] });
+    const stale = await callFree('sections', '{"code":"X 1111"}');
+    ok(stale.available === false, 'كاش عمره ٢٠ ساعة ⇒ غير متاح');
+    ok(stale.staleMin > 600, 'ويقول كم عمره — ' + stale.staleMin);
+    eq(PULLED, [], 'وما سحب ليجدّده');
+
+    /* ٦د) التقييمات — ملخّص مجهول الكاتب */
+    const rv = await callFree('instructor_reviews', '{"instructor":"أحمد"}');
+    eq(rv.found, 2, 'تقييمان ظاهران لـد. أحمد (المخفي ما رجع)');
+    const A = rv.instructors[0];
+    eq(A.average, 4, 'المتوسط ٤ — (٥+٣)÷٢');
+    eq(A.reviews, 2, 'وعددها ٢');
+    ok(A.comments.length === 2, 'ومعها التعليقات');
+    ok(!/تعليق مخفي/.test(JSON.stringify(rv)), 'التقييم المخفي ما يرجع إطلاقاً');
+    ok(!/u-pro|u-other|u-free|user_id/.test(JSON.stringify(rv)),
+       'ولا هوية كاتب — التقييم مجهول');
+    ok(/رأيهم لا رأينا/.test(rv.note || ''), 'ومعها إنها ملخّص لا حكم جديد');
+    ok(A.topTags.length > 0 && A.topTags[0].tag, 'والوسوم معدودة');
+    const rvGhost = await callFree('instructor_reviews', '{"instructor":"لا أحد أبداً"}');
+    eq(rvGhost.found, 0, 'دكتور بلا تقييمات: «ما لقيتها»');
+    ok(!!(await callFree('instructor_reviews', '{"instructor":"ا"}')).error,
+       'اسم قصير جداً يُرفض');
+
+    /* ٦هـ) القاعات الفاضية — من فهرس مبني مسبقاً */
+    ctxObj.ROOM_INDEX = { at: Date.now(), rooms: new Map([
+      ['M-COBA - G034', { gender:'M', building:'COBA', zone:'M-COBA',
+        slots:[{ day:'U', start:480, end:530 }] }],
+      ['M-COBA - G099', { gender:'M', building:'COBA', zone:'M-COBA',
+        slots:[{ day:'M', start:480, end:530 }] }],
+    ]) };
+    PULLED = [];
+    /* نافذة ٩:٠٠–١٠:٠٠ الأحد: محاضرة G034 خلصت ٨:٥٠، فالقاعتان فاضيتان */
+    const fr = await callFree('free_rooms', '{"day":"U","from":540,"to":600}');
+    eq(fr.total, 2, 'بعد ٨:٥٠ القاعتان فاضيتان');
+    ok(fr.rooms.some(r => r.room === 'M-COBA - G034'),
+       'وG034 منها — محاضرتها خلصت، والتقاطع بالدقيقة لا بالساعة');
+
+    /* نافذة ٨:٢٠–٩:٠٠ تتداخل مع محاضرة G034 فتُستبعد */
+    const fr2 = await callFree('free_rooms', '{"day":"U","from":500,"to":540}');
+    ok(!fr2.rooms.some(r => r.room === 'M-COBA - G034'), 'وأثناء محاضرتها تُستبعد');
+    ok(fr2.rooms.some(r => r.room === 'M-COBA - G099'), 'وG099 فاضية — محاضرتها الاثنين');
+    eq(PULLED, [], 'ولا سحبة — ما نادينا buildRoomIndex');
+    ok(!!(await callFree('free_rooms', '{"day":"Z","from":1,"to":2}')).error, 'يوم غلط يُرفض');
+    ok(!!(await callFree('free_rooms', '{"day":"U","from":600,"to":500}')).error,
+       'نافذة مقلوبة تُرفض');
+
+    /* ٦و) النهائيات */
+    ctxObj.finalsCache.M = { at: Date.now(), exams: [
+      { crn:'10002', code:'MATH 1422', title:'Calculus I', section:'02',
+        instructor:'د. سارة', building:'COBA', room:'G040',
+        day:'Sunday', date:'2099-01-20', hour:'08:00', gender:'M' },
+      { crn:'10001', code:'ALIS 1212', title:'Islamic Culture II', section:'01',
+        instructor:'د. أحمد', building:'COBA', room:'G034',
+        day:'Monday', date:'2099-01-21', hour:'10:00', gender:'M' },
+    ] };
+    PULLED = [];
+    const fin = await callFree('finals', '{"code":"MATH 1422"}');
+    eq(fin.count, 1, 'نهائي MATH 1422 موجود');
+    eq(fin.exams[0].date, '2099-01-20', 'بتاريخه');
+    eq(PULLED, [], 'ولا سحبة — ما نادينا fetchPage');
+    const finCrn = await callFree('finals', '{"crn":"10001"}');
+    eq(finCrn.count, 1, 'والبحث بالشعبة يشتغل');
+    const finGhost = await callFree('finals', '{"code":"ZZZZ 9999"}');
+    eq(finGhost.count, 0, 'مادة بلا نهائي: صفر لا اختراع');
+
+    /* mine: نهائيات جدوله — للمشتركين */
+    const finMineFree = await callFree('finals', '{"mine":true}');
+    ok(finMineFree.tier === 'pro', 'finals mine ممنوعة على المجاني');
+    const finMine = await call('finals', '{"mine":true}');
+    eq(finMine.scope, 'mine', 'نهائيات جدوله');
+    eq(finMine.count, 2, 'مادتان من جدوله لهما نهائي');
+    ok(finMine.missing.includes('COMM 1311'), 'والثالثة بلا نهائي معروف — تُذكر صراحة');
+
+    /* ٦ز) تغيّرات الجامعة على جدوله */
+    DB.schedule['u-pro'][0].changed_at = '2026-09-10T10:00:00Z';
+    DB.schedule['u-pro'][0].change_note = { at: 1, fields: ['room', 'instructor'] };
+    DB.schedule['u-pro'][2].missing_since = '2026-09-11T10:00:00Z';
+    const ch = await call('schedule_changes', '{}');
+    eq(ch.count, 2, 'تغيّران على جدوله');
+    const c1 = ch.changes.find(x => x.code === 'ALIS 1212');
+    eq(c1.fields, ['room', 'instructor'], 'وش تغيّر بالضبط');
+    ok(c1.gone === false, 'وهي ما اختفت');
+    const c2 = ch.changes.find(x => x.code === 'COMM 1311');
+    ok(c2.gone === true, 'والثانية اختفت من جدول الجامعة');
+    ok(JSON.stringify(ch).indexOf('90001') < 0, 'ولا تغيّر من الطالب الثاني');
+    ok(!!(await callFree('schedule_changes', '{}')).tier, 'وممنوعة على المجاني');
+
+    /* ٦ح) الخلاصة: ولا أداة سحبت من الجامعة في كل الجولة */
+    eq(PULLED, [], 'بعد كل أدوات الكاش: ولا سحبة — ' + PULLED.join(','));
   }
 
   console.log(`\n${pass} نجحت · ${fail} فشلت`);
