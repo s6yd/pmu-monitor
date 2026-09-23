@@ -55,6 +55,7 @@ run test-plan-logic     "$S" "$F"
 run test-ai-tools       "$S"
 run test-ai-chat        "$S"
 run test-prep-sync      "$F"
+run test-ai-page        "$F"
 
 echo
 if [ ${#failed[@]} -eq 0 ]; then

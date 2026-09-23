@@ -4421,9 +4421,20 @@ function esc(v) {
 function schedDays(s) {
   return String(s || '').toUpperCase().split('').filter(c => 'UMTWRFS'.includes(c));
 }
+/* الجامعة ترجّع الوقت **بلا نقطتين**: "0930 - 1045". النمط القديم كان
+   يطلب HH:MM فيرجع null على كل صف حقيقي — فـmy_day يطلع فاضي دائماً،
+   وقائمة التعارض في إشعار تغيّر الجدول تطلع فاضية دائماً كذلك.
+   الصفحة كانت تفهمها من البداية (parseTime)، والسيرفر لا. نقبل
+   الصيغتين: المحفوظ القديم بنقطتين وارد. */
 function schedTime(s) {
-  const m = String(s || '').match(/(\d+):(\d+)\s*-\s*(\d+):(\d+)/);
-  return m ? { start: +m[1] * 60 + +m[2], end: +m[3] * 60 + +m[4] } : null;
+  const str = String(s || '');
+  let m = str.match(/(\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})/);
+  if (m) return { start: +m[1] * 60 + +m[2], end: +m[3] * 60 + +m[4] };
+  m = str.match(/(\d{3,4})\s*[-–]\s*(\d{3,4})/);
+  if (!m) return null;
+  const t = x => { const p = String(x).padStart(4, '0');
+    return parseInt(p.slice(0, 2), 10) * 60 + parseInt(p.slice(2), 10) };
+  return { start: t(m[1]), end: t(m[2]) };
 }
 function schedClash(a, b) {
   const da = schedDays(a.courseDate || a.course_date);
@@ -5404,6 +5415,201 @@ async function aiStudentCtx(userId) {
   };
 }
 
+/* ═══ جسر العربي: الطالب ما يكتب كأسماء الجامعة ═══
+   بيانات الجامعة كلها إنجليزية — أسماء المواد والدكاترة. والطالب يكتب
+   «ثيرمو ١» و«ابو محمد معين الدين». بلا هذا الجسر نرد «ما لقيتها»
+   على أسئلة الجواب فيها موجود عندنا.
+   ولا شي هنا يخمّن: يطابق فقط، ويرجّع المرشحين بنقاطهم. */
+
+/* تطبيع عربي: تشكيل · تطويل · أشكال الألف والياء والتاء · أرقام هندية */
+function arNorm(s) {
+  return String(s == null ? '' : s)
+    .replace(/[ً-ْـ]/g, '')          /* تشكيل وتطويل */
+    .replace(/[آأإٱ]/g, 'ا')  /* آ أ إ ← ا */
+    .replace(/ى/g, 'ي')                    /* ى ← ي */
+    .replace(/ة/g, 'ه')                    /* ة ← ه */
+    .replace(/[ؤئء]/g, '')            /* ؤ ئ ء */
+    .replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[۰-۹]/g, d => String(d.charCodeAt(0) - 0x06F0))
+    .toLowerCase()
+    .replace(/[^ء-يa-z0-9]+/g, ' ')
+    .trim();
+}
+const AR_HAS = s => /[ء-ي]/.test(String(s || ''));
+
+/* حرف عربي ← ما يقابله لاتينياً. الهدف هيكل ساكن لا نطق دقيق. */
+const AR_LAT = { 'ا':'a','ب':'b','ت':'t','ث':'th','ج':'j','ح':'h','خ':'kh',
+  'د':'d','ذ':'d','ر':'r','ز':'z','س':'s','ش':'sh','ص':'s','ض':'d','ط':'t',
+  'ظ':'z','ع':'','غ':'gh','ف':'f','ق':'q','ك':'k','ل':'l','م':'m','ن':'n',
+  'ه':'h','و':'w','ي':'y' };
+const arToLatin = s => arNorm(s).split('')
+  .map(c => (c in AR_LAT) ? AR_LAT[c] : c).join('');
+
+/* الهيكل الساكن: يلغي اختلاف كتابة الاسم الواحد لاتينياً.
+   Moinuddeen · Moin Uddin · معين الدين ⇒ mndn */
+function aiSkel(s) {
+  return String(s || '').toLowerCase()
+    .replace(/[^a-z]/g, '')
+    .replace(/[aeiouwy]/g, '')
+    .replace(/(.)\1+/g, '$1');
+}
+
+/* جذر الكلمة للمطابقة: «ال» التعريف، والتاء المربوطة اللي صارت هاءً.
+   بدونها «سارة» ⇒ سار+ه ⇒ srh وما تطابق Sara ⇒ sr. */
+const arStem = w => String(w || '')
+  .replace(/^ال(?=.{3,})/, '')
+  .replace(/ه$/, '');
+const arWords = s => arNorm(s).split(' ').map(arStem)
+  /* الرقم المفرد يبقى: «تفاضل ١» بلا «1» تصير «تفاضل» وحدها فترجع
+     أي Calculus بالترتيب الأبجدي للكود. */
+  .filter(w => w.length > 1 || /[0-9]/.test(w));
+
+/* كلمة عربية دارجة ← ما يقابلها في أسماء مواد الجامعة.
+   المطابقة بالبادئة، فـ«ثيرمو» تمسك Thermodynamics. */
+const AR_COURSE = {
+  'ثيرمو':['thermo'], 'ثرمو':['thermo'], 'حراريه':['thermo','thermal','heat'],
+  'حراره':['heat','thermal'], 'انتقال':['transfer'],
+  'دوائر':['circuit'], 'دواير':['circuit'],
+  'كهرباء':['electric','electronic'], 'كهربائيه':['electric','electronic'],
+  'الكترونيات':['electronic'], 'تفاضل':['calculus','differential'],
+  'تكامل':['calculus'], 'كالكولس':['calculus'], 'رياضيات':['math'],
+  'رياضه':['math','physical'], 'جبر':['algebra'], 'معادلات':['equations'],
+  'تفاضليه':['differential'], 'احصاء':['statistic','probability'],
+  'احصا':['statistic'], 'احتمالات':['probability'],
+  'عدديه':['numerical','computational'], 'حسابيه':['computational'],
+  'فيزياء':['physic'], 'فيزيا':['physic'], 'كيمياء':['chem'], 'كيميا':['chem'],
+  'برمجه':['programming','computer'], 'كمبيوتر':['computer','computing'],
+  'حاسب':['computer','computing'], 'خوارزميات':['algorithm'],
+  'هياكل':['structure'], 'بيانات':['data'], 'قواعد':['database'],
+  'شبكات':['network'], 'شبكه':['network'], 'نظم':['system'], 'انظمه':['system'],
+  'تشغيل':['operating'], 'امن':['security'], 'سيبراني':['cyber','security'],
+  'ذكاء':['artificial','intelligence'], 'اصطناعي':['artificial'],
+  'ميكانيكا':['mechanic'], 'استاتيكا':['static'], 'سكون':['static'],
+  'ديناميكا':['dynamic'], 'حركه':['dynamic','kinematic'],
+  'موائع':['fluid'], 'سوائل':['fluid'], 'مواد':['material'],
+  'اهتزازات':['vibration'], 'تحكم':['control'], 'سيطره':['control'],
+  'تصميم':['design'], 'مشروع':['project','design','senior','capstone'],
+  'تخرج':['senior','capstone'], 'سينيور':['senior'],
+  'طاقه':['energy','power'], 'توليد':['generation','power'],
+  'تاكل':['corrosion'], 'تصنيع':['manufactur'], 'روبوت':['robot'],
+  'اقتصاد':['econom'], 'اداره':['management'], 'محاسبه':['accounting'],
+  'ماليه':['financ'], 'تمويل':['financ'], 'تسويق':['marketing'],
+  'قانون':['law','legal'], 'موارد':['human','resource'], 'بشريه':['human'],
+  'ريادة':['entrepreneur'], 'رياده':['entrepreneur'],
+  'مدني':['civil'], 'معماري':['architect'], 'عماره':['architect'],
+  'صناعي':['industrial'], 'بيئه':['environment'], 'تربه':['soil','geotech'],
+  'انشاءات':['structur'], 'خرسانه':['concrete'], 'مساحه':['survey'],
+  'انجليزي':['english','communication'], 'لغه':['english','linguistic'],
+  'كتابه':['written','writing'], 'محادثه':['oral','communication'],
+  'تواصل':['communication'], 'اتصال':['communication'],
+  'اسلاميه':['islam'], 'اسلام':['islam'], 'ثقافه':['culture'],
+  'دين':['islam','religio'], 'سيره':['biography','prophet'],
+  'بدنيه':['physical','active'], 'صحه':['health'],
+  'تدريب':['internship','training'], 'تعاوني':['internship'],
+  'قياده':['leadership'], 'تفكير':['thinking'], 'ناقد':['critical'],
+  'مقدمه':['intro'], 'اساسيات':['fundamental','principle'],
+  'مبادئ':['principle'], 'مبادى':['principle'], 'هندسه':['engineering'],
+  'هندسي':['engineering'], 'بحث':['research'], 'مختبر':['lab'], 'معمل':['lab'],
+  'اخلاقيات':['ethic'], 'مهني':['professional'], 'مهارات':['skill'],
+};
+/* المفاتيح تُطبَّع برمجياً لا بيدي: arNorm يحذف الهمزة، فـ«دوائر» تصير
+   «دوار» و«موائع» تصير «موا». مفتاح مكتوب بالهمزة ما يُطابَق أبداً. */
+const AR_COURSE_N = (() => {
+  const m = {};
+  Object.keys(AR_COURSE).forEach(k => {
+    const n = arStem(arNorm(k));
+    m[n] = (m[n] || []).concat(AR_COURSE[k]);
+  });
+  return m;
+})();
+
+/* الأرقام: الطالب يكتب ١ أو 1، والجامعة تكتب I */
+const AR_ROMAN = { '1':'i', '2':'ii', '3':'iii', '4':'iv' };
+
+/* نحوّل استعلام الطالب إلى كلمات إنجليزية مرشحة */
+function aiCourseTerms(q) {
+  const out = [];
+  arWords(q).forEach(w => {
+    if (AR_COURSE_N[w]) { out.push(...AR_COURSE_N[w]); return }
+    /* '=' يعني مطابقة تامة على كلمة: III تبدأ بـ II، فالبادئة تخلّي
+       «تفاضل ٢» يمسك Calculus III. */
+    if (AR_ROMAN[w]) { out.push('=' + AR_ROMAN[w], '=' + w); return }
+    /* كلمة لاتينية كتبها الطالب — نأخذها كما هي (thermo · circuits) */
+    if (/^[a-z0-9]+$/.test(w)) out.push(w);
+  });
+  return [...new Set(out)];
+}
+
+/* ترتيب مواد الخطة حسب قربها من نص الطالب. لا تخمين: من ما فيه
+   كلمة طابقت نرجع صفر نتائج وتقول الأداة «ما أعرف». */
+function aiRankCourses(ctx, q) {
+  const raw = String(q || '').trim();
+  const codeLike = raw.toUpperCase().replace(/\s+/g, ' ').trim();
+  const terms = aiCourseTerms(raw);
+  const all = PLANS_DATA.allPlanCourses(ctx.plan) || [];
+  const scored = [];
+  all.forEach(c => {
+    const code = String(c.c || '').toUpperCase();
+    const name = String(c.n || '').toLowerCase();
+    let sc = 0;
+    if (code === codeLike) sc += 100;
+    else if (code.replace(/\s+/g, '') === codeLike.replace(/\s+/g, '')) sc += 90;
+    else if (codeLike.length >= 3 && code.startsWith(codeLike)) sc += 40;
+    const nameWords = name.split(/[^a-z0-9]+/).filter(Boolean);
+    terms.forEach(t => {
+      if (t[0] === '=') {                       /* مطابقة تامة */
+        const x = t.slice(1);
+        if (x && nameWords.includes(x)) sc += 12;
+        return;
+      }
+      if (t.length < 2) return;
+      /* بادئة كلمة في الاسم: thermo ⊂ thermodynamics */
+      if (nameWords.some(w => w.startsWith(t))) sc += 10;
+      else if (name.includes(t)) sc += 6;
+      else if (code.toLowerCase().startsWith(t)) sc += 8;
+    });
+    if (sc > 0) scored.push({ c, sc });
+  });
+  return scored.sort((a, b) => b.sc - a.sc || String(a.c.c).localeCompare(String(b.c.c)));
+}
+
+/* أقرب أسماء الدكاترة لاسم كتبه الطالب — عربياً أو لاتينياً.
+   names: أسماء كما هي في القاعدة. */
+function aiMatchNames(q, names) {
+  const raw = String(q || '').trim();
+  if (!raw) return [];
+  const plain = raw.toLowerCase();
+  /* arWords تحذف «ال» أولاً: «معين الدين» ⇒ myn+dyn ⇒ mndn = Moinuddeen.
+     الترجمة على النص كامل تبقي «ال» فتطلع mnldn وما تطابق. */
+  const lat = AR_HAS(raw) ? arWords(raw).map(arToLatin).join(' ') : plain;
+  /* الاسم الواحد يُكتب كلمةً في اللاتيني وكلمتين في العربي:
+     Moinuddeen = «معين الدين» · Abumuhammad = «ابو محمد». فنولّد
+     المفردات وأزواجها المتجاورة والكل مدموجاً. */
+  const w0 = lat.split(/[^a-z0-9]+/).filter(w => w.length > 1);
+  const cand = w0.slice();
+  for (let i = 0; i + 1 < w0.length; i++) cand.push(w0[i] + w0[i + 1]);
+  if (w0.length > 1) cand.push(w0.join(''));
+  const qs = [...new Set(cand.map(aiSkel).filter(w => w.length >= 2))];
+  const out = [];
+  [...new Set(names.filter(Boolean))].forEach(n => {
+    const low = String(n).toLowerCase();
+    let sc = 0;
+    if (!AR_HAS(raw) && low.includes(plain)) sc += 50;
+    const p0 = low.split(/[^a-z0-9]+/).filter(Boolean);
+    const parts = p0.map(aiSkel);
+    for (let i = 0; i + 1 < p0.length; i++) parts.push(aiSkel(p0[i] + p0[i + 1]));
+    if (p0.length > 1) parts.push(aiSkel(p0.join('')));
+    qs.forEach(k => {
+      if (parts.some(p => p === k)) sc += 20;
+      else if (parts.some(p => p.length >= 3 && k.length >= 3 &&
+               (p.startsWith(k) || k.startsWith(p)))) sc += 12;
+      else if (aiSkel(low).includes(k) && k.length >= 3) sc += 6;
+    });
+    if (sc > 0) out.push({ name: n, score: sc });
+  });
+  return out.sort((a, b) => b.score - a.score);
+}
+
 /* نص «ما أعرف» موحّد — الأداة تقولها، والنموذج ينقلها */
 const AI_UNKNOWN = 'ما لقيتها في بيانات جدولك';
 const AI_PRO_ONLY = 'هذي تحتاج اشتراك — الحساب والدرجات للمشتركين';
@@ -5620,13 +5826,28 @@ const AI_TOOLS = {
     description: 'المقترح للترم الجاي: المواد الأساسية والاختيارية بترتيبها، '
       + 'وساعاتها، وليش كل مادة (إعادة/تفتح مواد/آخر فرصة).',
     input_schema: { type: 'object', properties: {}, required: [] },
-    run: (ctx) => {
+    run: async (ctx) => {
       const s = PLANS_DATA.suggestNext(ctx.plan);
+      /* المسجّل هذا الترم مو «منجزاً» في الخطة — درجته ما طلعت بعد —
+         فالمقترح يرجّعه كأنه ناقص، ونقترح على الطالب مواد هو قاعد
+         ياخذها الحين. نقرأ جدوله ونستبعدها، ونسمّيها له صريحاً.
+         ما نلمس suggestNext نفسها: الصفحة تشاركها وتبويب «خطتي»
+         يرسم منها لكل طالب. */
+      const rows = await aiSchedule(ctx);
+      const now = new Set(rows.map(r =>
+        String(r.course_code || '').trim().toUpperCase()).filter(Boolean));
       const map = c => ({ code: c.c, name: c.n, credits: c.h,
         unlocks: c.unlocks || 0, retake: !!c.retake,
         lastChance: !!c.lastChance, prep: !!c.prep });
-      return { critical: s.crit.map(map), optional: s.opt.map(map),
-        hours: s.hours, internshipOnly: !!s.internOnly,
+      const taking = c => now.has(String(c.c || '').trim().toUpperCase());
+      const crit = s.crit.filter(c => !taking(c)).map(map);
+      const opt = s.opt.filter(c => !taking(c)).map(map);
+      const hrs = l => l.reduce((n, c) => n + (Number(c.credits) || 0), 0);
+      return { critical: crit, optional: opt,
+        hours: hrs(crit) + hrs(opt),
+        alreadyTaking: s.crit.concat(s.opt).filter(taking).map(c => c.c),
+        planHours: s.hours,
+        internshipOnly: !!s.internOnly,
         internshipAvailable: !!s.internAvailable,
         adminPlacedOnly: !!s.admOnly,
         prepLevel: s.prepSem ? s.prepSem.id : null };
@@ -5683,9 +5904,18 @@ const AI_TOOLS = {
       const rows = await aiSchedule(ctx, a.slot);
       if (!rows.length) return { count: 0, courses: [],
         note: 'ما فيه مواد في هذا الجدول' };
+      /* المحاضرة والمعمل صفّان بنفس كود المادة (§٦)، فجمع الساعات صفاً
+         صفاً يعدّها مرتين: ٢٥ ساعة لطالب عنده ٢٠. نعدّ الأكواد الفريدة. */
+      const seen = new Set();
+      let totalCredits = 0;
+      rows.forEach(r => {
+        const code = String(r.course_code || '').trim().toUpperCase();
+        if (!code || seen.has(code)) return;
+        seen.add(code);
+        totalCredits += PLANS_DATA.creditsOf(ctx.plan, code);
+      });
       return { count: rows.length, term: rows[0].term || null,
-        totalCredits: rows.reduce((s, r) =>
-          s + PLANS_DATA.creditsOf(ctx.plan, r.course_code || ''), 0),
+        distinctCourses: seen.size, totalCredits,
         courses: rows.map(aiSchedRow) };
     },
   },
@@ -5831,8 +6061,18 @@ const AI_TOOLS = {
       if (!c.available) return c;
       const want = String(a.code || '').toUpperCase().replace(/\s+/g, ' ').trim();
       const who = String(a.instructor || '').trim();
+      /* اسم الدكتور في كاش الجامعة لاتيني والطالب يكتبه عربياً */
+      let names = null;
+      if (!want && AR_HAS(who)) {
+        const m = aiMatchNames(who, c.courses.map(x => x.instructor));
+        if (!m.length) return { found: 0, sections: [],
+          note: AI_UNKNOWN + ' — ما لقينا دكتوراً بهذا الاسم في جدول ' + c.term,
+          term: c.term, cacheAgeMin: c.ageMin };
+        names = new Set(m.filter(x => x.score >= m[0].score).map(x => x.name));
+      }
       let rows = c.courses.filter(x => {
         if (want) return String(x.courseCode || '').toUpperCase().replace(/\s+/g, ' ').trim() === want;
+        if (names) return names.has(x.instructor);
         return String(x.instructor || '').includes(who);
       });
       if (a.openOnly) rows = rows.filter(x => String(x.status || '').toUpperCase() !== 'CLOSE');
@@ -5846,6 +6086,31 @@ const AI_TOOLS = {
     },
   },
 
+  find_course: {
+    tier: 'free',
+    description: 'يلقى كود المادة من اسمها بلغة الطالب: «ثيرمو ١» · «دوائر» · '
+      + '«تفاضل» · «thermo» · حتى لو ما طابق اسم الجامعة. استعملها **قبل** '
+      + 'ما تسأل الطالب عن الكود، وبعدها نادِ course_info بالكود اللي رجع.',
+    input_schema: { type: 'object', properties: {
+      query: { type: 'string', description: 'اسم المادة كما كتبها الطالب' } },
+      required: ['query'] },
+    run: (ctx, a) => {
+      const q = String(a.query || '').trim();
+      if (q.length < 2) return { error: 'اكتب اسم المادة' };
+      const hits = aiRankCourses(ctx, q);
+      if (!hits.length) return { found: 0, matches: [],
+        error: AI_UNKNOWN + ' — جرّب كود المادة', query: q };
+      /* فرق كبير بين الأول والثاني = مطابقة واثقة */
+      const top = hits[0], second = hits[1];
+      return { found: hits.length, query: q,
+        confident: !second || top.sc >= second.sc * 2,
+        matches: hits.slice(0, 5).map(h => ({
+          code: h.c.c, name: h.c.n, credits: h.c.h,
+          semester: h.c.sem, done: (ctx.plan.completed || []).includes(h.c.c) })),
+        note: 'من خطة الطالب — لو ما فيها المادة اللي يقصد، اطلب الكود' };
+    },
+  },
+
   instructor_reviews: {
     tier: 'free',
     description: 'ملخّص تقييمات الطلاب لدكتور: المتوسط وعددها وأكثر الوسوم، '
@@ -5856,9 +6121,22 @@ const AI_TOOLS = {
     run: async (ctx, a) => {
       const who = String(a.instructor || '').trim();
       if (who.length < 3) return { error: 'اكتب اسم الدكتور كاملاً أو أكثر من حرفين' };
+      /* الأسماء في القاعدة لاتينية والطالب يكتبها عربية. نطابق على
+         الهيكل الساكن: «معين الدين» و Moinuddeen كلاهما mndn. */
+      let want = who, matched = null;
+      if (AR_HAS(who)) {
+        const names = await sb('GET', 'instructor_reviews',
+          { query: `?hidden=is.false&select=instructor_name&limit=2000` });
+        if (!Array.isArray(names)) return { error: 'تعذّر قراءة التقييمات' };
+        const m = aiMatchNames(who, names.map(x => x.instructor_name));
+        if (!m.length) return { found: 0, error: AI_UNKNOWN, instructor: who,
+          note: 'ما لقينا دكتوراً بهذا الاسم — جرّب اسمه بالإنجليزي كما في جدول المادة' };
+        matched = m[0].name;
+        want = matched;
+      }
       /* بلا user_id في select ولا في الناتج — التقييم مجهول للقارئ */
       const r = await sb('GET', 'instructor_reviews', {
-        query: `?instructor_name=ilike.*${encodeURIComponent(who)}*`
+        query: `?instructor_name=ilike.*${encodeURIComponent(want)}*`
              + `&hidden=is.false&select=instructor_name,rating,course_code,comment,tags,agree,disagree`
              + `&limit=500` });
       if (!Array.isArray(r)) return { error: 'تعذّر قراءة التقييمات' };
@@ -5880,6 +6158,8 @@ const AI_TOOLS = {
       });
 
       return { found: r.length,
+        askedAs: matched ? who : undefined,
+        matchedName: matched || undefined,
         instructors: Object.values(byName).map(g => ({
           name: g.name, reviews: g.n,
           average: g.n ? Number((g.sum / g.n).toFixed(2)) : null,
@@ -6202,15 +6482,34 @@ const aiUsedOf = q => ({ day: q.day, dayCap: q.cap.day,
 const AI_SYSTEM = `أنت «مساعد جدولك» — مساعد داخل موقع جدولك لطلاب جامعة الأمير محمد بن فهد (PMU).
 
 كيف تتكلم:
-- عربي بلهجة الطلاب، قصير ومباشر. جملتين أو ثلاث غالباً.
+- **لهجة سعودية/خليجية**، قصير ومباشر. جملتين أو ثلاث غالباً.
+  قل: وش · كم · عندك · تبي · ما فيه · شوف · زين · باقي لك · خلّص.
+  لا تقل أبداً: «ما فيش» · «بدك» · «هاي» · «دي» · «عايز» · «كده» ·
+  «إزاي» · «شوية» بمعنى قليل — هذي مصرية أو شامية وتبيّن إنك غريب.
+- **بلا أي تنسيق Markdown.** الموقع يعرض ردك **نصاً خاماً**، فالنجمتان
+  تظهران نجمتين للطالب لا خطاً غامقاً. ممنوع: ** و ## و * في أول السطر.
+  للقوائم استعمل سطراً لكل عنصر يبدأ بـ«- » أو برقم لاتيني.
+- إيموجي واحد على الأكثر، وأحياناً فقط — لا في كل رسالة.
 - الأكواد والأرقام والتواريخ لاتينية وميلادية: MATH 1422 · 2026-09-23.
-- بلا تنسيق كثير: سطور قصيرة أو نقاط قليلة.
+- لا تعتذر كثير ولا تكرّر «معذرة». صحّح وكمّل.
 
 من وين تجيب المعلومة:
 - من الأدوات وحدها. ما عندك أي معرفة عن الجامعة أو خططها أو دكاترتها غير اللي ترجّعه الأدوات.
 - ما لقيت الجواب في أداة؟ قل «ما أعرف» بصراحة، واقترح عليه وش يسوي.
 - ممنوع تخترع: مادة، متطلب، ساعات، وقت، قاعة، دكتور، تاريخ، رقم شعبة، مقعد.
 - رجّعت الأداة خطأ أو «ما لقيتها»؟ انقلها للطالب ولا تكمّل من عندك.
+- **لا تفسّر نتيجة أداة بما ليس فيها.** الأداة ما رجّعت شعباً؟ معناها ما
+  عندنا بياناتها الآن — لا «لأنك خلّصت المادة» ولا «لأنها ما تُطرح».
+  السبب الوحيد اللي تقوله هو السبب المكتوب في النتيجة نفسها.
+- **الطالب ما يسمّي المواد كأسماء الجامعة.** يقول «ثيرمو ١» و«دوائر»
+  و«تفاضل». استعمل أداة البحث عن المادة أول شي — لا تخمّن الكود ولا
+  تسأله عنه قبل ما تحاول. ولو رجّعت أكثر من مرشّح ومو واضح أيّها يقصد،
+  اعرض عليه الأقرب واسأل.
+- **وكذلك أسماء الدكاترة.** يكتبها بالعربي والقاعدة فيها بالإنجليزي —
+  الأداة تطابقها بنفسها، فمرّر الاسم كما كتبه ولا تترجمه أنت.
+- سؤال عن **استعمال الموقع** (كيف أثبّته على الجوال، كيف أراقب شعبة،
+  كيف أضيف موعد)؟ استعمل أداة الدليل — لا تجاوب من عندك ولا تقول
+  «ما عندي أداة» قبل ما تجرّبها.
 - الأداة تقول إن بيانات الجامعة مو جاهزة؟ قل له يجرّب بعد شوي — ولا تعطيه رقماً قديماً من عندك.
 
 حدودك:
@@ -6505,6 +6804,12 @@ async function aiPing() {
 /* حالة المساعد لصاحب الجلسة — الصفحة تسألها مرة عند الفتح لتعرف
    هل تعرض التبويب أصلاً، وكم بقي له اليوم. */
 async function aiStatus(userId) {
+  /* الصفحة تسألها مرة كل تحميل. لو المفتاح ناقص أو الوضع off نرد بلا
+     أي قراءة من القاعدة — وإلا صارت أربع قراءات لكل طالب على الفاضي.
+     وضع admin وحده يحتاج صفّه عشان نعرف هل هو صاحب الموقع. */
+  const pre = aiGate(null);
+  if (!pre.ok && pre.why !== 'admin')
+    return { on: false, why: pre.why, msg: pre.msg };
   const ctx = await aiStudentCtx(userId);
   const gate = aiGate(ctx.profile);
   if (!gate.ok) return { on: false, why: gate.why, msg: gate.msg };
