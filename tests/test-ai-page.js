@@ -182,8 +182,34 @@ const openSheet = async page => {
     await openSheet(page);
     ok(await page.$('#aiQ') !== null, 'مربّع السؤال موجود');
     ok(/اسألني/.test(await page.textContent('#aiLog')), 'وترحيب قبل أول سؤال');
+    /* **قاعدة تغيّرت بطلب محمد:** كان اللوح يفتح بارتفاع محتواه —
+       سطران وثلاثة أمثلة — فيطلع شريطاً صغيراً تحت لا محادثة.
+       صار بطول الشاشة، والستة أمثلة تدخل بلا ازدحام وتعلّمه أغلب
+       ما يقدر عليه المساعد. */
     const ex = await page.$$('#aiLog .ai-ex button');
-    ok(ex.length === 3, 'وثلاثة أمثلة جاهزة — ' + ex.length);
+    ok(ex.length === 6, 'وستة أمثلة جاهزة — ' + ex.length);
+    const exTxt = await Promise.all(ex.map(e => e.textContent()));
+    eq([...new Set(exTxt)].length, exTxt.length, 'وكلها مختلفة');
+    /* تعلّمه أبواباً مختلفة لا ستة أسئلة عن الخطة */
+    for (const [k, re] of [['جدوله', /عندي|جدول/], ['باني الجداول', /ركّب/],
+                           ['تذكير', /ذكّرني/], ['دكاترة', /يدرّس/],
+                           ['قاعات', /قاعة/], ['مراقبة', /راقب/]])
+      ok(exTxt.some(x => re.test(x)), `ومن الأمثلة باب ${k} — ` + exTxt.join(' · '));
+
+    /* اللوح يفتح بطول الشاشة، والحقل باقٍ داخلها */
+    const box = await page.evaluate(() => {
+      const sh = document.getElementById('aiSheet');
+      const bar = document.querySelector('#aiSheet .ai-bar');
+      const r = sh.getBoundingClientRect();
+      return { pct: Math.round(r.height / window.innerHeight * 100),
+        barBottom: bar ? Math.round(bar.getBoundingClientRect().bottom) : null,
+        vh: window.innerHeight,
+        cut: sh.scrollHeight > sh.clientHeight + 1 };
+    });
+    ok(box.pct >= 70, '**اللوح يفتح بطول الشاشة** — ' + box.pct + '%');
+    ok(box.barBottom !== null && box.barBottom <= box.vh,
+       'وحقل الكتابة داخل الشاشة — ' + box.barBottom + '/' + box.vh);
+    ok(!box.cut, 'ولا شي مقصوص خارج اللوح');
 
     await page.fill('#aiQ', 'وش عندي بكرة؟');
     await page.click('#aiSendBtn');
