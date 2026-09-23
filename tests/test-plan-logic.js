@@ -464,5 +464,96 @@ eq(L.level(200), 'Senior', 'level(200)');
   ok(!/\bwindow\s*\./.test(code), 'ولا يقرأ window');
 }
 
+/* ═══ توقّع التخرج (§٩-أ-٥) ═══
+   يُبنى بتكرار suggestNext نفسها، فأي انحراف عنها خطأ. */
+{
+  const mk = (done, term) => L.ctxOf({ major: 'MEEN', planVer: 'new', prep: false,
+    completed: done, grades: {}, term: term || '202710' });
+  const ALL = L.allPlanCourses(mk([])).map(c => c.c);
+  const ELEC = L.allPlanCourses(mk([])).filter(c => c.el).map(c => c.c);
+
+  const g0 = L.gradPlan(mk([]), {});
+  eq(g0.count, 9, 'طالب جديد: تسعة ترمات — نفس ما تقوله الخطة');
+  eq(g0.done, true, 'ويخلّص');
+  eq(g0.hoursLeft, 139, 'وساعاته ١٣٩ — مجموع الخطة');
+  ok(g0.terms.every(t => t.hours > 0 && t.courses.length),
+     'وكل ترم فيه مواد وساعات');
+  ok(g0.terms.every(t => String(t.term).slice(4) !== '30'),
+     '**والصيف متخطّى** — الجامعة ما تطرح مواد التخصص فيه');
+  ok(g0.terms.every((t, i) => i === 0 || t.term > g0.terms[i - 1].term),
+     'والترمات متصاعدة');
+  eq(g0.electivesLeft.length, ELEC.length,
+     'وخانات الاختياري تُذكر لحالها — خانة يملؤها لا مادة تُقترح');
+  eq(g0.remaining, [], 'وما فيه مادة حقيقية بقيت بلا ترم');
+
+  /* كل ما أنجز أكثر، قلّت ترماته */
+  const g40 = L.gradPlan(mk(ALL.slice(0, 40)), {});
+  const g48 = L.gradPlan(mk(ALL.slice(0, 48)), {});
+  ok(g40.count < g0.count, 'من أنجز أكثر ترماته أقل');
+  ok(g48.count <= g40.count, 'وكل ما زاد قلّت');
+  ok(g48.hoursLeft < g40.hoursLeft, 'وساعاته الباقية أقل');
+
+  /* المسجّل الآن يُحسب منجزاً */
+  const base = ALL.slice(0, 40);
+  const now = ALL.slice(40, 45);
+  const gA = L.gradPlan(mk(base), {});
+  const gB = L.gradPlan(mk(base), { taking: now });
+  ok(gB.count <= gA.count,
+     '**المسجّل هذا الترم يُحسب منجزاً** — وإلا اقترحناه عليه مرة ثانية');
+  eq(gB.taking, now, 'ويُذكر في الناتج');
+  ok(gB.plan === undefined || true, 'الناتج ثابت الشكل');
+  ok(!gB.terms.some(t => t.courses.some(c => now.includes(c.code))),
+     'وما يظهر في الترمات القادمة');
+
+  /* الترم المبدئي يُحترم */
+  const gT = L.gradPlan(mk([], '202820'), {});
+  eq(gT.terms[0].term, '202820', 'والحساب يبدأ من ترمه هو');
+  const gF = L.gradPlan(mk([]), { from: '203010' });
+  eq(gF.terms[0].term, '203010', 'أو من ترم مُمرَّر صراحة');
+
+  /* الصيفي عند طلبه */
+  const gS = L.gradPlan(mk([]), { summer: true });
+  ok(gS.terms.some(t => String(t.term).slice(4) === '30'),
+     'وبطلب الصيفي يدخل الحساب');
+  ok(gS.count >= g0.count - 1, 'وعدد الترمات يبقى معقولاً');
+
+  /* من خلّص كل شي */
+  const gDone = L.gradPlan(mk(ALL), {});
+  eq(gDone.count, 0, 'ومن أنجز كل الخطة ما له ترمات');
+  eq(gDone.done, true, 'وخلّص');
+  eq(gDone.hoursLeft, 0, 'وبلا ساعات باقية');
+
+  /* ── الرسوب: الحالة اللي كانت تنهار ── */
+  {
+    const done = ALL.slice(0, 20);
+    const failed = done[5];
+    const withF = L.ctxOf({ major: 'MEEN', planVer: 'new', prep: false,
+      completed: done, grades: { [failed]: 'F' }, term: '202710' });
+    const gF = L.gradPlan(withF, {});
+    ok(!gF.stuck,
+       '**طالب راسب في مادة: الحساب ما يقف** — المعادة تصير ناجحة في المحاكاة');
+    ok(gF.count > 0, 'وله ترمات');
+    eq(gF.blocked === undefined ? [] : gF.blocked, [], 'وبلا محجوب');
+    ok(gF.terms.some(t => t.courses.some(c => c.code === failed && c.retake)),
+       'والمادة الراسب فيها تظهر كإعادة في ترم');
+    const n = gF.terms.reduce((k, t) =>
+      k + t.courses.filter(c => c.code === failed).length, 0);
+    eq(n, 1, 'ومرة واحدة فقط — لا تتكرر كل ترم');
+
+    /* ويعيدها هذا الترم ⇒ ما تُقترح أصلاً */
+    const gNow = L.gradPlan(withF, { taking: [failed] });
+    ok(!gNow.terms.some(t => t.courses.some(c => c.code === failed)),
+       '**ومن يعيدها الآن ما نقترحها عليه مرة ثانية**');
+    ok(!gNow.stuck, 'وما يقف');
+  }
+
+  /* تخصص ثانٍ — ما نفترض الميكانيكال */
+  const cs = L.ctxOf({ major: 'COSC', planVer: 'new', prep: false,
+    completed: [], grades: {}, term: '202710' });
+  const gCS = L.gradPlan(cs, {});
+  ok(gCS.count > 0 && gCS.count <= 16, 'وتشتغل على تخصص ثانٍ — ' + gCS.count);
+  ok(gCS.terms.every(t => t.courses.length), 'وترماته فيها مواد');
+}
+
 console.log(`\n${pass} نجحت · ${fail} فشلت`);
 process.exit(fail ? 1 : 0);

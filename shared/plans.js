@@ -1833,6 +1833,70 @@ function retakeList(ctx){
 }
 
 /* ═══ المعدل ═══ */
+/* ═══ توقّع التخرج ═══
+   نحاكي الترمات القادمة بتكرار suggestNext نفسها — لا خوارزمية ثانية
+   تنحرف عنها مع الوقت. كل ترم: نأخذ مقترحه، نعدّه منجزاً، ونكمّل.
+
+   ثلاثة قرارات:
+   ١) **المسجّل الآن يُحسب منجزاً** للترم الأول: درجته ما طلعت لكنه
+      بيخلّصه، وبدونه نقترح عليه مواد هو قاعد ياخذها (نفس علّة
+      next_term_suggestion).
+   ٢) **الصيف يُتخطّى** افتراضياً: الجامعة ما تطرح مواد التخصص فيه
+      عملياً، فعدّه ترماً يعطي تاريخاً متفائلاً كذباً.
+   ٣) **تقدير لا وعد**: الطرح الفعلي والمقاعد وقرار المرشد تغيّرها. */
+function gradPlan(ctx,opts){
+  const o=opts||{};
+  const MAXT=16;                         /* حماية من حلقة لا تنتهي */
+  const taking=Array.isArray(o.taking)?o.taking.filter(Boolean):[];
+  let completed=ctx.completed.slice();
+  /* الدرجات تتغيّر مع المحاكاة: المادة المعادة تصير ناجحة. بلا هذا
+     تبقى «تحتاج إعادة» للأبد، فيقترحها كل ترم وما يتقدّم الحساب —
+     وكل طالب راسب في مادة ينهار توقّعه. */
+  let grades=Object.assign({},ctx.grades);
+  /* والمسجّل الآن كذلك: من يعيد مادة هذا الترم بيخلّصها، فلا نقترحها
+     عليه مرة ثانية. */
+  taking.forEach(c=>{
+    if(!completed.includes(c))completed.push(c);
+    delete grades[c];
+  });
+  let term=o.from||ctx.term;
+  const terms=[]; let stuck=false;
+  for(let i=0;i<MAXT&&terms.length<MAXT;i++){
+    if(!o.summer&&String(term).slice(4)==='30'){ term=nextTermCode(term); continue }
+    const s=suggestNext(ctxOf(Object.assign({},ctx,{completed,grades,term})));
+    const picked=s.crit.concat(s.opt);
+    if(!picked.length)break;
+    terms.push({term,hours:s.hours,
+      courses:picked.map(c=>({code:c.c,name:c.n,credits:c.h,retake:!!c.retake}))});
+    let moved=false;
+    picked.forEach(c=>{
+      if(!completed.includes(c.c)){ completed.push(c.c); moved=true }
+      if(grades[c.c]!==undefined){ delete grades[c.c]; moved=true }
+    });
+    /* ما تقدّمنا: متطلب مقفل أو مقترح يتكرر — نوقف ونقولها */
+    if(!moved){ terms.pop(); stuck=true; break }
+    term=nextTermCode(term);
+  }
+  /* خانات المواد الاختيارية (el) ما تُقترح: هي خانة لا مادة، والطالب
+     يملؤها بما يختار. والخطة تضعها داخل نفس الترمات فما تزيد عددها —
+     فنفصلها عن «ما انحطّت» حتى لا يطلع التوقّع «ما بتخلص» أبداً. */
+  const all=allPlanCourses(ctx);
+  const left=all.filter(c=>!completed.includes(c.c));
+  const electivesLeft=left.filter(c=>c.el).map(c=>({code:c.c,name:c.n,credits:c.h}));
+  const remaining=left.filter(c=>!c.el).map(c=>c.c);
+  return {
+    terms, count:terms.length,
+    lastTerm:terms.length?terms[terms.length-1].term:null,
+    taking, stuck,
+    done:!remaining.length&&!stuck,
+    remaining, electivesLeft,
+    /* الساعات الباقية من الخطة — بلا المسجّل الآن */
+    hoursLeft:all.filter(c=>!ctx.completed.includes(c.c))
+      .reduce((n,c)=>n+(Number(c.h)||0),0),
+    note:'تقدير من خطتك — الطرح الفعلي والمقاعد وقرار مرشدك تغيّره',
+  };
+}
+
 function calcGPA(ctx){
   let pts=0,hrs=0,n=0;
   Object.keys(ctx.grades).forEach(code=>{
@@ -1992,7 +2056,7 @@ const LOGIC = {
   PREP_MATH, PREP_MATH_NAME, PREP_EXIT, PREP_GATE_LANG, PREP_GATE_MATH,
   FAIL_GRADES, FAIL_GRADES_C, WITHDRAW_GRADES, GRADE_POINTS, GRADE_SKIP,
   INTERN_MIN_CREDITS,
-  hasAltPlan, planKey, planOf, prepSems, semesters, ctxOf,
+  hasAltPlan, planKey, planOf, prepSems, semesters, ctxOf, gradPlan,
   allPlanCourses, findPlanCourse, failGrades, isFailed, isWithdrawn,
   isDone, isPassed, doneCredits, level, prepGate, prepLevelLock,
   prereqCheck, creditsOf, unlocksCount, unlockedBy, isInternship,

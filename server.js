@@ -5863,6 +5863,43 @@ const AI_TOOLS = {
     },
   },
 
+
+  graduation_forecast: {
+    tier: 'pro',
+    description: 'توقّع التخرج: كم ترماً باقياً ومتى، وتوزيع المواد على الترمات '
+      + 'القادمة. **تقدير من الخطة لا وعد** — الطرح الفعلي والمقاعد وقرار '
+      + 'المرشد تغيّره، فقل ذلك للطالب.',
+    input_schema: { type: 'object', properties: {
+      summer: { type: 'boolean',
+        description: 'يحسب الصيفي كترم دراسي — الافتراضي لا، لأن الجامعة '
+          + 'ما تطرح مواد التخصص فيه عملياً' } },
+      required: [] },
+    run: async (ctx, a) => {
+      /* المسجّل الآن يُحسب منجزاً: درجته ما طلعت لكنه بيخلّصه */
+      const rows = await aiSchedule(ctx);
+      const taking = [...new Set(rows.map(r =>
+        String(r.course_code || '').trim()).filter(Boolean))];
+      const g = PLANS_DATA.gradPlan(ctx.plan, { taking, summer: !!a.summer });
+      const season = c => ({ '10': 'fall', '20': 'spring', '30': 'summer' })[String(c).slice(4)] || '?';
+      return {
+        termsLeft: g.count,
+        graduatesIn: g.lastTerm
+          ? { term: g.lastTerm, year: Number(String(g.lastTerm).slice(0, 4)),
+              season: season(g.lastTerm) } : null,
+        hoursLeft: g.hoursLeft,
+        countingNow: taking,
+        /* خانات اختيارية يملؤها بنفسه — داخل نفس الترمات لا زيادة عليها */
+        electivesLeft: g.electivesLeft,
+        plan: g.terms.map(x => ({ term: x.term, season: season(x.term),
+          hours: x.hours, courses: x.courses })),
+        blocked: g.stuck ? g.remaining : [],
+        note: g.stuck
+          ? 'وقف الحساب: فيه مواد متطلبها ما ينفتح من الخطة — راجع مرشدك'
+          : 'تقدير من خطتك — الطرح الفعلي والمقاعد وقرار مرشدك تغيّره',
+      };
+    },
+  },
+
   retake_list: {
     tier: 'pro',
     description: 'المواد اللي لازم الطالب يعيدها — رسب فيها أو انسحب منها.',
