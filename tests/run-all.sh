@@ -39,6 +39,7 @@ for t in test-plan-regress test-guest-theme test-build-reload test-term-ui \
 
 echo "— اللوحة —"
 run test-admin-season "$A"
+run test-admin-ai     "$A"
 
 echo "— عبر الملفات —"
 run test-calendar       "$S" "$F"

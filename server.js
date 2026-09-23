@@ -6470,6 +6470,38 @@ async function aiChat(userId, question, opt) {
            model, cost, tokens: usage, used: aiUsedOf(quota) };
 }
 
+/* حساب صاحب الموقع — لمربّع التجربة في اللوحة. نلقاه بنفس الربط اللي
+   يعرّفه في وضع admin: chat_id تيليغرام. بلا ربط ما فيه «أنا». */
+async function aiAdminUser() {
+  if (!ADMIN_CHAT_ID) return null;
+  const r = await sb('GET', 'profiles', { query:
+    `?telegram_chat_id=eq.${encodeURIComponent(ADMIN_CHAT_ID)}&select=id&limit=1` })
+    .catch(() => null);
+  return (Array.isArray(r) && r[0]) ? r[0].id : null;
+}
+
+/* نداء صغير يتأكد من المفتاح ومن اسم النموذج، ويرجّع خطأ المزوّد كما هو
+   بدل «تعذّر» — عشان تعرف فوراً هل الاسم غلط ولا المفتاح.
+   ما يُكتب له سطر استهلاك: أقل من هللة، واللوحة تقول ذلك صريحاً. */
+async function aiPing() {
+  if (!ANTHROPIC_KEY)
+    return { ok: false, error: 'ANTHROPIC_API_KEY ناقص في Render' };
+  const model = aiModel();
+  const t0 = Date.now();
+  const r = await aiCall({ model, max_tokens: 16,
+    messages: [{ role: 'user', content: 'قل: تمام' }] });
+  const j = r.json;
+  if (r.status !== 200 || !j || !Array.isArray(j.content))
+    return { ok: false, model, status: r.status || 0,
+      known: aiKnownModel(model),
+      type: (j && j.error && j.error.type) || '',
+      error: (j && j.error && j.error.message) || r.err || ('خطأ ' + r.status) };
+  return { ok: true, model, known: aiKnownModel(model), ms: Date.now() - t0,
+    text: j.content.filter(c => c.type === 'text')
+      .map(c => String(c.text || '')).join(' ').trim(),
+    cost: aiCostMicro(model, j.usage || {}) };
+}
+
 /* حالة المساعد لصاحب الجلسة — الصفحة تسألها مرة عند الفتح لتعرف
    هل تعرض التبويب أصلاً، وكم بقي له اليوم. */
 async function aiStatus(userId) {
@@ -6957,6 +6989,62 @@ const server = http.createServer(async (req, res) => {
               o[k] = Number(aiSar(sp.byEnv[k])); return o }, {})
           } : null
         });
+      }
+
+      /* أكثر الطلاب استهلاكاً هذا الشهر — من ملخّص (بيئة · شهر · طالب) */
+      if (act === 'ai-top') {
+        const ym = /^\d{4}-\d{2}$/.test(String(parsed.query.ym || ''))
+          ? String(parsed.query.ym) : aiYM();
+        const rows = await sb('GET', 'ai_spend_user', { query:
+          `?ym=eq.${ym}&select=env,ym,user_id,questions,cost_micro,last_on` +
+          `&order=cost_micro.desc&limit=1000` }).catch(() => null);
+        if (!Array.isArray(rows)) return send(500, { error: 'تعذّر قراءة الاستهلاك' });
+        /* الطالب له صف لكل بيئة — نجمعها قبل الترتيب */
+        const by = {};
+        rows.forEach(r => {
+          const g = by[r.user_id] || (by[r.user_id] =
+            { id: r.user_id, questions: 0, micro: 0, last: '', envs: {} });
+          g.questions += Number(r.questions) || 0;
+          g.micro += Number(r.cost_micro) || 0;
+          g.envs[r.env] = Number(aiSar(r.cost_micro));
+          if (String(r.last_on || '') > g.last) g.last = String(r.last_on || '');
+        });
+        const top = Object.keys(by).map(k => by[k])
+          .sort((a, b2) => b2.micro - a.micro).slice(0, 10);
+        const names = {};
+        const ids = top.map(t => t.id)
+          .filter(x => /^[0-9a-f-]{36}$/i.test(String(x)));
+        if (ids.length) {
+          const pr = await sb('GET', 'profiles',
+            { query: `?id=in.(${ids.join(',')})&select=id,name,email` }).catch(() => null);
+          if (Array.isArray(pr)) pr.forEach(p => { names[p.id] = p });
+        }
+        return send(200, { ym, truncated: rows.length >= 1000,
+          top: top.map(t => ({ id: t.id,
+            name: (names[t.id] && names[t.id].name) || '',
+            email: (names[t.id] && names[t.id].email) || '',
+            questions: t.questions, sar: Number(aiSar(t.micro)),
+            last: t.last, envs: t.envs })) });
+      }
+
+      /* زر «جرّب»: نداء واحد صغير يثبت المفتاح واسم النموذج */
+      if (act === 'ai-ping') return send(200, await aiPing());
+
+      /* مربّع التجربة في اللوحة — يسأل بحسابك أنت، فالأدوات تشتغل
+         على بياناتك الحقيقية. والوضع يطبَّق كما هو: off يمنع حتى هنا. */
+      if (act === 'ai-ask') {
+        if (req.method !== 'POST') return send(405, { error: 'POST فقط' });
+        const p = await readBody(req);
+        const uid = await aiAdminUser();
+        if (!uid) return send(400, { error: ADMIN_CHAT_ID
+          ? 'ما لقيت حسابك — اربط تيليغرام بحسابك في الموقع أولاً'
+          : 'ADMIN_CHAT_ID ناقص في Render' });
+        if (p.reset) { await aiThreadReset(uid); return send(200, { ok: true, reset: true }) }
+        const r = await aiChat(uid, p.q, { fresh: !!p.fresh });
+        return send(200, { ok: r.ok, why: r.why || '', answer: r.answer,
+          tools: r.tools || [], used: r.used || null, calls: r.calls || 0,
+          model: r.model || aiModel(), sar: Number(aiSar(r.cost || 0)),
+          tokens: r.tokens || null });
       }
 
       /* استهلاك المساعد يوماً بيوم — اللوحة ترسمه */
