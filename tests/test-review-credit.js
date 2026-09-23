@@ -102,7 +102,10 @@ https.request = function (opts, cb) {
   return req;
 };
 
-const PORT = 45887, TOKEN = 'admin-token-for-tests';
+/* المنفذ يتغيّر مع كل تشغيل: منفذ ثابت يبقى محجوزاً بعد انتهاء
+   العملية (TIME_WAIT أو بقايا جلسة)، فيفشل التشغيل التالي بـEADDRINUSE
+   والاختبار يطلع أحمر بلا علاقة بالكود. النطاق ١٠٠ لكل ملف فما يتصادمان. */
+const PORT = 46600 + (process.pid % 100), TOKEN = 'admin-token-for-tests';
 Object.assign(process.env, {
   PORT: String(PORT), ADMIN_TOKEN: TOKEN, SITE_ENV: 'dev', ACTIVE_TERM: '202710',
   SB_URL: 'https://fake.supabase.co', SUPABASE_URL: 'https://fake.supabase.co',
