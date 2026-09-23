@@ -790,6 +790,12 @@ transition:opacity .25s ease}
 .ai-sub{font-size:11.5px;color:var(--text3);line-height:1.6}
 /* dvh لا vh: مع لوحة المفاتيح المفتوحة يبقى الحقل والأزرار ظاهرة.
    vh تحسب الشاشة كاملة فينزل النصف تحت اللوحة. */
+/* اللوح يفتح كبيراً لا ربع شاشة: ارتفاعه كان يتبع محتواه، والمحتوى
+   أول ما يفتح سطران — فيطلع شريطاً صغيراً تحت لا محادثة.
+   نثبّت ارتفاعه ونخلّي السجل هو اللي يتمدّد، والحقل يبقى تحته. */
+#aiSheet{display:flex;flex-direction:column;height:88vh;height:86dvh;
+max-height:none;overflow:hidden}
+#aiSheet .ai-log{flex:1;max-height:none;min-height:0}
 .ai-log{max-height:44vh;max-height:38dvh;overflow-y:auto;margin:14px 0 10px}
 .ai-msg{display:flex;margin-bottom:10px}
 .ai-msg.me{justify-content:flex-end}
@@ -5904,8 +5910,14 @@ function closeAi(){
   document.body.style.overflow='';
 }
 
-const AI_EX=()=>[t('aiEx1'),t('aiEx2'),t('aiEx3'),
-                 t('aiEx4'),t('aiEx5'),t('aiEx6'),t('aiEx7')];
+/* الأمثلة **تعلّم**: كل واحد يفتح باباً مختلفاً — جدول · خطة ·
+   دكاترة · غياب · قاعات · باني الجداول · تذكير · مراقبة · نهائيات.
+   الشريط في صفحة اليوم يدوّر عليها كلها، واللوح يعرض أول ستة. */
+/* الترتيب مقصود: أول ستة هي اللي يشوفها في اللوح، وكل واحد منها
+   باب مختلف — جدوله · باني الجداول · تذكير · دكاترة · قاعات · مراقبة.
+   لو رتّبناها كما كُتبت طلعت ستة أسئلة عن الخطة والغياب وبس. */
+const AI_EX=()=>[t('aiEx1'),t('aiEx7'),t('aiEx8'),t('aiEx3'),t('aiEx6'),
+                 t('aiEx9'),t('aiEx2'),t('aiEx4'),t('aiEx5'),t('aiEx10')];
 
 /* keepLog: نعيد رسم الرأس والتذييل بلا ما نفقد موضع السجل */
 function renderAiSheet(keepLog){
@@ -5941,8 +5953,9 @@ function renderAiLog(){
     const blocked=st.on===false&&st.msg;
     log.innerHTML='<div class="ai-msg bot"><div class="ai-b'+(blocked?' warn':'')+'">'+
       escapeHtml(blocked?st.msg:t('aiHello'))+'</div></div>'+
-      /* ثلاثة في اللوح: ستة أزرار ازدحام على ٣٩٠px. الشريط يدوّر عليها كلها. */
-      (blocked?'':'<div class="ai-ex">'+AI_EX().slice(0,3).map(x=>
+      /* صار اللوح بطول الشاشة، فالستة تدخل بلا ازدحام — والطالب
+         يشوف أغلب ما يقدر عليه المساعد بلا ما يسأل. */
+      (blocked?'':'<div class="ai-ex">'+AI_EX().slice(0,6).map(x=>
         '<button onclick="aiAsk(this.textContent)">'+escapeHtml(x)+'</button>').join('')+'</div>');
     return;
   }
@@ -7815,6 +7828,9 @@ aiHello:'اسألني عن جدولك أو خطتك أو الدكاترة.',
 aiEx1:'وش عندي بكرة؟',aiEx2:'كم ساعة باقية لي؟',aiEx3:'مين يدرّس ثيرمو ١؟',
 aiEx4:'كم غياب باقي لي؟',aiEx5:'وش أنزل الترم الجاي؟',aiEx6:'وين قاعة فاضية الحين؟',
 aiEx7:'ركّب لي جدول بدون خميس',
+aiEx8:'ذكّرني بالكويز الأحد ٧ م',
+aiEx9:'راقب لي شعبة مقفلة',
+aiEx10:'متى نهائي الفيزياء؟',
 aiActRem:'أذكّرك يوم %d بـ«%b»؟',
 aiRemOk:'ضبطت التذكير — بيوصلك على تلقرام',
 aiRemNoTg:'اربط تلقرام أول عشان يوصلك التذكير',
@@ -7971,6 +7987,9 @@ aiHello:'Ask me about your schedule, plan or instructors. I answer in Arabic.',
 aiEx1:'وش عندي بكرة؟',aiEx2:'كم ساعة باقية لي؟',aiEx3:'مين يدرّس ثيرمو ١؟',
 aiEx4:'كم غياب باقي لي؟',aiEx5:'وش أنزل الترم الجاي؟',aiEx6:'وين قاعة فاضية الحين؟',
 aiEx7:'ركّب لي جدول بدون خميس',
+aiEx8:'ذكّرني بالكويز الأحد ٧ م',
+aiEx9:'راقب لي شعبة مقفلة',
+aiEx10:'متى نهائي الفيزياء؟',
 aiActRem:'Remind you on %d about "%b"?',
 aiRemOk:'Reminder set — it will reach you on Telegram',
 aiRemNoTg:'Link Telegram first so the reminder can reach you',
