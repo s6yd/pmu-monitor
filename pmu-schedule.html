@@ -762,11 +762,29 @@ box-shadow:0 6px 22px rgba(61,111,255,.45)}
 /* ═══ مساعد جدولك ═══
    زر عائم فوق زر الدليل (الدليل على 20px وارتفاعه 48)، ولوح يستعمل
    نفس .guide-overlay/.guide-sheet فما نكرّر تنسيقاً. */
-.ai-fab{position:fixed;bottom:78px;left:16px;z-index:200;display:none;
-background:var(--card);color:var(--text);border:1px solid var(--border2);
-border-radius:50%;width:48px;height:48px;font-size:20px;cursor:pointer;
-box-shadow:0 6px 22px rgba(0,0,0,.34)}
-.ai-fab.on{display:block}
+/* مدخل المساعد في أعلى لوح المساعدة */
+.ai-entry{display:flex;width:100%;align-items:center;gap:11px;text-align:start;
+background:var(--card);border:1px solid var(--border2);border-radius:14px;
+padding:12px 13px;margin-bottom:12px;cursor:pointer;font-family:var(--sans)}
+.ai-entry[hidden]{display:none}
+.ai-entry-ic{font-size:19px;line-height:1}
+.ai-entry-x{flex:1;min-width:0}
+.ai-entry-b{display:block;font-size:14px;font-weight:700;color:var(--text);
+direction:ltr;unicode-bidi:isolate;text-align:start}
+.ai-entry-s{display:block;font-size:11.5px;color:var(--text3);margin-top:3px;
+line-height:1.5}
+
+/* ومدخله في صفحة اليوم — يشبه البحث، وجملته تتبدّل */
+.ai-ask{display:flex;width:100%;align-items:center;gap:10px;text-align:start;
+background:var(--card);border:1px solid var(--border2);border-radius:14px;
+padding:11px 13px;margin-bottom:10px;cursor:pointer;font-family:var(--sans)}
+.ai-ask-ic{font-size:17px;line-height:1}
+.ai-ask-x{min-width:0;flex:1}
+.ai-ask-b{font-size:12.5px;font-weight:700;color:var(--text);
+direction:ltr;unicode-bidi:isolate}
+.ai-ask-h{display:block;font-size:12px;color:var(--text3);margin-top:3px;
+white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-style:normal;
+transition:opacity .25s ease}
 .ai-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px}
 .ai-t{font-size:16px;font-weight:700}
 .ai-sub{font-size:11.5px;color:var(--text3);line-height:1.6}
@@ -1377,7 +1395,7 @@ margin:0!important;padding:0!important;min-height:0!important}
 /* الشبكة ومبدّل العرض والشريطان يخصّون الشاشة وحدها — بدونهم كانت
    الطباعة تخرج بورقة أولى فيها التطبيق نفسه قبل ورقة الجدول. */
 .topbar,.tabs,.sched-actions,.slot-remove,.conflict-alert,.sched-summary,.lab-warn,
-.guide-fab,.ai-fab,.guide-overlay,.toast,.state-box,.sync-note,.next-check,.reg-card,.crn-panel,
+.guide-fab,.ai-ask,.guide-overlay,.toast,.state-box,.sync-note,.next-check,.reg-card,.crn-panel,
 .slot-bar,#slotBar,
 .vw-switch,#schedView,#schedGrid,.gr-zoom,.gr-hint,#gridPeek,
 .env-bar,.tg-bar,.pick-hint,#schedPickHint,
@@ -1982,7 +2000,6 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 
 </div>
 <button class="guide-fab" onclick="openGuide()" title="كيف أستخدم الموقع">؟</button>
-<button class="ai-fab" id="aiFab" onclick="openAi()" title="مساعد جدولك">✨</button>
 <div class="guide-overlay" id="aiOv" onclick="if(event.target===this)closeAi()">
   <div class="guide-sheet" id="aiSheet"></div>
 </div>
@@ -1995,6 +2012,11 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
       <button class="guide-close" onclick="closeGuide()">✕</button>
     </div>
     <p class="guide-lead" id="gLead">دليل سريع لكل ميزة في الموقع</p>
+    <button class="ai-entry" id="aiEntry" onclick="openAi()" hidden>
+      <span class="ai-entry-ic">✨</span>
+      <span class="ai-entry-x"><span class="ai-entry-b">Jadwalik AI</span>
+        <span class="ai-entry-s" data-i18n="aiEntrySub">اسأل عن جدولك وخطتك وغيابك</span></span>
+    </button>
     <a class="guide-visual" href="/guide" target="_blank" rel="noopener" id="gVisual" data-i18n="guideLink">📖 شوف الدليل بالصور</a>
     <div id="guideBody"></div>
   </div>
@@ -4596,7 +4618,7 @@ function renderToday(){
   const running=mine.find(x=>x.t.start<=n.min&&n.min<x.t.end);
   const next=mine.find(x=>x.t.start>n.min);
   const hol=todayHoliday(n.date);
-  let html=viewSwitch()+roomsCard();
+  let html=aiAskBar()+viewSwitch()+roomsCard();
 
   /* التبويب مفتوح للجميع، فالحالتان الناقصتان تُشرحان هنا بدل أن يقف
      الطالب أمام صفحة فاضية ما يدري ليش هي فاضية. */
@@ -5739,14 +5761,55 @@ let AI_ST=null, AI_MSGS=[], AI_BUSY=false;
 
 /* فحص واحد عند الدخول: هل نعرض الزر أصلاً؟ الوضع off أو admin لغير
    صاحبه ⇒ يختفي تماماً. السقف المستهلك ⇒ يظهر ويشرح عند الفتح. */
+/* يظهر المساعد؟ السقف المستهلك ما يخفيه — الطالب يستاهل يعرف ليش.
+   اللي يخفيه: مقفل · تحت التجربة · بلا مفتاح. */
+const aiShown = () => !!(USER && AI_ST &&
+  ['off','admin','nokey'].indexOf(AI_ST.why||'') < 0);
+
 async function aiProbe(){
-  const fab=document.getElementById('aiFab');
-  if(!fab)return;
-  if(!USER){ fab.classList.remove('on'); AI_ST=null; AI_MSGS=[]; return }
+  if(!USER){ AI_ST=null; AI_MSGS=[]; aiSync(); return }
   const j=await meFetch('/api/me/ai').catch(()=>null);
   AI_ST=j;
-  const hide=!j||['off','admin','nokey'].indexOf(j.why)>=0;
-  fab.classList.toggle('on',!hide);
+  aiSync();
+}
+
+/* مدخلان: واحد في أعلى لوح المساعدة، وواحد في صفحة اليوم */
+function aiSync(){
+  const e=document.getElementById('aiEntry');
+  if(e)e.hidden=!aiShown();
+  /* شريط اليوم جزء من رسم الصفحة، فنعيد رسمها مرة لما تتغيّر الحالة */
+  if(typeof renderToday==='function'&&document.getElementById('todayBody')){
+    TODAY_HTML=''; renderToday();
+  }
+  aiTipStart();
+}
+
+/* جمل تتبدّل: الطالب ما يعرف وش يقدر يسأل، فنعرض عليه */
+let AI_TIP=0, AI_TIP_TIMER=null;
+function aiTipStart(){
+  if(AI_TIP_TIMER||!aiShown())return;
+  AI_TIP_TIMER=setInterval(()=>{
+    const el=document.getElementById('aiHint');
+    if(!el)return;                       /* مو معروض الآن — ننتظر */
+    const ex=AI_EX();
+    AI_TIP=(AI_TIP+1)%ex.length;
+    el.style.opacity='0';
+    setTimeout(()=>{
+      const e2=document.getElementById('aiHint');
+      if(e2){ e2.textContent=ex[AI_TIP]; e2.style.opacity='1' }
+    },250);
+  },3800);
+}
+
+/* شريط المساعد في صفحة اليوم — فوق مبدّل اليوم/الأسبوع */
+function aiAskBar(){
+  if(!aiShown())return '';
+  const ex=AI_EX();
+  return `<button class="ai-ask" onclick="openAi()">
+    <span class="ai-ask-ic">✨</span>
+    <span class="ai-ask-x"><span class="ai-ask-b">Jadwalik AI</span>
+      <i class="ai-ask-h" id="aiHint">${escapeHtml(ex[AI_TIP%ex.length])}</i></span>
+  </button>`;
 }
 
 function openAi(){
@@ -5766,7 +5829,8 @@ function closeAi(){
   document.body.style.overflow='';
 }
 
-const AI_EX=()=>[t('aiEx1'),t('aiEx2'),t('aiEx3')];
+const AI_EX=()=>[t('aiEx1'),t('aiEx2'),t('aiEx3'),
+                 t('aiEx4'),t('aiEx5'),t('aiEx6')];
 
 /* keepLog: نعيد رسم الرأس والتذييل بلا ما نفقد موضع السجل */
 function renderAiSheet(keepLog){
@@ -5801,7 +5865,8 @@ function renderAiLog(){
     const blocked=st.on===false&&st.msg;
     log.innerHTML='<div class="ai-msg bot"><div class="ai-b'+(blocked?' warn':'')+'">'+
       escapeHtml(blocked?st.msg:t('aiHello'))+'</div></div>'+
-      (blocked?'':'<div class="ai-ex">'+AI_EX().map(x=>
+      /* ثلاثة في اللوح: ستة أزرار ازدحام على ٣٩٠px. الشريط يدوّر عليها كلها. */
+      (blocked?'':'<div class="ai-ex">'+AI_EX().slice(0,3).map(x=>
         '<button onclick="aiAsk(this.textContent)">'+escapeHtml(x)+'</button>').join('')+'</div>');
     return;
   }
@@ -7565,7 +7630,9 @@ aiPh:'اسأل عن جدولك أو خطتك...',aiSend:'إرسال',aiNew:'مح
 aiThinking:'أفكّر…',aiErr:'ما وصل رد — جرّب بعد شوي',
 aiNote:'يقرأ فقط وما يغيّر شي في حسابك',aiLeft:'باقي لك اليوم',
 aiHello:'اسألني عن جدولك أو خطتك أو الدكاترة.',
-aiEx1:'وش عندي بكرة؟',aiEx2:'كم ساعة باقية لي؟',aiEx3:'مين يدرّس MATH 1422؟',
+aiEx1:'وش عندي بكرة؟',aiEx2:'كم ساعة باقية لي؟',aiEx3:'مين يدرّس ثيرمو ١؟',
+aiEx4:'كم غياب باقي لي؟',aiEx5:'وش أنزل الترم الجاي؟',aiEx6:'وين قاعة فاضية الحين؟',
+aiEntrySub:'اسأل عن جدولك وخطتك وغيابك',
 svList:'قائمة',svGrid:'شبكة',csTime:'الوقت',csDays:'الأيام',csRoom:'القاعة',
 csDoc:'الدكتور',csSib1:'🔁 لهذي المادة جلسة أخرى:',csSib2:'🔁 لهذي المادة جلسات أخرى:',
 phShrinkErr:'ما قدرنا نقرأ الصورة',flFile:'ملف',
@@ -7709,7 +7776,9 @@ aiPh:'Ask about your schedule or plan...',aiSend:'Send',aiNew:'New chat',aiClose
 aiThinking:'Thinking…',aiErr:'No reply — try again shortly',
 aiNote:'Read-only — it changes nothing in your account',aiLeft:'left today',
 aiHello:'Ask me about your schedule, plan or instructors. I answer in Arabic.',
-aiEx1:'وش عندي بكرة؟',aiEx2:'كم ساعة باقية لي؟',aiEx3:'مين يدرّس MATH 1422؟',
+aiEx1:'وش عندي بكرة؟',aiEx2:'كم ساعة باقية لي؟',aiEx3:'مين يدرّس ثيرمو ١؟',
+aiEx4:'كم غياب باقي لي؟',aiEx5:'وش أنزل الترم الجاي؟',aiEx6:'وين قاعة فاضية الحين؟',
+aiEntrySub:'Ask about your schedule, plan and absences',
 svList:'List',svGrid:'Grid',csTime:'Time',csDays:'Days',csRoom:'Room',
 csDoc:'Instructor',csSib1:'🔁 This course has another session:',
 csSib2:'🔁 This course has other sessions:',

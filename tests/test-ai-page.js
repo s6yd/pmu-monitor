@@ -88,10 +88,13 @@ async function open(browser, signedIn) {
   await page.waitForTimeout(400);
   return { page, errs };
 }
+/* مدخلان بدل الزر العائم: أعلى لوح المساعدة، وصفحة اليوم */
 const fabOn = page => page.evaluate(() => {
-  const f = document.getElementById('aiFab');
-  return !!f && f.classList.contains('on');
+  const e = document.getElementById('aiEntry');
+  return !!e && !e.hidden;
 });
+const askBarOn = page => page.evaluate(() =>
+  !!document.querySelector('#todayBody .ai-ask'));
 const openSheet = async page => {
   await page.evaluate(() => openAi());
   await page.waitForTimeout(350);
@@ -105,7 +108,9 @@ const openSheet = async page => {
   {
     const { page, errs } = await open(browser, false);
     ok(typeof await page.evaluate(() => typeof aiProbe) === 'string', 'الدوال موجودة');
-    eq(await fabOn(page), false, 'بلا دخول: الزر مخفي');
+    eq(await fabOn(page), false, 'بلا دخول: مدخل المساعدة مخفي');
+    eq(await askBarOn(page), false, 'وشريط صفحة اليوم كذلك');
+    ok(await page.$('#aiFab') === null, 'وما فيه زر عائم — انتقل للمكانين');
     eq(ST.gets, 0, 'وبلا دخول ما نسأل السيرفر أصلاً');
     eq(errs, [], 'بلا أخطاء');
     await page.close();
@@ -113,14 +118,29 @@ const openSheet = async page => {
   for (const why of ['off', 'admin', 'nokey']) {
     ST.status = { on: false, why, msg: 'مقفل' };
     const { page, errs } = await open(browser, true);
-    eq(await fabOn(page), false, `الوضع ${why}: الزر مخفي تماماً`);
+    eq(await fabOn(page), false, `الوضع ${why}: مدخل المساعدة مخفي`);
+    eq(await askBarOn(page), false, `الوضع ${why}: وشريط اليوم مخفي`);
     eq(errs, [], 'بلا أخطاء');
     await page.close();
   }
   {
     ST.status = { on: true, why: '', used: { day: 2, dayCap: 25 } };
     const { page, errs } = await open(browser, true);
-    eq(await fabOn(page), true, 'الوضع all: الزر يظهر للمسجّل');
+    eq(await fabOn(page), true, 'الوضع all: مدخل المساعدة يظهر للمسجّل');
+    eq(await askBarOn(page), true, 'وشريط اليوم كذلك');
+    /* الاسم علامة تجارية — يبقى Jadwalik AI في اللغتين */
+    ok(/Jadwalik AI/.test(await page.textContent('#aiEntry')), 'باسم Jadwalik AI');
+    ok(/Jadwalik AI/.test(await page.textContent('#todayBody .ai-ask')),
+       'ونفس الاسم في شريط اليوم');
+    /* الشريط فوق مبدّل اليوم/الأسبوع */
+    const order = await page.evaluate(() => {
+      const b = document.getElementById('todayBody');
+      const a = b.querySelector('.ai-ask'), v = b.querySelector('.vw-switch');
+      if (!a || !v) return 'ناقص';
+      return (a.compareDocumentPosition(v) & Node.DOCUMENT_POSITION_FOLLOWING)
+        ? 'فوق' : 'تحت';
+    });
+    eq(order, 'فوق', 'والشريط فوق زرّي اليوم/الأسبوع');
     eq(errs, [], 'بلا أخطاء');
     await page.close();
   }
@@ -130,7 +150,8 @@ const openSheet = async page => {
     ST.status = { on: false, why: 'day', msg: 'خلصت أسئلتك لهذا اليوم (25). ترجع لي بكرة.',
                   used: { day: 25, dayCap: 25 } };
     const { page, errs } = await open(browser, true);
-    eq(await fabOn(page), true, 'عند السقف: الزر يظهر — الطالب يستاهل يعرف ليش');
+    eq(await fabOn(page), true, 'عند السقف: المدخل يظهر — الطالب يستاهل يعرف ليش');
+    eq(await askBarOn(page), true, 'وشريط اليوم كذلك');
     await openSheet(page);
     const log = await page.textContent('#aiLog');
     ok(/خلصت أسئلتك لهذا اليوم/.test(log), 'ونص السيرفر هو المعروض حرفياً');
@@ -237,6 +258,42 @@ const openSheet = async page => {
     await page.close();
   }
 
+  /* ── الجمل تتبدّل: الطالب ما يعرف وش يقدر يسأل ── */
+  {
+    ST.status = { on: true, why: '', used: { day: 0, dayCap: 25 } };
+    const { page, errs } = await open(browser, true);
+    const hint = () => page.textContent('#aiHint');
+    const first = await hint();
+    ok(!!first && first.length > 3, 'الشريط فيه جملة مقترحة — ' + first);
+    /* تتبدّل خلال دورتين على الأكثر */
+    let changed = false;
+    for (let i = 0; i < 12 && !changed; i++) {
+      await page.waitForTimeout(800);
+      if (await hint() !== first) changed = true;
+    }
+    ok(changed, 'والجملة تتبدّل لغيرها');
+    /* والضغط يفتح لوح المساعد — نقفل الدليل أولاً، يفتح تلقائياً
+       بعد ٩٠٠ م.ث أول زيارة ويعترض الضغط */
+    await page.evaluate(() => closeGuide());
+    await page.waitForTimeout(150);
+    await page.click('#todayBody .ai-ask');
+    await page.waitForTimeout(300);
+    eq(await page.evaluate(() =>
+      document.getElementById('aiOv').classList.contains('open')), true,
+      'والضغط على الشريط يفتح المساعد');
+    /* ومن لوح المساعدة كذلك */
+    await page.evaluate(() => closeAi());
+    await page.evaluate(() => openGuide());
+    await page.waitForTimeout(150);
+    await page.click('#aiEntry');
+    await page.waitForTimeout(300);
+    eq(await page.evaluate(() =>
+      document.getElementById('aiOv').classList.contains('open')), true,
+      'ومن مدخل لوح المساعدة كذلك');
+    eq(errs, [], 'بلا أخطاء');
+    await page.close();
+  }
+
   /* ── ٧) لوحان ما يفتحان معاً ── */
   {
     /* الدليل يفتح تلقائياً بعد ٩٠٠ م.ث أول زيارة، وعنصره بعد عنصرنا في
@@ -276,10 +333,11 @@ const openSheet = async page => {
 
   /* ── ٨) فحص ثابت ── */
   {
-    ok(/id="aiFab"/.test(SRC) && /id="aiOv"/.test(SRC), 'العنصران في الصفحة');
-    ok(/\.ai-fab\{/.test(SRC), 'وتنسيق الزر معرّف');
+    ok(/id="aiEntry"/.test(SRC) && /id="aiOv"/.test(SRC), 'العناصر في الصفحة');
+    ok(/\.ai-entry\{/.test(SRC) && /\.ai-ask\{/.test(SRC), 'وتنسيقهما معرّف');
+    ok(!/ai-fab/.test(SRC), 'ولا أثر للزر العائم القديم — لا HTML ولا CSS');
     /* ولا صنف CSS مستعمل بلا تعريف */
-    const js = SRC.slice(SRC.indexOf('function renderAiSheet'),
+    const js = SRC.slice(SRC.indexOf('const aiShown ='),
                          SRC.indexOf('/* ═══ رصيد تقييم الدكاترة ═══'));
     const used = new Set();
     js.replace(/class="([a-z][a-z0-9 \-]*)"/g, (_, c) =>
