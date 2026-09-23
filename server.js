@@ -1409,6 +1409,55 @@ const sendMsg = async (chatId, text, markup) => {
   return r;
 };
 
+/* ═══ قائمة أوامر البوت ═══
+   الطالب ما يعرف إن البوت يسوي شي غير الإشعارات — والقائمة هي المكان
+   الوحيد اللي يشوفه بلا ما يسأل أحداً. فنخلّيها **تعلّمه**: المراقبة
+   والقاعات والجدول والمساعد، لا الربط والإيقاف وبس.
+
+   تيليغرام يشترط اسم الأمر `[a-z0-9_]` بحروف صغيرة — فالاسم لاتيني
+   والوصف عربي. والحد ١٠٠ أمر ووصف ≤ ٢٥٦ حرفاً.
+
+   **تُضبط من الإنتاج وحده**: البوت واحد والقائمة له لا للخدمة، فلو
+   ضبطتها dev غلبت قائمة الإنتاج وهو يشتغل بكود أقدم — نفس درس
+   «مفتاح لوحة dev يغلب الإنتاج» (§٦). */
+const BOT_COMMANDS = [
+  { command: 'ai',     description: '✨ اسأل مساعد جدولك — جدولك وخطتك والدكاترة' },
+  { command: 'today',  description: '📅 وش عندك اليوم' },
+  { command: 'rooms',  description: '🚪 قاعة فاضية الحين' },
+  { command: 'plan',   description: '🎓 خطتك وكم باقي لك تتخرج' },
+  { command: 'watch',  description: '🔔 راقب شعبة ويجيك إشعار أول ما تفتح' },
+  { command: 'status', description: '📊 اشتراكك والمواد اللي تراقبها' },
+  { command: 'help',   description: '❓ كل اللي يقدر عليه البوت' },
+  { command: 'start',  description: '🔗 ربط حسابك بالموقع' },
+  { command: 'stop',   description: '🔕 إيقاف الإشعارات' },
+];
+
+/* تيليغرام يرفض الأمر المخالف كله، فنفحص قبل ما نرسل ونطبع السبب:
+   قائمة مرفوضة بصمت تعني طالباً ما شاف ولا أمر جديد ونحن نظن إنها وصلت. */
+function botCommandsBad(list) {
+  return (list || []).filter(c => !/^[a-z0-9_]{1,32}$/.test(String(c.command || ''))
+    || !String(c.description || '').trim()
+    || String(c.description).length > 256).map(c => c.command);
+}
+
+async function tgSetCommands() {
+  if (!TELEGRAM_TOKEN) return { ok: false, description: 'بلا رمز بوت' };
+  if (SITE_ENV !== 'prod') {
+    console.log('أوامر البوت: متخطّاة — القائمة للبوت لا للخدمة، والإنتاج يضبطها');
+    return { ok: false, description: 'dev' };
+  }
+  const bad = botCommandsBad(BOT_COMMANDS);
+  if (bad.length) {
+    console.log('أوامر البوت: أسماء مخالفة — ' + bad.join(','));
+    return { ok: false, description: 'أسماء مخالفة' };
+  }
+  const r = await tg('setMyCommands',
+    { commands: BOT_COMMANDS, scope: { type: 'all_private_chats' } });
+  console.log('أوامر البوت: ' + ((r && r.ok) ? `انضبطت (${BOT_COMMANDS.length})`
+    : `فشلت — ${(r && r.description) || 'بلا سبب'}`));
+  return r;
+}
+
 /* بلا await: فكّ الربط تنظيف لا يؤخّر شيئاً، والـcatch إجباري */
 function unlinkBlocked(chatId, why) {
   sb('PATCH', 'profiles', {
@@ -2326,8 +2375,10 @@ async function handleTelegramUpdate(update) {
         return sendMsg(chatId,
           `✅ <b>حسابك مربوط</b>\n\n` +
           `الإشعارات شغّالة، ما تحتاج تسوي شي.\n\n` +
+          `<code>/ai</code> — اسأل المساعد عن جدولك وخطتك\n` +
+          `<code>/watch</code> — كيف تراقب شعبة\n` +
           `<code>/status</code> — تشوف مواد تراقبها\n` +
-          `<code>/stop</code> — توقف الإشعارات\n\n` +
+          `<code>/help</code> — كل الأوامر\n\n` +
           `اختر مواد للمراقبة من jadwalik.com`);
       }
       return sendMsg(chatId,
@@ -2378,6 +2429,11 @@ async function handleTelegramUpdate(update) {
         : '') +
       `بتوصلك إشعارات فورية أول ما تنفتح أي مادة تراقبها.\n\n` +
       `روح للموقع واختر المواد اللي تبي تراقبها 👇\njadwalik.com\n\n` +
+      `✨ <b>وهنا كمان:</b>\n` +
+      `<code>/ai</code> — اسأل عن جدولك وخطتك والدكاترة\n` +
+      `<code>/today</code> — وش عندك اليوم\n` +
+      `<code>/rooms</code> — قاعة فاضية الحين\n` +
+      `<code>/help</code> — كل الأوامر\n\n` +
       `💬 <b>وأي ملاحظة أو اقتراح؟</b> اكتبها هنا مباشرة وبتوصلني.`);
   }
 
@@ -2395,6 +2451,46 @@ async function handleTelegramUpdate(update) {
       await sb('PATCH', 'profiles', { query: `?id=eq.${rows[0].id}`, body: { telegram_chat_id: null } });
     }
     return sendMsg(chatId, `🔕 وقفت الإشعارات. تقدر ترجع تربط حسابك من الموقع أي وقت.`);
+  }
+
+  /* ═══ الدليل والمراقبة — يعلّمان لا يردّان فقط ═══
+     أكثر طالب يظن البوت للإشعارات وبس. هذي قبل المساعد عمداً:
+     نصوص ثابتة بلا نداء نموذج ولا قراءة قاعدة — تشتغل للجميع
+     وفي أي وضع، وما تكلّف هللة. */
+  if (text === '/help' || text === '/مساعدة') {
+    return sendMsg(chatId,
+      `✨ <b>وش يقدر يسوي جدولك</b>\n\n` +
+      `<b>هنا في تيليغرام:</b>\n` +
+      `<code>/ai</code> — اسأل المساعد عن جدولك وخطتك والدكاترة\n` +
+      `<code>/today</code> — وش عندك اليوم\n` +
+      `<code>/rooms</code> — قاعة فاضية الحين\n` +
+      `<code>/plan</code> — كم باقي لك تتخرج ووش تنزل\n` +
+      `<code>/watch</code> — كيف تراقب شعبة\n` +
+      `<code>/status</code> — اشتراكك ومراقباتك\n` +
+      `<code>/stop</code> — إيقاف الإشعارات\n\n` +
+      `<b>وفي الموقع:</b>\n` +
+      `🔔 مراقبة الشعب وإشعار فوري أول ما تفتح\n` +
+      `📅 جدولك وجدول أسبوعك والفراغات\n` +
+      `🎓 خطتك والمتطلبات والمعدل و«ماذا لو»\n` +
+      `🚪 القاعات الفاضية الحين\n` +
+      `👨‍🏫 الدكاترة وتقييمات الطلاب\n` +
+      `🗓️ الغياب والمواعيد والنهائيات\n\n` +
+      `jadwalik.com\n\n` +
+      `💬 وأي ملاحظة؟ اكتبها هنا مباشرة وتوصلنا.`);
+  }
+
+  if (text === '/watch' || text === '/مراقبة') {
+    return sendMsg(chatId,
+      `🔔 <b>مراقبة شعبة</b>\n\n` +
+      `الشعبة مقفلة؟ خلّنا نراقبها لك — أول ما ينزل فيها مقعد يوصلك إشعار هنا فوراً.\n\n` +
+      `<b>كيف:</b>\n` +
+      `1️⃣ افتح jadwalik.com\n` +
+      `2️⃣ روح لتبويب 🔍 <b>البحث</b>\n` +
+      `3️⃣ اكتب كود المادة أو رقم الشعبة أو اسم الدكتور\n` +
+      `4️⃣ اضغط 🔕 جنب الشعبة المقفلة — تصير 🔔\n\n` +
+      `📡 وتبي كل شعب المادة؟ اضغط 📡 على أي شعبة منها.\n\n` +
+      `نفحص الشعب طول فترة التسجيل، والإشعار يوصلك على هذي المحادثة.\n\n` +
+      `<code>/status</code> — تشوف اللي تراقبه الحين`);
   }
 
   /* المساعد قبل الدعم: يحتاج /ai أو وضعاً يدخله الطالب، فما يزاحم
@@ -2504,9 +2600,13 @@ async function handleTelegramUpdate(update) {
   if (text.startsWith('/')) {
     return sendMsg(chatId,
       `❓ <b>أمر غير معروف</b>\n\n` +
-      `الأوامر المتاحة:\n` +
-      `<code>/start</code> — ربط حسابك\n` +
+      `<code>/ai</code> — اسأل المساعد\n` +
+      `<code>/today</code> — وش عندك اليوم\n` +
+      `<code>/rooms</code> — قاعة فاضية الحين\n` +
+      `<code>/plan</code> — خطتك وكم باقي لك\n` +
+      `<code>/watch</code> — كيف تراقب شعبة\n` +
       `<code>/status</code> — حالتك ومراقباتك\n` +
+      `<code>/help</code> — كل الأوامر\n` +
       `<code>/stop</code> — إيقاف الإشعارات\n\n` +
       `💬 وأي ملاحظة؟ اكتبها هنا مباشرة بدون أمر.`);
   }
@@ -7471,9 +7571,47 @@ async function aiStatus(userId) {
    كما هو. المساعد يحتاج `/ai` صريحاً، أو وضعاً يدخله الطالب ويخرج منه.
    بلا هذا الفصل ما عاد أحد يقدر يكلّمك.
 
-   و`/stop` محجوز لإيقاف الإشعارات — فالخروج بـ`/خروج` أو `/end`. */
+   و`/stop` محجوز لإيقاف الإشعارات — فالخروج بـ`/خروج` أو `/end`.
+
+   **الوضع لازم يبان:** الطالب يدخل المساعد وما يدري إنه داخله، فيكتب
+   للدعم وهو يظن إنه يكلّم المساعد أو العكس. فالوضع يرفع **لوحة أزرار**
+   تبقى تحت الشاشة ما دام فيه، وتختفي أول ما يخرج — إشارة دائمة بدل
+   سطر يتكرر في كل رد. وزر الخروج فيها، فما يحتاج يحفظ أمراً. */
 const AI_TG_MODE = new Map();          /* chatId → متى ينتهي الوضع */
 const AI_TG_TTL = 20 * 60 * 1000;
+
+/* لوحة الأزرار: أمثلة تعلّمه وش يسأل + زر خروج ظاهر دائماً.
+   الزر يرسل نصه رسالةً عادية، فما يحتاج كود خاص غير فحص الخروج. */
+const AI_TG_KB = {
+  keyboard: [
+    [{ text: 'وش عندي بكرة؟' }, { text: 'قاعة فاضية الحين' }],
+    [{ text: 'كم باقي لي أتخرج؟' }, { text: 'وش أنزل الترم الجاي؟' }],
+    [{ text: '🚪 خروج' }],
+  ],
+  resize_keyboard: true,
+  is_persistent: true,
+  input_field_placeholder: 'اسأل عن جدولك أو خطتك…',
+};
+const AI_TG_KB_OFF = { remove_keyboard: true };
+
+/* اختصارات: كل واحد سؤال جاهز للمساعد. وجودها في قائمة أوامر البوت
+   هو اللي يعلّم الطالب إن المساعد يعرف هذي الأشياء أصلاً. */
+const AI_TG_SHORTCUTS = {
+  '/today': 'وش عندي اليوم؟',
+  '/rooms': 'وين قاعة فاضية الحين؟',
+  '/plan': 'كم باقي لي أتخرج، ووش أنزل الترم الجاي؟',
+};
+
+/* نصوص الخروج: الأمر، وزر اللوحة، والكلمة وحدها.
+   من يضغط زراً مكتوب فيه «خروج» يتوقع يخرج — لا أن تُفتح له تذكرة. */
+const AI_TG_EXIT = ['/خروج', '/end', '🚪 خروج', 'خروج'];
+
+/* نصوص أزرارها: الوضع ينتهي بعد ٢٠ دقيقة **واللوحة تبقى معروضة** —
+   فضغطة زر بعدها كانت تفتح تذكرة دعم اسمها «وش عندي بكرة؟». من ضغط
+   زرنا يقصد المساعد، فنرجّعه له بدل ما نزعج الدعم. */
+const AI_TG_KB_TEXTS = new Set(AI_TG_KB.keyboard
+  .reduce((a, row) => a.concat(row.map(b => b.text)), [])
+  .filter(t => !AI_TG_EXIT.includes(t)));
 
 async function aiTgUser(chatId) {
   const rows = await sb('GET', 'profiles', { query:
@@ -7496,39 +7634,70 @@ async function aiTgAnswer(chatId, q) {
   /* الأفعال تحتاج تأكيداً، وحراسات التأكيد في الصفحة لا هنا — فما
      ننفّذ من البوت ولا نكرّر الفحوص (§١٠). نحيله للموقع. */
   if (r.proposal) out += '\n\n<i>🔸 هذا يحتاج تأكيدك — افتح jadwalik.com واضغط «تأكيد»</i>';
-  if (r.ok && (AI_TG_MODE.get(String(chatId)) || 0) > Date.now())
-    out += '\n\n<i>اكتب سؤالك الجاي، أو /خروج للخروج.</i>';
-  return sendMsg(chatId, out);
+  /* المساعد مقفل أو تحت التجربة؟ الأمر في قائمة البوت وعده الطالب
+     بشي — فما نتركه في طريق مسدود: نفس المعلومة موجودة في الموقع. */
+  if (!r.ok && ['off', 'admin', 'nokey'].includes(r.why))
+    out += '\n\nتلقاها في الموقع: jadwalik.com';
+  /* داخل الوضع: اللوحة هي التذكير بالخروج، فما نكرّر سطراً في كل رد.
+     ونعيد إرسالها مع كل جواب حتى ما تختفي لو أخفاها بنفسه. */
+  const inMode = (AI_TG_MODE.get(String(chatId)) || 0) > Date.now();
+  return sendMsg(chatId, out, inMode ? AI_TG_KB : undefined);
 }
 
 /* ترجع true لو تعاملت مع الرسالة — والمعالج يتوقف عندها */
 async function aiTgRoute(chatId, text) {
   const key = String(chatId);
-  const low = String(text || '').toLowerCase();
+  const raw = String(text || '').trim();
+  const low = raw.toLowerCase();
   const inMode = (AI_TG_MODE.get(key) || 0) > Date.now();
 
-  if (low === '/خروج' || low === '/end') {
-    if (!inMode) return false;
+  if (AI_TG_EXIT.includes(low) || AI_TG_EXIT.includes(raw)) {
+    /* «خروج» كلمةً عاديةً خارج الوضع تبقى للدعم — ما نخطفها.
+       لكن زر اللوحة نفسه يعني الخروج دائماً: لوحة باقية بعد انتهاء
+       الوضع ما يصح ضغطها يفتح تذكرة. */
+    if (!inMode && !AI_TG_KB.keyboard.some(r => r.some(b => b.text === raw)))
+      return false;
     AI_TG_MODE.delete(key);
-    await sendMsg(chatId, '👋 خرجت من المساعد. كلامك بعد كذا يوصل الدعم.');
+    await sendMsg(chatId,
+      '👋 خرجت من المساعد. كلامك بعد كذا يوصل الدعم.\n\n'
+      + '<i>/ai يرجّعك له أي وقت.</i>', AI_TG_KB_OFF);
+    return true;
+  }
+  /* الاختصارات: سؤال واحد جاهز بلا دخول وضع — مثل /ai بسؤال تماماً */
+  if (AI_TG_SHORTCUTS[low]) {
+    await aiTgAnswer(chatId, AI_TG_SHORTCUTS[low]);
     return true;
   }
   if (low === '/ai' || low.startsWith('/ai ') ||
-      text === '/اسأل' || text.startsWith('/اسأل ')) {
-    const q = text.replace(/^\/(ai|اسأل)\s*/i, '').trim();
+      raw === '/اسأل' || raw.startsWith('/اسأل ')) {
+    const q = raw.replace(/^\/(ai|اسأل)\s*/i, '').trim();
     if (q) { await aiTgAnswer(chatId, q); return true }
     AI_TG_MODE.set(key, Date.now() + AI_TG_TTL);
     if (AI_TG_MODE.size > 3000) AI_TG_MODE.clear();
     await sendMsg(chatId,
-      '✨ <b>مساعد جدولك</b>\n\nاسألني عن جدولك أو خطتك أو الدكاترة.\n\n'
-      + '• وش عندي بكرة؟\n• كم باقي لي أتخرج؟\n• مين يدرّس ثيرمو ١؟\n\n'
-      + '<i>/خروج لما تخلص — وبعدها كلامك يوصل الدعم عادي.</i>');
+      '✨ <b>مساعد جدولك</b>\n\n'
+      + 'اسألني بلغتك عن أي شي في جدولك — كل جوابي من بياناتك في الموقع، وما أخترع.\n\n'
+      + '📅 جدولك واليوم والفراغات\n'
+      + '🎓 خطتك والمتطلبات وكم باقي لك\n'
+      + '🔍 الشعب والدكاترة وتقييمات الطلاب\n'
+      + '🚪 القاعات الفاضية الحين\n'
+      + '🗓️ الغياب والمواعيد والنهائيات\n'
+      + '🧩 وأركّب لك جدولاً كاملاً بلا تعارض\n\n'
+      + '<b>جرّب:</b> «ركّب لي جدول بدون خميس»\n\n'
+      + '<i>🚪 خروج — تطلع منه، وبعدها كلامك يوصل الدعم عادي.</i>',
+      AI_TG_KB);
+    return true;
+  }
+  /* ضغطة زر من لوحتنا بعد انتهاء الوضع: نرجّعه للمساعد لا للدعم */
+  if (!inMode && AI_TG_KB_TEXTS.has(raw)) {
+    AI_TG_MODE.set(key, Date.now() + AI_TG_TTL);
+    await aiTgAnswer(chatId, raw);
     return true;
   }
   /* داخل الوضع: كل نص غير أمر يروح للمساعد */
-  if (inMode && !String(text || '').startsWith('/')) {
+  if (inMode && !raw.startsWith('/')) {
     AI_TG_MODE.set(key, Date.now() + AI_TG_TTL);
-    await aiTgAnswer(chatId, text);
+    await aiTgAnswer(chatId, raw);
     return true;
   }
   return false;
@@ -8942,6 +9111,8 @@ server.listen(PORT, () => {
   /* التذكيرات بدقيقتها، وكل بيئة ترسل صفوفها وحدها */
   setInterval(() => { remindersTick().catch(() => {}) }, REMIND_TICK);
   reportsWatch().catch(() => {});
+  /* قائمة أوامر البوت — مرة عند الإقلاع، ومن الإنتاج وحده */
+  tgSetCommands().catch(e => console.log('أوامر البوت: ' + (e && e.message)));
 
   /* الاستعادة أولاً، ثم نسمح بالكتابة — وإلا ضاعفنا ما استعدناه */
   (async () => {
