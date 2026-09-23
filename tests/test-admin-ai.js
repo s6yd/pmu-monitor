@@ -28,6 +28,8 @@ const aiState = (over = {}) => Object.assign({
   caps: { day: 25, dayFree: 5, term: 200, monthSar: 200 },
   defaults: { day: 25, dayFree: 5, term: 200, monthSar: 200 },
   alerted: '', fails: 0, unlogged: 0,
+  warm: { on: true, coolMin: 0, tries: 0, ok: 0, fail: 0, skipped: 0,
+          lastMin: null, lastErr: null },
   spend: { monthSar: 12.5, todaySar: 1.25, questions: 431, pct: 6,
            byEnv: { prod: 12.1, dev: 0.4 } }
 }, over);
@@ -201,8 +203,23 @@ const openAi = async page => {
     await page.click('#aiBody button[onclick="aiWarmBtn()"]');
     await page.waitForTimeout(350);
     eq(st.warms, ['POST'], 'زر ملء الكاش يرسل POST — فعل لا قراءة');
+
     ok(/900|1700|جاهز/.test(await page.textContent('#toast').catch(() => '')),
        'ويعرض كم شعبة وصلت');
+    /* ── مفتاح تسخين الكاش عند سؤال الطالب ── */
+    ok(/تسخين الكاش عند السؤال/.test(await page.textContent('#aiBody')),
+       'حالة التسخين معروضة في اللوحة');
+    ok(/مفعّل/.test(await page.textContent('#aiBody')), 'وتقول إنه مفعّل');
+    ok(await page.$('button:has-text("أطفئ التسخين")') !== null,
+       '**والزر يعرض الفعل لا الحالة** — «أطفئ» وهو مفعّل');
+    /* الصفحة تستعمل confirm — نستبدلها كما تُستبدل prompt في الأعلى،
+       لأن معالج الحوارات العام يرفض كل شي (alert من حقن = فشل). */
+    await page.evaluate(() => { window.confirm = () => true });
+    await page.click('button:has-text("أطفئ التسخين")');
+    await page.waitForTimeout(350);
+    const wp = st.posts.filter(x => x && 'warm' in x);
+    eq(wp.length, 1, 'الضغط يرسل تبديل التسخين مرة');
+    eq(wp[0].warm, false, '**وبالعكس** — مفعّل ⇒ نطفيه');
 
     /* زر الاتصال يعرض خطأ المزوّد كما هو لا «تعذّر» */
     await page.click('#aiBody button[onclick="aiPingBtn()"]');
