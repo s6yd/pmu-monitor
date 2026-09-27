@@ -115,12 +115,34 @@ const openSheet = async page => {
 
   /* ── ١) من يشوف الزر ── */
   {
+    /* **قاعدة تغيّرت بقرار محمد:** كان المساعد يحتاج حساباً، فالطالب
+       يدخل الموقع أول مرة ويلقاه مقفلاً عليه فيطلع. صار الزائر يشوفه
+       ويسأل عن العام، والخاص يرده السيرفر بـ«سجّل دخولك». */
+    ST.status = { on: true, why: '', guest: true, pro: false,
+                  used: { day: 0, dayCap: 3 } };
     const { page, errs } = await open(browser, false);
     ok(typeof await page.evaluate(() => typeof aiProbe) === 'string', 'الدوال موجودة');
-    eq(await fabOn(page), false, 'بلا دخول: مدخل المساعدة مخفي');
-    eq(await askBarOn(page), false, 'وشريط صفحة اليوم كذلك');
+    eq(await fabOn(page), true, '**بلا دخول: المدخل يظهر للزائر**');
+    eq(await askBarOn(page), true, 'وشريط صفحة اليوم كذلك');
     ok(await page.$('#aiFab') === null, 'وما فيه زر عائم — انتقل للمكانين');
-    eq(ST.gets, 0, 'وبلا دخول ما نسأل السيرفر أصلاً');
+    ok(ST.gets >= 1, 'ونسأل السيرفر عن حالته — بلا رمز');
+    eq(ST.heads[0], '', '**وبلا ترويسة هوية** — الزائر ما عنده رمز');
+    /* الترحيب يقول له وش يقدر يسأل، ومعه زر دخول */
+    await openSheet(page);
+    const glog = await page.textContent('#aiLog');
+    ok(/بلا تسجيل دخول/.test(glog), 'وترحيب الزائر يقول إنه بلا دخول');
+    ok(/سجّل دخولك/.test(glog), 'ويدلّه على الدخول لبياناته');
+    ok(await page.$('#aiLog .ai-ex button') !== null, 'ومعه زر');
+    ok(/تسجيل الدخول/.test(await page.textContent('#aiLog .ai-ex')),
+       '**وزر دخول ظاهر** — «سجّل دخولك» بلا زر يخلّيه يدوّر ويطلع');
+    /* **أمثلة الزائر تشتغل له**: الأمثلة العادية تسأل عن جدوله وغيابه
+       وتذكيره — يضغطها فيجيه «سجّل دخولك» ويطلع. */
+    const gEx = await Promise.all((await page.$$('#aiLog .ai-ex button'))
+      .map(e => e.textContent()));
+    ok(!gEx.some(x => /عندي بكرة|ذكّرني|غياب|أتخرج|أنزل/.test(x)),
+       '**ولا مثال يحتاج حساباً** — ' + gEx.join(' · '));
+    ok(gEx.some(x => /شعب|يدرّس/.test(x)), 'وفيها الشعب والدكاترة');
+    ok(gEx.some(x => /قاعة/.test(x)), 'والقاعات');
     eq(errs, [], 'بلا أخطاء');
     await page.close();
   }
@@ -131,6 +153,11 @@ const openSheet = async page => {
     eq(await askBarOn(page), false, `الوضع ${why}: وشريط اليوم مخفي`);
     eq(errs, [], 'بلا أخطاء');
     await page.close();
+    /* وعلى الزائر كذلك — وضع admin يخص صاحب الموقع وحده */
+    ST.status = { on: false, why, msg: 'مقفل', guest: true };
+    const g = await open(browser, false);
+    eq(await fabOn(g.page), false, `الوضع ${why}: مخفي عن الزائر كذلك`);
+    await g.page.close();
   }
   {
     ST.status = { on: true, why: '', used: { day: 2, dayCap: 25 } };

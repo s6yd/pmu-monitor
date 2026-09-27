@@ -60,6 +60,9 @@ const DB = {
     /* أرقام شعب كما ترجع من الجامعة فعلاً: ثلاث خانات، 1xx طلاب و2xx
        طالبات. الفِخاخ القديمة هنا كانت '01' و'02' — وما فيها الخانة
        اللي يُستنتج منها الجنس، فباني الجداول ما كان ينفلتر أصلاً. */
+    /* **بلا تخصص** — شفناها على الإنتاج: طالبة ما اختارت تخصصها
+       فأعطاها المساعد مواد الميكانيكال الترم الأول كأنها خطتها. */
+    'u-nomajor':{ id: 'u-nomajor', plan_ver: 'new', is_pro: true },
     'u-sched':  { id: 'u-sched',  major: 'COSC', plan_ver: 'new', is_pro: true },
     'u-schedf': { id: 'u-schedf', major: 'COSC', plan_ver: 'new', is_pro: true },
   },
@@ -78,6 +81,7 @@ const DB = {
     'u-meen':[],
     'u-sched':[],
     'u-schedf':[],
+    'u-nomajor':[],
   },
   /* جدول الطالب وغيابه ومواعيده — ولصاحبنا وللطالب الثاني،
      حتى نثبت إن ولا صف من الثاني يتسرّب. */
@@ -619,6 +623,36 @@ function fakeModel(ctx) {
     ctxObj.coursesCache.clear();
   }
 
+
+  /* ══════ بلا تخصص: ما نجاوب من خطة افتراضية ══════
+     على الإنتاج: طالبة ما اختارت تخصصها، والمساعد أعطاها «مواد ترمك
+     الجاي» — وهي مواد الميكانيكال الترم الأول، خطة طالب ثانٍ.
+     السبب: `major` الافتراضي MEEN موجود عشان الحسابات ما تنهار،
+     لكن **الرد به اختراع** (§٩-أ: لا يخترع). */
+  {
+    const NM = await aiStudentCtx('u-nomajor');
+    eq(NM.majorSet, false, 'السياق يعرف إنه ما اختار تخصصه');
+    const callNM = fakeModel(NM);
+    for (const t of ['plan_overview', 'next_term_suggestion', 'graduation_forecast',
+                     'retake_list', 'course_info', 'find_course', 'gpa',
+                     'what_unlocks', 'course_offering', 'build_schedule']) {
+      const r = await callNM(t, '{}');
+      ok(/اختر تخصصك|ما اخترت تخصصك/.test(r.error || ''),
+         `**${t}: ترفض بلا تخصص وتقول له يختاره** — ${JSON.stringify(r).slice(0, 60)}`);
+      ok(r.needMajor === true, `${t}: بعلامة صريحة للنموذج`);
+    }
+    /* وما يخصّ التخصص يشتغل عادي — ما نقفل عليه كل شي */
+    for (const t of ['guide', 'academic_calendar', 'registration_calendar']) {
+      const r = await callNM(t, '{}');
+      ok(!r.needMajor, `${t}: تشتغل بلا تخصص — عامة`);
+    }
+    /* ومن اختار تخصصه ما يتأثر */
+    const okMajor = await call('plan_overview', '{}');
+    ok(!okMajor.needMajor && okMajor.major === 'COSC',
+       '**ومن اختار تخصصه يُجاب عادي**');
+    /* والتعليمات تقول للنموذج وش يسوي */
+    ok(/ما اختار تخصصه/.test(src), 'والتعليمات تشرح الحالة للنموذج');
+  }
 
   /* ══════ حرّاس التسخين (قرار محمد) ══════
      التسخين بلا حرّاس = سؤال كل طالب ضغطة على موقع الجامعة.
