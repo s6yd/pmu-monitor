@@ -341,7 +341,10 @@ function sbAuthUser(token) {
       res.on('data', c => out += c);
       res.on('end', () => {
         let j = null; try { j = JSON.parse(out) } catch (e) {}
-        const user = (res.statusCode === 200 && j && j.id) ? { id: j.id, email: j.email || '' } : null;
+        /* الاسم من بيانات قوقل نفسها — نفس ما تعرضه الصفحة، بلا ما نثق بالمتصفح */
+        const md = (j && j.user_metadata) || {};
+        const user = (res.statusCode === 200 && j && j.id)
+          ? { id: j.id, email: j.email || '', name: String(md.name || md.full_name || '') } : null;
         if (user) {
           if (AUTH_CACHE.size > 1000) AUTH_CACHE.clear();
           AUTH_CACHE.set(token, { user, until: Date.now() + 60000 });
@@ -6058,19 +6061,26 @@ function aiCourse(ctx, code) {
            prep: !!c.prep };
 }
 
-/* جدول الطالب — صفوفه هو، بترتيب ثابت. slot الافتراضي هو الأول.
-   الصفحة تحفظ الجدول النشط في تخزين المتصفح وحده، فما نعرفه هنا؛
-   الأداة تقبل رقم الجدول صريحاً والافتراضي الأول. */
+/* جدول الطالب — صفوفه هو، بترتيب ثابت.
+   الافتراضي **الجدول النشط من حسابه** (`profiles.active_slot` — الصفحة
+   ترفعه مع كل تبديل): كان في تخزين المتصفح وحده فنفترض الأول، و«وش عندي
+   بكرة» من البوت يطلع من جدول ما يستعمله. وقبل ما ينضبط (NULL · أو قبل
+   الـSQL) أول جدول **فيه مواد** — كان الأول دائماً ولو فاضياً، فطالب
+   جدوله كله في الثاني يجيه «جدولك فاضي».
+   ورقم صريح من الطالب («جدول ٢») يغلب الاثنين. */
 async function aiSchedule(ctx, slot) {
   const id = encodeURIComponent(ctx.userId);
   const rows = await sb('GET', 'user_schedule',
     { query: `?user_id=eq.${id}&select=*&order=crn.asc` });
   if (!Array.isArray(rows)) return [];
   const want = Number.isFinite(slot) ? Number(slot) : null;
-  const pick = want === null
-    ? Math.min(...rows.map(r => Number(r.slot) || 1).concat([1]))
-    : want;
-  return rows.filter(r => (Number(r.slot) || 1) === pick);
+  const saved = Number(ctx.profile && ctx.profile.active_slot);
+  const pick = want !== null ? want
+    : (saved >= 1 && saved <= 3) ? saved
+    : Math.min(...rows.map(r => Number(r.slot) || 1).concat([3]));
+  const out = rows.filter(r => (Number(r.slot) || 1) === pick);
+  out.slot = pick;          /* عشان الأداة تقول «من جدولك ٢» لا تسكت */
+  return out;
 }
 
 /* صف جدول → ما يراه النموذج. ولا حقل يخصّ طالباً آخر. */
@@ -6489,11 +6499,11 @@ const AI_TOOLS = {
     description: 'جدول الطالب: مواده المسجّلة بأوقاتها وأيامها وقاعاتها ودكاترتها، '
       + 'ومجموع ساعاته. للسؤال عن «وش عندي هالترم».',
     input_schema: { type: 'object', properties: {
-      slot: { type: 'integer', description: 'رقم الجدول ١–٣ — اتركه للجدول الأول' } },
+      slot: { type: 'integer', description: 'رقم الجدول ١–٣ — اتركه للجدول اللي يستعمله الطالب الحين' } },
       required: [] },
     run: async (ctx, a) => {
       const rows = await aiSchedule(ctx, a.slot);
-      if (!rows.length) return { count: 0, courses: [],
+      if (!rows.length) return { count: 0, courses: [], slot: rows.slot,
         note: 'ما فيه مواد في هذا الجدول' };
       /* المحاضرة والمعمل صفّان بنفس كود المادة (§٦)، فجمع الساعات صفاً
          صفاً يعدّها مرتين: ٢٥ ساعة لطالب عنده ٢٠. نعدّ الأكواد الفريدة. */
@@ -6505,7 +6515,7 @@ const AI_TOOLS = {
         seen.add(code);
         totalCredits += PLANS_DATA.creditsOf(ctx.plan, code);
       });
-      return { count: rows.length, term: rows[0].term || null,
+      return { count: rows.length, slot: rows.slot, term: rows[0].term || null,
         distinctCourses: seen.size, totalCredits,
         courses: rows.map(aiSchedRow) };
     },
@@ -7448,9 +7458,12 @@ function aiCapBlock(q) {
   if (q.guest && q.guestMicro >= q.cap.guestMonthMicro) return { why: 'guests',
     msg: 'وصلنا سقف المساعد للزوار هذا الشهر. '
        + 'سجّل دخولك بقوقل ويشتغل لك عادي — وباقي الموقع شغّال بلا دخول.' };
+  /* حد الزائر بعنوانه، وطلاب الحرم كلهم خلف عنوان واحد — فزائر هناك
+     ممكن يجيه السقف من أول سؤال. «خلصت أسئلتك» تكذب عليه؛ نقول الصدق
+     ونعطيه الحل (قرار محمد). */
   if (q.day >= q.cap.day) return { why: 'day',
     msg: q.guest
-      ? `خلصت أسئلتك لهذا اليوم (${q.cap.day}). سجّل دخولك وترتفع حصتك.`
+      ? 'خلصت أسئلة الزوار من شبكتك لهذا اليوم. سجّل دخولك بقوقل وكمّل — مجاني وبضغطة.'
       : `خلصت أسئلتك لهذا اليوم (${q.cap.day}). ترجع لي بكرة.` };
   if (q.termCount >= q.cap.term) return { why: 'term',
     msg: `خلصت أسئلتك لهذا الترم (${q.cap.term}).` };
@@ -8866,9 +8879,14 @@ const server = http.createServer(async (req, res) => {
   if (parsed.pathname === '/api/feedback' && req.method === 'POST') {
     res.setHeader('Content-Type', 'application/json');
     const ip = clientIP(req);
-    /* حد بسيط: 5 رسائل لكل IP كل ساعة */
+    /* الهوية من رمز الجلسة لا من الإيميل المكتوب (قرار محمد):
+       طلاب الحرم كلهم خلف عنوان واحد، فحدّ العنوان كان يحجب السادس
+       منهم وهو ما أرسل شيئاً. صار الحد ٥ بالساعة **لكل حساب** للمسجّل،
+       و**لكل عنوان** للزائر وحده. */
+    const user = await sbAuthUser(bearerOf(req));
+    const rlKey = user ? 'u:' + user.id : 'ip:' + ip;
     const now = Date.now();
-    const rec = fbLimit.get(ip);
+    const rec = fbLimit.get(rlKey);
     if (rec && now - rec.first < 3600e3 && rec.count >= 5) {
       res.writeHead(429); res.end(JSON.stringify({ ok: false, error: 'كثير، جرّب بعدين' })); return;
     }
@@ -8877,7 +8895,7 @@ const server = http.createServer(async (req, res) => {
     if (text.length < 5) {
       res.writeHead(400); res.end(JSON.stringify({ ok: false, error: 'نص قصير' })); return;
     }
-    if (!rec || now - rec.first >= 3600e3) fbLimit.set(ip, { first: now, count: 1 });
+    if (!rec || now - rec.first >= 3600e3) fbLimit.set(rlKey, { first: now, count: 1 });
     else rec.count++;
     if (fbLimit.size > 3000) fbLimit.clear();
 
@@ -8885,35 +8903,32 @@ const server = http.createServer(async (req, res) => {
       at: now,
       text,
       category: ['idea', 'bug', 'other'].includes(b.category) ? b.category : 'other',
-      email: String(b.email || '').slice(0, 120) || null,
-      name:  String(b.name  || '').slice(0, 80)  || null,
+      /* المسجّل: إيميله واسمه من جلسته. الزائر: يكتبهما بنفسه — فهما
+         وسيلة تواصل ما تثبت شي، ونعلّمهما «غير موثّق» في رسالتك */
+      email: user ? (user.email || null) : (String(b.email || '').slice(0, 120) || null),
+      name:  user ? (String(user.name || '').slice(0, 80) || null)
+                  : (String(b.name || '').slice(0, 80) || null),
+      verified: !!user,
       major: String(b.major || '').slice(0, 12)  || null,
       lang:  b.lang === 'en' ? 'en' : 'ar',
       /* من الزائر: يكتبه بنفسه. من المسجّل: نجيبه من حسابه تحت */
-      telegram: String(b.telegram || '').trim().replace(/^@+/, '').slice(0, 40) || null,
+      telegram: user ? null
+        : (String(b.telegram || '').trim().replace(/^@+/, '').slice(0, 40) || null),
       chatId: null
     };
 
-    /* لو مسجّل وربط تيليغرام، نجيب معرّفه من حسابه — أدق من كتابته يدوياً */
-    if (entry.email) {
+    /* ربط تلقرام **بالجلسة وحدها**: كان يُبحث بالإيميل المكتوب، فأي أحد
+       يكتب إيميل طالب تنربط تذكرته بتلقرام ذاك الطالب — ويروح له ردّك،
+       وتنضاف الرسالة لتذكرته المفتوحة باسمه. */
+    if (user) {
       try {
         const p = await sb('GET', 'profiles', {
-          query: `?user_email=eq.${encodeURIComponent(entry.email)}` +
-                 `&select=telegram_username,telegram_chat_id`
+          query: `?id=eq.${encodeURIComponent(user.id)}` +
+                 `&select=telegram_username,telegram_chat_id&limit=1`
         });
         const row = Array.isArray(p) ? p[0] : null;
-        if (!row) {
-          const p2 = await sb('GET', 'profiles', {
-            query: `?email=eq.${encodeURIComponent(entry.email)}` +
-                   `&select=telegram_username,telegram_chat_id`
-          });
-          const r2 = Array.isArray(p2) ? p2[0] : null;
-          if (r2) {
-            entry.telegram = entry.telegram || r2.telegram_username || null;
-            entry.chatId = r2.telegram_chat_id || null;
-          }
-        } else {
-          entry.telegram = entry.telegram || row.telegram_username || null;
+        if (row) {
+          entry.telegram = row.telegram_username || null;
           entry.chatId = row.telegram_chat_id || null;
         }
       } catch (e) { /* ما يهم */ }
@@ -8972,7 +8987,8 @@ const server = http.createServer(async (req, res) => {
         `${icon} <b>${label}</b>\n\n` +
         `<blockquote>${esc(entry.text)}</blockquote>\n` +
         `👤 ${esc(who)}\n` +
-        (entry.email ? `✉️ <code>${esc(entry.email)}</code>\n` : '') +
+        (entry.email ? `✉️ <code>${esc(entry.email)}</code>` +
+          (entry.verified ? '' : ' <i>(كتبه بنفسه — غير موثّق)</i>') + '\n' : '') +
         (entry.telegram ? `📱 @${esc(entry.telegram)}\n` : '') +
         (entry.major ? `🎓 ${esc(entry.major)}\n` : '') +
         (saved ? '' : '⚠️ محفوظة بالذاكرة فقط — جدول feedback ناقص\n') +

@@ -31,11 +31,11 @@ run() {
 
 echo "— السيرفر —"
 for t in test-notif-repeat test-notif-approval test-cycle-recovery test-gender-split \
-         test-term-guard test-season-end test-state-isolation; do run "$t" "$S"; done
+         test-term-guard test-season-end test-state-isolation test-feedback; do run "$t" "$S"; done
 
 echo "— الصفحة —"
 for t in test-plan-regress test-guest-theme test-build-reload test-term-ui \
-         test-pushover-gate test-watch-gate; do run "$t" "$F"; done
+         test-pushover-gate test-watch-gate test-slot-sync; do run "$t" "$F"; done
 
 echo "— اللوحة —"
 run test-admin-season "$A"
