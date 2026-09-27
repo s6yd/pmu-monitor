@@ -65,6 +65,9 @@ const DB = {
     'u-nomajor':{ id: 'u-nomajor', plan_ver: 'new', is_pro: true },
     'u-sched':  { id: 'u-sched',  major: 'COSC', plan_ver: 'new', is_pro: true },
     'u-schedf': { id: 'u-schedf', major: 'COSC', plan_ver: 'new', is_pro: true },
+    /* الجدول النشط في حسابه (profiles.active_slot) — والثاني ما ضبطه بعد */
+    'u-slot2':  { id: 'u-slot2',  major: 'COSC', plan_ver: 'new', is_pro: true, active_slot: 2 },
+    'u-only2':  { id: 'u-only2',  major: 'COSC', plan_ver: 'new', is_pro: true, active_slot: null },
   },
   completed: {
     'u-pro':  [{ course_code: 'ALIS 1211', grade: 'A' }, { course_code: 'MATH 1422', grade: 'F' },
@@ -82,6 +85,8 @@ const DB = {
     'u-sched':[],
     'u-schedf':[],
     'u-nomajor':[],
+    'u-slot2':[],
+    'u-only2':[],
   },
   /* جدول الطالب وغيابه ومواعيده — ولصاحبنا وللطالب الثاني،
      حتى نثبت إن ولا صف من الثاني يتسرّب. */
@@ -125,6 +130,21 @@ const DB = {
       { user_id:'u-schedf', slot:1, crn:'10041', course_code:'CHEM 1421',
         course_title:'Chemistry for Engineers I', section:'201', course_date:'MW',
         course_timing:'0930 - 1045', room:'F-CORE - F053', instructor:'N', term:'202710' },
+    ],
+    /* جدولان: الأول بديل قديم، والثاني اللي يستعمله (active_slot = 2) */
+    'u-slot2': [
+      { user_id:'u-slot2', slot:1, crn:'10002', course_code:'MATH 1422', course_title:'Calculus I',
+        section:'101', course_date:'MW', course_timing:'0930 - 1045', room:'M-CORE - F155',
+        instructor:'Sara Nasser', term:'202710' },
+      { user_id:'u-slot2', slot:2, crn:'20001', course_code:'PHYS 1421', course_title:'Physics I',
+        section:'102', course_date:'R', course_timing:'1200 - 1250', room:'M-SCI - 101',
+        instructor:'Noura Faisal', term:'202710' },
+    ],
+    /* ما ضبط جدولاً نشطاً، وجدوله كله في الثاني — والأول فاضي */
+    'u-only2': [
+      { user_id:'u-only2', slot:2, crn:'20001', course_code:'PHYS 1421', course_title:'Physics I',
+        section:'102', course_date:'R', course_timing:'1200 - 1250', room:'M-SCI - 101',
+        instructor:'Noura Faisal', term:'202710' },
     ],
   },
   absences: {
@@ -923,6 +943,24 @@ function fakeModel(ctx) {
     const sc2 = await call('my_schedule', '{"slot":2}');
     eq(sc2.count, 1, 'الجدول الثاني فيه مادة وحدة');
     eq(sc2.courses[0].code, 'PHYS 1421', 'وهي مادة الجدول الثاني');
+
+    /* **الجدول النشط من الحساب**: كان في متصفح الطالب وحده فنفترض الأول،
+       و«وش عندي بكرة» من البوت يطلع من جدول ما يستعمله. */
+    {
+      const S2 = await aiStudentCtx('u-slot2'), O2 = await aiStudentCtx('u-only2');
+      const a = await aiRunTool('my_schedule', {}, S2);
+      eq((a.courses || []).map(c => c.code), ['PHYS 1421'],
+         '**بلا رقم: الجدول النشط من حسابه (٢)** — لا الأول');
+      eq(a.slot, 2, 'والأداة تقول أي جدول قرأت');
+      const a1 = await aiRunTool('my_schedule', { slot: 1 }, S2);
+      eq((a1.courses || []).map(c => c.code), ['MATH 1422'], 'ورقم صريح من الطالب يغلب المحفوظ');
+      const d2 = await aiRunTool('my_day', { day: 'R' }, S2);
+      eq((d2.lectures || []).map(x => x.code), ['PHYS 1421'],
+         '**واليوم من نفس الجدول** — هذا اللي يجاوب /today في البوت');
+      const b = await aiRunTool('my_schedule', {}, O2);
+      eq(b.count, 1, '**ما ضبطه بعد: أول جدول فيه مواد** — كان الأول ولو فاضياً فيقول «جدولك فاضي»');
+      eq(b.slot, 2, 'وهو الثاني');
+    }
 
     /* اليوم والفراغات — الأحد فيه محاضرتان بينهما فراغ */
     const d = await call('my_day', '{"day":"U"}');

@@ -153,6 +153,41 @@ async function open(browser, state) {
     c.close();
   }
 
+  /* ── ٦) بطاقات الأرقام بصنفها المعرَّف ──
+     كانت ١٥ بطاقة (المراقبة والتخزين والقاعات والمرفوعات) بصنف kpi-val
+     وهو ما له تعريف: الرقم يطلع بخط النص العادي وحجمه، بخلاف بقية
+     بطاقات اللوحة. وspan بصنف mono ما له تعريف كذلك. */
+  {
+    const src = fs.readFileSync(FILE, 'utf8');
+    ok(!/kpi-val/.test(src), 'ما فيه kpi-val في اللوحة — صنف بلا تعريف');
+    ok(!/class="mono[\s"]/.test(src), 'ولا class="mono" — الصحيح font-family:var(--mono)');
+    const c = await open(browser, { mi: monitorInfo(), mons: [] });
+    const k = await c.page.evaluate(() => {
+      HEALTH = { monitorInfo: { activeTerm: '202710', canWatch: true } };
+      MONS = [{ courseCode: 'MEEN 3311', crn: '30011', status: 'OPEN', watchers: 4,
+                notified: 1, scope: 'section', watchersList: [] }];
+      renderMons();
+      const e = document.querySelector('#monsBody .kpis .kpi > div');
+      const cs = e ? getComputedStyle(e) : null;
+      let unit = null;
+      if (typeof renderStorage === 'function') {
+        STORAGE = { total_kb: 1289000, photos: 1, photos_kb: 1, files: 1, files_kb: 1, week: 1, shared: 1 };
+        renderStorage();
+        const u = document.querySelector('#stgBody .kpi-num span');
+        unit = u ? { size: getComputedStyle(u).fontSize, text: u.textContent.trim() } : null;
+      }
+      return cs ? { size: cs.fontSize, font: cs.fontFamily, unit } : null;
+    });
+    ok(!!k && k.size === '22px',
+       '**أرقام بطاقات المراقبة بحجم بقية البطاقات (٢٢)** — ' + JSON.stringify(k && k.size));
+    ok(!!k && /JetBrains Mono/.test(k.font), 'وبالخط الأحادي — ' + (k && k.font));
+    ok(!!k && !!k.unit && k.unit.size === '12px' && k.unit.text === 'ج.ب',
+       'ووحدة التخزين صغيرة جنب الرقم — «1.23 ج.ب» بخط ٢٢ ينكسر سطرين في الجوال — '
+       + JSON.stringify(k && k.unit));
+    ok(c.errs.length === 0, 'بلا أخطاء JS');
+    c.close();
+  }
+
   await browser.close();
   console.log(`\n${pass} نجحت · ${fail} فشلت`);
   process.exit(fail ? 1 : 0);

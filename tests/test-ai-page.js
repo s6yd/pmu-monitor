@@ -27,7 +27,7 @@ const ST = { status: { on: true, why: '', msg: '', pro: true,
                        used: { day: 2, dayCap: 25, term: 9, termCap: 200 } },
              answer: { ok: true, answer: 'عندك محاضرتين بكرة', tools: ['my_day'],
                        used: { day: 3, dayCap: 25, term: 10, termCap: 200 } },
-             code: 200, posts: [], heads: [], gets: 0, fb: [] };
+             code: 200, posts: [], heads: [], gets: 0, fb: [], fbHeads: [] };
 
 const server = http.createServer((req, res) => {
   const u = req.url.split('?')[0];
@@ -60,6 +60,7 @@ const server = http.createServer((req, res) => {
     req.on('data', c => { body += c });
     return req.on('end', () => {
       try { ST.fb.push(JSON.parse(body || '{}')) } catch (e) { ST.fb.push({ bad: body }) }
+      ST.fbHeads.push(String(req.headers.authorization || ''));
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true }));
     });
@@ -143,6 +144,10 @@ const openSheet = async page => {
        '**ولا مثال يحتاج حساباً** — ' + gEx.join(' · '));
     ok(gEx.some(x => /شعب|يدرّس/.test(x)), 'وفيها الشعب والدكاترة');
     ok(gEx.some(x => /قاعة/.test(x)), 'والقاعات');
+    /* ملاحظة الزائر بلا رمز — السيرفر يحدّها بعنوانه */
+    ST.fb = []; ST.fbHeads = [];
+    await page.evaluate(() => sendFeedbackGo('ملاحظة من زائر بلا حساب', 'other'));
+    eq(ST.fbHeads, [''], 'ملاحظة الزائر بلا ترويسة هوية');
     eq(errs, [], 'بلا أخطاء');
     await page.close();
   }
@@ -531,7 +536,7 @@ const openSheet = async page => {
        'وبالربط ينجدول — **والبيئة من السيرفر لا من المتصفح**');
 
     /* ── تذكرة الدعم بالسياق (§٩-أ-٥) ── */
-    ST.fb = [];
+    ST.fb = []; ST.fbHeads = [];
     ST.answer.proposal = { action: 'support', category: 'bug',
       text: 'تبويب خطتي ما يفتح من الجوال',
       context: { major: 'COSC', planVer: 'new', prep: false, pro: true,
@@ -556,6 +561,10 @@ const openSheet = async page => {
     ok(/مشترك/.test(F.text || ''), 'وحالة اشتراكه');
     ok(/dev/.test(F.text || ''), 'والبيئة — البيئتان تتشاركان القاعدة');
     eq(F.category, 'bug', 'وتصنيفها');
+    /* شبكة الحرم عنوان واحد: بلا الرمز يعدّها السيرفر على العنوان فيحجب
+       السادس من الحرم — وبلا الرمز كذلك ما يعرف مين أرسل فعلاً */
+    eq(ST.fbHeads[0], 'Bearer tok-abc-123456789012345678901234567890',
+       '**ومعها رمز جلسته** — الحد على حسابه لا على عنوان الحرم، وتلقرامه من جلسته');
     ok(/تم/.test(await page.textContent('#aiLog .ai-act')), 'والبطاقة تصير «تم»');
     /* ورفضها ما يرسل شيئاً */
     ST.answer.proposal = { action: 'support', category: 'idea',

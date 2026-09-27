@@ -967,6 +967,13 @@ function fmtKb(kb){
   if(kb>=1024)return (kb/1024).toFixed(1)+' م.ب';
   return kb+' ك.ب';
 }
+/* الرقم كبير والوحدة صغيرة: «1.23 ج.ب» بخط البطاقة (٢٢) ينكسر سطرين
+   في بطاقة الجوال، والوحدة تطلع حروفاً متباعدة بالخط الأحادي */
+function kbKpi(kb){
+  const s=fmtKb(kb), i=s.lastIndexOf(' ');
+  return i<0?esc(s):esc(s.slice(0,i))+
+    `<span style="font-size:12px;font-family:var(--sans)"> ${esc(s.slice(i+1))}</span>`;
+}
 function renderStorage(){
   const box=document.getElementById('stgBody');
   if(!box)return;
@@ -974,15 +981,15 @@ function renderStorage(){
   const S=STORAGE;
   box.innerHTML=`<div class="sec-title">التخزين</div>
     <div class="kpis">
-      <div class="kpi"><div class="kpi-val">${fmtKb(S.total_kb)}</div>
+      <div class="kpi"><div class="kpi-num">${kbKpi(S.total_kb)}</div>
         <div class="kpi-label">الإجمالي</div></div>
-      <div class="kpi"><div class="kpi-val">${S.photos}</div>
+      <div class="kpi"><div class="kpi-num">${S.photos}</div>
         <div class="kpi-label">صورة · ${fmtKb(S.photos_kb)}</div></div>
-      <div class="kpi"><div class="kpi-val">${S.files}</div>
+      <div class="kpi"><div class="kpi-num">${S.files}</div>
         <div class="kpi-label">ملف · ${fmtKb(S.files_kb)}</div></div>
-      <div class="kpi"><div class="kpi-val">${S.week}</div>
+      <div class="kpi"><div class="kpi-num">${S.week}</div>
         <div class="kpi-label">مرفوع هذا الأسبوع</div></div>
-      <div class="kpi"><div class="kpi-val">${S.shared}</div>
+      <div class="kpi"><div class="kpi-num">${S.shared}</div>
         <div class="kpi-label">مشترك</div></div>
     </div>
     ${S.estimated?`<div class="row-meta" style="margin-top:8px">
@@ -1063,9 +1070,9 @@ function renderRooms(){
     ${R.missing&&R.missing.length?`<div class="row"><div class="row-meta">
       <span>⚠️ ${R.missing.map(esc).join(' · ')}</span></div></div>`:''}
     <div class="kpis">
-      <div class="kpi"><div class="kpi-val">${R.totalRooms}</div>
+      <div class="kpi"><div class="kpi-num">${R.totalRooms}</div>
         <div class="kpi-label">قاعة مميّزة</div></div>
-      <div class="kpi"><div class="kpi-val">${R.totalSessions}</div>
+      <div class="kpi"><div class="kpi-num">${R.totalSessions}</div>
         <div class="kpi-label">جلسة أسبوعية</div></div>
     </div>
     <div class="sec-title" style="margin-top:12px">فاضية ${esc(R.sample.label)}</div>
@@ -1144,11 +1151,11 @@ function renderUploads(){
     ${U.errors&&U.errors.length?`<div class="row" style="margin-top:8px">
       <div class="row-meta"><span>⚠️ ${U.errors.map(esc).join(' · ')}</span></div></div>`:''}
     <div class="kpis">
-      <div class="kpi"><div class="kpi-val">${U.counts.photo}</div>
+      <div class="kpi"><div class="kpi-num">${U.counts.photo}</div>
         <div class="kpi-label">صورة · ${U.sharedCounts.photo} مشتركة</div></div>
-      <div class="kpi"><div class="kpi-val">${U.counts.file}</div>
+      <div class="kpi"><div class="kpi-num">${U.counts.file}</div>
         <div class="kpi-label">ملف · ${U.sharedCounts.file} مشترك</div></div>
-      <div class="kpi"><div class="kpi-val">${U.counts.note}</div>
+      <div class="kpi"><div class="kpi-num">${U.counts.note}</div>
         <div class="kpi-label">ملاحظة · ${U.sharedCounts.note} مشتركة</div></div>
     </div>
     <div class="row-acts" style="margin-top:10px">
@@ -2043,10 +2050,10 @@ function seasonCard(){
   const open=h.canWatch;
   return `<div class="gauge" style="margin-bottom:12px">
     <div class="kv"><span>الترم النشط</span>
-      <b><span class="mono ltr">${esc(h.activeTerm||'—')}</span>${
+      <b><span class="ltr" style="font-family:var(--mono)">${esc(h.activeTerm||'—')}</span>${
         h.termCustom?' <span style="color:var(--warn,#f59e0b)">يدوي</span>':''}</b></div>
     <div class="kv"><span>نافذة التسجيل</span>
-      <b>${w?`<span class="mono ltr">${esc(w.from)} → ${esc(w.to)}</span>`
+      <b>${w?`<span class="ltr" style="font-family:var(--mono)">${esc(w.from)} → ${esc(w.to)}</span>`
            :'<span style="color:var(--text3)">مغلقة</span>'}${
         h.windowCustom?' <span style="color:var(--warn,#f59e0b)">يدوية</span>':''}</b></div>
     <div class="kv"><span>التنبيه الطارئ (Pushover)</span>
@@ -2800,15 +2807,15 @@ function renderMons(){
   box.innerHTML=`
     ${seasonCard()}
     <div class="kpis" style="margin-bottom:10px">
-      <div class="kpi"><div class="kpi-val">${MONS.length}</div>
+      <div class="kpi"><div class="kpi-num">${MONS.length}</div>
         <div class="kpi-label">مادة مراقَبة</div></div>
-      <div class="kpi"><div class="kpi-val" style="color:var(--open)">${open}</div>
+      <div class="kpi"><div class="kpi-num" style="color:var(--open)">${open}</div>
         <div class="kpi-label">مفتوحة الآن</div></div>
-      <div class="kpi"><div class="kpi-val" style="color:var(--close)">${shut}</div>
+      <div class="kpi"><div class="kpi-num" style="color:var(--close)">${shut}</div>
         <div class="kpi-label">مغلقة</div></div>
-      <div class="kpi"><div class="kpi-val">${watchers}</div>
+      <div class="kpi"><div class="kpi-num">${watchers}</div>
         <div class="kpi-label">طلب مراقبة</div></div>
-      <div class="kpi"><div class="kpi-val" style="color:var(--open)">${notified}</div>
+      <div class="kpi"><div class="kpi-num" style="color:var(--open)">${notified}</div>
         <div class="kpi-label">طالب نُبِّه</div></div>
     </div>
     <div class="toolbar">
