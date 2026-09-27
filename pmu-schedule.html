@@ -2804,6 +2804,7 @@ function switchSlot(i){
   if(i===SLOT)return;
   if(slotLocked(i)){ openPlans('slots'); return }
   SLOT=i; save('pmu_slot',String(i));
+  pushSlot();             /* المساعد والبوت يقرون الجدول النشط من الحساب */
   schedule=SCHEDULES[SLOT];
   updateBadge(); renderSchedule(); renderResults(); renderSlots();
   if(FINALS)renderFinals();          /* الاختبارات تتبع الجدول المختار */
@@ -4808,6 +4809,10 @@ async function loadMonitorState(){
   try{ syncPlanHint() }catch(e){}
   /* أول قراءة تثبّت بصمة النسخة المحمّلة، وما بعدها يقارن بها */
   try{ checkBuild(MON_STATE) }catch(e){}
+  /* الفترة المجانية والباقات توصل هنا — وقبلها الجداول الثلاثة مفتوحة
+     احتياطاً. فجدول صار مقفولاً يرجع للأول **الحين** لا بعد أول ضغطة،
+     والحساب ينصحّح معه (وإلا البوت يقرأ جدولاً الصفحة ما تعرضه). */
+  try{ enforceSlotAndRedraw() }catch(e){}
   const eb=document.getElementById('envBar');
   if(eb && MON_STATE && MON_STATE.env && MON_STATE.env!=='prod'){
     eb.className='env-bar on';
@@ -4833,8 +4838,18 @@ function pickFb(el){
 /* الإرسال الفعلي — النموذج (§٩-أ-٥) ونموذج الملاحظات يستعملانها معاً،
    فما فيه طريقان يفترقان. ترمي عند الفشل عشان من يناديها يعرف. */
 async function sendFeedbackGo(txt,cat,extra){
+  /* رمز الجلسة يثبت من المرسل: الحد يصير بحسابه لا بعنوان الحرم
+     المشترك، والتذكرة تنربط بتلقرامه من جلسته لا من إيميل مكتوب */
+  const h={'Content-Type':'application/json'};
+  if(USER){
+    try{
+      const {data}=await sb.auth.getSession();
+      const tok=data&&data.session&&data.session.access_token;
+      if(tok)h.Authorization='Bearer '+tok;
+    }catch(_){ }
+  }
   const r=await fetch(API_BASE+'/api/feedback',{
-    method:'POST',headers:{'Content-Type':'application/json'},
+    method:'POST',headers:h,
     body:JSON.stringify(Object.assign({
       text:txt, category:cat,
       email:USER?USER.email:(document.getElementById('fbEmail')?.value||'').trim()||null,
@@ -5810,6 +5825,7 @@ function slotLocked(i){ return !isPro()&&i>=planInfo().freeSchedules }
 function enforceSlot(){
   if(!slotLocked(SLOT))return false;
   SLOT=0; save('pmu_slot','0'); schedule=SCHEDULES[0]; updateBadge();
+  pushSlot();             /* والحساب يعرف إنه رجع للأول — وإلا البوت يقرأ المقفول */
   return true;
 }
 function enforceSlotAndRedraw(){
@@ -8727,6 +8743,25 @@ async function pullCloud(){
     }
     else if(SCHEDULES.some(x=>x.length)) await pushSchedule();
 
+    /* ═══ الجدول النشط من الحساب ═══
+       كان في تخزين المتصفح وحده، فالمساعد والبوت ما يعرفون أي جدول
+       تستعمل ويفترضون الأول — و«وش عندي بكرة» يطلع من جدول ما تستعمله.
+       الحين في الحساب مثل التخصص: يتبعك لأي جهاز، والسيرفر يقرأه.
+       بعد توزيع الجداول لا قبله، وإلا أشرنا لجدول ما انملى بعد.
+       عمود ناقص (قبل SQL) = المفتاح ما يجي أصلاً، فما نكتب شيئاً. */
+    if(prof&&('active_slot' in prof)){
+      const as=parseInt(prof.active_slot,10);
+      if(as>=1&&as<=3){
+        /* مقفول عليه (انتهى اشتراكه): نصحّح الحساب لما يشوفه هو.
+           enforceSlot ترفع بنفسها لو غيّرت، وإلا نرفع هنا — مرة وحدة */
+        if(slotLocked(as-1)){ if(!enforceSlot()) pushSlot(); }
+        else if(as-1!==SLOT){
+          SLOT=as-1; save('pmu_slot',String(SLOT)); schedule=SCHEDULES[SLOT];
+          try{ renderResults(); if(FINALS)renderFinals(); }catch(e){}
+        }
+      } else if(SLOT!==0) pushSlot();      /* NULL: قيمة المتصفح تصعد مرة وحدة */
+    }
+
     save('pmu_completed',completed);
     save('pmu_schedules',SCHEDULES);save('pmu_schedule',schedule);
     /* السحب يجيب change_note معه — بدون إعادة الرسم ما يظهر التحذير
@@ -8755,6 +8790,14 @@ async function pushProfile(){
      فالحارس guard_profile_billing ما يمسّه (يعيد خمسة أعمدة بالاسم فقط). */
   try{ await sb.from('profiles').update({major:MAJOR,plan_ver:PLAN_VER,prep:prepOn()}).eq('id',USER.id); }
   catch(e){ console.log('major sync',e); }
+}
+
+/* الجدول النشط للحساب — طلب مستقل عن pushProfile عمداً: لو العمود ما
+   انضاف بعد (SQL) يفشل وحده، وما يوقف رفع التخصص والتحضيري معه */
+async function pushSlot(){
+  if(!USER)return;
+  try{ await sb.from('profiles').update({active_slot:SLOT+1}).eq('id',USER.id); }
+  catch(e){ console.log('slot sync',e); }
 }
 
 async function pushCompleted(){ return saveQueue('completed',writeCompleted) }
