@@ -5822,11 +5822,13 @@ function enforceSlotAndRedraw(){
    نرسل رمز الجلسة، والسيرفر يسأل Supabase عن صاحبه — ما نرسل معرّفاً
    يقدر أحد يغيّره. نخزّن الجواب ٥ دقائق. */
 let ACCOUNT=null, ACCOUNT_AT=0, ACCOUNT_LOADING=null;
-async function meFetch(path,method,body){
+/* anon: يسمح بالنداء بلا جلسة — للمساعد وحده. بقية /api/me/* تبقى
+   تحتاج رمزاً، والسيرفر يرفضها بلا رمز كما هي. */
+async function meFetch(path,method,body,anon){
   const {data}=await sb.auth.getSession();
   const tok=data&&data.session&&data.session.access_token;
-  if(!tok)return null;
-  const h={Authorization:'Bearer '+tok};
+  if(!tok&&!anon)return null;
+  const h=tok?{Authorization:'Bearer '+tok}:{};
   if(body)h['Content-Type']='application/json';
   const r=await fetch(API_BASE+path,{method:method||'GET',headers:h,
     body:body?JSON.stringify(body):undefined,cache:'no-store'});
@@ -5844,13 +5846,18 @@ let AI_ST=null, AI_MSGS=[], AI_BUSY=false;
    صاحبه ⇒ يختفي تماماً. السقف المستهلك ⇒ يظهر ويشرح عند الفتح. */
 /* يظهر المساعد؟ السقف المستهلك ما يخفيه — الطالب يستاهل يعرف ليش.
    اللي يخفيه: مقفل · تحت التجربة · بلا مفتاح. */
-const aiShown = () => !!(USER && AI_ST &&
+/* الزائر يشوفه كذلك (قرار محمد): كان يحتاج حساباً، فالطالب يدخل أول
+   مرة ويلقى المساعد مقفلاً عليه فيطلع. صار يسأل عن العام، وأي شي
+   يخص حسابه يقوله السيرفر «سجّل دخولك». */
+const aiShown = () => !!(AI_ST &&
   ['off','admin','nokey'].indexOf(AI_ST.why||'') < 0);
+const aiGuest = () => !!(AI_ST && AI_ST.guest);
 
 async function aiProbe(){
-  if(!USER){ AI_ST=null; AI_MSGS=[]; aiSync(); return }
-  const j=await meFetch('/api/me/ai').catch(()=>null);
+  /* بلا جلسة نسأل بلا رمز — السيرفر يرد بحالة الزائر */
+  const j=await meFetch('/api/me/ai',null,null,true).catch(()=>null);
   AI_ST=j;
+  if(!USER)AI_MSGS=[];
   aiSync();
 }
 
@@ -5916,8 +5923,13 @@ function closeAi(){
 /* الترتيب مقصود: أول ستة هي اللي يشوفها في اللوح، وكل واحد منها
    باب مختلف — جدوله · باني الجداول · تذكير · دكاترة · قاعات · مراقبة.
    لو رتّبناها كما كُتبت طلعت ستة أسئلة عن الخطة والغياب وبس. */
-const AI_EX=()=>[t('aiEx1'),t('aiEx7'),t('aiEx8'),t('aiEx3'),t('aiEx6'),
-                 t('aiEx9'),t('aiEx2'),t('aiEx4'),t('aiEx5'),t('aiEx10')];
+const AI_EX=()=>(aiGuest()?AI_EX_G():[
+  t('aiEx1'),t('aiEx7'),t('aiEx8'),t('aiEx3'),t('aiEx6'),
+  t('aiEx9'),t('aiEx2'),t('aiEx4'),t('aiEx5'),t('aiEx10')]);
+/* أمثلة الزائر: **كلها تشتغل له بلا حساب**. الأمثلة العادية تسأل عن
+   جدوله وغيابه وتذكيره — يضغطها الزائر فيجيه «سجّل دخولك» ويطلع،
+   وهذي بالضبط الطريق المسدود اللي نتفاداه. */
+const AI_EX_G=()=>[t('aiG1'),t('aiG2'),t('aiG3'),t('aiG4'),t('aiG5'),t('aiG6')];
 
 /* keepLog: نعيد رسم الرأس والتذييل بلا ما نفقد موضع السجل */
 function renderAiSheet(keepLog){
@@ -5952,7 +5964,11 @@ function renderAiLog(){
     /* مقفول بسقف: نشرح بنص السيرفر نفسه لا بنص نخترعه هنا */
     const blocked=st.on===false&&st.msg;
     log.innerHTML='<div class="ai-msg bot"><div class="ai-b'+(blocked?' warn':'')+'">'+
-      escapeHtml(blocked?st.msg:t('aiHello'))+'</div></div>'+
+      escapeHtml(blocked?st.msg:(aiGuest()?t('aiHelloGuest'):t('aiHello')))+'</div></div>'+
+      /* الزائر: زر دخول تحت الترحيب — الجواب «سجّل دخولك» بلا زر
+         يخلّيه يدوّر على مكان الدخول ويطلع. */
+      (aiGuest()?'<div class="ai-ex"><button onclick="closeAi();googleSignIn()">'+
+        escapeHtml(t('aiSignIn'))+'</button></div>':'')+
       /* صار اللوح بطول الشاشة، فالستة تدخل بلا ازدحام — والطالب
          يشوف أغلب ما يقدر عليه المساعد بلا ما يسأل. */
       (blocked?'':'<div class="ai-ex">'+AI_EX().slice(0,6).map(x=>
@@ -5990,7 +6006,7 @@ async function aiSend(){
   AI_MSGS.push({role:'bot',text:t('aiThinking')});
   renderAiLog();
   try{
-    const r=await meFetch('/api/me/ai','POST',{q});
+    const r=await meFetch('/api/me/ai','POST',{q},true);
     AI_MSGS.pop();
     if(!r){ AI_MSGS.push({role:'bot',text:t('aiErr'),bad:true}) }
     else{
@@ -6115,7 +6131,7 @@ async function aiNew(){
   if(AI_BUSY)return;
   AI_MSGS=[];
   renderAiSheet(true);
-  await meFetch('/api/me/ai','POST',{reset:true}).catch(()=>null);
+  await meFetch('/api/me/ai','POST',{reset:true},true).catch(()=>null);
 }
 
 /* ═══ رصيد تقييم الدكاترة ═══
@@ -7825,12 +7841,20 @@ aiPh:'اسأل عن جدولك أو خطتك...',aiSend:'إرسال',aiNew:'مح
 aiThinking:'أفكّر…',aiErr:'ما وصل رد — جرّب بعد شوي',
 aiNote:'ما يغيّر شي إلا بتأكيدك',aiLeft:'باقي لك اليوم',
 aiHello:'اسألني عن جدولك أو خطتك أو الدكاترة.',
+aiHelloGuest:'اسألني عن الشعب والدكاترة والقاعات والتقويم — بلا تسجيل دخول.\nوعشان أشوف جدولك وخطتك، سجّل دخولك بقوقل.',
+aiSignIn:'🔑 تسجيل الدخول',
 aiEx1:'وش عندي بكرة؟',aiEx2:'كم ساعة باقية لي؟',aiEx3:'مين يدرّس ثيرمو ١؟',
 aiEx4:'كم غياب باقي لي؟',aiEx5:'وش أنزل الترم الجاي؟',aiEx6:'وين قاعة فاضية الحين؟',
 aiEx7:'ركّب لي جدول بدون خميس',
 aiEx8:'ذكّرني بالكويز الأحد ٧ م',
 aiEx9:'راقب لي شعبة مقفلة',
 aiEx10:'متى نهائي الفيزياء؟',
+aiG1:'وش شعب ثيرمو ١؟',
+aiG2:'مين يدرّس تفاضل ١؟',
+aiG3:'وين قاعة فاضية الحين؟',
+aiG4:'متى يبدأ التسجيل؟',
+aiG5:'متى نهائي الفيزياء؟',
+aiG6:'كيف أراقب شعبة مقفلة؟',
 aiActRem:'أذكّرك يوم %d بـ«%b»؟',
 aiRemOk:'ضبطت التذكير — بيوصلك على تلقرام',
 aiRemNoTg:'اربط تلقرام أول عشان يوصلك التذكير',
@@ -7984,12 +8008,20 @@ aiPh:'Ask about your schedule or plan...',aiSend:'Send',aiNew:'New chat',aiClose
 aiThinking:'Thinking…',aiErr:'No reply — try again shortly',
 aiNote:'Changes nothing without your confirmation',aiLeft:'left today',
 aiHello:'Ask me about your schedule, plan or instructors. I answer in Arabic.',
+aiHelloGuest:'Ask about sections, instructors, rooms and the calendar — no sign-in needed. Sign in to see your own schedule and plan.',
+aiSignIn:'🔑 Sign in',
 aiEx1:'وش عندي بكرة؟',aiEx2:'كم ساعة باقية لي؟',aiEx3:'مين يدرّس ثيرمو ١؟',
 aiEx4:'كم غياب باقي لي؟',aiEx5:'وش أنزل الترم الجاي؟',aiEx6:'وين قاعة فاضية الحين؟',
 aiEx7:'ركّب لي جدول بدون خميس',
 aiEx8:'ذكّرني بالكويز الأحد ٧ م',
 aiEx9:'راقب لي شعبة مقفلة',
 aiEx10:'متى نهائي الفيزياء؟',
+aiG1:'وش شعب ثيرمو ١؟',
+aiG2:'مين يدرّس تفاضل ١؟',
+aiG3:'وين قاعة فاضية الحين؟',
+aiG4:'متى يبدأ التسجيل؟',
+aiG5:'متى نهائي الفيزياء؟',
+aiG6:'كيف أراقب شعبة مقفلة؟',
 aiActRem:'Remind you on %d about "%b"?',
 aiRemOk:'Reminder set — it will reach you on Telegram',
 aiRemNoTg:'Link Telegram first so the reminder can reach you',

@@ -748,7 +748,55 @@ function aiTopCard(){
         <span>الأسئلة <b><span class="ltr">${u.questions}</span></b></span>
         <span>آخر سؤال <b><span class="ltr">${esc(u.last||'—')}</span></b></span>
         ${u.email?`<span><span class="ltr">${esc(u.email)}</span></span>`:''}
-      </div></div>`).join('')}`;
+        <button class="mini" onclick="aiThread('${esc(u.id)}')">💬 محادثته</button>
+      </div></div>`).join('')}
+    ${aiThreadCard()}`;
+}
+
+/* محادثة طالب بعينه — رقم الاستهلاك وحده ما يقول هل جاوبه صح.
+   قراءة فقط: ما فيه رد ولا حذف من هنا. */
+let AITHREAD=null;
+async function aiThread(id){
+  AITHREAD={loading:true,id};
+  renderAi();
+  /* api() تلصق المسار كما هو، فالاستعلام يروح معه */
+  try{ AITHREAD=await api('ai-thread?user='+encodeURIComponent(id)); }
+  catch(e){ AITHREAD={err:e.message,id} }
+  renderAi();
+  const el=document.getElementById('aiThreadBox');
+  if(el)el.scrollIntoView({behavior:'smooth',block:'start'});
+}
+function aiThreadClose(){ AITHREAD=null; renderAi() }
+
+function aiThreadCard(){
+  if(!AITHREAD)return '';
+  const T=AITHREAD;
+  const head=`<div class="sec-title" id="aiThreadBox">محادثة ${
+    esc(T.name||T.email||T.id||'')} 
+    <button class="mini" onclick="aiThreadClose()">إغلاق</button></div>`;
+  if(T.loading)return head+'<div class="gauge"><div class="spinner"></div></div>';
+  if(T.err)return head+`<div class="gauge"><div class="gauge-sub"
+    style="color:var(--close)">${esc(T.err)}</div></div>`;
+  const msgs=Array.isArray(T.messages)?T.messages:[];
+  if(!msgs.length)return head+`<div class="gauge"><div class="gauge-sub">
+    ما فيه محادثة محفوظة له في بيئة ${esc(T.env||'')}.
+    (المحادثة مفتاحها الطالب + البيئة، وتُصفّر لما يضغط «محادثة جديدة».)
+    </div></div>`;
+  return head+`<div class="gauge">
+    <div class="kv"><span>البيئة</span><b>${esc(T.env||'')}</b></div>
+    <div class="kv"><span>الأدوار</span><b><span class="ltr">${T.turns||0}</span></b></div>
+    ${T.major?`<div class="kv"><span>التخصص</span><b>${esc(T.major)}</b></div>`
+      :`<div class="kv"><span>التخصص</span><b style="color:var(--warn)">ما اختاره</b></div>`}
+    ${T.summary?`<div class="gauge-sub" style="margin:9px 0 0">
+      <b>الملخّص:</b> ${esc(T.summary)}</div>`:''}
+    <div style="margin-top:11px;display:flex;flex-direction:column;gap:8px">
+      ${msgs.map(m=>`<div style="align-self:${m.role==='user'?'flex-end':'flex-start'};
+        max-width:88%;background:${m.role==='user'?'var(--accent)':'var(--card)'};
+        color:${m.role==='user'?'#fff':'var(--text)'};
+        border:1px solid var(--border2);border-radius:13px;padding:9px 12px;
+        font-size:13px;line-height:1.75;white-space:pre-wrap;
+        overflow-wrap:break-word">${esc(m.text||'')}</div>`).join('')}
+    </div></div>`;
 }
 
 /* مربّع التجربة: يسأل بحسابك أنت، فالأدوات تشتغل على بياناتك الحقيقية.
