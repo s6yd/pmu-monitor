@@ -125,9 +125,10 @@ function creditExpiryISO(fromTerm, terms) {
 /* الرصيد المتاح من سجل الحركات: الأقرب انتهاءً يُصرف أول، والمنتهي ما
    يُحسب، والمنح بعد صرفٍ ما يغطيه. نقارن بالأرقام لا بالنصوص — القاعدة
    ترجع «+00:00» ونحن نكتب «Z»، والمقارنة النصية بينهما تخطئ. */
-function creditBalance(rows, nowISO) {
-  const T = v => (v ? Date.parse(v) : NaN);
-  const now = T(nowISO) || Date.now();
+const creditT = v => (v ? Date.parse(v) : NaN);
+/* المنح بعد صرف كل الحركات السابقة عليها — الأقرب انتهاءً أول */
+function creditGrantsLeft(rows) {
+  const T = creditT;
   const grants = (rows || []).filter(r => r.amount_halalas > 0)
     .map(r => ({ left: r.amount_halalas, exp: T(r.expires_at), at: T(r.created_at) }))
     .sort((a, b) => a.exp - b.exp);
@@ -145,6 +146,11 @@ function creditBalance(rows, nowISO) {
     }
     overdraft += need;
   }
+  return { grants, overdraft };
+}
+function creditBalance(rows, nowISO) {
+  const now = creditT(nowISO) || Date.now();
+  const { grants, overdraft } = creditGrantsLeft(rows);
   const live = grants.filter(g => g.left > 0 && g.exp > now);
   return {
     available: live.reduce((x, g) => x + g.left, 0),
@@ -152,6 +158,22 @@ function creditBalance(rows, nowISO) {
     nextExpiry: live.length ? new Date(live[0].exp).toISOString() : null,
     overdraft
   };
+}
+
+/* صلاحية الرصيد اللي بيصرفه مبلغ: آخر منحة يلمسها الصرف (الأقرب انتهاءً
+   أول). تُحفظ في صف الصرف نفسه، فلو ما اكتملت الدفعة يرجع الرصيد
+   **بصلاحيته الأصلية** — لا صلاحية جديدة تمدّد عمره، ولا أقصر تضيّعه. */
+function creditSpendExpiry(rows, amount, nowISO) {
+  const now = creditT(nowISO) || Date.now();
+  const { grants } = creditGrantsLeft(rows);
+  let need = amount, last = null;
+  for (const g of grants) {
+    if (need <= 0) break;
+    if (g.left <= 0 || !(g.exp > now)) continue;
+    need -= Math.min(g.left, need);
+    last = g.exp;
+  }
+  return last ? new Date(last).toISOString() : null;
 }
 /* ═══ نهاية كتلة الاشتراك ═══ */
 
@@ -460,11 +482,568 @@ async function meQuote(uid, { pushover, ref }) {
 
   const bal = creditBalance(Array.isArray(led) ? led : []);
   const before = base + po - discount;
-  const credit = Math.max(0, Math.min(bal.available, before));
+  /* أقل فاتورة عند Paylink ٥ ريال: الرصيد يغطي الكل ⇒ تفعيل بلا فاتورة،
+     وإلا نصرف منه بقدر يترك ٥ على الأقل — وإلا طلعت فاتورة ٣ ريال
+     ترفضها البوابة والطالب واقف قدام زر ما يشتغل. */
+  const credit = bal.available >= before ? before
+    : Math.max(0, Math.min(bal.available, before - PAY_MIN_HALALAS));
+  const amount = before - credit;
+  const pt = payTermNow();
   return { ok: true, includesTerm, pushover: wantPo, base, po, discount, credit,
-           amount: before - credit, ref: refState, creditAvailable: bal.available,
-           termEnd: termEndApprox(regTerm()) };
+           amount, ref: refState, creditAvailable: bal.available,
+           term: pt.term, termEnd: pt.until, late: pt.late,
+           /* أقل من ٥ وما يغطيه الرصيد: ما نقدر نبيعه (سعر من اللوحة أقل من الحد) */
+           belowMin: amount > 0 && amount < PAY_MIN_HALALAS };
 }
+
+/* ═══ بوابة الدفع — Paylink (§٩-ب) ═══
+   الشكل من مكتبتين مفتوحتين تستعملان نفس الواجهة (موقع توثيقهم محجوب
+   عن بيئة التطوير): POST /api/auth ⇒ id_token · POST /api/addInvoice ⇒
+   {transactionNo, url} · GET /api/getInvoice/{tx} ⇒ {orderStatus, amount,
+   transactionNo, gatewayOrderRequest:{orderNumber, amount}} · POST /api/cancelInvoice.
+
+   قواعد لا تُكسر:
+   ١) **رجوع الطالب والإشعار جرس لا إثبات.** الإشعار غير موقَّع، فالتفعيل
+      ما يصير إلا بعد ما نسأل Paylink بأنفسنا: الحالة Paid · المبلغ =
+      المسجّل بالهللة · رقم الطلب ورقم العملية يطابقان. أي اختلاف ⇒ ما
+      نفعّل ونبلّغك.
+   ٢) **التسوية مرة واحدة**: تحديث مشروط بالحالة، والرابح وحده ينفّذ
+      التفعيل ورصيد الداعي.
+   ٣) **القاعدة مشتركة**: كل بيئة لها بوابتها (`paylink` · `paylink-test`)
+      وتسوّي وتنظّف صفوفها وحدها. وdev يدفع ببطاقات تجريبية عامة، والملف
+      مشترك مع الإنتاج — فالدفع على dev **لصاحب الموقع وحده**، وإلا دفع
+      أي أحد ببطاقة تجريبية وأخذ اشتراكاً حقيقياً.
+   ٤) **قبل الإطلاق** (الفترة المجانية شغّالة) الدفع في الإنتاج لصاحب
+      الموقع وحده كذلك: يجرّب بدفعة حقيقية، والطلاب ما يشوفون زراً.
+   ٥) **الإنتاج يرفض الدفع بلا مفاتيحه الحقيقية** — والمفتاح التجريبي العام
+      يُعرف ويُرفض هناك. */
+const PL_ID = (process.env.PAYLINK_API_ID || '').trim();
+const PL_SECRET = (process.env.PAYLINK_SECRET || '').trim();
+const PL_HOOK_KEY = (process.env.PAYLINK_WEBHOOK_KEY || '').trim();
+/* معرّف التجربة العام المنشور في توثيقهم — نعرفه عشان نرفضه في الإنتاج */
+const PL_PUBLIC_TEST_ID = 'APP_ID_1123453311';
+const PL_LIVE = SITE_ENV === 'prod';
+const PL_HOST = PL_LIVE ? 'restapi.paylink.sa' : 'restpilot.paylink.sa';
+const PL_GATEWAY = PL_LIVE ? 'paylink' : 'paylink-test';
+/* رصيد يغطي السعر كله: تفعيل بلا فاتورة — وبوابة باسمها عشان تنفصل
+   بيئتها وما تدخل الإيرادات */
+const PL_CREDIT_GATEWAY = PL_LIVE ? 'credit' : 'credit-test';
+const PL_READY = !!(PL_ID && PL_SECRET) && !(PL_LIVE && PL_ID === PL_PUBLIC_TEST_ID);
+const PAY_MIN_HALALAS = 500;                 /* أقل فاتورة عند Paylink */
+const PAY_PENDING_MS = 24 * 3600 * 1000;     /* المعلّقة تنلغي بعدها */
+const PAY_TICK = 5 * 60 * 1000;
+const PAY_ORIGIN_PROD = 'https://jadwalik.com';
+
+/* ترم الشراء: ترم النافذة المفتوحة، وإلا ترم الدراسة (كما في ورقة
+   الباقات). والشراء في **آخر lateDays من النافذة** للترم الجاي — التسجيل
+   خلص تقريباً، فباقي الحالي هدية. وما نبيع اشتراكاً ينتهي قبل ما يبدأ:
+   ترم دراسة خلصت نهائياته وما تقدّم في اللوحة بعد ⇒ الترم اللي بعده. */
+function payTermNow() {
+  const w = currentWindow();
+  let term = (w && w.term) || activeTerm();
+  let late = false;
+  if (w && PRICING.lateDays > 0) {
+    const left = Math.round((Date.parse(w.to + 'T00:00:00Z') -
+                             Date.parse(riyadhDate() + 'T00:00:00Z')) / 864e5);
+    if (left < PRICING.lateDays) { term = nextTerm(term); late = true }
+  }
+  let until = termEndApprox(term);
+  for (let i = 0; i < 3 && !(Date.parse(until) > Date.now()); i++) {
+    term = nextTerm(term); until = termEndApprox(term); late = true;
+  }
+  return { term, until, late };
+}
+
+/* من يقدر يدفع الحين — الفحص الوحيد، والصفحة تعرض جوابه */
+function payGate(p) {
+  if (!PL_READY) return { open: false, why: 'nokeys' };
+  const owner = aiIsAdmin(p);
+  if (!PL_LIVE && !owner) return { open: false, why: 'test' };
+  if (FREE_BETA && !owner) return { open: false, why: 'beta' };
+  return { open: true, why: '', owner };
+}
+const PAY_CLOSED_MSG = {
+  nokeys: 'الدفع يفتح قريباً',
+  test: 'الدفع في نسخة التجربة لصاحب الموقع وحده',
+  beta: 'الدفع يفتح مع نهاية الفترة المجانية'
+};
+
+/* جوال سعودي بأي صيغة يكتبها الطالب — ومنها الأرقام العربية من كيبورد
+   الآيفون — إلى 05XXXXXXXX. غيره ⇒ null */
+function payPhone(v) {
+  let d = String(v || '')
+    .replace(/[٠-٩]/g, c => String(c.charCodeAt(0) - 0x660))
+    .replace(/[۰-۹]/g, c => String(c.charCodeAt(0) - 0x6F0))
+    .replace(/\D/g, '');
+  if (d.startsWith('00966')) d = d.slice(5);
+  else if (d.startsWith('966')) d = d.slice(3);
+  if (d.startsWith('0')) d = d.slice(1);
+  return /^5\d{8}$/.test(d) ? '0' + d : null;
+}
+
+const payOrderNo = sub => (PL_LIVE ? 'JDW-' : 'JDWT-') + sub.id;
+const PAY_RL = new Map();
+/* رابط الرجوع: الإنتاج على نطاقه دائماً (ترويسة Host ما تُصدَّق)،
+   والتجربة على عنوانها هي */
+function payOrigin(req) {
+  if (PL_LIVE) return PAY_ORIGIN_PROD;
+  const h = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+  return /^[a-z0-9.-]+(:\d+)?$/i.test(h) ? 'https://' + h : PAY_ORIGIN_PROD;
+}
+const paySar = h => Number((Number(h || 0) / 100).toFixed(2));
+
+function plReq(method, path, body, token) {
+  return new Promise(resolve => {
+    const data = body ? JSON.stringify(body) : null;
+    const headers = { 'Accept': 'application/json' };
+    if (data) {
+      headers['Content-Type'] = 'application/json';
+      headers['Content-Length'] = Buffer.byteLength(data);
+    }
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    const req = https.request({ hostname: PL_HOST, path, method, headers }, res => {
+      let out = '';
+      res.on('data', c => { if (out.length < 200000) out += c });
+      res.on('end', () => {
+        let j = null; try { j = JSON.parse(out) } catch (e) {}
+        resolve({ status: res.statusCode, j, text: out.slice(0, 300) });
+      });
+    });
+    req.on('error', e => resolve({ status: 0, j: null, text: e.message }));
+    req.setTimeout(15000, () => { req.destroy(); resolve({ status: 0, j: null, text: 'انتهت المهلة' }) });
+    if (data) req.write(data);
+    req.end();
+  });
+}
+function plErr(r, what) {
+  const j = r.j || {};
+  return `Paylink ${what}: ${r.status} ${j.detail || j.title || j.error || j.message || r.text || ''}`.trim();
+}
+/* المفتاح يعيش نص ساعة عندهم — نجدّده كل ٢٠ دقيقة، ومع أول ٤٠١ */
+let PL_TOKEN = { tok: '', until: 0 };
+async function plToken(force) {
+  if (!force && PL_TOKEN.tok && Date.now() < PL_TOKEN.until) return PL_TOKEN.tok;
+  const r = await plReq('POST', '/api/auth', { apiId: PL_ID, secretKey: PL_SECRET, persistToken: false });
+  const tok = r.j && r.j.id_token;
+  if (r.status !== 200 || !tok) { PL_TOKEN = { tok: '', until: 0 }; throw new Error(plErr(r, 'auth')) }
+  PL_TOKEN = { tok: String(tok), until: Date.now() + 20 * 60 * 1000 };
+  return PL_TOKEN.tok;
+}
+async function plCall(method, path, body) {
+  let r = await plReq(method, path, body, await plToken(false));
+  if (r.status === 401) r = await plReq(method, path, body, await plToken(true));
+  return r;
+}
+async function plAddInvoice(o) {
+  const r = await plCall('POST', '/api/addInvoice', o);
+  const j = r.j || {};
+  /* الرابط اللي نودّي له الطالب لازم يكون صفحة دفعهم — لا غيرها */
+  const url = String(j.url || '');
+  if (r.status !== 200 || !j.transactionNo || !/^https:\/\/([a-z0-9-]+\.)*paylink\.sa\//i.test(url))
+    return { ok: false, error: plErr(r, 'addInvoice') };
+  return { ok: true, transactionNo: String(j.transactionNo), url };
+}
+async function plGetInvoice(tx) {
+  const r = await plCall('GET', '/api/getInvoice/' + encodeURIComponent(tx));
+  if (r.status !== 200 || !r.j) return { ok: false, error: plErr(r, 'getInvoice') };
+  return { ok: true, inv: r.j };
+}
+async function plCancelInvoice(tx) {
+  const r = await plCall('POST', '/api/cancelInvoice', { transactionNo: String(tx) });
+  return { ok: r.status === 200 };
+}
+
+/* الإثبات: أربعة شروط كلها لازمة (§٩-ب). رقم الطلب ناقص = ما يطابق */
+function plVerify(sub, inv) {
+  const st = String((inv && inv.orderStatus) || '').trim().toLowerCase();
+  if (st !== 'paid') return { paid: false, status: st || 'unknown' };
+  const g = (inv && inv.gatewayOrderRequest) || {};
+  const amt = Math.round(Number(inv.amount != null ? inv.amount : g.amount) * 100);
+  if (amt !== Number(sub.amount_halalas))
+    return { paid: true, ok: false, why: `المبلغ ${amt / 100} بدل ${Number(sub.amount_halalas) / 100}` };
+  if (String(g.orderNumber || inv.orderNumber || '') !== payOrderNo(sub))
+    return { paid: true, ok: false, why: 'رقم الطلب ما يطابق' };
+  if (String(inv.transactionNo || '') !== String(sub.gateway_ref || ''))
+    return { paid: true, ok: false, why: 'رقم العملية ما يطابق' };
+  return { paid: true, ok: true };
+}
+
+const PAY_ALERTED = new Set();
+function payAlert(sub, why) {
+  const k = sub.id + '|' + why;
+  if (PAY_ALERTED.has(k)) return;
+  PAY_ALERTED.add(k);
+  if (PAY_ALERTED.size > 2000) PAY_ALERTED.clear();
+  console.log(`pay: طلب ${sub.id} — ${why}`);
+  if (ADMIN_CHAT_ID) sendMsg(ADMIN_CHAT_ID, `⚠️ <b>دفعة تحتاج نظرك</b>\n\nطلب <code>${sub.id}</code> (${PL_GATEWAY}): ${why}\n` +
+    'ما فعّلناه. شيك عليها في لوحة Paylink وفعّله يدوياً لو صحيحة.').catch(() => {});
+}
+
+/* الطلب المعلّق لهالطالب في هالبيئة */
+async function payPendingOf(uid) {
+  const r = await sb('GET', 'subscriptions', { query:
+    `?user_id=eq.${encodeURIComponent(uid)}&status=eq.pending` +
+    `&gateway=in.(${PL_GATEWAY},${PL_CREDIT_GATEWAY})&select=*&order=created_at.desc&limit=1` });
+  return Array.isArray(r) ? (r[0] || null) : null;
+}
+
+/* فشل: مشروط بـpending، والرصيد المحجوز يرجع بصلاحيته الأصلية */
+async function payFail(sub, why) {
+  const r = await sb('PATCH', 'subscriptions', {
+    query: `?id=eq.${sub.id}&status=eq.pending`,
+    body: { status: 'failed', note: String(why || '').slice(0, 300) },
+    prefer: 'return=representation'
+  }).catch(e => ({ message: e.message }));
+  if (!Array.isArray(r) || !r.length) return false;
+  const ref = encodeURIComponent('subscription:' + sub.id);
+  const sp = await sb('GET', 'credit_ledger', { query:
+    `?user_id=eq.${encodeURIComponent(sub.user_id)}&ref=eq.${ref}&select=amount_halalas,reason,expires_at` })
+    .catch(() => []);
+  const rows = Array.isArray(sp) ? sp : [];
+  const net = -rows.reduce((n, x) => n + Number(x.amount_halalas || 0), 0);
+  if (net > 0) {
+    const spend = rows.find(x => x.reason === 'spend' && x.expires_at);
+    await sb('POST', 'credit_ledger', { body: {
+      user_id: sub.user_id, amount_halalas: net, reason: 'reversal', ref: 'subscription:' + sub.id,
+      note: 'رجوع رصيد دفعة ما اكتملت', created_by: 'system',
+      expires_at: (spend && spend.expires_at) || creditExpiryISO(activeTerm()) },
+      prefer: 'return=representation' }).catch(() => {});
+  }
+  return true;
+}
+
+/* التفعيل: الأبعد يغلب (ما نقصّر اشتراكاً أطول). paid_at للدفع الحقيقي
+   وحده — إحصاء «دفعوا فعلياً» ما يدخله رصيد ولا بطاقة تجريبية */
+async function payActivate(s) {
+  const id = encodeURIComponent(s.user_id);
+  const pr = await sb('GET', 'profiles', {
+    query: `?id=eq.${id}&select=id,subscription_expires_at,pushover_until,telegram_chat_id` });
+  const p = Array.isArray(pr) && pr[0];
+  if (!p) return { ok: false, error: 'الحساب غير موجود' };
+  const later = (a, b) => (a && (!b || Date.parse(a) > Date.parse(b))) ? a : b;
+  const body = {};
+  if (s.includes_term) {
+    body.subscription_expires_at = later(p.subscription_expires_at, s.valid_until);
+    if (s.gateway === 'paylink') body.paid_at = new Date().toISOString();
+  }
+  if (s.pushover) body.pushover_until = later(p.pushover_until, s.valid_until);
+  if (!Object.keys(body).length) return { ok: true, until: s.valid_until, chat: p.telegram_chat_id };
+  const r = await sb('PATCH', 'profiles', { query: `?id=eq.${id}`, body, prefer: 'return=representation' })
+    .catch(e => ({ message: e.message }));
+  if (!Array.isArray(r) || !r.length) return { ok: false, error: (r && r.message) || 'ما انكتب' };
+  return { ok: true, until: body.subscription_expires_at || body.pushover_until || s.valid_until,
+           chat: p.telegram_chat_id };
+}
+
+/* رصيد الداعي لحظة التسوية — أول شراء للصديق، وreferrals.invited_id
+   فريد فيُمنح مرة للأبد. ودفعة التجربة ما تمنح رصيداً حقيقياً */
+async function payReferral(s) {
+  if (!s.referral_code || !(Number(s.discount_halalas) > 0) || s.gateway !== 'paylink') return;
+  const own = await sb('GET', 'profiles', { query:
+    `?invite_code=eq.${encodeURIComponent(s.referral_code)}&select=id,telegram_chat_id&limit=1` }).catch(() => []);
+  const o = Array.isArray(own) && own[0];
+  if (!o || o.id === s.user_id) return;
+  const rf = await sb('POST', 'referrals', {
+    body: { referrer_id: o.id, invited_id: s.user_id, subscription_id: s.id },
+    prefer: 'return=representation' }).catch(e => ({ message: e.message }));
+  if (!Array.isArray(rf) || !rf.length) return;          /* 23505: انحسب له من قبل */
+  const amt = PRICING.referrerCreditHalalas;
+  if (!(amt > 0)) return;
+  const cr = await sb('POST', 'credit_ledger', { body: {
+    user_id: o.id, amount_halalas: amt, reason: 'referral', ref: 'subscription:' + s.id,
+    note: 'صديقك اشترك بكودك', created_by: 'system', expires_at: creditExpiryISO(activeTerm()) },
+    prefer: 'return=representation' }).catch(() => null);
+  if (Array.isArray(cr) && cr.length)
+    await sb('PATCH', 'referrals', { query: `?id=eq.${rf[0].id}`, body: { credit_id: cr[0].id } }).catch(() => {});
+  if (o.telegram_chat_id)
+    sendMsg(o.telegram_chat_id, `🎁 <b>صديقك اشترك بكودك</b>\n\nنزل لك ${amt / 100} ريال رصيد، ` +
+      'ينخصم تلقائياً من اشتراكك الجاي.').catch(() => {});
+}
+
+/* التسوية: الحجز أولاً (pending|failed ⇒ paid)، والرابح وحده يكمل.
+   «failed» لأن الدفعة قد توصل بعد الإلغاء (الطالب دفع من تبويب قديم) —
+   فلوسه وصلت فنفعّله، ونعيد صرف رصيده اللي رجع له عند الإلغاء.
+   تعثّر التفعيل ⇒ نرجّعه pending والدورة تعيد المحاولة: فلوس وصلت ما تضيع. */
+async function paySettle(sub) {
+  const r = await sb('PATCH', 'subscriptions', {
+    query: `?id=eq.${sub.id}&status=in.(pending,failed)`,
+    body: { status: 'paid', paid_at: new Date().toISOString() },
+    prefer: 'return=representation'
+  }).catch(e => ({ message: e.message }));
+  if (!Array.isArray(r)) return { ok: false, error: (r && r.message) || 'تعذّر' };
+  if (!r.length) return { ok: true, already: true, until: sub.valid_until };
+  const s = r[0];
+  if (sub.status === 'failed' && Number(s.credit_halalas) > 0) {
+    await sb('POST', 'credit_ledger', { body: {
+      user_id: s.user_id, amount_halalas: -Number(s.credit_halalas), reason: 'spend',
+      ref: 'subscription:' + s.id, note: 'دفعة وصلت بعد الإلغاء', created_by: 'system' },
+      prefer: 'return=representation' }).catch(() => {});
+  }
+  const act = await payActivate(s);
+  if (!act.ok) {
+    await sb('PATCH', 'subscriptions', { query: `?id=eq.${s.id}&status=eq.paid`,
+      body: { status: 'pending', paid_at: null, note: 'التفعيل تعثّر — نعيد المحاولة' } }).catch(() => {});
+    payAlert(s, 'الدفعة وصلت والتفعيل تعثّر (' + act.error + ') — نعيد المحاولة تلقائياً');
+    return { ok: false, error: 'وصلت دفعتك ونكمل التفعيل — ثواني ويصير' };
+  }
+  await payReferral(s).catch(() => {});
+  const end = new Date(act.until).toLocaleDateString('ar-u-ca-gregory-nu-latn',
+    { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Riyadh' });
+  if (act.chat)
+    sendMsg(act.chat, `✅ <b>اشتراكك فعّال</b>\n\nحتى ${end}. شكراً لأنك معنا 🤍`).catch(() => {});
+  if (ADMIN_CHAT_ID) sendMsg(ADMIN_CHAT_ID, `💳 <b>اشتراك جديد</b> · ${s.gateway}\n\n` +
+    `${paySar(s.amount_halalas)} ريال` + (Number(s.credit_halalas) ? ` + رصيد ${paySar(s.credit_halalas)}` : '') +
+    ` · ترم ${s.term}` + (s.pushover ? ' · مع التنبيه الطارئ' : '')).catch(() => {});
+  return { ok: true, until: act.until };
+}
+
+/* وين وصل هالطلب؟ يسأل Paylink ويسوّي أو يلغي. آمنة للتكرار */
+async function payReconcile(sub) {
+  if (!sub) return { status: 'missing' };
+  if (sub.status === 'paid') return { status: 'paid', until: sub.valid_until };
+  if (sub.gateway === PL_CREDIT_GATEWAY) {
+    if (sub.status !== 'pending') return { status: sub.status };
+    const s = await paySettle(sub);
+    return s.ok ? { status: 'paid', until: s.until } : { status: 'pending', error: s.error };
+  }
+  if (sub.gateway !== PL_GATEWAY) return { status: sub.status, foreign: true };
+  const age = Date.now() - Date.parse(sub.created_at || 0);
+  if (!sub.gateway_ref) {
+    /* انقطع بين إنشاء الصف والفاتورة: ما فيه شي يندفع */
+    if (sub.status === 'pending' && age > 30 * 60 * 1000) {
+      await payFail(sub, 'ما انشأت الفاتورة'); return { status: 'failed' };
+    }
+    return { status: sub.status };
+  }
+  if (!PL_READY) return { status: sub.status };
+  const g = await plGetInvoice(sub.gateway_ref).catch(e => ({ ok: false, error: e.message }));
+  if (!g.ok) return { status: sub.status, error: g.error };
+  const v = plVerify(sub, g.inv);
+  if (v.paid && v.ok) {
+    const s = await paySettle(sub);
+    return s.ok ? { status: 'paid', until: s.until } : { status: sub.status, error: s.error };
+  }
+  if (v.paid) { payAlert(sub, v.why); return { status: sub.status, mismatch: true } }
+  if (sub.status === 'pending' && age > PAY_PENDING_MS) {
+    await plCancelInvoice(sub.gateway_ref).catch(() => {});
+    await payFail(sub, 'انتهت مهلة الدفع (٢٤ ساعة)');
+    return { status: 'failed' };
+  }
+  return { status: sub.status, url: String(g.inv.url || '') || null };
+}
+
+/* بدء الدفع. الترتيب مهم: المعلّق أولاً (يمكن دفعه ونسي) ← السعر من
+   meQuote وحدها ← الصف ← حجز الرصيد ← الفاتورة. وأي تعثّر بعد الحجز
+   يلغي الصف ويرجّع الرصيد. */
+async function payCheckout(uid, opt, origin) {
+  const id = encodeURIComponent(uid);
+  const pr = await sb('GET', 'profiles', { query: `?id=eq.${id}&select=*` });
+  const p = Array.isArray(pr) && pr[0];
+  if (!p) return { ok: false, error: 'الحساب غير موجود' };
+  const gate = payGate(p);
+  if (!gate.open) return { ok: false, why: gate.why, error: PAY_CLOSED_MSG[gate.why] };
+
+  const pend = await payPendingOf(uid);
+  if (pend) {
+    const r = await payReconcile(pend);
+    if (r.status === 'paid') return { ok: true, activated: true, earlier: true, until: r.until, id: pend.id };
+    if (r.status === 'pending')
+      return { ok: false, why: 'pending', id: pend.id, url: r.url || null,
+               amount: Number(pend.amount_halalas) || 0,
+               error: 'عندك دفعة ما كملت — كمّلها أو ألغها' };
+  }
+
+  const q = await meQuote(uid, { pushover: !!opt.pushover, ref: opt.ref || '' });
+  if (!q.ok) return q;
+  if (!q.base && !q.po) return { ok: false, why: 'nothing', error: 'اشتراكك فعّال — ما فيه شي تدفعه الحين' };
+  if (q.belowMin) return { ok: false, why: 'min', error: 'أقل مبلغ للدفع ٥ ريال' };
+  const mob = payPhone(opt.phone) || payPhone(p.phone);
+  if (q.amount > 0 && !mob) return { ok: false, why: 'phone', error: 'اكتب رقم جوالك — بوابة الدفع تطلبه' };
+  /* الجوال يُحفظ في الملف بلا تحقق (§٧). والكتابة تفشل بصمت قبل SQL العمود */
+  if (mob && mob !== p.phone)
+    sb('PATCH', 'profiles', { query: `?id=eq.${id}`, body: { phone: mob } }).catch(() => {});
+
+  const code = String(opt.ref || '').toUpperCase().trim();
+  const ins = await sb('POST', 'subscriptions', { body: {
+    user_id: uid, term: q.term, status: 'pending',
+    includes_term: q.includesTerm, pushover: q.pushover,
+    base_halalas: q.base, pushover_halalas: q.po, discount_halalas: q.discount,
+    credit_halalas: q.credit, amount_halalas: q.amount,
+    referral_code: q.ref === 'ok' ? code : null, valid_until: q.termEnd,
+    gateway: q.amount > 0 ? PL_GATEWAY : PL_CREDIT_GATEWAY,
+    note: q.late ? 'شراء آخر النافذة — للترم الجاي' : null },
+    prefer: 'return=representation' }).catch(e => ({ message: e.message }));
+  if (!Array.isArray(ins) || !ins.length) {
+    if (ins && ins.code === '23505')
+      return { ok: false, why: 'pending', error: 'عندك دفعة ما كملت — كمّلها أو ألغها' };
+    return { ok: false, error: 'تعذّر إنشاء الطلب — جرّب بعد شوي' };
+  }
+  const sub = ins[0];
+
+  if (q.credit > 0) {
+    const led = await sb('GET', 'credit_ledger', {
+      query: `?user_id=eq.${id}&select=amount_halalas,expires_at,created_at` }).catch(() => []);
+    const d = await sb('POST', 'credit_ledger', { body: {
+      user_id: uid, amount_halalas: -q.credit, reason: 'spend', ref: 'subscription:' + sub.id,
+      note: 'اشتراك ' + q.term, created_by: 'system',
+      expires_at: creditSpendExpiry(Array.isArray(led) ? led : [], q.credit) },
+      prefer: 'return=representation' }).catch(e => ({ message: e.message }));
+    if (!Array.isArray(d) || !d.length) {
+      await payFail(sub, 'ما قدرنا نحجز الرصيد');
+      return { ok: false, error: 'تعذّر حجز رصيدك — جرّب بعد شوي' };
+    }
+  }
+
+  if (q.amount === 0) {
+    const s = await paySettle(sub);
+    return s.ok ? { ok: true, activated: true, until: s.until, id: sub.id }
+                : { ok: false, error: s.error };
+  }
+
+  const back = `${origin}/?pay=${sub.id}`;
+  const title = q.includesTerm ? `اشتراك جدولك — ترم ${q.term}` : 'التنبيه الطارئ — جدولك';
+  const inv = await plAddInvoice({
+    amount: paySar(q.amount), currency: 'SAR', orderNumber: payOrderNo(sub),
+    callBackUrl: back, cancelUrl: back,
+    clientName: String(p.name || 'طالب جدولك').slice(0, 80), clientMobile: mob,
+    clientEmail: p.email || undefined, note: title,
+    products: [{ title, price: paySar(q.amount), qty: 1, isDigital: true,
+                 description: [q.includesTerm && 'اشتراك الترم', q.pushover && 'التنبيه الطارئ']
+                   .filter(Boolean).join(' + ') }]
+  }).catch(e => ({ ok: false, error: e.message }));
+  if (!inv.ok) {
+    console.log('pay: ' + inv.error);
+    await payFail(sub, 'بوابة الدفع ما أنشأت الفاتورة');
+    return { ok: false, error: 'بوابة الدفع ما ردّت — جرّب بعد شوي' };
+  }
+  const up = await sb('PATCH', 'subscriptions', {
+    query: `?id=eq.${sub.id}&status=eq.pending`, body: { gateway_ref: inv.transactionNo },
+    prefer: 'return=representation' }).catch(e => ({ message: e.message }));
+  if (!Array.isArray(up) || !up.length) {
+    plCancelInvoice(inv.transactionNo).catch(() => {});
+    await payFail(sub, 'ما انحفظ رقم الفاتورة');
+    return { ok: false, error: 'تعذّر — جرّب بعد شوي' };
+  }
+  return { ok: true, url: inv.url, id: sub.id, amount: q.amount };
+}
+
+/* طلب يملكه صاحب الجلسة ومن هالبيئة — غيره ما نلمسه */
+async function payOwnSub(uid, sid) {
+  if (!/^\d{1,12}$/.test(String(sid || ''))) return null;
+  const r = await sb('GET', 'subscriptions', { query:
+    `?id=eq.${sid}&user_id=eq.${encodeURIComponent(uid)}&select=*&limit=1` });
+  const s = Array.isArray(r) ? r[0] : null;
+  return s && (s.gateway === PL_GATEWAY || s.gateway === PL_CREDIT_GATEWAY) ? s : null;
+}
+const payView = (s, extra) => Object.assign({ ok: true, id: s.id, status: s.status,
+  amount: Number(s.amount_halalas) || 0, term: s.term, until: s.valid_until,
+  pushover: !!s.pushover }, extra || {});
+
+/* الطالب رجع من صفحة الدفع: جرس — نسأل Paylink بأنفسنا */
+const PAY_LOOK = new Map();
+async function payStatus(uid, sid) {
+  const s = await payOwnSub(uid, sid);
+  if (!s) return { ok: false, error: 'الطلب غير موجود' };
+  if (s.status !== 'pending') return payView(s);
+  const last = PAY_LOOK.get(s.id) || 0;
+  if (Date.now() - last < 4000) return payView(s);          /* ضغطات متتالية ما تضرب Paylink */
+  PAY_LOOK.set(s.id, Date.now());
+  if (PAY_LOOK.size > 5000) PAY_LOOK.clear();
+  const r = await payReconcile(s);
+  return payView(s, { status: r.status, until: r.until || s.valid_until, url: r.url || null });
+}
+
+async function payCancel(uid, sid) {
+  const s = await payOwnSub(uid, sid);
+  if (!s) return { ok: false, error: 'الطلب غير موجود' };
+  if (s.status !== 'pending') return payView(s);
+  const r = await payReconcile(s);                            /* يمكن دفعها قبل الإلغاء */
+  if (r.status !== 'pending') return payView(s, { status: r.status, until: r.until || s.valid_until });
+  /* Paylink يقول مدفوعة والتفاصيل ما طابقت: فلوس ربما وصلت — ما نلغيها أبداً،
+     تبقى لمراجعتك (وصلك تنبيه) */
+  if (r.mismatch) return payView(s, { status: 'pending', review: true });
+  if (s.gateway_ref) await plCancelInvoice(s.gateway_ref).catch(() => {});
+  await payFail(s, 'ألغاها الطالب');
+  return payView(s, { status: 'failed' });
+}
+
+/* الإشعار: ترويسة ثابتة نختارها في بوابة التاجر — مقارنة ثابتة الزمن.
+   بلا مفتاح في Render الإشعار مقفل (لا «مفتوح للكل») */
+function payHookOk(req) {
+  if (!PL_HOOK_KEY) return false;
+  const h = String(req.headers['x-jadwalik-key'] || req.headers['authorization'] || '')
+    .replace(/^Bearer\s+/i, '').trim();
+  return safeEqual(h, PL_HOOK_KEY);
+}
+let PAY_HOOK_SWEEP = 0;
+async function payWebhook(b) {
+  const pick = (...xs) => xs.map(x => (x == null ? '' : String(x).trim())).find(Boolean) || '';
+  const g = (b && b.gatewayOrderRequest) || {};
+  const tx = pick(b && b.transactionNo, b && b.transaction_no, b && b.data && b.data.transactionNo);
+  const ord = pick(b && b.merchantOrderNumber, b && b.orderNumber, g.orderNumber);
+  const m = /^(JDWT?)-(\d{1,12})$/.exec(ord);
+  let sub = null;
+  if (m && m[1] === (PL_LIVE ? 'JDW' : 'JDWT')) {
+    const r = await sb('GET', 'subscriptions', { query: `?id=eq.${m[2]}&select=*&limit=1` });
+    sub = Array.isArray(r) ? r[0] : null;
+  }
+  if (!sub && tx) {
+    const r = await sb('GET', 'subscriptions', { query:
+      `?gateway_ref=eq.${encodeURIComponent(tx)}&select=*&limit=1` });
+    sub = Array.isArray(r) ? r[0] : null;
+  }
+  if (sub) return payReconcile(sub);
+  /* جسم ما نعرفه: نعامله جرساً لكل المعلّقات — مرة كل ١٠ ثواني على الأكثر */
+  if (Date.now() - PAY_HOOK_SWEEP < 10000) return { status: 'skipped' };
+  PAY_HOOK_SWEEP = Date.now();
+  await payTick(true);
+  return { status: 'swept' };
+}
+
+/* الدورة: كل بيئة تسوّي وتنظّف صفوفها وحدها. الأحدث من ٣ دقائق نتركه
+   لرجوع الطالب والإشعار — الدورة للي فاتهم الجرس. */
+let PAY_BUSY = false;
+async function payTick(all) {
+  if (PAY_BUSY) return;
+  PAY_BUSY = true;
+  try {
+    const cut = new Date(Date.now() - (all ? 0 : 3 * 60 * 1000)).toISOString();
+    const r = await sb('GET', 'subscriptions', { query:
+      `?status=eq.pending&gateway=in.(${PL_GATEWAY},${PL_CREDIT_GATEWAY})` +
+      `&created_at=lt.${encodeURIComponent(cut)}&select=*&order=created_at.asc&limit=50` });
+    for (const s of (Array.isArray(r) ? r : [])) {
+      await payReconcile(s).catch(e => console.log('payTick: ' + s.id + ' — ' + e.message));
+    }
+  } finally { PAY_BUSY = false }
+}
+
+/* حالة الدفع للوحة: الإعداد وعدّادات هالبيئة وآخر الطلبات */
+async function adminPay() {
+  const r = await sb('GET', 'subscriptions', { query:
+    `?gateway=in.(${PL_GATEWAY},${PL_CREDIT_GATEWAY})&select=id,user_id,term,status,amount_halalas,` +
+    `credit_halalas,gateway,gateway_ref,note,created_at,paid_at&order=created_at.desc&limit=200` })
+    .catch(() => null);
+  const rows = Array.isArray(r) ? r : [];
+  const n = st => rows.filter(x => x.status === st).length;
+  return { ok: true, env: SITE_ENV, live: PL_LIVE, host: PL_HOST, gateway: PL_GATEWAY,
+    ready: PL_READY, idSet: !!PL_ID, secretSet: !!PL_SECRET,
+    testIdInProd: PL_LIVE && PL_ID === PL_PUBLIC_TEST_ID, hookSet: !!PL_HOOK_KEY,
+    freeBeta: FREE_BETA, openTo: !PL_READY ? 'none' : (!PL_LIVE || FREE_BETA) ? 'owner' : 'all',
+    counts: { pending: n('pending'), paid: n('paid'), failed: n('failed') },
+    paidHalalas: rows.filter(x => x.status === 'paid' && x.gateway === PL_GATEWAY)
+      .reduce((s, x) => s + (Number(x.amount_halalas) || 0), 0),
+    recent: rows.slice(0, 10).map(x => ({ id: x.id, term: x.term, status: x.status,
+      amount: Number(x.amount_halalas) || 0, credit: Number(x.credit_halalas) || 0,
+      gateway: x.gateway, note: x.note || null, at: x.created_at })) };
+}
+async function adminPayPing() {
+  if (!PL_ID || !PL_SECRET) return { ok: false, error: 'PAYLINK_API_ID أو PAYLINK_SECRET ناقص في Render' };
+  if (!PL_READY) return { ok: false, error: 'مفتاح التجربة العام ما يشتغل في الإنتاج — حط مفاتيحك الحقيقية' };
+  const t0 = Date.now();
+  try { await plToken(true); return { ok: true, ms: Date.now() - t0, host: PL_HOST } }
+  catch (e) { return { ok: false, error: e.message } }
+}
+/* ═══ نهاية بوابة الدفع ═══ */
 
 /* ═══ رصيد تقييم الدكاترة ═══
    الطالب يقيّم N دكاترة ← يرسل طلباً ← تراجعه في اللوحة ← تقبل أو ترفض
@@ -8613,6 +9192,10 @@ const server = http.createServer(async (req, res) => {
       /* زر «جرّب»: نداء واحد صغير يثبت المفتاح واسم النموذج */
       if (act === 'ai-ping') return send(200, await aiPing());
 
+      /* الدفع: الإعداد وعدّادات هالبيئة، وزر يثبت مفاتيح Paylink */
+      if (act === 'pay') return send(200, await adminPay());
+      if (act === 'pay-ping' && req.method === 'POST') return send(200, await adminPayPing());
+
       /* ملء الكاش بضغطة — لأدوات الشعب والدكاترة.
          على dev المراقبة مطفأة (SITE_ENV) فالتسخين ما يشتغل والكاش
          بارد دائماً، فتقول أدوات الشعب «بيانات الجامعة مو جاهزة» ولا
@@ -8777,6 +9360,11 @@ const server = http.createServer(async (req, res) => {
       if (act === 'beta-toggle') {
         if (req.method === 'POST') {
           const b = await readBody(req);
+          /* §١٠: لا إطفاء للفترة المجانية في الإنتاج قبل البوابة — بعدها
+             الميزات للمشتركين، وبلا بوابة ما أحد يقدر يشترك */
+          if (!b.on && PL_LIVE && !PL_READY)
+            return send(400, { error: 'ما تنطفي الفترة المجانية قبل ما تشتغل بوابة الدفع — ' +
+              'حط مفاتيح Paylink الحقيقية في Render وجرّب الاتصال من تبويب الدفع' });
           const was = FREE_BETA;
           FREE_BETA = !!b.on;
           if (was !== FREE_BETA) {
@@ -9064,10 +9652,69 @@ const server = http.createServer(async (req, res) => {
         ? await meAccount(user.id)
         : await meQuote(user.id, { pushover: parsed.query.pushover === '1',
                                    ref: parsed.query.ref || '' });
+      /* هل يقدر يدفع الحين؟ القرار هنا والورقة تعرضه. select=* لأن عمود
+         الجوال ما يوجد قبل الـSQL، واسم عمود ناقص يفشّل القراءة كلها */
+      if (out.ok && parsed.pathname === '/api/me/quote') {
+        const pr = await sb('GET', 'profiles', {
+          query: `?id=eq.${encodeURIComponent(user.id)}&select=*` }).catch(() => null);
+        const p = Array.isArray(pr) ? pr[0] : null;
+        const g = payGate(p);
+        out.pay = { open: g.open, why: g.why, msg: g.open ? '' : PAY_CLOSED_MSG[g.why] };
+        out.phone = (p && p.phone) || null;
+      }
       res.writeHead(out.ok ? 200 : 404); res.end(JSON.stringify(out));
     } catch (e) {
       res.writeHead(500); res.end(JSON.stringify({ error: 'تعذّر' }));
     }
+    return;
+  }
+
+  /* ═══ الدفع — بهوية الجلسة وحدها مثل بقية /api/me ═══ */
+  if (parsed.pathname === '/api/me/checkout' || parsed.pathname === '/api/me/pay' ||
+      parsed.pathname === '/api/me/pay-cancel') {
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'no-store');
+    const user = await sbAuthUser(bearerOf(req));
+    if (!user) { res.writeHead(401); res.end(JSON.stringify({ error: 'سجّل دخول' })); return }
+    try {
+      let out;
+      if (parsed.pathname === '/api/me/pay') out = await payStatus(user.id, parsed.query.id);
+      else if (req.method !== 'POST') { res.writeHead(405); res.end('{}'); return }
+      else {
+        const b = await readBody(req);
+        if (parsed.pathname === '/api/me/pay-cancel') out = await payCancel(user.id, b.id);
+        else {
+          /* فواتير بلا حد تعني طلبات بلا حد على Paylink — عشر بالساعة تكفي أي طالب */
+          const now = Date.now(), rec = PAY_RL.get(user.id);
+          if (rec && now - rec.first < 3600e3 && rec.count >= 10) {
+            res.writeHead(429); res.end(JSON.stringify({ ok: false, error: 'محاولات كثيرة — جرّب بعد ساعة' }));
+            return;
+          }
+          if (!rec || now - rec.first >= 3600e3) PAY_RL.set(user.id, { first: now, count: 1 });
+          else rec.count++;
+          if (PAY_RL.size > 5000) PAY_RL.clear();
+          out = await payCheckout(user.id,
+            { pushover: !!b.pushover, ref: String(b.ref || ''), phone: String(b.phone || '') },
+            payOrigin(req));
+        }
+      }
+      res.writeHead(200); res.end(JSON.stringify(out));
+    } catch (e) {
+      console.log('pay: ' + (e && e.message));
+      res.writeHead(500); res.end(JSON.stringify({ ok: false, error: 'تعذّر — جرّب بعد شوي' }));
+    }
+    return;
+  }
+
+  /* إشعار Paylink: جرس لا إثبات — نسأل Paylink بأنفسنا قبل أي تفعيل.
+     نرد ٢٠٠ بعد ما نتحقق من الترويسة، حتى لو ما لقينا الطلب: ردّ غيره
+     يخلّيهم يعيدون الإرسال بلا فايدة. */
+  if (parsed.pathname === '/api/paylink/webhook' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    if (!payHookOk(req)) { res.writeHead(401); res.end(JSON.stringify({ ok: false })); return }
+    const b = await readBody(req);
+    const r = await payWebhook(b).catch(e => ({ status: 'error', error: e.message }));
+    res.writeHead(200); res.end(JSON.stringify({ ok: true, status: r && r.status }));
     return;
   }
 
@@ -9094,7 +9741,8 @@ const server = http.createServer(async (req, res) => {
         referrerCreditHalalas: PRICING.referrerCreditHalalas,
         freeMonitors: PRICING.freeMonitors,
         freeSchedules: PRICING.freeSchedules,
-        termEnd: termEndApprox(regTerm()),
+        /* نفس ترم الشراء اللي يحسبه meQuote — آخر أيام النافذة للترم الجاي */
+        termEnd: payTermNow().until,
         pushoverOffered: !!PUSHOVER_SUBSCRIBE_URL
       },
       canWatch: MONITOR_ENABLED && !MONITOR_PAUSED && !!currentWindow(),
@@ -9449,6 +10097,10 @@ server.listen(PORT, () => {
     : 'معطّل — المتغيران ناقصان'));
   if (PUSHOVER_ON)
     pushover('✅ جدولك شغّال', 'السيرفر اشتغل و Pushover موصول.', 0).catch(() => {});
+  /* سطر يكشف إعداد الدفع من سجل Render — بلا أي حرف من المفاتيح */
+  console.log(`pay: ${PL_GATEWAY} · ${PL_HOST} · ` + (PL_READY ? 'جاهز'
+    : (PL_ID && PL_SECRET) ? 'مفتاح التجربة العام مرفوض في الإنتاج' : 'المفاتيح ناقصة') +
+    ` · الإشعار ${PL_HOOK_KEY ? 'مضبوط' : 'بلا مفتاح'}`);
   /* التسخين المسبق: فحص كل 20 ثانية، وما يسحب إلا لو فيه تركيبة
      مطلوبة قاربت صلاحيتها تنتهي — والمفتاح مطفأ افتراضياً. */
   setInterval(() => { prewarmTick().catch(() => {}) }, 20000);
@@ -9460,6 +10112,9 @@ server.listen(PORT, () => {
   setInterval(() => { reportsWatch().catch(() => {}) }, 3 * 60 * 1000);
   /* التذكيرات بدقيقتها، وكل بيئة ترسل صفوفها وحدها */
   setInterval(() => { remindersTick().catch(() => {}) }, REMIND_TICK);
+  /* الدفع: كل بيئة تسوّي وتنظّف طلباتها وحدها — اللي فاتها الإشعار
+     تُسوّى، واللي تجاوزت ٢٤ ساعة بلا دفع تنلغي ويرجع رصيدها */
+  setInterval(() => { payTick().catch(() => {}) }, PAY_TICK);
   reportsWatch().catch(() => {});
   /* قائمة أوامر البوت — مرة عند الإقلاع، ومن الإنتاج وحده */
   tgSetCommands().catch(e => console.log('أوامر البوت: ' + (e && e.message)));

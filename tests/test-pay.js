@@ -1,0 +1,546 @@
+/* بوابة الدفع (Paylink) — اختبار سلوكي على السيرفر الحقيقي.
+   السيرفر يشتغل فعلاً، و https.request محاكٍ يلعب دور Supabase وPaylink وتلقرام.
+
+   أخطار يمسكها:
+   ١) **التفعيل بلا إثبات**: رجوع الطالب والإشعار جرس — التفعيل بعد ما نسأل
+      Paylink: Paid · المبلغ بالهللة · رقم الطلب · رقم العملية. أي اختلاف ⇒ لا.
+   ٢) **التفعيل مرتين** (إشعار يتكرر، رجوع + إشعار) ⇒ رصيد داعٍ مرتين.
+   ٣) **رصيد يضيع**: دفعة ما اكتملت ⇒ الرصيد المحجوز يرجع بصلاحيته الأصلية.
+   ٤) **فاتورة أقل من ٥ ريال** ترفضها البوابة ⇒ الرصيد يُصرف بقدر يترك ٥.
+   ٥) **البيئتان تتشاركان القاعدة**: dev ببطاقات تجريبية عامة ⇒ لصاحب الموقع
+      وحده، وما يلمس صفوف الإنتاج. والإنتاج يرفض مفتاح التجربة العام.
+   ٦) **قبل الإطلاق** الطلاب ما يدفعون (الفترة المجانية) — صاحب الموقع وحده.
+   ٧) آخر أيام النافذة ⇒ الترم الجاي.
+
+   node tests/test-pay.js [server.js]
+   (يشغّل نفسه ثلاث مرات إضافية كعمليات مستقلة: dev · إنتاج بلا مفاتيح ·
+    إنتاج بمفتاح التجربة العام — SITE_ENV يُقرأ مرة عند الإقلاع) */
+const path = require('path');
+const http = require('http');
+const { Readable } = require('stream');
+const { fork } = require('child_process');
+
+const SRV = path.resolve(process.argv[2] || path.join(__dirname, '..', 'server.js'));
+const MODE = (process.argv.find(a => a.startsWith('--mode=')) || '--mode=prod').slice(7);
+
+let pass = 0, fail = 0;
+const out = [];
+const ok = (c, m) => { if (c) { pass++ } else { fail++; out.push(`  ✗ [${MODE}] ` + m) } };
+const eq = (a, b, m) => ok(JSON.stringify(a) === JSON.stringify(b),
+  `${m} — توقّعنا ${JSON.stringify(b)} وجانا ${JSON.stringify(a)}`);
+
+/* ═══ القاعدة المزيّفة — تطابق PostgREST: الفلاتر، القصّ عند ١٠٠٠،
+   Prefer في الترويسة، والقيود الفريدة ترجع 23505 ═══ */
+const TOK = {
+  'tok-own-aaaaaaaaaaaaaaaaaaaaaa': 'u-own',   /* صاحب الموقع: تلقرامه = ADMIN_CHAT_ID */
+  'tok-st-bbbbbbbbbbbbbbbbbbbbbbb': 'u-st',
+  'tok-cr-ccccccccccccccccccccccc': 'u-cr',
+  'tok-full-dddddddddddddddddddddd': 'u-full',
+  'tok-ref-eeeeeeeeeeeeeeeeeeeeeee': 'u-ref',
+  'tok-late-ffffffffffffffffffffff': 'u-late',
+  'tok-miss-gggggggggggggggggggggg': 'u-miss',
+  'tok-race-hhhhhhhhhhhhhhhhhhhhhh': 'u-race',
+};
+const tokOf = u => Object.keys(TOK).find(k => TOK[k] === u);
+const prof = (id, extra) => Object.assign({ id, email: id + '@x.com', name: 'Name ' + id,
+  is_pro: false, subscription_expires_at: null, pushover_until: null, paid_at: null,
+  telegram_chat_id: null, invite_code: null, phone: null }, extra || {});
+const DB = {
+  profiles: [
+    prof('u-own', { telegram_chat_id: '5555' }),
+    prof('u-st', { telegram_chat_id: '6001' }),
+    prof('u-cr', { phone: '0500000001' }),
+    prof('u-full'),
+    prof('u-ref', { phone: '0500000003', telegram_chat_id: '6003' }),
+    prof('u-friend', { invite_code: 'FRD234', telegram_chat_id: '7777' }),
+    prof('u-late', { phone: '0500000004' }),
+    prof('u-miss', { phone: '0500000005' }),
+    prof('u-race', { phone: '0500000006', telegram_chat_id: '6006' }),
+    prof('u-friend2', { invite_code: 'FRE234', telegram_chat_id: '7778' }),
+  ],
+  credit_ledger: [
+    { id: 1, user_id: 'u-cr', amount_halalas: 1500, reason: 'reviews',
+      expires_at: '2027-03-01T20:59:59+00:00', created_at: '2026-09-01T10:00:00+00:00' },
+    { id: 2, user_id: 'u-full', amount_halalas: 5000, reason: 'admin',
+      expires_at: '2029-03-01T20:59:59+00:00', created_at: '2026-09-01T10:00:00+00:00' },
+  ],
+  subscriptions: [], referrals: [], app_state: [], app_events: []
+};
+const NEXT = { subscriptions: 100, credit_ledger: 500, referrals: 50 };
+const PATCHES = [];
+
+function cmp(v, op, val) {
+  const s = v == null ? null : String(v);
+  if (op === 'eq') return s === val;
+  if (op === 'neq') return s !== val;
+  if (op === 'is') return val === 'null' ? v == null : String(v) === val;
+  if (op === 'in') return val.replace(/^\(|\)$/g, '').split(',').includes(s);
+  const a = Date.parse(s), b = Date.parse(val);
+  const [x, y] = (!isNaN(a) && !isNaN(b)) ? [a, b] : [Number(s), Number(val)];
+  if (op === 'lt') return x < y;
+  if (op === 'gt') return x > y;
+  if (op === 'lte') return x <= y;
+  if (op === 'gte') return x >= y;
+  return true;
+}
+function filt(rows, qs) {
+  const P = new URLSearchParams(qs);
+  let r = rows.slice();
+  for (const [k, v] of P) {
+    if (['select', 'order', 'limit', 'offset'].includes(k)) continue;
+    const m = /^(eq|neq|is|in|lt|gt|lte|gte)\.(.*)$/.exec(v);
+    if (m) r = r.filter(x => cmp(x[k], m[1], m[2]));
+  }
+  const ord = P.get('order');
+  if (ord) {
+    const [col, dir] = ord.split(',')[0].split('.');
+    r.sort((a, b) => (a[col] > b[col] ? 1 : a[col] < b[col] ? -1 : 0) * (dir === 'desc' ? -1 : 1));
+  }
+  return r.slice(0, P.get('limit') ? Number(P.get('limit')) : 1000);
+}
+/* قيود subscriptions في القاعدة الحقيقية (قريناها منها): الحالة من خمس،
+   والمبالغ موجبة، والمبلغ = الترم + الإضافة − الخصم − الرصيد */
+const SUB_ST = ['pending', 'paid', 'failed', 'refunded', 'comp'];
+function checkBad(table, r) {
+  if (table !== 'subscriptions') return false;
+  const n = k => Number(r[k] || 0);
+  if (!SUB_ST.includes(r.status)) return true;
+  if (['base_halalas', 'pushover_halalas', 'discount_halalas', 'credit_halalas', 'amount_halalas']
+      .some(k => n(k) < 0)) return true;
+  return n('amount_halalas') !== n('base_halalas') + n('pushover_halalas') - n('discount_halalas') - n('credit_halalas');
+}
+/* self: الصف نفسه وقت التعديل — ما يتصادم مع نفسه */
+function unique(table, row, self) {
+  const L = DB[table].filter(x => x !== self);
+  if (table === 'referrals' && L.some(x => x.invited_id === row.invited_id)) return true;
+  if (table === 'subscriptions') {
+    if (row.gateway_ref && L.some(x => x.gateway_ref === row.gateway_ref)) return true;
+    /* فهرس الـSQL الجديد: طلب معلّق واحد لكل طالب وبوابة */
+    if (row.status === 'pending' && L.some(x => x.status === 'pending' &&
+        x.user_id === row.user_id && x.gateway === row.gateway)) return true;
+  }
+  return false;
+}
+function supabase(method, urlPath, body, prefer) {
+  const [p, qs = ''] = urlPath.split('?');
+  const table = p.replace('/rest/v1/', '');
+  const L = DB[table] || (DB[table] = []);
+  const rep = /return=representation/.test(prefer || '');
+  if (method === 'GET') return [200, filt(L, qs)];
+  if (method === 'POST') {
+    const b = JSON.parse(body || '{}');
+    if (table === 'app_state') {
+      const i = L.findIndex(x => x.key === b.key);
+      if (i >= 0) L[i] = b; else L.push(b);
+      return [201, []];
+    }
+    const rows = (Array.isArray(b) ? b : [b]).map(x => Object.assign(
+      { id: (NEXT[table] = (NEXT[table] || 1) + 1), created_at: new Date().toISOString() },
+      table === 'subscriptions' ? { status: 'pending' } : {}, x));
+    for (const r of rows) {
+      if (checkBad(table, r)) return [400, { code: '23514', message: 'violates check constraint' }];
+      if (unique(table, r)) return [409, { code: '23505', message: 'duplicate key value violates unique constraint' }];
+    }
+    L.push(...rows);
+    return [201, rep ? rows.map(r => Object.assign({}, r)) : []];
+  }
+  if (method === 'PATCH') {
+    const b = JSON.parse(body || '{}');
+    const hit = filt(L, qs);
+    PATCHES.push({ table, qs: decodeURIComponent(qs), body: b, n: hit.length });
+    for (const r of hit) {
+      const next = Object.assign({}, r, b);
+      if (checkBad(table, next)) return [400, { code: '23514', message: 'violates check constraint' }];
+      if (unique(table, next, r)) return [409, { code: '23505', message: 'duplicate key' }];
+    }
+    hit.forEach(r => Object.assign(r, b));
+    return [200, rep ? hit.map(r => Object.assign({}, r)) : []];
+  }
+  return [200, []];
+}
+
+/* ═══ Paylink المزيّف ═══ */
+const PL = { hosts: new Set(), calls: [], inv: {}, tx: 7000, auth: 0 };
+function paylink(method, p, body, headers) {
+  const b = body ? JSON.parse(body) : {};
+  PL.calls.push({ method, p, b });
+  if (p === '/api/auth') {
+    PL.auth++;
+    if (b.apiId === process.env.PAYLINK_API_ID && b.secretKey === process.env.PAYLINK_SECRET)
+      return [200, { id_token: 'pl-token-1' }];
+    return [401, { detail: 'Invalid credentials' }];
+  }
+  if (headers.Authorization !== 'Bearer pl-token-1') return [401, { detail: 'Unauthorized' }];
+  if (p === '/api/addInvoice') {
+    const tx = String(++PL.tx) + '1234';
+    PL.inv[tx] = { transactionNo: tx, orderStatus: 'Pending', amount: b.amount, success: true,
+      url: 'https://payment.paylink.sa/pay/order/' + tx, gatewayOrderRequest: Object.assign({}, b) };
+    return [200, PL.inv[tx]];
+  }
+  const m = /^\/api\/getInvoice\/(.+)$/.exec(p);
+  if (m) return PL.inv[m[1]] ? [200, PL.inv[m[1]]] : [404, { detail: 'not found' }];
+  if (p === '/api/cancelInvoice') {
+    if (PL.inv[b.transactionNo]) PL.inv[b.transactionNo].orderStatus = 'Canceled';
+    return [200, { success: true }];
+  }
+  return [404, {}];
+}
+
+const TG = [];
+const https = require('https');
+https.request = function (opts, cb) {
+  const host = opts.hostname || '';
+  const chunks = [];
+  const req = {
+    on(ev, fn) { if (ev === 'error') req._err = fn; return req },
+    setTimeout() { return req }, destroy() {},
+    write(d) { chunks.push(d) },
+    end(d) {
+      if (d) chunks.push(d);
+      let code = 200, o = [];
+      const body = chunks.join('');
+      if (opts.path && opts.path.startsWith('/auth/v1/user')) {
+        const t = String((opts.headers && opts.headers.Authorization) || '').replace('Bearer ', '');
+        if (TOK[t]) o = { id: TOK[t], email: TOK[t] + '@x.com', user_metadata: { name: 'Name ' + TOK[t] } };
+        else { code = 401; o = { msg: 'invalid JWT' } }
+      } else if (host === 'api.telegram.org') {
+        let b = {}; try { b = JSON.parse(body || '{}') } catch (e) {}
+        if (/sendMessage/.test(opts.path || '')) TG.push(b);
+        o = { ok: true, result: { message_id: 1 } };
+      } else if (/paylink\.sa$/.test(host)) {
+        PL.hosts.add(host);
+        [code, o] = paylink(opts.method, opts.path, body, opts.headers || {});
+      } else if (host.includes('pmu.edu.sa')) {
+        o = [];
+      } else {
+        [code, o] = supabase(opts.method, opts.path, body,
+          (opts.headers && (opts.headers.Prefer || opts.headers.prefer)) || '');
+      }
+      const txt = JSON.stringify(o);
+      const res = new Readable({ read() { this.push(txt); this.push(null) } });
+      res.statusCode = code; res.headers = {};
+      setImmediate(() => cb(res));
+    }
+  };
+  return req;
+};
+
+const BASES = { prod: 47500, dev: 47600, nokeys: 47700, testkey: 47800 };
+const PORT = BASES[MODE] + (process.pid % 100);
+const KEYS = {
+  prod:    { SITE_ENV: 'prod', PAYLINK_API_ID: 'APP_ID_LIVE_9', PAYLINK_SECRET: 'live-secret' },
+  dev:     { SITE_ENV: 'dev',  PAYLINK_API_ID: 'APP_ID_1123453311', PAYLINK_SECRET: 'pub-test-secret' },
+  nokeys:  { SITE_ENV: 'prod', PAYLINK_API_ID: '', PAYLINK_SECRET: '' },
+  testkey: { SITE_ENV: 'prod', PAYLINK_API_ID: 'APP_ID_1123453311', PAYLINK_SECRET: 'pub-test-secret' },
+}[MODE];
+Object.assign(process.env, KEYS, {
+  PORT: String(PORT), ADMIN_TOKEN: 'admin-token-for-tests', ADMIN_CHAT_ID: '5555',
+  /* ترم بعيد وثابت: الاختبار ما يتغيّر مع التاريخ الحقيقي (نهايته 2029-12-31) */
+  ACTIVE_TERM: '203010', FREE_BETA: 'true', MONITOR_ENABLED: 'false',
+  PAYLINK_WEBHOOK_KEY: 'hook-key-1234567890',
+  SB_URL: 'https://fake.supabase.co', SUPABASE_URL: 'https://fake.supabase.co',
+  SB_SERVICE_KEY: 'k', SUPABASE_SERVICE_KEY: 'k', TELEGRAM_TOKEN: 'tg'
+});
+const realLog = console.log;
+console.log = () => {};
+require(SRV);
+
+function call(method, p, { tok, body, headers, admin } = {}) {
+  return new Promise((resolve, reject) => {
+    const data = body !== undefined ? JSON.stringify(body) : null;
+    const h = Object.assign({}, headers || {});
+    if (data) h['Content-Type'] = 'application/json';
+    if (tok) h.Authorization = 'Bearer ' + tok;
+    if (admin) h['X-Admin-Token'] = 'admin-token-for-tests';
+    const r = http.request({ host: '127.0.0.1', port: PORT, path: p, method, headers: h }, res => {
+      let o = ''; res.on('data', c => o += c);
+      res.on('end', () => { let j; try { j = JSON.parse(o) } catch (e) { j = o } resolve({ code: res.statusCode, j }) });
+    });
+    r.on('error', reject); r.end(data || undefined);
+  });
+}
+const wait = ms => new Promise(r => setTimeout(r, ms));
+const riyadh = n => new Date(Date.now() + 3 * 3600e3 + n * 864e5).toISOString().slice(0, 10);
+const setWindow = (from, to) => call('POST', '/api/admin/monitor-window', { admin: true, body: { from, to } });
+const hook = (body, key) => call('POST', '/api/paylink/webhook',
+  { body, headers: key === undefined ? { 'X-Jadwalik-Key': 'hook-key-1234567890' } : (key ? { 'X-Jadwalik-Key': key } : {}) });
+const sub = id => DB.subscriptions.find(s => s.id === id);
+const P = id => DB.profiles.find(p => p.id === id);
+const ledger = u => DB.credit_ledger.filter(r => r.user_id === u);
+const adds = () => PL.calls.filter(c => c.p === '/api/addInvoice');
+const tgTo = (chat, re) => TG.filter(m => String(m.chat_id) === chat && re.test(String(m.text || '')));
+const END_NOW = '2029-12-31T20:59:59.000Z';    /* termEndApprox('203010') */
+const END_NEXT = '2030-06-15T20:59:59.000Z';   /* termEndApprox('203020') */
+
+async function prodSuite() {
+  /* بلا نافذة: قائمة يدوية في الماضي تلغي نوافذ التقويم الحقيقية */
+  await setWindow('2000-01-01', '2000-01-02');
+
+  /* ── ١) قبل الإطلاق: الطالب ما يدفع، وصاحب الموقع يجرّب ── */
+  let q = (await call('GET', '/api/me/quote', { tok: tokOf('u-st') })).j;
+  eq(q.pay && [q.pay.open, q.pay.why], [false, 'beta'], '**الفترة المجانية: الطالب ما يشوف دفعاً**');
+  let r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-st'), body: { phone: '0512345678' } })).j;
+  eq([r.ok, r.why], [false, 'beta'], 'ولو نادى الدفع بنفسه يترفض');
+  eq(adds().length, 0, 'وما انفتحت فاتورة');
+  q = (await call('GET', '/api/me/quote', { tok: tokOf('u-own') })).j;
+  eq(q.pay && q.pay.open, true, '**وصاحب الموقع يقدر يجرّب بدفعة حقيقية**');
+  eq([q.term, q.termEnd, q.late], ['203010', END_NOW, false], 'ترم الشراء بلا نافذة: ترم الدراسة');
+
+  /* ── ٢) بدء الدفع ── */
+  r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-own'), body: {} })).j;
+  eq([r.ok, r.why], [false, 'phone'], 'بلا جوال: نطلبه — Paylink يشترطه');
+  r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-own'), body: { phone: '٠٥١٢٣٤٥٦٧٨' } })).j;
+  ok(r.ok && /^https:\/\/payment\.paylink\.sa\//.test(r.url || ''), 'رابط صفحة الدفع — ' + JSON.stringify(r));
+  const s1 = sub(r.id) || {};
+  const a1 = (adds()[0] || {}).b || {};
+  eq(a1.amount, 19, 'الفاتورة بالريال: ١٩');
+  eq(a1.orderNumber, 'JDW-' + r.id, 'رقم الطلب من صفّنا');
+  eq(a1.callBackUrl, 'https://jadwalik.com/?pay=' + r.id, '**رابط الرجوع على نطاقنا دائماً** — لا ترويسة Host');
+  eq(a1.clientMobile, '0512345678', '**الأرقام العربية من كيبورد الآيفون تتحوّل**');
+  eq(a1.clientName, 'Name u-own', 'اسم الطالب');
+  eq([s1.status, s1.gateway, s1.gateway_ref, s1.amount_halalas, s1.term, s1.valid_until],
+     ['pending', 'paylink', a1 && Object.keys(PL.inv).pop(), 1900, '203010', END_NOW], 'الصف معلّق بكل تفاصيله');
+  eq(P('u-own').phone, '0512345678', 'والجوال انحفظ في الملف');
+  ok([...PL.hosts].every(h => h === 'restapi.paylink.sa'), 'الإنتاج على restapi — ' + [...PL.hosts]);
+
+  const r2 = (await call('POST', '/api/me/checkout', { tok: tokOf('u-own'), body: { phone: '0512345678' } })).j;
+  eq([r2.ok, r2.why, r2.id], [false, 'pending', r.id], '**طلب ثانٍ والأول معلّق: نرجّعه له لا فاتورة ثانية**');
+  ok(/payment\.paylink\.sa/.test(r2.url || ''), 'ومعه رابط يكمّل منه');
+  eq(adds().length, 1, 'وما انفتحت فاتورة ثانية');
+
+  /* ── ٣) الرجوع والإشعار: جرس لا إثبات ── */
+  let st = (await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-own') })).j;
+  eq(st.status, 'pending', 'رجع وما دفع: معلّق');
+  eq(P('u-own').subscription_expires_at, null, 'وما انفعّل');
+  st = (await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-st') })).j;
+  eq(st.ok, false, '**طالب ثانٍ ما يقرأ طلب غيره**');
+
+  const tx = s1.gateway_ref;
+  eq((await hook({ transactionNo: tx }, '')).code, 401, 'إشعار بلا ترويسة: مرفوض');
+  eq((await hook({ transactionNo: tx }, 'wrong-key-000000000')).code, 401, 'وبترويسة غلط: مرفوض');
+
+  PL.inv[tx].orderStatus = 'Paid'; PL.inv[tx].amount = 1;
+  await hook({ transactionNo: tx });
+  eq([sub(r.id).status, P('u-own').subscription_expires_at], ['pending', null],
+     '**Paylink يقول Paid بمبلغ غلط: ما نفعّل**');
+  ok(tgTo('5555', /تحتاج نظرك[\s\S]*المبلغ/).length === 1, 'ونبلّغ صاحب الموقع');
+
+  PL.inv[tx].amount = 19; PL.inv[tx].gatewayOrderRequest.orderNumber = 'JDW-999';
+  await hook({ transactionNo: tx });
+  eq(sub(r.id).status, 'pending', '**رقم طلب ما يطابق: ما نفعّل**');
+  delete PL.inv[tx].gatewayOrderRequest.orderNumber;
+  await hook({ transactionNo: tx });
+  eq(sub(r.id).status, 'pending', '**ورقم طلب ناقص = ما يطابق** (نقفل عند الشك)');
+
+  PL.inv[tx].gatewayOrderRequest.orderNumber = 'JDW-' + r.id;
+  const hk = await hook({ transactionNo: tx });
+  eq(hk.code, 200, 'الإشعار الصحيح: ٢٠٠');
+  eq(sub(r.id).status, 'paid', '**تحقّقنا من Paylink بأنفسنا ⇒ مدفوع**');
+  eq(P('u-own').subscription_expires_at, END_NOW, 'والاشتراك حتى نهاية نهائيات الترم');
+  ok(!!P('u-own').paid_at, 'وpaid_at للدفع الحقيقي');
+  eq(tgTo('5555', /اشتراكك فعّال/).length, 1, 'الطالب وصله «اشتراكك فعّال»');
+
+  await hook({ transactionNo: tx });
+  await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-own') });
+  eq(tgTo('5555', /اشتراكك فعّال/).length, 1, '**الإشعار يتكرر والرجوع بعده: تفعيل واحد بس**');
+  st = (await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-own') })).j;
+  eq([st.status, st.until], ['paid', END_NOW], 'وصفحة الرجوع تقول مدفوع وحتى متى');
+
+  /* ── ٤) الإطلاق: الطلاب يدفعون ── */
+  eq((await call('POST', '/api/admin/beta-toggle', { admin: true, body: { on: false } })).code, 200,
+     'إطفاء الفترة المجانية مسموح والمفاتيح جاهزة');
+  q = (await call('GET', '/api/me/quote', { tok: tokOf('u-st') })).j;
+  eq(q.pay && q.pay.open, true, 'بعد الإطلاق: الطالب يدفع');
+
+  /* ── ٥) أقل فاتورة ٥ ريال، والرصيد المحجوز يرجع بصلاحيته ── */
+  q = (await call('GET', '/api/me/quote', { tok: tokOf('u-cr') })).j;
+  eq([q.credit, q.amount], [1400, 500], '**رصيد ١٥ وسعر ١٩: نصرف ١٤ ونترك ٥** — لا فاتورة ٤ ترفضها البوابة');
+  r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-cr'), body: {} })).j;
+  ok(r.ok && r.url, 'الجوال المحفوظ يكفي — ' + JSON.stringify(r));
+  const sp = ledger('u-cr').find(x => x.reason === 'spend');
+  eq(sp && [sp.amount_halalas, sp.ref, String(sp.expires_at).slice(0, 10)],
+     [-1400, 'subscription:' + r.id, '2027-03-01'], 'حجز ١٤ من الرصيد، بصلاحية منحته');
+  eq((adds().pop() || {}).b.amount, 5, 'والفاتورة ٥ ريال');
+  /* ٢٥ ساعة بلا دفع ⇒ تنلغي ويرجع الرصيد */
+  sub(r.id).created_at = new Date(Date.now() - 25 * 3600e3).toISOString();
+  await hook({ something: 'else' });           /* جرس بجسم ما نعرفه ⇒ تسوية المعلّقات */
+  eq(sub(r.id).status, 'failed', '**بعد ٢٤ ساعة بلا دفع: فشل**');
+  eq(PL.inv[sub(r.id).gateway_ref].orderStatus, 'Canceled', 'وألغينا الفاتورة عند Paylink');
+  const rv = ledger('u-cr').find(x => x.reason === 'reversal');
+  eq(rv && [rv.amount_halalas, String(rv.expires_at).slice(0, 10)], [1400, '2027-03-01'],
+     '**والرصيد رجع بصلاحيته الأصلية** — لا أطول ولا أقصر');
+  q = (await call('GET', '/api/me/quote', { tok: tokOf('u-cr') })).j;
+  eq(q.creditAvailable, 1500, 'ورصيده ١٥ كما كان');
+
+  /* ── ٦) الرصيد يغطي الكل: تفعيل بلا فاتورة ── */
+  const nAdds = adds().length;
+  r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-full'), body: {} })).j;
+  eq([r.ok, r.activated], [true, true], '**رصيد ٥٠ وسعر ١٩: تفعيل فوري بلا فاتورة ولا جوال**');
+  eq(adds().length, nAdds, 'وما انفتحت فاتورة');
+  eq([sub(r.id).status, sub(r.id).gateway], ['paid', 'credit'], 'صفّه مدفوع بالرصيد');
+  eq(P('u-full').subscription_expires_at, END_NOW, 'والاشتراك فعّال');
+  eq(P('u-full').paid_at, null, '**ورصيد ما يُحسب «دفع فعلي»** في الإحصاء');
+
+  /* ── ٧) رصيد الداعي لحظة التسوية — مرة للأبد ── */
+  q = (await call('GET', '/api/me/quote?ref=FRD234', { tok: tokOf('u-ref') })).j;
+  eq([q.discount, q.amount], [300, 1600], 'كود صديق: −٣');
+  r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-ref'), body: { ref: 'frd234' } })).j;
+  ok(r.ok, 'بدأ الدفع بكود صديقه');
+  eq(sub(r.id).referral_code, 'FRD234', 'والكود محفوظ في الطلب');
+  eq(ledger('u-friend').length, 0, 'وما نزل رصيد للداعي قبل الدفع');
+  const txr = sub(r.id).gateway_ref;
+  PL.inv[txr].orderStatus = 'Paid';
+  st = (await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-ref') })).j;
+  eq(st.status, 'paid', 'رجع من صفحة الدفع وقد دفع: مدفوع (بلا انتظار الإشعار)');
+  eq(DB.referrals.filter(x => x.invited_id === 'u-ref').length, 1, 'صف دعوة واحد');
+  eq(ledger('u-friend').map(x => [x.amount_halalas, x.reason]), [[500, 'referral']], '**والداعي نزل له ٥**');
+  eq(tgTo('7777', /صديقك اشترك/).length, 1, 'ووصله خبر على تلقرام');
+  await hook({ transactionNo: txr });
+  await wait(4100);
+  await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-ref') });
+  eq(ledger('u-friend').length, 1, '**إشعار ورجوع بعد التسوية: ولا رصيد ثانٍ**');
+
+  /* ── ٧ب) سباق: الإشعار ورجوع الطالب بنفس اللحظة ──
+     الاثنان يقرون الطلب «معلّقاً» قبل ما يسوّيه أحدهما — التحديث المشروط
+     وحده يخلّي واحداً يفعّل. بلاه: تفعيلان ورسالتان. */
+  r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-race'), body: { ref: 'FRE234' } })).j;
+  const txq = sub(r.id).gateway_ref;
+  PL.inv[txq].orderStatus = 'Paid';
+  await Promise.all([hook({ transactionNo: txq }),
+                     call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-race') }),
+                     hook({ orderNumber: 'JDW-' + r.id })]);
+  eq(sub(r.id).status, 'paid', 'السباق: مدفوع');
+  eq(tgTo('6006', /اشتراكك فعّال/).length, 1, '**ثلاثة أجراس بنفس اللحظة: تفعيل واحد ورسالة وحدة**');
+  eq(ledger('u-friend2').length, 1, 'ورصيد داعٍ واحد');
+
+  /* ── ٨) آخر أيام النافذة ⇒ الترم الجاي ── */
+  await setWindow(riyadh(-5), riyadh(0));
+  q = (await call('GET', '/api/me/quote', { tok: tokOf('u-late') })).j;
+  eq([q.late, q.term, q.termEnd], [true, '203020', END_NEXT], '**آخر يوم في النافذة: الاشتراك للترم الجاي**');
+  const ms = (await call('GET', '/api/monitor-status')).j;
+  eq(ms.plans && ms.plans.termEnd, END_NEXT, 'وورقة الباقات تعرض نفس التاريخ');
+  await setWindow(riyadh(-5), riyadh(+5));
+  q = (await call('GET', '/api/me/quote', { tok: tokOf('u-late') })).j;
+  eq([q.late, q.term], [false, '203010'], 'وسط النافذة: الترم الحالي');
+
+  /* ── ٩) ألغاها ثم دفعها من تبويب قديم: فلوسه وصلت ⇒ نفعّل ── */
+  r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-late'), body: {} })).j;
+  const txl = sub(r.id).gateway_ref;
+  let c = (await call('POST', '/api/me/pay-cancel', { tok: tokOf('u-late'), body: { id: r.id } })).j;
+  eq([c.status, sub(r.id).status, PL.inv[txl].orderStatus], ['failed', 'failed', 'Canceled'], 'الإلغاء: فشل + إلغاء عند Paylink');
+  PL.inv[txl].orderStatus = 'Paid';
+  await hook({ transactionNo: txl });
+  eq(sub(r.id).status, 'paid', '**دفعة وصلت بعد الإلغاء: فعّلناه** — الفلوس ما تضيع');
+  eq(P('u-late').subscription_expires_at, END_NOW, 'والاشتراك فعّال');
+
+  /* ── ٩ب) مدفوعة بتفاصيل ما تطابق ثم ضغط «ألغها»: ما نلغي فلوساً وصلت ── */
+  {
+    const P2 = prof('u-mis2', { phone: '0500000007' });
+    DB.profiles.push(P2); TOK['tok-mis2-iiiiiiiiiiiiiiiiiiiiii'] = 'u-mis2';
+    const rr = (await call('POST', '/api/me/checkout', { tok: 'tok-mis2-iiiiiiiiiiiiiiiiiiiiii', body: {} })).j;
+    const tm = sub(rr.id).gateway_ref;
+    PL.inv[tm].orderStatus = 'Paid'; PL.inv[tm].amount = 18;
+    const cc = (await call('POST', '/api/me/pay-cancel', { tok: 'tok-mis2-iiiiiiiiiiiiiiiiiiiiii', body: { id: rr.id } })).j;
+    eq([cc.status, cc.review, sub(rr.id).status], ['pending', true, 'pending'],
+       '**مدفوعة بمبلغ ما يطابق ثم «ألغها»: تبقى معلّقة لمراجعتك** — ما نلغي فلوساً ربما وصلت');
+    eq(PL.inv[tm].orderStatus, 'Paid', 'وما ألغيناها عند Paylink');
+  }
+
+  /* ── ١٠) فاتها الإشعار والرجوع: الدورة تسوّيها ولو بعد ٢٤ ساعة ── */
+  r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-miss'), body: {} })).j;
+  sub(r.id).created_at = new Date(Date.now() - 26 * 3600e3).toISOString();
+  PL.inv[sub(r.id).gateway_ref].orderStatus = 'Paid';
+  await wait(10100);                              /* جرس المعلّقات مرة كل ١٠ ثواني */
+  await hook({});
+  eq(sub(r.id).status, 'paid', '**مدفوعة فاتها الإشعار: تُسوّى لا تُلغى**');
+
+  /* ── ١١) اللوحة ── */
+  const ap = (await call('GET', '/api/admin/pay', { admin: true })).j;
+  eq([ap.ready, ap.gateway, ap.openTo], [true, 'paylink', 'all'], 'اللوحة: جاهز · paylink · للكل');
+  ok(ap.counts.paid >= 4 && ap.counts.failed >= 1, 'وعدّاداته — ' + JSON.stringify(ap.counts));
+  ok(!JSON.stringify(ap).includes('live-secret'), '**وما فيها حرف من المفتاح السري**');
+  const pg = (await call('POST', '/api/admin/pay-ping', { admin: true })).j;
+  eq(pg.ok, true, 'زر «جرّب الاتصال» ينجح بالمفاتيح الصحيحة');
+}
+
+async function devSuite() {
+  await setWindow('2000-01-01', '2000-01-02');
+  let q = (await call('GET', '/api/me/quote', { tok: tokOf('u-st') })).j;
+  eq(q.pay && [q.pay.open, q.pay.why], [false, 'test'],
+     '**dev ببطاقات تجريبية عامة: الطالب ما يدفع** — وإلا أخذ اشتراكاً حقيقياً ببطاقة تجريبية');
+  eq((await call('POST', '/api/admin/beta-toggle', { admin: true, body: { on: false } })).code, 200,
+     'في dev إطفاء الفترة المجانية ما يُحرس');
+  q = (await call('GET', '/api/me/quote', { tok: tokOf('u-st') })).j;
+  eq(q.pay && q.pay.open, false, 'ولو انطفت الفترة المجانية: dev لصاحب الموقع وحده');
+  const r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-own'), body: { phone: '+966 51 234 5678' } })).j;
+  ok(r.ok, 'صاحب الموقع يجرّب — ' + JSON.stringify(r));
+  const s = sub(r.id) || {};
+  const a = (adds()[0] || {}).b || {};
+  eq(s.gateway, 'paylink-test', '**بوابة التجربة باسمها** — خارج الإيرادات');
+  eq(a.orderNumber, 'JDWT-' + r.id, 'ورقم طلبها غير الإنتاج');
+  eq(a.clientMobile, '0512345678', '+966 بمسافات يتحوّل');
+  eq(a.callBackUrl, `https://127.0.0.1:${PORT}/?pay=${r.id}`, 'والرجوع على عنوان التجربة نفسه');
+  eq([...PL.hosts], ['restpilot.paylink.sa'], '**dev على restpilot لا الإنتاج**');
+  /* صف إنتاج معلّق في نفس القاعدة: dev ما يلمسه */
+  DB.subscriptions.push({ id: 9001, user_id: 'u-st', term: '203010', status: 'pending', gateway: 'paylink',
+    gateway_ref: 'PROD-TX-1', amount_halalas: 1900, credit_halalas: 0, includes_term: true,
+    valid_until: END_NOW, created_at: new Date(Date.now() - 30 * 3600e3).toISOString() });
+  PL.inv[s.gateway_ref].orderStatus = 'Paid';
+  await call('POST', '/api/paylink/webhook', { body: { orderNumber: 'JDWT-' + r.id },
+    headers: { 'X-Jadwalik-Key': 'hook-key-1234567890' } });
+  eq(sub(r.id).status, 'paid', 'إشعار برقم طلب التجربة: مدفوع');
+  eq(P('u-own').paid_at, null, '**دفعة تجريبية ما تُحسب «دفع فعلي»** في إحصاء الإنتاج');
+  await hook({ transactionNo: 'PROD-TX-1' });
+  await hook({});
+  eq(sub(9001).status, 'pending', '**صف الإنتاج المعلّق ما لمسه dev** — كل بيئة تنظّف صفوفها');
+}
+
+async function nokeysSuite() {
+  const q = (await call('GET', '/api/me/quote', { tok: tokOf('u-own') })).j;
+  eq(q.pay && [q.pay.open, q.pay.why], [false, 'nokeys'], 'الإنتاج بلا مفاتيح: الدفع مقفل حتى لصاحب الموقع');
+  const b = await call('POST', '/api/admin/beta-toggle', { admin: true, body: { on: false } });
+  eq(b.code, 400, '**§١٠: ما تنطفي الفترة المجانية في الإنتاج قبل البوابة**');
+  ok(/Paylink/.test(String(b.j && b.j.error)), 'والرسالة تقول ليش — ' + (b.j && b.j.error));
+  const ap = (await call('GET', '/api/admin/pay', { admin: true })).j;
+  eq([ap.ready, ap.idSet, ap.openTo], [false, false, 'none'], 'اللوحة تقول المفاتيح ناقصة');
+}
+
+async function testkeySuite() {
+  const q = (await call('GET', '/api/me/quote', { tok: tokOf('u-own') })).j;
+  eq(q.pay && [q.pay.open, q.pay.why], [false, 'nokeys'], '**الإنتاج يرفض مفتاح التجربة العام**');
+  const pg = (await call('POST', '/api/admin/pay-ping', { admin: true })).j;
+  ok(pg.ok === false && /الحقيقية/.test(pg.error || ''), 'وزر التجربة يقول حط مفاتيحك الحقيقية');
+  eq(PL.auth, 0, 'وما حاولنا ندخل Paylink بمفتاح عام من الإنتاج');
+  const ap = (await call('GET', '/api/admin/pay', { admin: true })).j;
+  eq(ap.testIdInProd, true, 'واللوحة تسمّي السبب');
+}
+
+(async () => {
+  await wait(400);
+  try {
+    await ({ prod: prodSuite, dev: devSuite, nokeys: nokeysSuite, testkey: testkeySuite })[MODE]();
+  } catch (e) { fail++; out.push(`  ✗ [${MODE}] انهار: ` + (e && e.stack || e)) }
+  console.log = realLog;
+
+  /* الأب يشغّل البقية كعمليات مستقلة ويجمع النتائج */
+  if (MODE === 'prod') {
+    for (const m of ['dev', 'nokeys', 'testkey']) {
+      const res = await new Promise(resolve => {
+        const ch = fork(__filename, [SRV, '--mode=' + m], { silent: true });
+        let o = '';
+        ch.stdout.on('data', d => o += d);
+        ch.stderr.on('data', d => o += d);
+        ch.on('exit', () => resolve(o));
+      });
+      const mm = /(\d+) نجحت · (\d+) فشلت\s*$/.exec(res.trim());
+      if (!mm) { fail++; out.push(`  ✗ [${m}] ما رجع ملخص:\n` + res.slice(-800)) }
+      else {
+        pass += Number(mm[1]); fail += Number(mm[2]);
+        res.split('\n').filter(l => l.includes('✗')).forEach(l => out.push(l));
+      }
+    }
+  }
+  out.forEach(l => console.log(l));
+  console.log(`\n${pass} نجحت · ${fail} فشلت`);
+  process.exit(fail ? 1 : 0);
+})();
