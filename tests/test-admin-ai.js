@@ -61,6 +61,13 @@ function makeServer(st) {
       }
       if (u.endsWith('/ai-top')) return res.end(JSON.stringify(st.top));
       if (u.endsWith('/ai-ping')) return res.end(JSON.stringify(st.ping));
+      if (u.endsWith('/ai-thread')) {
+        st.threads.push(req.url);
+        return res.end(JSON.stringify(st.thread || { id: 'u1', env: 'prod',
+          name: 'نورة', email: 'n@x.com', major: 'COSC', turns: 2, summary: 'سألت عن جدولها',
+          messages: [{ role: 'user', text: 'وش عندي بكرة؟' },
+                     { role: 'assistant', text: 'عندك مادتين' }] }));
+      }
       if (u.endsWith('/cache-warm')) {
         st.warms.push(req.method);
         return res.end(JSON.stringify(st.warm || { ok: true, term: '202710',
@@ -110,7 +117,7 @@ const openAi = async page => {
 
   /* ── ١) التبويب يفتح ويعرض ما يرجّعه السيرفر ── */
   {
-    const st = { ai: aiState(), top: topState(), posts: [], asks: [], warms: [],
+    const st = { ai: aiState(), top: topState(), posts: [], asks: [], warms: [], threads: [],
                  ping: { ok: true, model: 'claude-haiku-4-5', ms: 300 },
                  ask: { ok: true, answer: 'تمام' } };
     const { page, errs, close } = await open(browser, st);
@@ -153,7 +160,7 @@ const openAi = async page => {
                    fails: 3, unlogged: 2,
                    spend: { monthSar: 205, todaySar: 9, questions: 9000, pct: 102,
                             byEnv: { prod: 205 } } }),
-                 top: topState({ truncated: true }), posts: [], asks: [], warms: [],
+                 top: topState({ truncated: true }), posts: [], asks: [], warms: [], threads: [],
                  ping: {}, ask: {} };
     const { page, errs, close } = await open(browser, st);
     await openAi(page);
@@ -175,7 +182,7 @@ const openAi = async page => {
 
   /* ── ٣) الأزرار ترسل الحقول الصحيحة ── */
   {
-    const st = { ai: aiState(), top: topState(), posts: [], asks: [], warms: [],
+    const st = { ai: aiState(), top: topState(), posts: [], asks: [], warms: [], threads: [],
                  ping: { ok: false, error: 'model: not_found', type: 'not_found_error' },
                  ask: {} };
     const { page, errs, close } = await open(browser, st);
@@ -221,6 +228,36 @@ const openAi = async page => {
     eq(wp.length, 1, 'الضغط يرسل تبديل التسخين مرة');
     eq(wp[0].warm, false, '**وبالعكس** — مفعّل ⇒ نطفيه');
 
+    /* ── محادثة طالب بعينه: الرقم وحده ما يقول هل جاوبه صح ── */
+    ok(await page.$('button:has-text("محادثته")') !== null,
+       'كل طالب في القائمة له زر «محادثته»');
+    await page.click('button:has-text("محادثته")');
+    await page.waitForTimeout(400);
+    eq(st.threads.length, 1, 'الضغط يقرأ المحادثة مرة');
+    ok(/user=u1/.test(st.threads[0] || ''),
+       '**وبمعرّف الطالب في الاستعلام** — ' + st.threads[0]);
+    const tb = await page.textContent('#aiThreadBox') || '';
+    ok(/نورة/.test(tb), 'والبطاقة باسمه');
+    const body = await page.textContent('#aiBody');
+    ok(/وش عندي بكرة/.test(body), '**وسؤاله معروض**');
+    ok(/عندك مادتين/.test(body), 'وجواب المساعد');
+    ok(/سألت عن جدولها/.test(body), 'والملخّص');
+    ok(/prod/.test(body), 'والبيئة — المحادثة مفتاحها الطالب + البيئة');
+    /* الحقن: نص الطالب يُعرض نصاً لا HTML */
+    st.thread = { id: 'u2', env: 'prod', name: '<img src=x onerror=alert(1)>',
+      major: '', turns: 1, summary: '',
+      messages: [{ role: 'user', text: '<img src=y onerror=alert(2)>' }] };
+    await page.click('button:has-text("محادثته")');
+    await page.waitForTimeout(400);
+    ok(await page.$('#aiBody img') === null,
+       '**نص فيه وسم HTML يُهرَّب** — ما انزرع عنصر');
+    ok(/ما اختاره/.test(await page.textContent('#aiBody')),
+       'وبلا تخصص تبيّنه — هذي بالضبط حالة الطالبة على الإنتاج');
+    /* والإغلاق يشيلها */
+    await page.click('button:has-text("إغلاق")');
+    await page.waitForTimeout(250);
+    ok(await page.$('#aiThreadBox') === null, 'والإغلاق يشيل البطاقة');
+
     /* زر الاتصال يعرض خطأ المزوّد كما هو لا «تعذّر» */
     await page.click('#aiBody button[onclick="aiPingBtn()"]');
     await page.waitForTimeout(300);
@@ -232,7 +269,7 @@ const openAi = async page => {
 
   /* ── ٤) مربّع التجربة ── */
   {
-    const st = { ai: aiState({ mode: 'admin' }), top: topState(), posts: [], asks: [], warms: [],
+    const st = { ai: aiState({ mode: 'admin' }), top: topState(), posts: [], asks: [], warms: [], threads: [],
                  ping: {},
                  ask: { ok: true, answer: 'عندك MATH 1422 الساعة 10',
                         tools: ['my_day'], calls: 2, model: 'claude-haiku-4-5',
@@ -262,7 +299,7 @@ const openAi = async page => {
   /* ── ٥) وضع off يشرح للوحة، وجواب النموذج يُهرَّب ── */
   {
     const st = { ai: aiState({ mode: 'off' }), top: topState({ top: [] }),
-                 posts: [], asks: [], warms: [], ping: {},
+                 posts: [], asks: [], warms: [], threads: [], ping: {},
                  ask: { ok: false, why: 'off', answer: '<b>مقفل</b>' } };
     const { page, errs, close } = await open(browser, st);
     await openAi(page);

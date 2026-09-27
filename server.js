@@ -1322,6 +1322,10 @@ async function saveState() {
                  hoursOverride: HOURS_OVERRIDE, pushoverMode: PUSHOVER_MODE,
                  freeBeta: FREE_BETA, pricing: PRICING,
                  aiMode: AI_MODE, aiModel: AI_MODEL_OVERRIDE, aiWarmOn: AI_WARM_ON,
+                 /* عدّاد الزوار: بلا حفظه يرجع لصفر مع كل نشر فيضيع سدّه */
+                 aiGuest: { ymd: AI_GUEST.ymd, ym: AI_GUEST.ym,
+                            micro: AI_GUEST.micro, questions: AI_GUEST.questions,
+                            ips: [...AI_GUEST.ips.entries()].slice(0, 5000) },
                  aiCaps: AI_CAPS, aiAlerted: AI_ALERTED },
       ops: { searches: OPS.searches, feedback: OPS.feedback,
              pmuFails: OPS.pmuFails, tgFails: OPS.tgFails,
@@ -1368,6 +1372,12 @@ async function restoreState() {
      يتقدّم على متغيّر Render (null = ارجع لمتغيّر Render). */
   if ('aiMode' in g && AI_MODES.includes(g.aiMode)) AI_MODE = g.aiMode;
   if ('aiWarmOn' in g) AI_WARM_ON = !!g.aiWarmOn;
+  if (g.aiGuest && typeof g.aiGuest === 'object') {
+    AI_GUEST = { ymd: String(g.aiGuest.ymd || ''), ym: String(g.aiGuest.ym || ''),
+      micro: Number(g.aiGuest.micro) || 0,
+      questions: Number(g.aiGuest.questions) || 0,
+      ips: new Map(Array.isArray(g.aiGuest.ips) ? g.aiGuest.ips : []) };
+  }
   if ('aiModel' in g) AI_MODEL_OVERRIDE = String(g.aiModel || '').trim() || null;
   if (g.aiCaps && typeof g.aiCaps === 'object') {
     const merged = Object.assign({}, AI_CAPS_DEFAULT, g.aiCaps);
@@ -5795,6 +5805,12 @@ async function aiStudentCtx(userId) {
   const prepInferred = prepStored === null;
   const prep = prepInferred ? completed.some(c => /^(PRP|PREE)/.test(c)) : prepStored;
 
+  /* **التخصص قد يكون غير مختار.** الافتراضي MEEN موجود عشان بقية
+     الحسابات ما تنهار، لكن **الرد على الطالب به اختراع**: شفناها على
+     الإنتاج — طالبة ما اختارت تخصصها، فأعطاها المساعد «مواد ترمك
+     الجاي» وهي مواد الميكانيكال الترم الأول. فنعلّمها هنا، وأدوات
+     الخطة ترفض حتى يختار. */
+  const majorSet = !!(p && p.major);
   const major = (p && p.major) || 'MEEN';
   const planVer = (p && p.plan_ver === 'old') ? 'old' : 'new';
 
@@ -5802,6 +5818,7 @@ async function aiStudentCtx(userId) {
     userId: String(userId),
     profile: p,
     pro: hasAccess(p),
+    majorSet,
     prep,                       /* القيمة الفعلية المستعملة في الحساب */
     prepInferred,               /* true لما تكون مستنتَجة لا محفوظة */
     plan: PLANS_DATA.ctxOf({
@@ -6017,6 +6034,21 @@ const aiToday = () => riyadhNow().toISOString().slice(0, 10);
 /* نص «ما أعرف» موحّد — الأداة تقولها، والنموذج ينقلها */
 const AI_UNKNOWN = 'ما لقيتها في بيانات جدولك';
 const AI_PRO_ONLY = 'هذي تحتاج اشتراك — الحساب والدرجات للمشتركين';
+/* الزائر بلا حساب: نقول له «سجّل دخول» لا «تحتاج اشتراك» — الثانية
+   تخلّيه يظن إنها بفلوس وهي مجانية بمجرد دخوله. */
+const AI_SIGN_IN = 'سجّل دخولك بقوقل أول (ثانيتين) عشان أشوف جدولك وخطتك.';
+/* تخصص ما انختار: نقولها بدل ما نجاوب من خطة افتراضية */
+const AI_NO_MAJOR = 'ما اخترت تخصصك بعد — افتح ⚙️ الإعدادات واختر تخصصك، '
+  + 'وبعدها أقدر أقول لك خطتك ومقترح ترمك.';
+/* الأدوات اللي جوابها يتغيّر بالتخصص — بلا تخصص ترد بالرسالة فوق */
+const AI_MAJOR_TOOLS = new Set(['plan_overview', 'next_term_suggestion',
+  'graduation_forecast', 'retake_list', 'course_info', 'what_unlocks',
+  'course_offering', 'find_course', 'build_schedule', 'gpa']);
+/* أدوات الزائر: **العام وحده**. ما فيها ولا أداة تحتاج تخصصه أو
+   صفوفه — والخطة منها: ما نعرف تخصصه، وافتراضه يعطيه خطة غيره. */
+const AI_GUEST_TOOLS = new Set(['guide', 'academic_calendar',
+  'registration_calendar', 'sections', 'instructor_reviews', 'free_rooms',
+  'finals', 'propose_support_ticket']);
 
 function aiCourse(ctx, code) {
   const c = PLANS_DATA.findPlanCourse(ctx.plan, code);
@@ -6923,6 +6955,7 @@ const AI_TOOLS = {
       if (text.length < 5) return { error: 'اكتب المشكلة أو الاقتراح بوضوح' };
       const p = ctx.plan || {};
       return { proposal: { action: 'support', text,
+          guest: !!ctx.guest,
           category: ['bug', 'idea', 'other'].includes(a.category) ? a.category : 'other',
           /* حقائق من جلسته لا من النموذج */
           context: { major: p.major || null, planVer: p.planVer || null,
@@ -7072,6 +7105,7 @@ const AI_TOOLS = {
       if (!all.length) return { available: false, error: AI_CACHE_COLD };
 
       if (a.mine) {
+        if (ctx.guest) return { error: AI_SIGN_IN, signIn: true };
         if (!ctx.pro) return { error: AI_PRO_ONLY, tier: 'pro' };
         const rows = await aiSchedule(ctx);
         const crns = new Set(rows.map(r => String(r.crn)));
@@ -7140,6 +7174,16 @@ async function aiRunTool(name, args, ctx) {
       return { error: 'ما نقبل معرّف مستخدم في الوسائط — الهوية من الجلسة' };
   }
 
+  /* الزائر: قائمة بيضاء صريحة، **قبل فحص الوسائط**. أداة ما هي له
+     أصلاً ما يهم شكل وسائطها — والرسالة المفيدة «سجّل دخول» لا
+     «وسيط غير معروف». */
+  if (ctx.guest && !AI_GUEST_TOOLS.has(name))
+    return { error: AI_SIGN_IN, signIn: true };
+  /* داخل وما اختار تخصصه: جواب الخطة بلا تخصص = خطة غيره.
+     نرفض بالاسم لا نجاوب من الافتراضي (§٩-أ: لا يخترع). */
+  if (!ctx.guest && ctx.majorSet === false && AI_MAJOR_TOOLS.has(name))
+    return { error: AI_NO_MAJOR, needMajor: true };
+
   /* الوسائط المطلوبة */
   for (const r of (t.input_schema.required || [])) {
     if (a[r] === undefined || a[r] === null || a[r] === '')
@@ -7183,7 +7227,11 @@ const aiModel = () => AI_MODEL_OVERRIDE || AI_MODEL_ENV;
 /* السقوف. dayFree أصغر: المجاني «الدليل والمعلومات العامة وعدد قليل من
    أسئلة الخطة» (§٩-أ). وفي الفترة المجانية hasAccess تصدق للجميع،
    فالكل ياخذ السقف الكامل — وهذا مقصود. */
-const AI_CAPS_DEFAULT = { day: 25, dayFree: 5, term: 200, monthSar: 200 };
+/* guestDay: أسئلة الزائر الواحد في اليوم (بعنوانه) ·
+   guestMonthSar: سقف الزوار كلهم بالريال في الشهر — بالريال لا بالعدد،
+   لأن كلفة السؤال تتغيّر بطوله وأدواته. */
+const AI_CAPS_DEFAULT = { day: 25, dayFree: 5, term: 200, monthSar: 200,
+                          guestDay: 3, guestMonthSar: 30 };
 let AI_CAPS = Object.assign({}, AI_CAPS_DEFAULT);
 
 /* ترجع نص الخطأ، أو '' لو السقوف سليمة */
@@ -7198,6 +7246,7 @@ function validateAiCaps(c) {
   /* الترمي ≤ ٩٠٠ لأن عدّ أسئلة الطالب يُقرأ بحد واحد، وSupabase يقصّ
      عند ١٠٠٠ بصمت (§٦) — فوقها يصير العدّ ناقصاً بلا أي خطأ. */
   return n('day', 0, 500) || n('dayFree', 0, 500) || n('term', 0, 900) ||
+         n('guestDay', 0, 100) || n('guestMonthSar', 0, 100000) ||
          n('monthSar', 0, 100000) ||
          (Number(c.dayFree) > Number(c.day) ? 'سقف المجاني لازم ≤ اليومي' : '');
 }
@@ -7290,6 +7339,84 @@ async function aiSpendMonth() {
   return out;
 }
 
+/* ═══ الزائر — المساعد بلا تسجيل دخول (قرار محمد) ═══
+   الطالب يدخل الموقع أول مرة ويشوف المساعد مقفلاً عليه، فيطلع.
+   صار يقدر يسأل عن **العام**: الدليل · التقويم · الشعب · الدكاترة ·
+   القاعات · النهائيات. وأي شي يخص حسابه ⇒ «سجّل دخولك».
+
+   **الخطر هنا فلوس لا خصوصية**: كل سؤال يكلّف، والزائر بلا حساب فما
+   ينفع نعدّ عليه كما نعدّ على الطالب. فثلاثة سدود:
+   ١) **حد يومي لكل عنوان** (`guestDay`) — يوقف الواحد المتحمّس.
+   ٢) **سقف شهري للزوار كلهم بالريال** (`guestMonthSar`) — يوقف الحشد.
+      وبالريال لا بعدد الأسئلة: الكلفة تتغيّر بطول السؤال وأدواته.
+   ٣) **السقف الشهري العام** فوقهما كما هو.
+   والعدّادان في الذاكرة ويُحفظان في `app_state` (بلا SQL جديد): بلا
+   الحفظ يرجع الزوار لصفر مع كل نشر فيضيع السد.
+
+   و**ما نكتب صفّ `ai_usage` للزائر**: العمود مربوط بـ`auth.users`
+   بمفتاح أجنبي، فأي معرّف مخترع يُرفض. فنعدّ إنفاقه هنا ونضمّه
+   للشهري عند الفحص — واللوحة تعرضه مفصولاً. */
+const AI_GUEST_SAVE_MS = 60 * 1000;      /* أقصى تكرار للحفظ */
+let AI_GUEST = { ymd: '', ips: new Map(), ym: '', micro: 0, questions: 0 };
+let AI_GUEST_SAVED = 0;
+
+function aiGuestRoll() {
+  const d = aiToday(), m = aiYM();
+  if (AI_GUEST.ymd !== d) { AI_GUEST.ymd = d; AI_GUEST.ips = new Map() }
+  if (AI_GUEST.ym !== m) { AI_GUEST.ym = m; AI_GUEST.micro = 0; AI_GUEST.questions = 0 }
+  /* خريطة العناوين تكبر بيوم مزدحم — نقصّها بدل ما تكبر بلا حد */
+  if (AI_GUEST.ips.size > 20000) AI_GUEST.ips.clear();
+}
+
+function aiGuestState() {
+  aiGuestRoll();
+  return { ymd: AI_GUEST.ymd, ym: AI_GUEST.ym,
+    micro: AI_GUEST.micro, questions: AI_GUEST.questions,
+    ips: AI_GUEST.ips.size,
+    capSar: AI_CAPS.guestMonthSar, capDay: AI_CAPS.guestDay };
+}
+
+/* سياق الزائر: بلا هوية وبلا خطة وبلا اشتراك.
+   `plan` تبقى null عمداً — ما نعرف تخصصه، وافتراض تخصص يعطيه خطة
+   غيره وهذا اختراع (§٩-أ). والأدوات اللي تحتاجها ترفضه بالاسم. */
+function aiGuestCtx() {
+  return { userId: null, profile: null, pro: false, guest: true,
+           prep: false, prepInferred: false, plan: null };
+}
+
+/* `cheap`: بلا قراءة من القاعدة — للحالة اللي تسألها الصفحة عند كل
+   تحميل. الفحص الحقيقي (وقت السؤال) يقرأ الشهري كما يقرأه الطالب،
+   وإلا صار سقف الشهر أعمى عن الزوار. */
+async function aiGuestQuota(ip, opt) {
+  aiGuestRoll();
+  const key = String(ip || 'unknown');
+  const cheap = !!(opt && opt.cheap);
+  const spend = cheap ? null : await aiSpendMonth();
+  return { term: regTerm(), guest: true, ip: key,
+    cap: { day: AI_CAPS.guestDay, term: AI_CAPS.term,
+           monthMicro: AI_CAPS.monthSar * 1e6,
+           guestMonthMicro: AI_CAPS.guestMonthSar * 1e6 },
+    day: AI_GUEST.ips.get(key) || 0,
+    termCount: 0,
+    guestMicro: AI_GUEST.micro,
+    monthMicro: spend ? spend.micro : AI_MONTH.micro,
+    /* الرخيصة ما تقفل على شكّ: الزر يبان والسؤال نفسه يفحص */
+    monthKnown: cheap ? true : (!!spend || AI_MONTH.ym === aiYM()) };
+}
+
+/* يُنادى بعد كل سؤال زائر: عدّ السؤال وكلفته، واحفظ بتباعد */
+function aiGuestSpend(ip, micro) {
+  aiGuestRoll();
+  const key = String(ip || 'unknown');
+  AI_GUEST.ips.set(key, (AI_GUEST.ips.get(key) || 0) + 1);
+  AI_GUEST.micro += Math.max(0, Number(micro) || 0);
+  AI_GUEST.questions++;
+  if (Date.now() - AI_GUEST_SAVED > AI_GUEST_SAVE_MS) {
+    AI_GUEST_SAVED = Date.now();
+    saveState().catch(() => {});
+  }
+}
+
 /* ═══ سقوف الطالب ═══ */
 async function aiQuota(userId, pro) {
   const term = regTerm();
@@ -7317,8 +7444,14 @@ function aiCapBlock(q) {
   if (q.monthMicro >= q.cap.monthMicro) return { why: 'month',
     msg: 'وصلنا سقف المساعد لهذا الشهر، فوقّفته لين أول الشهر الجاي. '
        + 'باقي الموقع شغّال عادي — البحث والمراقبة والجدول والغياب.' };
+  /* سقف الزوار قبل اليومي: «الزوار خلصوا» غير «أنت خلصت» */
+  if (q.guest && q.guestMicro >= q.cap.guestMonthMicro) return { why: 'guests',
+    msg: 'وصلنا سقف المساعد للزوار هذا الشهر. '
+       + 'سجّل دخولك بقوقل ويشتغل لك عادي — وباقي الموقع شغّال بلا دخول.' };
   if (q.day >= q.cap.day) return { why: 'day',
-    msg: `خلصت أسئلتك لهذا اليوم (${q.cap.day}). ترجع لي بكرة.` };
+    msg: q.guest
+      ? `خلصت أسئلتك لهذا اليوم (${q.cap.day}). سجّل دخولك وترتفع حصتك.`
+      : `خلصت أسئلتك لهذا اليوم (${q.cap.day}). ترجع لي بكرة.` };
   if (q.termCount >= q.cap.term) return { why: 'term',
     msg: `خلصت أسئلتك لهذا الترم (${q.cap.term}).` };
   return null;
@@ -7364,6 +7497,8 @@ const AI_SYSTEM = `أنت «مساعد جدولك» — مساعد داخل مو
   كيف أضيف موعد)؟ استعمل أداة الدليل — لا تجاوب من عندك ولا تقول
   «ما عندي أداة» قبل ما تجرّبها.
 - الأداة تقول إن بيانات الجامعة مو جاهزة؟ قل له يجرّب بعد شوي — ولا تعطيه رقماً قديماً من عندك.
+- **الأداة تقول إنه ما اختار تخصصه؟** قل له يفتح الإعدادات ويختار تخصصه،
+  ولا تجاوب عن خطته ولا مقترحه من عندك — خطة بلا تخصص خطة طالب ثانٍ.
 - **عجزت عن جوابه؟ أو يبلّغ عن خلل؟ أو يقترح ميزة؟** جهّز له تذكرة دعم —
   توصل فريق جدولك ومعها تخصصه ونسخة خطته وترمه، فما يُسأل عنها.
   لكن **جرّب الأدوات أول**: تذكرة عن سؤال جوابه عندك تضيّع وقته ووقتهم.
@@ -7538,10 +7673,13 @@ async function aiSpendAlert() {
 
 /* ═══ سؤال واحد من الأول للآخر ═══
    userId من الجلسة وحدها — النقطة تمرّره، وما يجي من جسم الطلب أبداً. */
+/* userId فاضٍ = زائر (بلا تسجيل دخول): سياقه بلا هوية ولا خطة،
+   وسقوفه بعنوانه لا بحسابه، وبلا محادثة محفوظة. */
 async function aiChat(userId, question, opt) {
   const t0 = Date.now();
   const o = opt || {};
-  const ctx = await aiStudentCtx(userId);
+  const guest = !userId;
+  const ctx = guest ? aiGuestCtx() : await aiStudentCtx(userId);
 
   const gate = aiGate(ctx.profile);
   if (!gate.ok) return { ok: false, why: gate.why, answer: gate.msg, tools: [] };
@@ -7549,12 +7687,13 @@ async function aiChat(userId, question, opt) {
   const q = String(question == null ? '' : question).trim().slice(0, AI_Q_MAX);
   if (!q) return { ok: false, why: 'empty', answer: 'اكتب سؤالك وأنا أساعدك.', tools: [] };
 
-  const quota = await aiQuota(userId, ctx.pro);
+  const quota = guest ? await aiGuestQuota(o.ip) : await aiQuota(userId, ctx.pro);
   const block = aiCapBlock(quota);
   if (block) return { ok: false, why: block.why, answer: block.msg,
                       tools: [], used: aiUsedOf(quota) };
 
-  const th = o.fresh ? { summary: '', messages: [], turns: 0 }
+  /* الزائر بلا محادثة محفوظة: مفتاحها user_id وهو مربوط بـauth.users */
+  const th = (guest || o.fresh) ? { summary: '', messages: [], turns: 0 }
                      : await aiThreadGet(userId);
   const messages = th.messages.map(m => ({ role: m.role, content: m.text }));
   messages.push({ role: 'user', content: aiHeader(ctx, th) + q });
@@ -7607,7 +7746,17 @@ async function aiChat(userId, question, opt) {
 
   const cost = aiCostMicro(model, usage);
   const spent = usage.input_tokens > 0 || usage.output_tokens > 0;
-  if (spent) {
+  /* الزائر: عمود `ai_usage.user_id` مربوط بـ`auth.users` بمفتاح أجنبي،
+     فما نقدر نكتب له صفاً بمعرّف مخترع. نعدّ إنفاقه في `AI_GUEST`
+     (ويُحفظ في `app_state`) ونضمّه للشهري — الفلوس تُحسب مرة واحدة
+     في المكانين معاً لأن `aiMonthAdd` تشتغل لكليهما. */
+  if (spent && guest) {
+    aiGuestSpend(o.ip, cost);
+    quota.day++; quota.guestMicro += cost;
+    aiMonthAdd(cost);
+    await aiSpendAlert();
+  }
+  if (spent && !guest) {
     const w = await sb('POST', 'ai_usage', {
       body: { user_id: String(userId), env: SITE_ENV, term: quota.term, model,
               on_date: aiToday(), calls,
@@ -7633,12 +7782,12 @@ async function aiChat(userId, question, opt) {
       ? 'صار خلل عندي الحين — جرّب بعد شوي.'
       : 'ما قدرت أطلع لك جواب. جرّب تسأل بطريقة ثانية.';
     if (!why) why = 'noanswer';
-  } else {
+  } else if (!guest) {
     await aiThreadSave(userId, th, q, answer);
   }
 
   return { ok: !why, why, answer, tools: tools_used, calls, proposal,
-           model, cost, tokens: usage, used: aiUsedOf(quota) };
+           model, cost, tokens: usage, guest, used: aiUsedOf(quota) };
 }
 
 /* حساب صاحب الموقع — لمربّع التجربة في اللوحة. نلقاه بنفس الربط اللي
@@ -7675,7 +7824,17 @@ async function aiPing() {
 
 /* حالة المساعد لصاحب الجلسة — الصفحة تسألها مرة عند الفتح لتعرف
    هل تعرض التبويب أصلاً، وكم بقي له اليوم. */
-async function aiStatus(userId) {
+async function aiStatus(userId, opt) {
+  /* الزائر: بلا أي قراءة من القاعدة — سقوفه في الذاكرة. */
+  if (!userId) {
+    const pre = aiGate(null);
+    /* وضع admin يخص صاحب الموقع وحده، فالزائر ما يشوف الزر فيه */
+    if (!pre.ok) return { on: false, why: pre.why, msg: pre.msg, guest: true };
+    const q = await aiGuestQuota((opt || {}).ip, { cheap: true });
+    const b = aiCapBlock(q);
+    return { on: !b, why: b ? b.why : '', msg: b ? b.msg : '',
+             guest: true, pro: false, used: aiUsedOf(q) };
+  }
   /* الصفحة تسألها مرة كل تحميل. لو المفتاح ناقص أو الوضع off نرد بلا
      أي قراءة من القاعدة — وإلا صارت أربع قراءات لكل طالب على الفاضي.
      وضع admin وحده يحتاج صفّه عشان نعرف هل هو صاحب الموقع. */
@@ -8365,7 +8524,7 @@ const server = http.createServer(async (req, res) => {
           model: aiModel(), modelEnv: AI_MODEL_ENV,
           modelCustom: !!AI_MODEL_OVERRIDE, modelKnown: aiKnownModel(aiModel()),
           caps: AI_CAPS, defaults: AI_CAPS_DEFAULT, alerted: AI_ALERTED,
-          warm: aiWarmState(),
+          warm: aiWarmState(), guests: aiGuestState(),
           fails: OPS.aiFails || 0, unlogged: OPS.aiUnlogged || 0,
           spend: sp ? {
             monthSar: Number(aiSar(sp.micro)), todaySar: Number(aiSar(sp.today)),
@@ -8412,6 +8571,30 @@ const server = http.createServer(async (req, res) => {
             email: (names[t.id] && names[t.id].email) || '',
             questions: t.questions, sar: Number(aiSar(t.micro)),
             last: t.last, envs: t.envs })) });
+      }
+
+      /* ═══ محادثة طالب بعينه — للتأكد إن المساعد يشتغل صح ═══
+         محمد يشوف رقماً في «أكثر الطلاب استهلاكاً» وما يعرف هل جاوبهم
+         صح ولا خربط. يفتح محادثته ويقرأ.
+         **قراءة فقط**، وبرمز اللوحة، ومن البيئة الحالية (المحادثة
+         مفتاحها الطالب + البيئة). وnotes: هذي محادثات طلاب حقيقيين —
+         للتشغيل والتحقق لا للتصفّح. */
+      if (act === 'ai-thread') {
+        const uid = String(parsed.query.user || '').trim();
+        if (!/^[0-9a-f-]{36}$/i.test(uid))
+          return send(400, { error: 'معرّف طالب غير صالح' });
+        const [th, pr] = await Promise.all([
+          aiThreadGet(uid),
+          sb('GET', 'profiles', { query:
+            `?id=eq.${encodeURIComponent(uid)}&select=name,email,major` })
+            .catch(() => null),
+        ]);
+        const p0 = Array.isArray(pr) ? pr[0] : null;
+        return send(200, { id: uid, env: SITE_ENV,
+          name: (p0 && p0.name) || '', email: (p0 && p0.email) || '',
+          major: (p0 && p0.major) || '',
+          summary: th.summary, turns: th.turns,
+          messages: th.messages.map(m => ({ role: m.role, text: m.text })) });
       }
 
       /* زر «جرّب»: نداء واحد صغير يثبت المفتاح واسم النموذج */
@@ -8826,22 +9009,28 @@ const server = http.createServer(async (req, res) => {
   if (parsed.pathname === '/api/me/ai') {
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Cache-Control', 'no-store');
+    /* **بلا رمز = زائر لا رفض**: الطالب يدخل الموقع أول مرة ويشوف
+       المساعد مقفلاً عليه فيطلع. الزائر يسأل عن العام، وأي شي يخص
+       حسابه ترفضه الأدوات بالاسم وتقول له «سجّل دخول». */
     const user = await sbAuthUser(bearerOf(req));
-    if (!user) { res.writeHead(401); res.end(JSON.stringify({ error: 'سجّل دخول' })); return }
+    const ip = clientIP(req);
     try {
       if (req.method !== 'POST') {
-        res.writeHead(200); res.end(JSON.stringify(await aiStatus(user.id))); return;
+        res.writeHead(200);
+        res.end(JSON.stringify(await aiStatus(user ? user.id : null, { ip })));
+        return;
       }
       const b = await readBody(req);
       if (b.reset) {
-        await aiThreadReset(user.id);
+        if (user) await aiThreadReset(user.id);
         res.writeHead(200); res.end(JSON.stringify({ ok: true, reset: true })); return;
       }
-      const r = await aiChat(user.id, b.q, { fresh: !!b.fresh });
+      const r = await aiChat(user ? user.id : null, b.q, { fresh: !!b.fresh, ip });
       /* ما يوصل الطالب: الجواب وحصته. التكلفة والرموز للوحة وحدها. */
       res.writeHead(200);
       res.end(JSON.stringify({ ok: r.ok, answer: r.answer, why: r.why || '',
                                tools: r.tools || [], used: r.used || null,
+                               guest: !!r.guest,
                                proposal: r.proposal || null }));
     } catch (e) {
       res.writeHead(500); res.end(JSON.stringify({ error: 'تعذّر' }));

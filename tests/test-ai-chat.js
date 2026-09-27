@@ -268,6 +268,13 @@ this.getCaps = () => AI_CAPS;
 this.setModel = m => { AI_MODEL_OVERRIDE = m };
 this.getAlerted = () => AI_ALERTED;
 this.resetRuntime = () => { AI_ALERTED = ''; AI_MONTH = { ym: '', micro: 0 } };
+/* داخل try: على كود قديم بلا الزائر نبلّغ فشلاً مرتّباً بدل انهيار
+   يخفي سطر الملخّص عن run-all.sh */
+try{
+this.aiGuestState = aiGuestState;
+this.resetGuests = () => { AI_GUEST = { ymd: '', ips: new Map(), ym: '',
+                                        micro: 0, questions: 0 } };
+}catch(e){ this.aiGuestState = () => ({}); this.resetGuests = () => {} }
 `, ctxObj);
 
 const A = ctxObj;
@@ -709,8 +716,17 @@ const usageRow = (over) => Object.assign({
 
   /* ══════════ ١١) الحدود والسقوف: التحقق ══════════ */
   {
-    eq(A.validateAiCaps({ day: 25, dayFree: 5, term: 200, monthSar: 200 }), '',
-       'سقوف سليمة تُقبل');
+    /* سقفا الزائر جديدان (قرار محمد: المساعد للجميع) — والتحقق
+       يطلبهما، وإلا مرّ كائن ناقص وصار الزائر بلا حد. */
+    const CAPS_OK = { day: 25, dayFree: 5, term: 200, monthSar: 200,
+                      guestDay: 3, guestMonthSar: 30 };
+    eq(A.validateAiCaps(CAPS_OK), '', 'سقوف سليمة تُقبل');
+    ok(!!A.validateAiCaps({ day: 25, dayFree: 5, term: 200, monthSar: 200 }),
+       '**وكائن بلا سقوف الزائر يُرفض** — لا يمر ناقصاً فيصير بلا حد');
+    ok(!!A.validateAiCaps(Object.assign({}, CAPS_OK, { guestDay: -1 })),
+       'وحد الزائر السالب يُرفض');
+    ok(!!A.validateAiCaps(Object.assign({}, CAPS_OK, { guestMonthSar: 1.5 })),
+       'وسقف الزوار بكسر يُرفض');
     ok(!!A.validateAiCaps({ day: 25, dayFree: 5, term: 1200, monthSar: 200 }),
        'الترمي فوق ٩٠٠ يُرفض — Supabase يقصّ عند ١٠٠٠ بصمت');
     ok(!!A.validateAiCaps({ day: -1, dayFree: 5, term: 200, monthSar: 200 }),
@@ -768,6 +784,102 @@ const usageRow = (over) => Object.assign({
     ok(!!s3.msg, 'ومعه شرح للطالب');
   }
 
+
+  /* ══════════ الزائر — المساعد بلا تسجيل دخول (قرار محمد) ══════════
+     الخطر هنا **فلوس لا خصوصية**: الزائر بلا حساب، فسقوف الطالب ما
+     تنطبق عليه — ولو تركناه بلا سد يحرق ميزانية الشهر أي أحد. */
+  {
+    resetAll(); A.resetGuests();
+
+    /* ١) يسأل ويُجاب — بلا حساب */
+    SENT = []; DB.ai_usage = []; DB.ai_threads = [];
+    const g1 = await A.aiChat(null, 'وش التقويم الأكاديمي؟', { ip: '1.1.1.1' });
+    ok(g1.ok, 'الزائر يسأل ويُجاب — ' + JSON.stringify(g1).slice(0, 80));
+    eq(g1.guest, true, 'والرد يقول إنه زائر');
+    eq(SENT.length, 1, 'ونادينا النموذج مرة');
+
+    /* ٢) **ولا صفّ في ai_usage**: العمود مربوط بـauth.users */
+    eq(DB.ai_usage.length, 0,
+       '**ولا صفّ استهلاك للزائر** — user_id مربوط بـauth.users');
+    eq(DB.ai_threads.length, 0, 'ولا محادثة محفوظة له');
+    /* لكن فلوسه محسوبة */
+    ok(A.aiGuestState().micro > 0,
+       '**ومع ذلك إنفاقه محسوب** — ' + A.aiGuestState().micro + ' ميكرو');
+    eq(A.aiGuestState().questions, 1, 'وسؤاله معدود');
+
+    /* ٣) الحد اليومي بعنوانه */
+    resetAll({ guestDay: 2 }); A.resetGuests();
+    SENT = [];
+    await A.aiChat(null, 'س١', { ip: '2.2.2.2' });
+    await A.aiChat(null, 'س٢', { ip: '2.2.2.2' });
+    const g3 = await A.aiChat(null, 'س٣', { ip: '2.2.2.2' });
+    ok(!g3.ok && g3.why === 'day', 'الزائر يوقف عند حده اليومي');
+    ok(/سجّل دخولك/.test(g3.answer), 'ونقول له إن الدخول يرفع حصته');
+    eq(SENT.length, 2, '**ولا نداء بعد السقف** — ما نصرف على مرفوض');
+    /* وعنوان ثانٍ ما يتأثر */
+    const g3b = await A.aiChat(null, 'س١', { ip: '3.3.3.3' });
+    ok(g3b.ok, 'وزائر بعنوان ثانٍ يسأل عادي');
+
+    /* ٤) سقف الزوار الشهري بالريال — السد ضد الحشد */
+    resetAll({ guestDay: 50, guestMonthSar: 0 }); A.resetGuests();
+    SENT = [];
+    const g4 = await A.aiChat(null, 'س', { ip: '4.4.4.4' });
+    ok(!g4.ok && g4.why === 'guests',
+       '**سقف الزوار الشهري يوقفهم كلهم** — ' + g4.why);
+    ok(/سجّل دخولك/.test(g4.answer), 'ويدلّه على الدخول');
+    eq(SENT.length, 0, 'وبلا أي نداء');
+    /* والمسجّل ما يتأثر بسقف الزوار */
+    const g4b = await A.aiChat('u-pro', 'س');
+    ok(g4b.ok, '**والمسجّل ما يوقفه سقف الزوار**');
+
+    /* ٥) الأدوات: العام له، والخاص «سجّل دخول».
+       حد يومي واسع هنا: كل أداة سؤال، وبالحد الافتراضي (٣) يوقفنا
+       السقف بعد الثالثة فنظن إن الأدوات ترفض وهي ما وصلت أصلاً. */
+    resetAll({ guestDay: 500 }); A.resetGuests();
+    const ask = async (name, input) => {
+      SCRIPT = (p, n) => n === 0
+        ? { status: 200, body: replyTool([{ name, input: input || {} }]) }
+        : { status: 200, body: reply('تمام') };
+      SENT = [];
+      await A.aiChat(null, 'سؤال', { ip: '5.5.5.5' });
+      /* نتيجة الأداة تروح في الرسالة الثانية للنموذج */
+      const second = SENT[1] && SENT[1].payload;
+      const blocks = second ? second.messages[second.messages.length - 1].content : [];
+      ok(SENT.length === 2, name + ': وصل للأداة فعلاً — ' + SENT.length);
+      return JSON.stringify(blocks);
+    };
+    for (const n of ['guide', 'academic_calendar', 'registration_calendar'])
+      ok(!/سجّل دخولك/.test(await ask(n)), `${n}: متاحة للزائر`);
+    for (const n of ['my_schedule', 'my_day', 'gpa', 'plan_overview',
+                     'graduation_forecast', 'build_schedule', 'propose_reminder',
+                     'course_info', 'find_course', 'retake_list'])
+      /* بلا وسائط عمداً: الرفض لازم يكون **لأنه زائر** لا لأن وسيطاً
+         ناقص أو غريب — وإلا مرّ الاختبار على رسالة غلط. */
+      ok(/سجّل دخولك/.test(await ask(n)),
+         `**${n}: ترفض الزائر وتقول «سجّل دخول»**`);
+    /* ولا تقول له «تحتاج اشتراك» — يظنها بفلوس وهي مجانية بدخوله */
+    ok(!/تحتاج اشتراك/.test(await ask('my_schedule')),
+       '**ولا نقول «تحتاج اشتراك»** — الرسالة الغلط تطرده');
+
+    /* ٦) حالة المساعد للزائر بلا قراءة من القاعدة */
+    resetAll(); A.resetGuests();
+    SB = [];
+    const st = await A.aiStatus(null, { ip: '6.6.6.6' });
+    eq(st.guest, true, 'حالة الزائر تقول إنه زائر');
+    eq(st.on, true, 'والمساعد مفتوح له');
+    eq(st.pro, false, 'وغير مشترك');
+    eq(SB.length, 0, '**وبلا أي قراءة من القاعدة** — حالته في الذاكرة');
+    /* ووضع admin يخفيه عن الزائر */
+    A.setMode('admin');
+    const st2 = await A.aiStatus(null, { ip: '6.6.6.6' });
+    eq(st2.on, false, 'ووضع admin يقفله على الزائر');
+    eq(st2.why, 'admin', 'بالسبب');
+    A.setMode('off');
+    eq((await A.aiStatus(null, { ip: '6.6.6.6' })).why, 'off', 'ووضع off كذلك');
+
+    resetAll(); A.resetGuests();
+  }
+
   /* ══════════ ١٤) فحص ثابت على المصدر ══════════ */
   {
     const ep = src.slice(src.indexOf("if (parsed.pathname === '/api/me/ai')"),
@@ -775,12 +887,19 @@ const usageRow = (over) => Object.assign({
     ok(ep.length > 100, 'نقطة /api/me/ai موجودة');
     ok(/sbAuthUser\(bearerOf\(req\)\)/.test(ep),
        'الهوية من رمز الجلسة — نفس بقية /api/me/*');
-    ok(/aiChat\(user\.id,/.test(ep), 'وتمرّر معرّف الجلسة لا شيئاً من الجسم');
+    ok(/aiChat\(user \? user\.id : null,/.test(ep),
+       'وتمرّر معرّف الجلسة لا شيئاً من الجسم — وnull للزائر');
     ok(!/b\.(user_?id|uid|student_?id|email)/i.test(ep),
        '**ولا تقرأ معرّف مستخدم من جسم الطلب**');
     ok(!/parsed\.query\.(user_?id|uid|id)/i.test(ep),
        'ولا من الرابط');
-    ok(/401/.test(ep), 'وبلا جلسة ٤٠١');
+    /* **قاعدة تغيّرت بقرار محمد:** كانت «بلا جلسة ٤٠١»، فالطالب يدخل
+       الموقع أول مرة ويشوف المساعد مقفلاً عليه فيطلع. صار الزائر
+       يسأل عن العام، والخاص ترفضه الأدوات بالاسم. */
+    ok(!/401/.test(ep), '**بلا جلسة = زائر لا رفض**');
+    ok(/clientIP\(req\)/.test(ep), 'وسقف الزائر بعنوانه — ما عنده حساب نعدّ عليه');
+    ok(/if \(user\) await aiThreadReset/.test(ep),
+       'وتصفير المحادثة للمسجّل وحده — الزائر بلا محادثة محفوظة');
     /* التكلفة ما تطلع للطالب */
     const out = ep.slice(ep.indexOf('res.end(JSON.stringify({ ok: r.ok'));
     ok(!/cost|tokens/.test(out.slice(0, 300)),
