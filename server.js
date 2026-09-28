@@ -519,7 +519,14 @@ async function meQuote(uid, { pushover, ref }) {
       يُعرف ويُرفض هناك. */
 const PL_ID = (process.env.PAYLINK_API_ID || '').trim();
 const PL_SECRET = (process.env.PAYLINK_SECRET || '').trim();
-const PL_HOOK_KEY = (process.env.PAYLINK_WEBHOOK_KEY || '').trim();
+/* مفتاح الإشعار: الحروف الظاهرة وحدها. النسخ من الجوال (من رسالة عربية)
+   يلصق معه أحياناً علامات اتجاه مخفية (U+200E/F) — و`trim` ما تشيلها،
+   فيطلع المفتاح «مضبوط» وما يطابق أبداً. نشيل كل حرف مو ظاهر من الطرفين:
+   المفتاح نختاره نحن (hex) فما ينقص منه شي. */
+const payKeyNorm = s => String(s || '').replace(/[^\x21-\x7e]/g, '');
+const payKeyHidden = s => String(s || '').replace(/[\x21-\x7e\s]/g, '').length;
+const PL_HOOK_KEY = payKeyNorm(process.env.PAYLINK_WEBHOOK_KEY);
+const PL_HOOK_HIDDEN = payKeyHidden(process.env.PAYLINK_WEBHOOK_KEY);
 /* معرّف التجربة العام المنشور في توثيقهم — نعرفه عشان نرفضه في الإنتاج */
 const PL_PUBLIC_TEST_ID = 'APP_ID_1123453311';
 const PL_LIVE = SITE_ENV === 'prod';
@@ -981,12 +988,64 @@ async function payCancel(uid, sid) {
 }
 
 /* الإشعار: ترويسة ثابتة نختارها في بوابة التاجر — مقارنة ثابتة الزمن.
-   بلا مفتاح في Render الإشعار مقفل (لا «مفتوح للكل») */
+   بلا مفتاح في Render الإشعار مقفل (لا «مفتوح للكل»).
+   **وكل محاولة تنحفظ بسببها** (`PAY_HOOK_LAST` ⇒ بطاقة اللوحة وسجل Render):
+   زر Test في Paylink كان يرجّع `{"ok":false}` وبس، فما نعرف وش الغلط —
+   الترويسة ما وصلت؟ المفتاح ما طابق؟ نحفظ **أسماء** الترويسات والأطوال،
+   **ولا قيمة أبداً**. والرد نفسه فيه رمز السبب بلا أطوال ولا أسماء. */
+let PAY_HOOK_LAST = null;
+let PAY_HOOK_OK_AT = null;                    /* آخر إشعار مقبول — ما يغطّيه رفض بعده */
+const PAY_HOOK_LOGGED = {};                   /* سطر لكل سبب بالدقيقة على الأكثر */
+const PAY_HOOK_WHY = { 'nokey': 'no-key-configured', 'noheader': 'no-header',
+  'mismatch': 'mismatch', 'swapped': 'key-in-header-name' };
+/* قيمة ترويسة كما أرسلها صاحبها: Node يقرأ البايتات latin1 فنرجعها UTF-8
+   (علامة مخفية وحدة تنعد وحدة لا ثلاث)، و«Bearer » تنشال */
+function payHdr(v) {
+  let s = v == null ? '' : String(v);
+  if (/[\x80-\xff]/.test(s) && /^[\x00-\xff]*$/.test(s)) s = Buffer.from(s, 'latin1').toString('utf8');
+  return s.replace(/^\s*Bearer\s+/i, '');
+}
+/* اسم ترويسة للعرض — واسم يشبه مفتاحاً ما يُكتب */
+const payHdrName = n => /^[a-z][a-z0-9_.-]{0,39}$/i.test(n) && !/^[0-9a-f_-]{16,}$/i.test(n)
+  ? n.toLowerCase() : `‹${n.length} حرف›`;
 function payHookOk(req) {
-  if (!PL_HOOK_KEY) return false;
-  const h = String(req.headers['x-jadwalik-key'] || req.headers['authorization'] || '')
-    .replace(/^Bearer\s+/i, '').trim();
-  return safeEqual(h, PL_HOOK_KEY);
+  const isKey = v => !!PL_HOOK_KEY && safeEqual(payKeyNorm(v), PL_HOOK_KEY);
+  /* المفتاح هو السرّ لا اسم الترويسة: X-Jadwalik-Key أو Authorization — أو
+     أي اسم ثاني لو انكتب الاسم غلط في Paylink (واللوحة تقول باسم وش وصل).
+     ومن كتب المفتاح في خانة الاسم بدل القيمة نقول له كذا بالضبط */
+  const names = [];
+  let via = '', raw = '', swapped = false;
+  const rh = req.rawHeaders || [];
+  for (let i = 0; i < rh.length; i += 2) {
+    const n = String(rh[i] || ''), v = payHdr(rh[i + 1]);
+    if (isKey(n)) { swapped = true; continue }
+    names.push(payHdrName(n));
+    if (!via && isKey(v)) { via = payHdrName(n); raw = v }
+  }
+  const ok = !!via;
+  if (!ok) {
+    const c = ['x-jadwalik-key', 'authorization'].find(h => String(req.headers[h] || '') !== '');
+    if (c) { via = c; raw = payHdr(req.headers[c]) }
+  }
+  const got = payKeyNorm(raw);
+  const why = !PL_HOOK_KEY ? 'nokey' : ok ? 'ok' : swapped ? 'swapped' : !got ? 'noheader' : 'mismatch';
+  const at = new Date().toISOString();
+  if (ok) PAY_HOOK_OK_AT = at;
+  PAY_HOOK_LAST = { at, ok, why, via, len: got.length, want: PL_HOOK_KEY.length,
+    hidden: payKeyHidden(raw), headers: [...new Set(names)].slice(0, 30), okAt: PAY_HOOK_OK_AT };
+  req.payHookWhy = PAY_HOOK_WHY[why] || '';
+  if (Date.now() - (PAY_HOOK_LOGGED[why] || 0) >= 60 * 1000) {
+    PAY_HOOK_LOGGED[why] = Date.now();
+    const L = PAY_HOOK_LAST;
+    console.log('pay: إشعار ' + ({
+      ok: `مقبول (${via})`,
+      nokey: 'مرفوض — PAYLINK_WEBHOOK_KEY ناقص في Render',
+      noheader: 'مرفوض — ما وصلت ترويسة X-Jadwalik-Key · وصلت: ' + L.headers.join(', '),
+      mismatch: `مرفوض — المفتاح في ${via} ما طابق (وصل ${L.len} حرف · المضبوط ${L.want})`,
+      swapped: 'مرفوض — المفتاح مكتوب في خانة اسم الترويسة لا القيمة',
+    }[why]) + (L.hidden ? ` · فيه ${L.hidden} حرف مخفي تجاهلناه` : ''));
+  }
+  return ok;
 }
 let PAY_HOOK_SWEEP = 0;
 async function payWebhook(b) {
@@ -1041,6 +1100,7 @@ async function adminPay() {
   return { ok: true, env: SITE_ENV, live: PL_LIVE, host: PL_HOST, gateway: PL_GATEWAY,
     ready: PL_READY, idSet: !!PL_ID, secretSet: !!PL_SECRET,
     testIdInProd: PL_LIVE && PL_ID === PL_PUBLIC_TEST_ID, hookSet: !!PL_HOOK_KEY,
+    hookLen: PL_HOOK_KEY.length, hookHidden: PL_HOOK_HIDDEN, hookLast: PAY_HOOK_LAST,
     freeBeta: FREE_BETA, openTo: !PL_READY ? 'none' : (!PL_LIVE || FREE_BETA) ? 'owner' : 'all',
     counts: { pending: n('pending'), paid: n('paid'), failed: n('failed') },
     paidHalalas: rows.filter(x => x.status === 'paid' && x.gateway === PL_GATEWAY)
@@ -10153,7 +10213,11 @@ const server = http.createServer(async (req, res) => {
      يخلّيهم يعيدون الإرسال بلا فايدة. */
   if (parsed.pathname === '/api/paylink/webhook' && req.method === 'POST') {
     res.setHeader('Content-Type', 'application/json');
-    if (!payHookOk(req)) { res.writeHead(401); res.end(JSON.stringify({ ok: false })); return }
+    /* الرفض يقول رمز سببه: زر Test في Paylink يعرض الرد كما هو، فمحمد يشوف
+       السبب هناك بلا سجل. أسماء وأطوال؟ في اللوحة وحدها */
+    if (!payHookOk(req)) {
+      res.writeHead(401); res.end(JSON.stringify({ ok: false, why: req.payHookWhy })); return;
+    }
     const b = await readBody(req);
     const r = await payWebhook(b).catch(e => ({ status: 'error', error: e.message }));
     res.writeHead(200); res.end(JSON.stringify({ ok: true, status: r && r.status }));
@@ -10542,7 +10606,8 @@ server.listen(PORT, () => {
   /* سطر يكشف إعداد الدفع من سجل Render — بلا أي حرف من المفاتيح */
   console.log(`pay: ${PL_GATEWAY} · ${PL_HOST} · ` + (PL_READY ? 'جاهز'
     : (PL_ID && PL_SECRET) ? 'مفتاح التجربة العام مرفوض في الإنتاج' : 'المفاتيح ناقصة') +
-    ` · الإشعار ${PL_HOOK_KEY ? 'مضبوط' : 'بلا مفتاح'}`);
+    ` · الإشعار ${!PL_HOOK_KEY ? 'بلا مفتاح' : `مضبوط (${PL_HOOK_KEY.length} حرف` +
+      (PL_HOOK_HIDDEN ? ` · تجاهلنا ${PL_HOOK_HIDDEN} حرف مخفي` : '') + ')'}`);
   /* التسخين المسبق: فحص كل 20 ثانية، وما يسحب إلا لو فيه تركيبة
      مطلوبة قاربت صلاحيتها تنتهي — والمفتاح مطفأ افتراضياً. */
   setInterval(() => { prewarmTick().catch(() => {}) }, 20000);

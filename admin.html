@@ -2013,8 +2013,10 @@ function payCardHTML(){
   const keys=d.ready?'<b style="color:var(--open)">جاهزة</b>'
     :d.testIdInProd?'<b style="color:var(--close)">مفتاح التجربة العام — حط مفاتيحك الحقيقية</b>'
     :'<b style="color:var(--close)">ناقصة — PAYLINK_API_ID · PAYLINK_SECRET</b>';
-  const hook=d.hookSet?'<b style="color:var(--open)">مضبوط</b>'
+  const hook=d.hookSet?`<b style="color:var(--open)">مضبوط · ${Number(d.hookLen)||0} حرف${
+      d.hookHidden?` · تجاهلنا ${Number(d.hookHidden)} حرف مخفي`:''}</b>`
     :'<b style="color:var(--warn)">بلا مفتاح — PAYLINK_WEBHOOK_KEY</b>';
+  const hk=payHookHTML(d);
   const who={none:'ولا أحد',all:'كل الطلاب',
     owner:d.live?'أنت فقط — الفترة المجانية شغّالة':'أنت فقط — نسخة التجربة'}[d.openTo]||d.openTo;
   const c=d.counts||{};
@@ -2028,13 +2030,46 @@ function payCardHTML(){
       <span class="ltr" style="font-family:var(--mono)">${esc(d.host)}</span></b></div>
     <div class="kv"><span>المفاتيح</span>${keys}</div>
     <div class="kv"><span>الإشعار</span>${hook}</div>
+    ${hk}
     <div class="kv"><span>مين يقدر يدفع</span><b>${esc(who)}</b></div>
     <div class="kv"><span>الطلبات</span><b>معلّقة ${c.pending||0} · مدفوعة ${c.paid||0} · فاشلة ${c.failed||0}</b></div>
     ${d.live?`<div class="kv"><span>المحصّل عبر Paylink</span><b>${sar(d.paidHalalas||0)} ريال</b></div>`:''}
     ${rec?`<div style="margin-top:8px">${rec}</div>`:''}
     <div class="row-meta" style="margin-top:10px">
-      <button class="mini go" onclick="payPing(this)">🔌 جرّب الاتصال</button></div>
+      <button class="mini go" onclick="payPing(this)">🔌 جرّب الاتصال</button>
+      <button class="mini" onclick="loadPay(true)">🔄 تحديث</button></div>
   </div>`;
+}
+/* آخر إشعار وصل من Paylink وليش انرفض — زر Test عندهم يرجّع رمزاً بس،
+   والسيرفر يحفظ الأسماء والأطوال (لا القيم). في الذاكرة: يفضى مع كل نشر */
+function payAgo(iso){
+  const m=Math.round((Date.now()-Date.parse(iso))/60000);
+  return !Number.isFinite(m)?'':m<1?'الآن':m<60?`قبل ${m} د`:m<1440?`قبل ${Math.round(m/60)} س`:`قبل ${Math.round(m/1440)} يوم`;
+}
+function payHookHTML(d){
+  const L=d.hookLast, tip=s=>`<div class="gauge-sub" style="margin:2px 0 8px;line-height:1.7;font-size:12px;color:var(--text2)">${s}</div>`;
+  const code=s=>`<span class="ltr" style="font-family:var(--mono)">${esc(s)}</span>`;
+  if(!L)return `<div class="kv"><span>آخر إشعار</span><b style="color:var(--text3)">ما وصل شي من آخر تشغيل</b></div>`+
+    (d.hookSet?tip('جرّبه: زر <b>Test</b> في إعدادات الإشعار في Paylink، وبعدها «🔄 تحديث» هنا.'):'');
+  const when=esc(payAgo(L.at));
+  if(L.ok)return `<div class="kv"><span>آخر إشعار</span><b style="color:var(--open)">✅ مقبول · ${when}</b></div>`+
+    (L.via&&L.via!=='x-jadwalik-key'&&L.via!=='authorization'
+      ?tip(`وصل المفتاح باسم ${code(L.via)} — يشتغل، والأصح ${code('X-Jadwalik-Key')}.`):'');
+  const H=(L.headers||[]).length?`<div dir="ltr" style="text-align:left;font-family:var(--mono)">${
+    (L.headers||[]).map(esc).join(' · ')}</div>`:'';
+  const why={
+    nokey:`${code('PAYLINK_WEBHOOK_KEY')} ناقص في Render — أضفه في خدمة الإنتاج وانشر.`,
+    noheader:`ما وصلت ترويسة المفتاح. في Paylink: خانة <b>HTTP Header 1</b> = ${code('X-Jadwalik-Key')}، وخانة <b>Value</b> = المفتاح.`+
+      (H?`<br>الترويسات اللي وصلت:${H}`:''),
+    mismatch:(L.via==='authorization'
+      ?`ما وصلت ${code('X-Jadwalik-Key')}، ووصلت ${code('Authorization')} بمفتاح غير مفتاحنا — تأكد من اسم الترويسة في خانة <b>HTTP Header 1</b>. `
+      :'المفتاح ما طابق. ')+
+      `وصل ${Number(L.len)||0} حرف، والمضبوط في Render ${Number(L.want)||0} — انسخ نفس المفتاح في الخانتين بزر النسخ.`,
+    swapped:`المفتاح مكتوب في خانة اسم الترويسة. الاسم ${code('X-Jadwalik-Key')} في <b>HTTP Header 1</b>، والمفتاح في <b>Value</b>.`
+  }[L.why]||esc(L.why);
+  return `<div class="kv"><span>آخر إشعار</span><b style="color:var(--close)">❌ مرفوض · ${when}</b></div>`+
+    tip(why+(L.hidden?`<br>وفيه ${Number(L.hidden)} حرف مخفي (من النسخ) — تجاهلناه.`:'')+
+      (L.okAt&&L.okAt!==L.at?`<br>وآخر إشعار مقبول: ${esc(payAgo(L.okAt))}.`:''));
 }
 async function loadPay(force){
   if(!force&&PAYST&&Date.now()-PAYST_AT<60000)return;

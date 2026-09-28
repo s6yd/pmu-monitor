@@ -11,12 +11,17 @@
       وحده، وما يلمس صفوف الإنتاج. والإنتاج يرفض مفتاح التجربة العام.
    ٦) **قبل الإطلاق** الطلاب ما يدفعون (الفترة المجانية) — صاحب الموقع وحده.
    ٧) آخر أيام النافذة ⇒ الترم الجاي — وخارج النوافذ كذلك (قرار محمد).
+   ٨) **الإشعار يرفض بلا سبب**: زر Test في Paylink رجّع `{"ok":false}` وبس، فما
+      عرفنا وش الغلط. الرفض يقول رمز سببه، واللوحة الأسماء والأطوال (لا القيم)،
+      وعلامات الاتجاه المخفية من النسخ على الجوال ما تكسر المطابقة.
 
    node tests/test-pay.js [server.js]
-   (يشغّل نفسه ثلاث مرات إضافية كعمليات مستقلة: dev · إنتاج بلا مفاتيح ·
-    إنتاج بمفتاح التجربة العام — SITE_ENV يُقرأ مرة عند الإقلاع) */
+   (يشغّل نفسه أربع مرات إضافية كعمليات مستقلة: dev · إنتاج بلا مفاتيح ·
+    إنتاج بمفتاح التجربة العام · مفتاح إشعار لُصق بحروف مخفية — المتغيّرات
+    تُقرأ مرة عند الإقلاع) */
 const path = require('path');
 const http = require('http');
+const net = require('net');
 const { Readable } = require('stream');
 const { fork } = require('child_process');
 
@@ -225,24 +230,30 @@ https.request = function (opts, cb) {
   return req;
 };
 
-const BASES = { prod: 47500, dev: 47600, nokeys: 47700, testkey: 47800 };
+const BASES = { prod: 47500, dev: 47600, nokeys: 47700, testkey: 47800, hookenv: 48400 };
 const PORT = BASES[MODE] + (process.pid % 100);
 const KEYS = {
   prod:    { SITE_ENV: 'prod', PAYLINK_API_ID: 'APP_ID_LIVE_9', PAYLINK_SECRET: 'live-secret' },
   dev:     { SITE_ENV: 'dev',  PAYLINK_API_ID: 'APP_ID_1123453311', PAYLINK_SECRET: 'pub-test-secret' },
-  nokeys:  { SITE_ENV: 'prod', PAYLINK_API_ID: '', PAYLINK_SECRET: '' },
+  /* بلا مفاتيح Paylink ولا مفتاح إشعار */
+  nokeys:  { SITE_ENV: 'prod', PAYLINK_API_ID: '', PAYLINK_SECRET: '', PAYLINK_WEBHOOK_KEY: '' },
   testkey: { SITE_ENV: 'prod', PAYLINK_API_ID: 'APP_ID_1123453311', PAYLINK_SECRET: 'pub-test-secret' },
+  /* مفتاح الإشعار لُصق في Render من رسالة عربية على الجوال: علامتا اتجاه
+     مخفيتان حوله وسطر جديد في آخره */
+  hookenv: { SITE_ENV: 'prod', PAYLINK_API_ID: 'APP_ID_LIVE_9', PAYLINK_SECRET: 'live-secret',
+             PAYLINK_WEBHOOK_KEY: '\u200fhook-key-1234567890\u200e \n' },
 }[MODE];
-Object.assign(process.env, KEYS, {
+Object.assign(process.env, { PAYLINK_WEBHOOK_KEY: 'hook-key-1234567890' }, KEYS, {
   PORT: String(PORT), ADMIN_TOKEN: 'admin-token-for-tests', ADMIN_CHAT_ID: '5555',
   /* ترم بعيد وثابت: الاختبار ما يتغيّر مع التاريخ الحقيقي (نهايته 2029-12-31) */
   ACTIVE_TERM: '203010', FREE_BETA: 'true', MONITOR_ENABLED: 'false',
-  PAYLINK_WEBHOOK_KEY: 'hook-key-1234567890',
   SB_URL: 'https://fake.supabase.co', SUPABASE_URL: 'https://fake.supabase.co',
   SB_SERVICE_KEY: 'k', SUPABASE_SERVICE_KEY: 'k', TELEGRAM_TOKEN: 'tg'
 });
 const realLog = console.log;
-console.log = () => {};
+/* سجل السيرفر محفوظ لا مطبوع: نفحص إن سطوره ما فيها قيمة مفتاح أبداً */
+const LOGS = [];
+console.log = (...a) => { LOGS.push(a.map(String).join(' ')) };
 require(SRV);
 
 function call(method, p, { tok, body, headers, admin } = {}) {
@@ -264,6 +275,20 @@ const riyadh = n => new Date(Date.now() + 3 * 3600e3 + n * 864e5).toISOString().
 const setWindow = (from, to) => call('POST', '/api/admin/monitor-window', { admin: true, body: { from, to } });
 const hook = (body, key) => call('POST', '/api/paylink/webhook',
   { body, headers: key === undefined ? { 'X-Jadwalik-Key': 'hook-key-1234567890' } : (key ? { 'X-Jadwalik-Key': key } : {}) });
+/* إشعار بالبايتات كما هي: http.request يرمّز الترويسة UTF-8 مرة ثانية لما
+   تنضم للجسم، فالعلامة المخفية توصل بغير بايتاتها الحقيقية */
+function rawHook(keyBytes) {
+  return new Promise((resolve, reject) => {
+    const req = Buffer.concat([Buffer.from('POST /api/paylink/webhook HTTP/1.1\r\nHost: 127.0.0.1\r\n' +
+      'Content-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\nX-Jadwalik-Key: '),
+      keyBytes, Buffer.from('\r\n\r\n{}')]);
+    let o = '';
+    const c = net.connect(PORT, '127.0.0.1', () => c.end(req));
+    c.on('data', d => o += d);
+    c.on('end', () => resolve(Number((/^HTTP\/1\.1 (\d+)/.exec(o) || [])[1]) || 0));
+    c.on('error', reject);
+  });
+}
 const sub = id => DB.subscriptions.find(s => s.id === id);
 const P = id => DB.profiles.find(p => p.id === id);
 const ledger = u => DB.credit_ledger.filter(r => r.user_id === u);
@@ -495,6 +520,66 @@ async function prodSuite() {
   ok(!JSON.stringify(ap).includes('live-secret'), '**وما فيها حرف من المفتاح السري**');
   const pg = (await call('POST', '/api/admin/pay-ping', { admin: true })).j;
   eq(pg.ok, true, 'زر «جرّب الاتصال» ينجح بالمفاتيح الصحيحة');
+
+  /* ── ١٢) الإشعار يقول ليش رفض ──
+     زر Test في Paylink رجّع لمحمد `{"ok":false}` وبس: الترويسة ما وصلت؟ المفتاح
+     ما طابق؟ ما نعرف. الرد صار فيه رمز السبب (بلا أطوال ولا أسماء)، واللوحة
+     فيها أسماء الترويسات والأطوال — **لا قيمة أبداً** */
+  const hookLast = async () => ((await call('GET', '/api/admin/pay', { admin: true })).j || {}).hookLast || {};
+  const post = headers => call('POST', '/api/paylink/webhook', { body: {}, headers });
+  let h = await hook({}, '');
+  eq([h.code, h.j && h.j.why], [401, 'no-header'], '**بلا ترويسة: الرد يقول السبب** — زر Test يعرضه كما هو');
+  let L = await hookLast();
+  eq([L.ok, L.why], [false, 'noheader'], 'واللوحة: ما وصلت الترويسة');
+  ok((L.headers || []).includes('content-type'), 'ومعها أسماء الترويسات اللي وصلت — ' + JSON.stringify(L.headers));
+
+  h = await hook({}, 'wrong-key');
+  eq([h.code, h.j && h.j.why], [401, 'mismatch'], 'مفتاح غلط: السبب mismatch');
+  L = await hookLast();
+  eq([L.why, L.via, L.len, L.want], ['mismatch', 'x-jadwalik-key', 9, 19],
+     '**واللوحة بالأطوال**: وصل ٩ حروف والمضبوط ١٩ — يعرف إن النسخ ناقص');
+  eq(Object.keys(h.j || {}).sort(), ['ok', 'why'], 'والرد العام رمز السبب وبس — بلا أطوال ولا أسماء');
+
+  h = await post({ 'hook-key-1234567890': 'X-Jadwalik-Key' });
+  eq([h.code, h.j && h.j.why], [401, 'key-in-header-name'], '**المفتاح في خانة الاسم بدل القيمة: نقولها بالضبط**');
+  L = await hookLast();
+  eq(L.why, 'swapped', 'واللوحة كذلك');
+  ok(!JSON.stringify(L).includes('hook-key-1234567890'), '**والمفتاح ما ينكتب في اللوحة ولو جا اسماً**');
+
+  h = await post({ Authorization: 'Bearer paylink-own-token-xyz' });
+  L = await hookLast();
+  eq([h.code, L.why, L.via], [401, 'mismatch', 'authorization'],
+     'Authorization بمفتاح غير مفتاحنا (مفتاح Paylink نفسه؟): اللوحة تسمّي الترويسة');
+
+  h = await post({ 'X-Jadwalik_Key': 'hook-key-1234567890' });
+  eq(h.code, 200, '**المفتاح وصل باسم ترويسة مكتوب غلط: مقبول** — السرّ المفتاح لا الاسم');
+  L = await hookLast();
+  eq([L.ok, L.via], [true, 'x-jadwalik_key'], 'واللوحة تقول باسم وش وصل');
+
+  /* علامة اتجاه (U+200F) حول المفتاح — ببايتاتها UTF-8 كما يرسلها غيرنا */
+  const rlm = Buffer.from('\u200f', 'utf8');
+  eq(await rawHook(Buffer.concat([rlm, Buffer.from('hook-key-1234567890'), rlm])), 200,
+     '**مفتاح لُصق بعلامات اتجاه مخفية (نسخ من رسالة عربية): مقبول**');
+  L = await hookLast();
+  eq([L.ok, L.hidden], [true, 2], 'واللوحة تقول: حرفان مخفيان تجاهلناهما');
+  const okAt = L.at;
+  await hook({}, '');
+  L = await hookLast();
+  eq([L.ok, L.okAt], [false, okAt], '**رفض بعد قبول ما يغطّي وقت آخر مقبول**');
+
+  eq((await hook({}, 'hook-key-123456789')).code, 401, 'والمفتاح الناقص حرفاً مرفوض كما هو');
+  eq((await hook({}, 'hook-key-1234567890x')).code, 401, 'والزائد حرفاً ظاهراً مرفوض');
+
+  const n0 = LOGS.length;
+  for (let i = 0; i < 8; i++) await hook({}, 'wrong-key-' + i);
+  const re = /^pay: إشعار مرفوض — المفتاح/;
+  ok(LOGS.some(l => re.test(l)), '**السجل يقول ليش رفض** — ' + (LOGS.find(l => /إشعار/.test(l)) || 'ولا سطر'));
+  ok(LOGS.slice(n0).filter(l => re.test(l)).length <= 1, '**ثمانية رفضات ورا بعض: سطر واحد بالدقيقة** لا ثمانية');
+  ok(LOGS.some(l => /^pay: إشعار مرفوض — ما وصلت ترويسة X-Jadwalik-Key · وصلت: .*content-type/.test(l)),
+     'وسطر «ما وصلت» فيه أسماء اللي وصل');
+  ok(!LOGS.some(l => /hook-key-1234567890|wrong-key|paylink-own-token/.test(l)), '**ولا قيمة ترويسة في السجل أبداً**');
+  ok(LOGS.some(l => /^pay: paylink .* الإشعار مضبوط \(19 حرف\)$/.test(l)),
+     'وسطر الإقلاع فيه طول المفتاح — ' + (LOGS.find(l => /^pay: paylink/.test(l)) || ''));
 }
 
 async function devSuite() {
@@ -537,6 +622,22 @@ async function nokeysSuite() {
   ok(/Paylink/.test(String(b.j && b.j.error)), 'والرسالة تقول ليش — ' + (b.j && b.j.error));
   const ap = (await call('GET', '/api/admin/pay', { admin: true })).j;
   eq([ap.ready, ap.idSet, ap.openTo], [false, false, 'none'], 'اللوحة تقول المفاتيح ناقصة');
+  const h = await hook({});
+  eq([h.code, h.j && h.j.why], [401, 'no-key-configured'], '**بلا مفتاح إشعار في Render: الرد يقول كذا**');
+  const L = ((await call('GET', '/api/admin/pay', { admin: true })).j || {}).hookLast || {};
+  eq([L.why, L.want], ['nokey', 0], 'واللوحة كذلك');
+  ok(LOGS.some(l => /PAYLINK_WEBHOOK_KEY ناقص في Render/.test(l)), 'والسجل يسمّي المتغيّر');
+}
+
+/* مفتاح الإشعار في Render لُصق بعلامات اتجاه مخفية: `trim` ما تشيلها، فكان
+   السيرفر يقول «مضبوط» ويرفض كل إشعار صحيح */
+async function hookenvSuite() {
+  eq((await hook({})).code, 200, '**مفتاح Render فيه علامات مخفية: الإشعار الصحيح يُقبل**');
+  const ap = (await call('GET', '/api/admin/pay', { admin: true })).j || {};
+  eq([ap.hookSet, ap.hookLen, ap.hookHidden], [true, 19, 2], 'واللوحة: ١٩ حرف، وحرفان مخفيان تجاهلناهما');
+  ok(LOGS.some(l => /الإشعار مضبوط \(19 حرف · تجاهلنا 2 حرف مخفي\)/.test(l)),
+     'وسطر الإقلاع يقولها — ' + (LOGS.find(l => /^pay: paylink/.test(l)) || ''));
+  eq((await hook({}, 'hook-key-123456789')).code, 401, 'والناقص حرفاً مرفوض');
 }
 
 async function testkeySuite() {
@@ -552,13 +653,14 @@ async function testkeySuite() {
 (async () => {
   await wait(400);
   try {
-    await ({ prod: prodSuite, dev: devSuite, nokeys: nokeysSuite, testkey: testkeySuite })[MODE]();
+    await ({ prod: prodSuite, dev: devSuite, nokeys: nokeysSuite, testkey: testkeySuite,
+             hookenv: hookenvSuite })[MODE]();
   } catch (e) { fail++; out.push(`  ✗ [${MODE}] انهار: ` + (e && e.stack || e)) }
   console.log = realLog;
 
   /* الأب يشغّل البقية كعمليات مستقلة ويجمع النتائج */
   if (MODE === 'prod') {
-    for (const m of ['dev', 'nokeys', 'testkey']) {
+    for (const m of ['dev', 'nokeys', 'testkey', 'hookenv']) {
       const res = await new Promise(resolve => {
         const ch = fork(__filename, [SRV, '--mode=' + m], { silent: true });
         let o = '';
