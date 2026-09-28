@@ -39,7 +39,7 @@ const DB = {
   profiles: [
     prof('u-own', '5555'),                     /* صاحب الموقع = ADMIN_CHAT_ID */
     ...['6101', '6102', '6103', '6104', '6105', '6106', '6107', '6108', '6109', '6110', '6111',
-        '6112', '6113']
+        '6112', '6113', '6114', '6115', '6116']
       .map(c => prof('u-' + c, c)),
   ],
   tickets: [], ticket_messages: [], app_state: [], app_events: [],
@@ -112,6 +112,30 @@ const TG = [];                 /* كل نداء: { method, b } */
 let BOT_MID = 50000;           /* أرقام رسائل البوت */
 const AI = [];                 /* كل سؤال وصل النموذج */
 const REJECT_ASK = new Set();  /* محادثات يرفض فيها تيليغرام رسالة الزرّين */
+/* النموذج المزيّف: يطلب أداة لو السؤال فيه «أداة:<اسمها> {وسائطها}» — بنفس
+   الشكل اللي يطلبها به الحقيقي — ويجاوب نصاً بعد ما ترجع نتيجتها.
+   AI = أسئلة الطلاب وحدها (بلا جولات الأدوات)، AI_RES = نتائج الأدوات. */
+const AI_RES = [];
+function fakeModel(b) {
+  const msgs = b.messages || [];
+  const last = msgs[msgs.length - 1] || {};
+  const usage = { input_tokens: 100, output_tokens: 20 };
+  const say = t => ({ id: 'msg_1', type: 'message', role: 'assistant', model: b.model,
+    content: [{ type: 'text', text: t }], stop_reason: 'end_turn', usage });
+  if (Array.isArray(last.content) && last.content.some(c => c.type === 'tool_result')) {
+    last.content.filter(c => c.type === 'tool_result').forEach(c =>
+      AI_RES.push(typeof c.content === 'string' ? c.content : JSON.stringify(c.content)));
+    return say('جهّزتها لك — اضغط الزر تحت');
+  }
+  const q = typeof last.content === 'string' ? last.content : JSON.stringify(last.content);
+  AI.push(q);
+  const m = /أداة:([a-z_]+)(\s+\{[^\n]*\})?/.exec(q);
+  if (m) return { id: 'msg_t', type: 'message', role: 'assistant', model: b.model,
+    content: [{ type: 'tool_use', id: 'tu_' + AI.length, name: m[1],
+                input: m[2] ? JSON.parse(m[2].trim()) : {} }],
+    stop_reason: 'tool_use', usage };
+  return say('جواب المساعد عن سؤالك');
+}
 const https = require('https');
 https.request = function (opts, cb) {
   const host = opts.hostname || '';
@@ -136,13 +160,7 @@ https.request = function (opts, cb) {
               chat: { id: Number(b.chat_id) }, text: b.text || '' } };
       } else if (host === 'api.anthropic.com') {
         let b = {}; try { b = JSON.parse(body || '{}') } catch (e) {}
-        const last = (b.messages || []).slice(-1)[0] || {};
-        const q = typeof last.content === 'string' ? last.content : JSON.stringify(last.content);
-        AI.push(q);
-        o = { id: 'msg_1', type: 'message', role: 'assistant', model: b.model,
-              content: [{ type: 'text', text: 'جواب المساعد عن سؤالك' }],
-              stop_reason: 'end_turn',
-              usage: { input_tokens: 100, output_tokens: 20 } };
+        o = fakeModel(b);
       } else if (host.includes('pmu.edu.sa')) {
         o = [];
       } else {
@@ -247,6 +265,11 @@ async function main() {
   ok(/جدول الترم/.test(AI[0] || ''), '**بنفس رسالته** — ما يكتبها مرة ثانية');
   const ans = sentTo(since(n), '6101');
   ok(ans.some(c => /جواب المساعد/.test(c.b.text || '')), 'ويوصله الجواب');
+  /* ملاحظة محمد: يعرف إنه يسأل أي شي، وإن جوابه من اللي عبّاه — ما شاف مقدمة /ai */
+  const first = ans.find(c => /جواب المساعد/.test(c.b.text || '')) || { b: {} };
+  ok(/💡/.test(first.b.text || '') && /أي شي/.test(first.b.text || '')
+     && /أمثلة/.test(first.b.text || '') && /عبّيته/.test(first.b.text || ''),
+     '**أول جواب: «اسألني أي شي — الأزرار أمثلة» ومن وين بياناته**');
   ok(ans.some(c => c.b.reply_markup && Array.isArray(c.b.reply_markup.keyboard)),
      'والجواب يدخله وضع المساعد — لوحته تبان');
   const ed = since(n).find(c => c.method === 'editMessageText');
@@ -268,6 +291,8 @@ async function main() {
   await say('6101', 'وبكرة؟');
   eq(AI.length, 2, 'داخل الوضع: للمساعد مباشرة');
   eq(datas(sentTo(since(n), '6101')[0]), [], 'بلا زرّين');
+  ok(!/💡/.test((sentTo(since(n), '6101')[0] || { b: {} }).b.text || ''),
+     'والسطر ما يتكرر في كل جواب');
 
   /* والخروج: رسالته الجاية نسأله عنها من جديد */
   n = TG.length;
@@ -351,12 +376,14 @@ async function main() {
   eq(datas(sentTo(since(n), '6110')[0]), [], '**بعد /reply: جوابه للفريق بلا سؤال**');
   ok(!!ticketOf('6110'), 'ويصير تذكرة');
 
-  /* ── ٧) غير المربوط: خطوات الربط + زر الفريق وحده ── */
+  /* ── ٧) غير المربوط: الزرّان وخطوات الربط ──
+     **قاعدة تغيّرت عمداً — قرار محمد:** كان زر الفريق وحده («المساعد ما
+     يجاوبه قبل الربط»). صار المساعد يساعده في استعمال الموقع (٧ب). */
   n = TG.length;
   const m7 = await say('7001', 'متى ينتهي تسجيل المواد؟');
   const ch7 = sentTo(since(n), '7001')[0] || { b: {} };
-  eq(datas(ch7), ['ask:team:' + m7.message_id],
-     '**غير المربوط: زر الفريق وحده** — المساعد ما يجاوبه قبل الربط');
+  eq(datas(ch7), ['ask:ai:' + m7.message_id, 'ask:team:' + m7.message_id],
+     '**غير المربوط: الزرّان** — المساعد يساعده في استعمال الموقع');
   ok(/اربط/.test(ch7.b.text || '') && /jadwalik\.com/.test(ch7.b.text || ''), 'ويقول له يربط، ووين');
   ok(/1️⃣[\s\S]*2️⃣[\s\S]*3️⃣/.test(ch7.b.text || ''), 'بخطوات مرقّمة');
   ok(/إشعارات تيليغرام/.test(ch7.b.text || ''), 'وباسم القسم كما في الصفحة');
@@ -430,6 +457,147 @@ async function main() {
   ok(!!ticketOf('6113'), '**تيليغرام رفض الزرّين: رسالته تصير تذكرة كالسابق** — ما تضيع');
   ok(sentTo(since(n), '5555').some(c => /والزرّان مرفوضان/.test(c.b.text || '')), 'ومحمد يوصله');
   ok(sentTo(since(n), '6113').some(c => /رقم تذكرتك/.test(c.b.text || '')), 'والطالب يستلم رقم تذكرته');
+
+  /* ── ١٠د) غير المربوط يختار المساعد: استعمال الموقع وحده (قرار محمد) ── */
+  n = TG.length;
+  /* مو نص زر من اللوحة: نصوص الأزرار تروح للمساعد مباشرة بلا زرّين */
+  const g1 = await say('7002', 'كيف أثبّت الموقع على جوالي؟');
+  const chg = sentTo(since(n), '7002')[0] || { b: {} };
+  const aiG = AI.length;
+  n = TG.length;
+  await press('7002', 'ask:ai:' + g1.message_id, botMsgOf(chg, g1));
+  eq(AI.length - aiG, 1, '**غير المربوط: المساعد يجاوبه**');
+  ok(/زائر من تلقرام/.test(AI[AI.length - 1] || ''),
+     '**والنموذج يعرف إنه زائر: استعمال الموقع وحده**');
+  const ga = sentTo(since(n), '7002').find(c => /جواب المساعد/.test(c.b.text || '')) || { b: {} };
+  ok(/اربط/.test(ga.b.text || ''), 'وجوابه يقول له يربط عشان جدوله وخطته');
+  ok(/أراقب/.test(JSON.stringify(ga.b.reply_markup || {})), 'ولوحته أمثلة من استعمال الموقع');
+  eq(ticketOf('7002'), undefined, 'ولا تذكرة');
+  /* يطلب جدوله: الأداة ترفض «اربط حسابك» — لا «سجّل دخولك بقوقل» — والخطوات تطلع */
+  let r0 = AI_RES.length;
+  n = TG.length;
+  await say('7002', 'وش عندي بكرة؟ أداة:my_day {"day":"U"}');
+  ok(AI_RES.slice(r0).some(x => /اربط حسابك/.test(x)) && !AI_RES.slice(r0).some(x => /سجّل دخولك بقوقل/.test(x)),
+     '**أداة تحتاج حسابه: ترفض «اربط حسابك»**');
+  ok(sentTo(since(n), '7002').some(c => /1️⃣[\s\S]*3️⃣/.test(c.b.text || '')),
+     '**والجواب فيه خطوات الربط كاملة**');
+  /* والدليل يشتغل له */
+  r0 = AI_RES.length;
+  await say('7002', 'كيف أضيف موعد؟ أداة:guide {"lang":"ar"}');
+  ok(AI_RES.slice(r0).length === 1 && !/اربط حسابك/.test(AI_RES[r0] || '')
+     && /sections/.test(AI_RES[r0] || ''), '**والدليل يشتغل له**');
+  /* سقفه اليومي (٣ أسئلة): الرابع يوقف بصياغة تلقرام */
+  const aiC = AI.length;
+  n = TG.length;
+  await say('7002', 'سؤال رابع');
+  eq(AI.length, aiC, 'السؤال الرابع ما وصل النموذج — سقف الزوار اليومي');
+  const capMsg = (sentTo(since(n), '7002')[0] || { b: {} }).b.text || '';
+  ok(/خلصت أسئلتك/.test(capMsg) && !/شبكتك/.test(capMsg) && /اربط/.test(capMsg),
+     '**والرسالة بصياغة تلقرام** — «من شبكتك» ما تنطبق هنا — ' + capMsg.slice(0, 50));
+  /* زائر الموقع يقرأ التقويم — زائر تلقرام الدليل وحده */
+  r0 = AI_RES.length;
+  await say('7003', '/ai متى تبدأ الدراسة؟ أداة:academic_calendar');
+  ok(AI_RES.slice(r0).some(x => /اربط حسابك/.test(x)),
+     '**وغير الدليل يُرفض له — حتى التقويم المفتوح لزائر الموقع**');
+
+  /* ── ١٠هـ) «ذكّرني» من البوت: زر «✅ ثبّت» يكتب التذكير فعلاً ──
+     كانت «افتح jadwalik.com واضغط تأكيد» — والموقع ما يعرض اقتراحات
+     تلقرام: طريق مسدود، والتذكير صار مثالاً في لوحة البوت. */
+  const rt = new Date(Date.now() + 3 * 3600e3 + 3600e3);      /* بعد ساعة بتوقيت الرياض */
+  const D = rt.toISOString().slice(0, 10), T = rt.toISOString().slice(11, 16);
+  n = TG.length;
+  const mr1 = await say('6114',
+    `ذكّرني بعد ساعة أذاكر أداة:propose_reminder {"date":"${D}","time":"${T}","body":"أذاكر"}`);
+  const chr1 = sentTo(since(n), '6114')[0] || { b: {} };
+  n = TG.length;
+  await press('6114', 'ask:ai:' + mr1.message_id, botMsgOf(chr1, mr1));
+  const pa = sentTo(since(n), '6114').find(c => btns(c).some(x => /^act:ok:/.test(x.callback_data)))
+    || { b: {} };
+  ok(btns(pa).some(x => /ثبّت/.test(x.text)), '**التذكير: زر «✅ ثبّت» في البوت**');
+  ok(!/افتح المساعد في jadwalik/.test(pa.b.text || ''), 'وما يحيله للموقع');
+  eq((DB.reminders || []).length, 0, 'وما انكتب شي قبل الضغط');
+  const okId = (btns(pa).find(x => /^act:ok:/.test(x.callback_data)) || {}).callback_data;
+  n = TG.length;
+  await press('6114', okId, botMsgOf(pa, null));
+  const rem = DB.reminders || [];
+  eq(rem.length, 1, '**الضغط يثبّت التذكير فعلاً**');
+  eq([rem[0] && rem[0].user_id, rem[0] && rem[0].env, rem[0] && rem[0].body], ['u-6114', 'prod', 'أذاكر'],
+     'لصاحب المحادثة، وبيئة الخدمة (يختمها السيرفر)، وبنصّه');
+  ok(rem[0] && Math.abs(Date.parse(rem[0].at) - (Date.now() + 3600e3)) < 120e3, 'وبوقته — بعد ساعة');
+  ok(since(n).some(c => c.method === 'editMessageReplyMarkup'), 'وأزراره تنشال');
+  ok(sentTo(since(n), '6114').some(c => /ثبّتنا التذكير/.test(c.b.text || '')), 'ويقول له ثبّتناه');
+  await press('6114', okId, botMsgOf(pa, null));
+  eq((DB.reminders || []).length, 1, '**ضغطة ثانية ما تثبّت تذكيراً ثانياً**');
+  n = TG.length;
+  await say('6114', `وذكّرني أصلّي أداة:propose_reminder {"date":"${D}","time":"${T}","body":"أصلّي"}`);
+  const pb = sentTo(since(n), '6114').find(c => btns(c).some(x => /^act:no:/.test(x.callback_data)))
+    || { b: {} };
+  await press('6114', (btns(pb).find(x => /^act:no:/.test(x.callback_data)) || {}).callback_data,
+              botMsgOf(pb, null));
+  eq((DB.reminders || []).length, 1, '«✖️ لا»: ما ينكتب شي');
+  /* الزر يعيد فحوص الاقتراح **وقت الضغط** (aiRemindCheck): عنده ٢٠ معلّقة؟ ما يثبّت */
+  const propose = async body => {
+    const k = TG.length;
+    await say('6114', `ذكّرني أداة:propose_reminder {"date":"${D}","time":"${T}","body":"${body}"}`);
+    const c = sentTo(since(k), '6114').find(x => btns(x).some(y => /^act:ok:/.test(y.callback_data)))
+      || { b: {} };
+    return { c, id: (btns(c).find(y => /^act:ok:/.test(y.callback_data)) || {}).callback_data };
+  };
+  let pr = await propose('ثالث');
+  const base = DB.reminders.length;
+  for (let i = 0; i < 20; i++) DB.reminders.push({ id: 9000 + i, user_id: 'u-6114', env: 'prod',
+    at: new Date(Date.now() + 864e5).toISOString(), body: 'x', sent_at: null });
+  n = TG.length;
+  await press('6114', pr.id, botMsgOf(pr.c, null));
+  eq(DB.reminders.length, base + 20, '**الزر يعيد الفحص وقت الضغط: فوق حد المعلّق ما يثبّت**');
+  ok(sentTo(since(n), '6114').some(c => /معلّقة/.test(c.b.text || '')), 'ويقول له ليش');
+  DB.reminders.splice(base, 20);
+  /* فكّ ربطه بين الاقتراح والضغط: ما نكتب لحساب ما عاد صاحب المحادثة */
+  pr = await propose('رابع');
+  const P14 = DB.profiles.find(x => x.id === 'u-6114');
+  P14.telegram_chat_id = null;
+  await press('6114', pr.id, botMsgOf(pr.c, null));
+  eq(DB.reminders.length, base, '**فكّ الربط قبل الضغط: ما ينكتب شي**');
+  P14.telegram_chat_id = '6114';
+
+  /* ── ١٠و) تذكرة الدعم من المساعد: زر يرسلها للفريق بسياقها ── */
+  n = TG.length;
+  const ms1 = await say('6115',
+    'الموقع يعلّق أداة:propose_support_ticket {"text":"الجدول يعلّق عندي","category":"bug"}');
+  const chs1 = sentTo(since(n), '6115')[0] || { b: {} };
+  n = TG.length;
+  await press('6115', 'ask:ai:' + ms1.message_id, botMsgOf(chs1, ms1));
+  const ps = sentTo(since(n), '6115').find(c => btns(c).some(x => /^act:ok:/.test(x.callback_data)))
+    || { b: {} };
+  ok(btns(ps).some(x => /فريق جدولك/.test(x.text)), '**تذكرة الدعم: زر «أرسلها لفريق جدولك»**');
+  eq(ticketOf('6115'), undefined, 'وما انرسلت قبل الضغط');
+  n = TG.length;
+  await press('6115', (btns(ps).find(x => /^act:ok:/.test(x.callback_data)) || {}).callback_data,
+              botMsgOf(ps, null));
+  const ts = ticketOf('6115');
+  const tsBody = ts ? (msgsOf(ts.id)[0] || {}).body || '' : '';
+  ok(/الجدول يعلّق عندي/.test(tsBody) && /من المساعد/.test(tsBody),
+     '**الضغط يفتح تذكرة بنصّها وسياقها** — ' + tsBody.slice(0, 60));
+  ok(sentTo(since(n), '5555').some(c => /الجدول يعلّق عندي/.test(c.b.text || '')), 'ومحمد يوصله');
+  const cs = sentTo(since(n), '6115').find(c => /رقم تذكرتك/.test(c.b.text || '')) || { b: {} };
+  ok(cs.b.reply_markup && cs.b.reply_markup.remove_keyboard === true,
+     'ويطلع من وضع المساعد — لوحته تنشال');
+  const aiS = AI.length;
+  await say('6115', 'ولسا يعلّق');
+  eq(AI.length, aiS, '**وكلامه الجاي للفريق لا للمساعد**');
+  eq(ts ? msgsOf(ts.id).length : 0, 2, 'يلتصق بتذكرته');
+
+  /* ── ١٠ز) رددنا على طالب داخل وضع المساعد: جوابه لنا لا للمساعد ── */
+  await say('6116', '/ai');
+  n = TG.length;
+  await call('POST', '/api/admin/reply', { admin: true, body: { chatId: '6116', text: 'هلا، وصلتنا ملاحظتك' } });
+  const rr = sentTo(since(n), '6116').find(c => /رد من فريق جدولك/.test(c.b.text || '')) || { b: {} };
+  ok(rr.b.reply_markup && rr.b.reply_markup.remove_keyboard === true,
+     '**ردّنا يشيل لوحة المساعد** — وإلا جوابه يروح للمساعد');
+  const aiR = AI.length;
+  await say('6116', 'تمام شكراً');
+  eq(AI.length, aiR, '**وجوابه لنا لا للمساعد**');
+  ok(!!ticketOf('6116'), 'ويصير تذكرة');
 
   /* ── ١١) المساعد لصاحب الموقع وحده (admin): الطلاب للفريق مباشرة ── */
   await call('POST', '/api/admin/ai', { admin: true, body: { mode: 'admin' } });

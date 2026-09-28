@@ -5,8 +5,9 @@
    ١) المساعد يبلع الكلام الحر فما عاد أحد يقدر يكلّم الفريق.
       (والكلام الحر نفسه — المساعد ولا الفريق؟ — في test-tg-ask.js)
    ٢) /stop ينخطف من إيقاف الإشعارات.
-   ٣) غير المربوط يسأل فيرجع خطأ غامض.
-   ٤) الأفعال تُنفّذ من البوت بلا حراسات الصفحة.
+   ٣) غير المربوط يسأل فيرجع خطأ غامض — أو يوصل لأدوات تحتاج حسابه.
+   ٤) الأفعال تُنفّذ من البوت بلا حراسات الصفحة (التذكير وحده بفحوص السيرفر)،
+      أو تُحال للموقع على شي ما هو موجود فيه.
    ٥) أمر في قائمة البوت ما له معالج — الطالب يضغطه فما يصير شي.
    ٦) الطالب داخل وضع المساعد وما يدري، فيكتب للدعم وهو يظن العكس.
 
@@ -47,12 +48,20 @@ function makeCtx() {
       return Promise.resolve({ ok: true }) },
     sb: (m, t, o) => Promise.resolve(
       (t === 'profiles' && LINKED) ? [{ id: 'u-1' }] : []),
-    aiChat: (uid, q) => { ASKED.push({ uid, q }); return Promise.resolve(REPLY) },
+    /* o: خيارات المدخل — زائر تلقرام يمرّر أدواته وحدّه */
+    aiChat: (uid, q, o) => { ASKED.push({ uid, q, o }); return Promise.resolve(REPLY) },
+    btn: (label, data) => ({ text: label, callback_data: data }),
+    kb: rows => ({ inline_keyboard: rows }),
   };
   vm.createContext(ctx);
-  vm.runInContext(REGION + '\nthis.aiTgRoute=aiTgRoute;this.AI_TG_MODE=AI_TG_MODE;', ctx);
+  /* try: على كود قديم بلا AI_TG_PROP نبلّغ فشلاً مرتّباً بدل انهيار */
+  vm.runInContext(REGION + '\nthis.aiTgRoute=aiTgRoute;this.AI_TG_MODE=AI_TG_MODE;'
+    + 'try{this.AI_TG_PROP=AI_TG_PROP}catch(e){this.AI_TG_PROP=new Map()}', ctx);
   return ctx;
 }
+/* أزرار الفعل (inline) في رسالة — للفحص */
+const acts = m => (((m && m.markup) || {}).inline_keyboard || [])
+  .reduce((a, row) => a.concat(row), []);
 
 (async () => {
   /* ── ١) الكلام الحر ما ياخذه المساعد بلا اختيار ── */
@@ -114,19 +123,70 @@ function makeCtx() {
   eq(await c.aiTgRoute(9, 'كلام من ثانٍ'), false,
      'ووضع محادثة ما يفتح وضع غيرها');
 
-  /* ── ٥) غير المربوط ── */
+  /* ── ٥) غير المربوط ──
+     **قاعدة تغيّرت عمداً — قرار محمد:** كان يرد «اربط حسابك» وبس ولا
+     يسأل المساعد. صار المساعد يساعده **في استعمال الموقع وحده** (أداة
+     الدليل)، وأي شي ثاني «اربط حسابك». فالنموذج يُسأل — كزائر، بأدوات
+     الدليل وحدها وحدّه اليومي بمحادثته. */
   c = makeCtx(); LINKED = false;
   eq(await c.aiTgRoute(7, '/ai سؤال'), true, 'غير المربوط يتعامل معه');
-  eq(ASKED.length, 0, 'وما نسأل النموذج بلا هوية');
-  ok(/اربط/.test(SENT[0].text), 'ويقول له يربط حسابه');
+  eq(ASKED.length, 1, 'ويسأل المساعد كزائر');
+  eq((ASKED[0] || {}).uid, null, '**بلا هوية** — ما نخترع له حساباً');
+  const go = (ASKED[0] || {}).o || {};
+  eq(go.tgGuest, true, 'زائر تلقرام');
+  eq([...(go.tools || [])], ['guide'], '**أدواته الدليل وحده** — استعمال الموقع لا غيره');
+  eq(go.ip, 'tg:7', 'وحدّه اليومي بمحادثته — تلقرام ما يعطينا عنوان شبكته');
+  ok(/اربط/.test(SENT[0].text), 'ويقول له يربط حسابه عشان جدوله وخطته');
   ok(/jadwalik/.test(SENT[0].text), 'ويعطيه الرابط');
+  /* سأل عن شي يحتاج حسابه: خطوات الربط كاملة لا صياغة النموذج وحدها */
+  c = makeCtx(); LINKED = false;
+  REPLY = { ok: true, answer: 'لازم تربط حسابك', proposal: null, signIn: true };
+  await c.aiTgRoute(7, '/ai وش عندي بكرة؟');
+  ok(/1️⃣[\s\S]*2️⃣[\s\S]*3️⃣/.test((SENT[0] || {}).text || ''),
+     '**وصل حدّ الزائر: خطوات الربط مرقّمة**');
+  /* سقفا الزوار بصياغة تلقرام: «من شبكتك» ما تنطبق هنا */
+  for (const why of ['day', 'guests']) {
+    c = makeCtx(); LINKED = false;
+    REPLY = { ok: false, why, answer: 'خلصت أسئلة الزوار من شبكتك لهذا اليوم. سجّل دخولك بقوقل', proposal: null };
+    await c.aiTgRoute(7, '/ai سؤال');
+    const tx = (SENT[0] || {}).text || '';
+    ok(!/شبكتك/.test(tx) && /اربط/.test(tx), `سقف الزوار (${why}) بصياغة تلقرام — ${tx.slice(0, 40)}`);
+  }
+  REPLY = { ok: true, answer: 'جوابك', proposal: null };
 
-  /* ── ٦) الأفعال تُحال للموقع ── */
+  /* ── ٦) الأفعال ──
+     **قاعدة تغيّرت عمداً:** كانت كلها «افتح jadwalik.com واضغط تأكيد» —
+     والموقع ما يعرض اقتراحات تلقرام أصلاً، فطريق مسدود. صار التذكير
+     وتذكرة الدعم يتأكدان من البوت (زر)، وباقيها إحالة صادقة. */
   c = makeCtx();
   REPLY = { ok: true, answer: 'جهّزت لك', proposal: { action: 'absence' } };
   await c.aiTgRoute(7, '/ai سجّل غياب');
   ok(/تأكيد/.test(SENT[0].text), 'الاقتراح يُحال للتأكيد');
-  ok(/jadwalik/.test(SENT[0].text), '**وللموقع — ما ننفّذ من البوت**');
+  ok(/jadwalik/.test(SENT[0].text), '**الغياب للموقع — حراساته في دوال الصفحة**');
+  ok(/اطلبه هناك/.test(SENT[0].text),
+     '**والإحالة صادقة: يطلبه من المساعد هناك** — لا «اضغط تأكيد» على شي ما هو موجود');
+  eq(acts(SENT[0]).length, 0, 'وبلا أزرار فعل في البوت');
+  /* التذكير: زر تثبيت في البوت نفسه */
+  c = makeCtx();
+  REPLY = { ok: true, answer: 'جهّزت لك التذكير', proposal: { action: 'reminder',
+    at: '2099-01-01T06:00:00.000Z', atLocal: '2099-01-01 09:00', body: 'أذاكر', crn: null, env: 'prod' } };
+  await c.aiTgRoute(7, '/ai ذكّرني بكرة ٩ أذاكر');
+  const ra = acts(SENT[0]);
+  ok(ra.some(b => /ثبّت/.test(b.text) && /^act:ok:\d+$/.test(b.callback_data)),
+     '**التذكير: زر «✅ ثبّت» في البوت** — ' + JSON.stringify(ra.map(b => b.text)));
+  ok(ra.some(b => /^act:no:\d+$/.test(b.callback_data)), 'وزر «لا»');
+  ok(!/افتح المساعد في jadwalik/.test(SENT[0].text), 'وما يحيله للموقع');
+  const pid = ((ra[0] || {}).callback_data || '').split(':')[2];
+  const saved = c.AI_TG_PROP.get(pid) || {};
+  eq([saved.chat, saved.uid, (saved.p || {}).action], ['7', 'u-1', 'reminder'],
+     'الاقتراح محفوظ بمحادثته وصاحبه — الزر يحمل رقمه بس');
+  /* تذكرة الدعم: زر يرسلها للفريق */
+  c = makeCtx();
+  REPLY = { ok: true, answer: 'جهّزت لك الرسالة', proposal: { action: 'support',
+    text: 'الموقع يعلّق', category: 'bug', context: { major: 'COSC' } } };
+  await c.aiTgRoute(7, '/ai في مشكلة');
+  ok(acts(SENT[0]).some(b => /فريق جدولك/.test(b.text) && /^act:ok:/.test(b.callback_data)),
+     '**تذكرة الدعم: زر «أرسلها لفريق جدولك» في البوت**');
 
   /* ── ٧) الأعطال ── */
   c = makeCtx();
@@ -150,6 +210,13 @@ function makeCtx() {
   ok(kbText(KB).length > 20, 'وفيها أمثلة تعلّمه وش يسأل — ' + kbText(KB));
   /* الأمثلة في اللوحة أسئلة حقيقية لا أوامر */
   ok(!/^\//.test(kbText(KB)), 'والأمثلة أسئلة لا أوامر');
+  /* ملاحظة محمد: الأمثلة أبواب مختلفة لا كلها عن الجدول، ومنها التذكير —
+     والطالب يعرف إنه يسأل أي شي، والأزرار أمثلة بس */
+  ok(/ذكّرني/.test(kbText(KB)), '**وفيها مثال تذكير** — مو كلها عن الجدول — ' + kbText(KB));
+  ok(/أي شي/.test(KB.input_field_placeholder || ''),
+     '**والحقل يقول «اسألني أي شي»** — ' + KB.input_field_placeholder);
+  ok(/أي شي/.test(intro.text) && /أمثلة/.test(intro.text), 'والمقدمة تقول إن الأزرار أمثلة');
+  ok(/عبّيته/.test(intro.text), '**والمقدمة تقول إن جدوله وخطته من اللي عبّاه**');
 
   /* زر «🚪 خروج» يخرجه — الطالب ضغط زراً مكتوب فيه خروج */
   eq(await c.aiTgRoute(7, '🚪 خروج'), true, '**وزر «🚪 خروج» يخرجه فعلاً**');
@@ -184,6 +251,29 @@ function makeCtx() {
   /* لكن كلمة «خروج» المكتوبة بلا زر تبقى كلاماً حراً */
   c = makeCtx();
   eq(await c.aiTgRoute(7, 'خروج'), false, 'وكلمة «خروج» وحدها تبقى كلاماً حراً');
+
+  /* ── ٩ج) أول دخول بلا مقدمة (زر المساعد أو /ai بسؤال): سطر التوضيح مرة ── */
+  c = makeCtx();
+  await c.aiTgRoute(7, '/ai وش عندي بكرة؟');
+  const h1 = (SENT[0] || {}).text || '';
+  ok(/💡/.test(h1) && /أي شي/.test(h1) && /أمثلة/.test(h1),
+     '**أول جواب يقول «اسألني أي شي» والأزرار أمثلة** — ما شاف المقدمة');
+  ok(/عبّيته/.test(h1), '**ويقول إن جدوله وخطته من اللي عبّاه**');
+  await c.aiTgRoute(7, 'وبعده؟');
+  ok(!/💡/.test((SENT[1] || {}).text || ''), 'والجواب الثاني بلا تكرار');
+  /* أزرار لوحة الزائر، والمثال القديم من اللوحة اللي قبل: للمساعد لا للدعم */
+  for (const b of ['كيف أراقب شعبة؟', 'وش أنزل الترم الجاي؟']) {
+    c = makeCtx();
+    eq(await c.aiTgRoute(7, b), true, `زر «${b}» بعد انتهاء الوضع يرجع للمساعد`);
+  }
+  /* /ai لغير المربوط: مقدمته عن استعمال الموقع وخطوات الربط، ولوحته منها */
+  c = makeCtx(); LINKED = false;
+  await c.aiTgRoute(7, '/ai');
+  const gi = SENT[0] || {};
+  ok(/استعمال الموقع/.test(gi.text || '') && /1️⃣/.test(gi.text || ''),
+     'مقدمة غير المربوط: استعمال الموقع + خطوات الربط');
+  ok(/أراقب/.test(kbText(gi.markup || {})), 'ولوحته أمثلة عن استعمال الموقع');
+  ok(!/ذكّرني|أتخرج/.test(kbText(gi.markup || {})), 'لا أمثلة يحتاج لها حساباً');
 
   /* ── ١٠) الاختصارات: سؤال جاهز بلا وضع ── */
   for (const [cmd, q] of [['/today', 'اليوم'], ['/rooms', 'قاعة'], ['/plan', 'أتخرج']]) {
@@ -225,11 +315,14 @@ function makeCtx() {
   await c.aiTgRoute(7, '/ai سؤال');
   eq(await c.aiTgRoute(7, 'كلام بعده'), false,
      '**والسقف كذلك** — الكلام ما ينحبس في المساعد');
-  /* وغير المربوط ما يدخل وضعاً أصلاً */
+  /* غير المربوط: **قاعدة تغيّرت عمداً — قرار محمد.** كان ما يدخل وضعاً
+     لأنه ما يُجاوَب أصلاً. صار يُجاوَب عن استعمال الموقع، فجوابه الناجح
+     يدخله الوضع مثل غيره — ولوحته أمثلة من استعمال الموقع لا جدوله. */
   c = makeCtx(); LINKED = false;
   await c.aiTgRoute(7, '/ai سؤال');
-  eq(await c.aiTgRoute(7, 'كلام بعده'), false,
-     'وغير المربوط ما يدخل وضعاً — ما فيه جواب أصلاً');
+  ok(/أراقب/.test(kbText((SENT[0] || {}).markup || {})), 'غير المربوط: لوحته لوحة الزائر');
+  eq(await c.aiTgRoute(7, 'كلام بعده'), true,
+     'وجوابه الناجح يدخله الوضع — سؤاله الجاي للمساعد');
 
   /* ── ١١) قائمة أوامر البوت ── */
   {
@@ -351,8 +444,12 @@ function makeCtx() {
   const CODE = REGION.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
   ok(!/'\/stop'/.test(CODE), 'وما يلمس /stop أصلاً');
   ok(/aiChat\(/.test(CODE), 'ويستعمل aiChat نفسها — نفس السقوف والأوضاع');
-  ok(!/sb\('POST'|sb\('PATCH'|sb\('DELETE'/.test(CODE),
-     '**ولا كتابة واحدة من البوت** — الأفعال حراساتها في الصفحة');
+  /* **قاعدة تغيّرت عمداً:** كانت «ولا كتابة من البوت». صار التذكير يتثبّت
+     من البوت (فحوصه كلها في السيرفر — aiRemindCheck)، وهو الكتابة الوحيدة:
+     باقي الأفعال حراساتها في دوال الصفحة، وتذكرة الدعم تمر بـtgToTeam. */
+  eq((CODE.match(/sb\('(POST|PATCH|DELETE)',\s*'\w+'/g) || []), ["sb('POST', 'reminders'"],
+     '**كتابة وحدة من البوت: التذكير** — وباقي الأفعال حراساتها في الصفحة');
+  ok(/aiRemindCheck\(/.test(CODE), 'والتثبيت يعيد فحوص الاقتراح نفسها — لا فحص ثانٍ');
   ok(/telegram_chat_id=eq\./.test(CODE), 'والهوية من الربط لا من الرسالة');
 
   done();

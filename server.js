@@ -2659,6 +2659,9 @@ async function handleCallback(cq) {
   /* كلام حر: الطالب اختار المساعد ولا الفريق (aiTgAsk) */
   const ask = data.match(/^ask:(ai|team):(\d+)$/);
   if (ask) return aiTgPick(cq, ack, ask[1], ask[2]);
+  /* فعل من المساعد يتأكد من البوت: تذكير أو تذكرة دعم (aiTgAct) */
+  const act = data.match(/^act:(ok|no):(\d+)$/);
+  if (act) return aiTgAct(cq, ack, act[1] === 'ok', act[2]);
 
   const mm = data.match(/^(stop|keep):(\d+)$/);
   if (!mm || !chatId) return ack();
@@ -2907,15 +2910,17 @@ async function handleTelegramUpdate(update) {
 
     if (m) {
       const target = m[1];
+      /* داخل وضع المساعد؟ جوابه لنا لا للمساعد — يطلع ولوحته تنشال */
+      const off = aiTgLeaveAi(target);
       let r;
       if (photo) {
-        r = await tg('sendPhoto', { chat_id: target, photo,
+        r = await tg('sendPhoto', Object.assign({ chat_id: target, photo,
           caption: `💬 <b>رد من فريق جدولك</b>\n\n${text}`,
-          parse_mode: 'HTML' });
+          parse_mode: 'HTML' }, off ? { reply_markup: off } : {}));
       } else {
         r = await sendMsg(target,
           `💬 <b>رد من فريق جدولك</b>\n\n${text}\n\n` +
-          `<i>💬 تبي ترد؟ اكتب رسالتك هنا مباشرة وبتوصلنا.</i>`);
+          `<i>💬 تبي ترد؟ اكتب رسالتك هنا مباشرة وبتوصلنا.</i>`, off);
       }
       /* نسجّل الرد في تذكرة الطالب */
       try {
@@ -3030,10 +3035,12 @@ async function handleTelegramUpdate(update) {
       `<i>البحث غير حساس لحالة الأحرف. جرّب رقم المحادثة بدل البريد:</i>\n` +
       `<code>/reply 123456789 !النص</code>`);
 
+    /* داخل وضع المساعد؟ جوابه لنا لا للمساعد — يطلع ولوحته تنشال */
+    const off = aiTgLeaveAi(target);
     if (photo) {
-      const rp = await tg('sendPhoto', { chat_id: target, photo,
+      const rp = await tg('sendPhoto', Object.assign({ chat_id: target, photo,
         caption: (bare ? body : `💬 <b>رد من فريق جدولك</b>\n\n${body}`).slice(0, 1000),
-        parse_mode: 'HTML' });
+        parse_mode: 'HTML' }, off ? { reply_markup: off } : {}));
       if (rp && rp.ok) aiTgTeamOpen(target, AI_TG_TEAM_REPLY);
       return sendMsg(chatId, (rp && rp.ok) ? `✅ وصلت مع الصورة.` :
         `⚠️ ما وصلت: ${(rp && rp.description) || 'تأكد أن الوسوم مغلقة صح'}`);
@@ -3042,7 +3049,7 @@ async function handleTelegramUpdate(update) {
     const r = await sendMsg(target, bare
       ? `${body}\n\n<i>💬 عندك ملاحظة؟ اكتبها هنا مباشرة.</i>`
       : `💬 <b>رد من فريق جدولك</b>\n\n${body}\n\n` +
-        `<i>💬 تبي ترد؟ اكتب رسالتك هنا مباشرة وبتوصلنا.</i>`);
+        `<i>💬 تبي ترد؟ اكتب رسالتك هنا مباشرة وبتوصلنا.</i>`, off);
     /* رسالة لطالب واحد — بترويسة أو بلا — تدعوه يكتب هنا مباشرة،
        فردّه لنا بلا سؤال. (البث للكل لا: يلغي السؤال عن الجميع) */
     if (r && r.ok) aiTgTeamOpen(target, AI_TG_TEAM_REPLY);
@@ -4472,9 +4479,10 @@ async function adminReply(chatId, email, text) {
   }
   if (!target) return { ok: false, error: 'ما ربط تيليغرام — رد بالإيميل' };
 
+  /* داخل وضع المساعد؟ جوابه لنا لا للمساعد — يطلع ولوحته تنشال */
   const r = await sendMsg(target,
     `💬 <b>رد من فريق جدولك</b>\n\n${body.slice(0,3000)}\n\n` +
-    `<i>💬 تبي ترد؟ اكتب رسالتك هنا مباشرة وبتوصلنا.</i>`);
+    `<i>💬 تبي ترد؟ اكتب رسالتك هنا مباشرة وبتوصلنا.</i>`, aiTgLeaveAi(target));
   if (!r || r.ok !== true) return { ok: false, error: (r && r.description) || 'ما وصل تأكيد' };
   /* ردّنا يقول له «اكتب رسالتك هنا مباشرة» — فكلامه الجاي لنا بلا سؤال */
   aiTgTeamOpen(target, AI_TG_TEAM_REPLY);
@@ -6656,6 +6664,27 @@ const AI_REMIND_MAX = 20;    /* معلّق لكل طالب */
 const AI_REMIND_DAYS = 200;  /* أبعد وقت */
 const AI_REMIND_LEN = 200;   /* أطول نص */
 
+/* فحوص التذكير — **نفسها** للاقتراح (propose_reminder) ولزر «✅ ثبّت»
+   في تلقرام (aiTgAct): وقت جاي · ضمن حدّه · نص · وحدّ المعلّق.
+   فحص واحد لا فحصان (§١٠): الزر يعيدها وقت الضغط، لأن الوقت ممكن
+   يفوت بين الاقتراح والضغط. */
+async function aiRemindCheck(userId, at, body) {
+  const b = String(body || '').trim().slice(0, AI_REMIND_LEN);
+  if (!b) return { error: 'وش أذكّرك فيه؟' };
+  if (!Number.isFinite(at)) return { error: 'ما فهمت الوقت' };
+  const now = Date.now();
+  if (at <= now) return { error: 'الوقت راح — حدّد وقتاً جاياً' };
+  if (at > now + AI_REMIND_DAYS * 86400000)
+    return { error: `أقصى شي ${AI_REMIND_DAYS} يوماً من اليوم` };
+  /* حد المعلّق: ما نخلّيه يكدّس تذكيرات بلا نهاية */
+  const mine = await sb('GET', 'reminders', { query:
+    `?user_id=eq.${encodeURIComponent(userId)}&sent_at=is.null` +
+    `&select=id&limit=${AI_REMIND_MAX + 1}` });
+  if (Array.isArray(mine) && mine.length >= AI_REMIND_MAX)
+    return { error: `عندك ${AI_REMIND_MAX} تذكيرات معلّقة — احذف واحداً أول` };
+  return { ok: true, at, body: b };
+}
+
 /* تاريخ اليوم بتوقيت الرياض — تستعمله أدوات الاقتراح وكتلة المحادثة */
 const aiToday = () => riyadhNow().toISOString().slice(0, 10);
 
@@ -6665,6 +6694,9 @@ const AI_PRO_ONLY = 'هذي تحتاج اشتراك — الحساب والدر�
 /* الزائر بلا حساب: نقول له «سجّل دخول» لا «تحتاج اشتراك» — الثانية
    تخلّيه يظن إنها بفلوس وهي مجانية بمجرد دخوله. */
 const AI_SIGN_IN = 'سجّل دخولك بقوقل أول (ثانيتين) عشان أشوف جدولك وخطتك.';
+/* زائر تلقرام (حسابه مو مربوط): «سجّل دخولك» ما تكفي هناك — لازم يربط */
+const AI_SIGN_IN_TG = 'حسابك في تلقرام مو مربوط، فأساعدك الحين في استعمال الموقع بس. '
+  + 'عشان أجاوبك عن هذا اربط حسابك: jadwalik.com ← ⚙️ ← «إشعارات تيليغرام» ← ربط.';
 /* تخصص ما انختار: نقولها بدل ما نجاوب من خطة افتراضية */
 const AI_NO_MAJOR = 'ما اخترت تخصصك بعد — افتح ⚙️ الإعدادات واختر تخصصك، '
   + 'وبعدها أقدر أقول لك خطتك ومقترح ترمك.';
@@ -7521,17 +7553,8 @@ const AI_TOOLS = {
       /* الرياض +03:00 ثابتة بلا توقيت صيفي — فالتحويل مباشر */
       const at = Date.parse(`${d}T${String(hh).padStart(2, '0')}:`
         + `${String(mi).padStart(2, '0')}:00+03:00`);
-      if (!Number.isFinite(at)) return { error: 'ما فهمت الوقت' };
-      const now = Date.now();
-      if (at <= now) return { error: 'الوقت راح — حدّد وقتاً جاياً' };
-      if (at > now + AI_REMIND_DAYS * 86400000)
-        return { error: `أقصى شي ${AI_REMIND_DAYS} يوماً من اليوم` };
-      /* حد المعلّق: ما نخلّيه يكدّس تذكيرات بلا نهاية */
-      const mine = await sb('GET', 'reminders', { query:
-        `?user_id=eq.${encodeURIComponent(ctx.userId)}&sent_at=is.null` +
-        `&select=id&limit=${AI_REMIND_MAX + 1}` });
-      if (Array.isArray(mine) && mine.length >= AI_REMIND_MAX)
-        return { error: `عندك ${AI_REMIND_MAX} تذكيرات معلّقة — احذف واحداً أول` };
+      const chk = await aiRemindCheck(ctx.userId, at, body);
+      if (chk.error) return { error: chk.error };
       /* مادة من جدوله — للربط لا أكثر */
       let crn = null, code = null;
       if (a.code) {
@@ -7848,8 +7871,9 @@ async function aiRunTool(name, args, ctx) {
   /* الزائر: قائمة بيضاء صريحة، **قبل فحص الوسائط**. أداة ما هي له
      أصلاً ما يهم شكل وسائطها — والرسالة المفيدة «سجّل دخول» لا
      «وسيط غير معروف». */
-  if (ctx.guest && !AI_GUEST_TOOLS.has(name))
-    return { error: AI_SIGN_IN, signIn: true };
+  /* وقائمة المدخل تغلب لو مرّرها (زائر تلقرام: الدليل وحده — قرار محمد) */
+  if (ctx.guest && !(ctx.allow || AI_GUEST_TOOLS).has(name))
+    return { error: ctx.signInMsg || AI_SIGN_IN, signIn: true };
   /* داخل وما اختار تخصصه: جواب الخطة بلا تخصص = خطة غيره.
      نرفض بالاسم لا نجاوب من الافتراضي (§٩-أ: لا يخترع). */
   if (!ctx.guest && ctx.majorSet === false && AI_MAJOR_TOOLS.has(name))
@@ -8050,9 +8074,15 @@ function aiGuestState() {
 /* سياق الزائر: بلا هوية وبلا خطة وبلا اشتراك.
    `plan` تبقى null عمداً — ما نعرف تخصصه، وافتراض تخصص يعطيه خطة
    غيره وهذا اختراع (§٩-أ). والأدوات اللي تحتاجها ترفضه بالاسم. */
-function aiGuestCtx() {
+function aiGuestCtx(o) {
+  const x = o || {};
   return { userId: null, profile: null, pro: false, guest: true,
-           prep: false, prepInferred: false, plan: null };
+           prep: false, prepInferred: false, plan: null,
+           /* زائر تلقرام (قرار محمد): الدليل وحده، ورفضه «اربط حسابك»
+              لا «سجّل دخولك». `has` لا instanceof: الاختبار يمرّرها من سياق ثانٍ */
+           allow: (x.tools && typeof x.tools.has === 'function') ? x.tools : null,
+           tgGuest: !!x.tgGuest,
+           signInMsg: x.tgGuest ? AI_SIGN_IN_TG : null };
 }
 
 /* `cheap`: بلا قراءة من القاعدة — للحالة اللي تسألها الصفحة عند كل
@@ -8326,6 +8356,12 @@ function aiHeader(ctx, th) {
     + `الساعة ${String(riyadhNow().getUTCHours()).padStart(2, '0')}:`
     + `${String(riyadhNow().getUTCMinutes()).padStart(2, '0')} بتوقيت الرياض]\n`;
   if (th && th.summary) h += `[سألني قبل عن:\n${th.summary}]\n`;
+  /* زائر تلقرام (قرار محمد): نطاقه في رسالته لا في التعليمات — البادئة
+     تبقى واحدة للجميع والتخزين المؤقت مشترك. والأدوات ترفض غير الدليل
+     أصلاً، فهذا السطر يخلّيه يقولها بلطف بدل ما يحاول ويتعثّر. */
+  if (ctx.tgGuest) h += '[زائر من تلقرام حسابه مو مربوط: ساعده في استعمال الموقع بس '
+    + '(أداة الدليل). أي سؤال غيره — جدوله، خطته، الشعب، التقويم، القاعات — قل له '
+    + 'يربط حسابه أول، ولا تجاوبه من عندك.]\n';
   return h + 'سؤالي: ';
 }
 
@@ -8357,7 +8393,7 @@ async function aiChat(userId, question, opt) {
   const t0 = Date.now();
   const o = opt || {};
   const guest = !userId;
-  const ctx = guest ? aiGuestCtx() : await aiStudentCtx(userId);
+  const ctx = guest ? aiGuestCtx(o) : await aiStudentCtx(userId);
 
   const gate = aiGate(ctx.profile);
   if (!gate.ok) return { ok: false, why: gate.why, answer: gate.msg, tools: [] };
@@ -8381,7 +8417,7 @@ async function aiChat(userId, question, opt) {
   const usage = { input_tokens: 0, output_tokens: 0,
                   cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
   const tools_used = [];
-  let calls = 0, answer = '', why = '', proposal = null;
+  let calls = 0, answer = '', why = '', proposal = null, signIn = false;
 
   for (let step = 0; step < AI_MAX_STEPS; step++) {
     if (Date.now() - t0 > AI_TURN_MS) { why = 'timeout'; break }
@@ -8417,6 +8453,9 @@ async function aiChat(userId, question, opt) {
          بطاقتا تأكيد في رسالة واحدة تربك أكثر ما تساعد. */
       if (res && res.proposal && typeof res.proposal === 'object')
         proposal = res.proposal;
+      /* الزائر وصل حدّه («سجّل دخولك» / «اربط حسابك»): المدخل يعرض له
+         الطريق كاملاً (خطوات الربط في تلقرام) بدل ما يعتمد على صياغة النموذج */
+      if (res && res.signIn) signIn = true;
       out.push(aiToolResult(c.id, res));
     }
     messages.push({ role: 'user', content: out });
@@ -8464,7 +8503,7 @@ async function aiChat(userId, question, opt) {
     await aiThreadSave(userId, th, q, answer);
   }
 
-  return { ok: !why, why, answer, tools: tools_used, calls, proposal,
+  return { ok: !why, why, answer, tools: tools_used, calls, proposal, signIn,
            model, cost, tokens: usage, guest, used: aiUsedOf(quota) };
 }
 
@@ -8543,6 +8582,16 @@ async function aiStatus(userId, opt) {
 
    و`/stop` محجوز لإيقاف الإشعارات — فالخروج بـ`/خروج` أو `/end`.
 
+   **الأفعال:** التذكير وتذكرة الدعم يتأكدان من البوت نفسه (زر «✅ ثبّت»
+   و«📩 أرسلها» — aiTgAct): التذكير يوصله هنا أصلاً وفحوصه كلها في
+   السيرفر (aiRemindCheck)، والتذكرة مسارها tgToTeam. وباقي الأفعال
+   حراساتها في دوال الصفحة فتُحال للموقع — بصدق: «اطلبه من المساعد
+   هناك»، لأن الموقع ما يعرض اقتراحات تلقرام («اضغط تأكيد في الموقع»
+   كانت طريقاً مسدوداً).
+
+   **غير المربوط (قرار محمد):** المساعد يساعده في استعمال الموقع وحده
+   (أداة الدليل) بسقوف الزوار، وأي شي ثاني «اربط حسابك» بخطواته.
+
    **الوضع لازم يبان:** الطالب يدخل المساعد وما يدري إنه داخله، فيكتب
    للدعم وهو يظن إنه يكلّم المساعد أو العكس. فالوضع يرفع **لوحة أزرار**
    تبقى تحت الشاشة ما دام فيه، وتختفي أول ما يخرج — إشارة دائمة بدل
@@ -8551,16 +8600,31 @@ const AI_TG_MODE = new Map();          /* chatId → متى ينتهي الوض�
 const AI_TG_TTL = 20 * 60 * 1000;
 
 /* لوحة الأزرار: أمثلة تعلّمه وش يسأل + زر خروج ظاهر دائماً.
-   الزر يرسل نصه رسالةً عادية، فما يحتاج كود خاص غير فحص الخروج. */
+   الزر يرسل نصه رسالةً عادية، فما يحتاج كود خاص غير فحص الخروج.
+   **الأمثلة أبواب مختلفة** (ملاحظة محمد): كانت أربعتها عن الجدول
+   والخطة، فيظن الطالب المساعد لهذا وبس. صارت: يومه · تذكير · قاعة ·
+   خطته — والتذكير يتثبّت من البوت نفسه (aiTgAct) فما يودّي لطريق مسدود. */
 const AI_TG_KB = {
   keyboard: [
-    [{ text: 'وش عندي بكرة؟' }, { text: 'قاعة فاضية الحين' }],
-    [{ text: 'كم باقي لي أتخرج؟' }, { text: 'وش أنزل الترم الجاي؟' }],
+    [{ text: 'وش عندي بكرة؟' }, { text: 'ذكّرني بعد ساعة أذاكر' }],
+    [{ text: 'قاعة فاضية الحين' }, { text: 'كم باقي لي أتخرج؟' }],
     [{ text: '🚪 خروج' }],
   ],
   resize_keyboard: true,
   is_persistent: true,
-  input_field_placeholder: 'اسأل عن جدولك أو خطتك…',
+  /* الأزرار أمثلة لا قائمة — الحقل نفسه يقول له يسأل أي شي */
+  input_field_placeholder: 'اسألني أي شي…',
+};
+/* غير المربوط (قرار محمد): يسأل عن استعمال الموقع وحده، فأمثلته من هناك */
+const AI_TG_KB_GUEST = {
+  keyboard: [
+    [{ text: 'كيف أراقب شعبة؟' }, { text: 'كيف أضيف جدولي؟' }],
+    [{ text: 'كيف أربط حسابي؟' }, { text: 'وش يقدر يسوي الموقع؟' }],
+    [{ text: '🚪 خروج' }],
+  ],
+  resize_keyboard: true,
+  is_persistent: true,
+  input_field_placeholder: 'اسألني عن استعمال الموقع…',
 };
 const AI_TG_KB_OFF = { remove_keyboard: true };
 
@@ -8579,8 +8643,11 @@ const AI_TG_EXIT = ['/خروج', '/end', '🚪 خروج', 'خروج'];
 /* نصوص أزرارها: الوضع ينتهي بعد ٢٠ دقيقة **واللوحة تبقى معروضة** —
    فضغطة زر بعدها كانت تفتح تذكرة دعم اسمها «وش عندي بكرة؟». من ضغط
    زرنا يقصد المساعد، فنرجّعه له بدل ما نزعج الدعم. */
-const AI_TG_KB_TEXTS = new Set(AI_TG_KB.keyboard
-  .reduce((a, row) => a.concat(row.map(b => b.text)), [])
+/* والأمثلة القديمة كذلك: اللوحة اللي قبل التغيير باقية على جوال الطالب */
+const AI_TG_KB_OLD = ['وش أنزل الترم الجاي؟'];
+const AI_TG_KB_TEXTS = new Set([AI_TG_KB, AI_TG_KB_GUEST]
+  .reduce((a, k) => a.concat(...k.keyboard.map(row => row.map(b => b.text))),
+          AI_TG_KB_OLD.slice())
   .filter(t => !AI_TG_EXIT.includes(t)));
 
 /* غير المربوط: خطوات يقدر ينفذها — لا «اربط حسابك» وبس.
@@ -8597,19 +8664,68 @@ async function aiTgUser(chatId) {
   return (Array.isArray(rows) && rows[0]) ? rows[0].id : null;
 }
 
+/* أول دخول للوضع (زر «اسأل المساعد» أو اختصار — /ai له مقدمته): سطر
+   يقول إن الأزرار أمثلة، وإن جوابه من اللي عبّاه هو (ملاحظة محمد: طالب
+   ما عبّا جدوله يظن الموقع غلطان). مرة لكل دخول لا في كل رد. */
+const AI_TG_HINT = '\n\n<i>💡 اسألني أي شي بكلامك — الأزرار تحت أمثلة بس. '
+  + 'وجدولك وخطتك من اللي عبّيته في الموقع.</i>';
+const AI_TG_HINT_GUEST = '\n\n<i>💡 أساعدك الحين في استعمال الموقع. وعشان أجاوبك عن '
+  + 'جدولك وخطتك اربط حسابك: jadwalik.com ← ⚙️ ← «إشعارات تيليغرام».</i>';
+
+/* غير المربوط (قرار محمد): المساعد يساعده في استعمال الموقع وحده —
+   أداة الدليل فقط، وأي شي ثاني «اربط حسابك». بسقوف الزوار نفسها،
+   واليومي بمحادثته (تلقرام ما يعطينا عنوان شبكته). */
+const AI_TG_GUEST_TOOLS = new Set(['guide']);
+
+/* فعل يتأكد من البوت نفسه: التذكير وتذكرة الدعم. الاقتراح يُحفظ هنا،
+   والزر يحمل رقمه — بيانات الزر ٦٤ بايت ما تكفي نصّه. */
+const AI_TG_PROP = new Map();          /* id → { chat, uid, p, made } */
+const AI_TG_PROP_TTL = 30 * 60 * 1000;
+let AI_TG_PROP_SEQ = Math.floor(Math.random() * 1e6) * 1000;
+
 async function aiTgAnswer(chatId, q) {
+  const key = String(chatId);
   const uid = await aiTgUser(chatId);
-  if (!uid) return sendMsg(chatId, AI_TG_LINK);
+  const guest = !uid;
+  const was = (AI_TG_MODE.get(key) || 0) > Date.now();
   let r;
-  try { r = await aiChat(uid, String(q || '')) }
+  try {
+    r = guest
+      ? await aiChat(null, String(q || ''),
+          { ip: 'tg:' + key, tools: AI_TG_GUEST_TOOLS, tgGuest: true })
+      : await aiChat(uid, String(q || ''));
+  }
   catch (e) {
     console.log('aiTgAnswer: ' + (e && e.message));
     return sendMsg(chatId, 'صار خلل عندي — جرّب بعد شوي.');
   }
   let out = esc(r.answer || '');
-  /* الأفعال تحتاج تأكيداً، وحراسات التأكيد في الصفحة لا هنا — فما
-     ننفّذ من البوت ولا نكرّر الفحوص (§١٠). نحيله للموقع. */
-  if (r.proposal) out += '\n\n<i>🔸 هذا يحتاج تأكيدك — افتح jadwalik.com واضغط «تأكيد»</i>';
+  let act = null;
+  /* سقوف الزوار بصياغة تلقرام: «من شبكتك» و«سجّل دخولك بقوقل» ما تنطبق هنا */
+  if (guest && !r.ok && r.why === 'day')
+    out = 'خلصت أسئلتك كزائر اليوم.\n\n' + AI_TG_LINK;
+  else if (guest && !r.ok && r.why === 'guests')
+    out = 'وصلنا سقف المساعد للزوار هذا الشهر.\n\n' + AI_TG_LINK;
+  /* سأل عن شي يحتاج حسابه: الطريق كامل بخطوات، لا صياغة النموذج وحدها */
+  else if (guest && r.signIn) out += '\n\n' + AI_TG_LINK;
+  if (r.proposal && !guest) {
+    const p = r.proposal;
+    if (p.action === 'reminder' || p.action === 'support') {
+      /* التذكير يوصله هنا أصلاً وفحوصه كلها في السيرفر (aiRemindCheck)،
+         وتذكرة الدعم مسارها tgToTeam — فالاثنان يتأكدان من البوت نفسه */
+      if (AI_TG_PROP.size > 3000) AI_TG_PROP.clear();   /* قبل الإضافة لا بعدها */
+      const id = String(++AI_TG_PROP_SEQ);
+      AI_TG_PROP.set(id, { chat: key, uid: String(uid), p, made: Date.now() });
+      act = kb([[btn(p.action === 'reminder' ? '✅ ثبّت التذكير' : '📩 أرسلها لفريق جدولك',
+                     `act:ok:${id}`), btn('✖️ لا', `act:no:${id}`)]]);
+    } else {
+      /* غياب · موعد · شعبة · مراقبة: حراساتها في دوال الصفحة. والموقع ما
+         يعرض اقتراحات تلقرام — «اضغط تأكيد في الموقع» كانت طريقاً مسدوداً.
+         الصادق: يطلبه من المساعد هناك فيطلع له زر التأكيد. */
+      out += '\n\n<i>🔸 تأكيده من الموقع: افتح المساعد في jadwalik.com واطلبه هناك — '
+        + 'يطلع لك زر «تأكيد».</i>';
+    }
+  }
   /* المساعد مقفل أو تحت التجربة؟ الأمر في قائمة البوت وعده الطالب
      بشي — فما نتركه في طريق مسدود: نفس المعلومة موجودة في الموقع. */
   if (!r.ok && ['off', 'admin', 'nokey'].includes(r.why))
@@ -8620,16 +8736,96 @@ async function aiTgAnswer(chatId, q) {
      الطبيعي («استثني المواد المسجّلة») يروح للدعم **كتذكرة** —
      شفناها تصير على dev: تذكرة #74 كانت جواباً للمساعد لا شكوى.
      من كلّم المساعد قبل دقيقة يقصده، والخروج زر ظاهر أمامه. */
-  const key = String(chatId);
   if (r.ok) {
     if (AI_TG_MODE.size > 3000) AI_TG_MODE.clear();   /* قبل الإضافة لا بعدها */
     AI_TG_MODE.set(key, Date.now() + AI_TG_TTL);
+    if (!was) out += guest ? AI_TG_HINT_GUEST : AI_TG_HINT;
   }
   /* داخل الوضع: اللوحة هي التذكير بالخروج، فما نكرّر سطراً في كل رد.
-     ونعيد إرسالها مع كل جواب حتى ما تختفي لو أخفاها بنفسه. */
+     ونعيد إرسالها مع كل جواب حتى ما تختفي لو أخفاها بنفسه — إلا رسالة
+     فيها أزرار فعل: الرسالة تحمل لوحة وحدة، ولوحة الوضع باقية تحت. */
   const inMode = (AI_TG_MODE.get(key) || 0) > Date.now();
-  return sendMsg(chatId, out, inMode ? AI_TG_KB : undefined);
+  return sendMsg(chatId, out,
+    act || (inMode ? (guest ? AI_TG_KB_GUEST : AI_TG_KB) : undefined));
 }
+
+/* زر فعل من البوت (act:ok / act:no) — من handleCallback */
+async function aiTgAct(cq, ack, yes, id) {
+  const m = cq.message || {};
+  const chatId = m.chat && m.chat.id;
+  const key = String(chatId);
+  const P = AI_TG_PROP.get(String(id));
+  /* الحجز قبل أي await: ضغطتان ما تثبّتان تذكيرين */
+  if (P && P.chat === key) AI_TG_PROP.delete(String(id));
+  const drop = () => tg('editMessageReplyMarkup', { chat_id: chatId,
+    message_id: m.message_id, reply_markup: { inline_keyboard: [] } }).catch(() => {});
+  if (!chatId || !P || P.chat !== key || Date.now() - P.made > AI_TG_PROP_TTL) {
+    await ack('انتهت — اطلبها مرة ثانية');
+    return drop();
+  }
+  if (!yes) { await ack('تمام، ما سويناه'); return drop() }
+  if (P.p.action === 'support') {
+    await ack('أرسلناها');
+    await drop();
+    /* السياق بناه السيرفر من جلسته وقت الاقتراح — لا النموذج */
+    const c = P.p.context || {};
+    const line = `[من المساعد · ${c.major || '—'} · خطة ${c.planVer || '—'}`
+      + ` · ترم ${c.term || '—'}]`;
+    /* كلّم الفريق: كلامه الجاي لهم، فيطلع من وضع المساعد */
+    const wasAi = AI_TG_MODE.delete(key);
+    return tgToTeam(chatId, cq.from, `${P.p.text}\n\n${line}`, null,
+                    wasAi ? AI_TG_KB_OFF : undefined);
+  }
+  if (P.p.action !== 'reminder') { await ack(); return drop() }
+  /* الهوية من ربط المحادثة الحين: فكّ الربط أو صارت لحساب ثانٍ؟ ما نكتب */
+  const uid = await aiTgUser(chatId);
+  if (!uid || String(uid) !== P.uid) { await ack('اربط حسابك أول'); return drop() }
+  const chk = await aiRemindCheck(uid, Date.parse(P.p.at), P.p.body);
+  if (chk.error) {
+    await ack(); await drop();
+    return sendMsg(chatId, '⚠️ ' + esc(chk.error));
+  }
+  const w = await sb('POST', 'reminders', { body: { user_id: String(uid), env: SITE_ENV,
+      at: new Date(chk.at).toISOString(), body: chk.body, crn: P.p.crn || null },
+    prefer: 'return=representation' }).catch(() => null);
+  /* كتابة ما رجع صفّها ما انكتبت (§٦) — فما نقول «ثبّتناه» */
+  if (!Array.isArray(w) || !w.length) {
+    await ack('ما انحفظ');
+    return sendMsg(chatId, 'ما قدرت أثبّت التذكير — جرّب بعد شوي.');
+  }
+  await ack('ثبّتناه ⏰');
+  await drop();
+  const inMode = (AI_TG_MODE.get(key) || 0) > Date.now();
+  return sendMsg(chatId, `⏰ <b>ثبّتنا التذكير</b> — يوصلك هنا ${esc(P.p.atLocal || '')}`
+    + `\n«${esc(chk.body)}»`, inMode ? AI_TG_KB : undefined);
+}
+
+/* ردّ الفريق على طالب داخل وضع المساعد: جوابه الجاي للفريق لا للمساعد.
+   يطلعه من الوضع ويرجّع ما يشيل لوحته مع ردّنا. */
+function aiTgLeaveAi(chatId) {
+  return AI_TG_MODE.delete(String(chatId)) ? AI_TG_KB_OFF : undefined;
+}
+
+/* مقدمة /ai: «اسألني أي شي» أولاً — الأمثلة تحت ما هي كل شي (ملاحظة
+   محمد) — وإن جدوله وخطته من اللي عبّاه، فالفاضي ما يُفهم غلطاً */
+const AI_TG_INTRO = '✨ <b>مساعد جدولك</b>\n\n'
+  + 'اسألني أي شي بكلامك — الأزرار تحت أمثلة بس.\n\n'
+  + '📅 جدولك واليوم والفراغات\n'
+  + '⏰ ذكّرني بموعد — يوصلك هنا في وقته\n'
+  + '🎓 خطتك والمتطلبات وكم باقي لك\n'
+  + '🔍 الشعب والدكاترة وتقييمات الطلاب\n'
+  + '🚪 القاعات الفاضية الحين\n'
+  + '🗓️ الغياب والمواعيد والنهائيات\n'
+  + '🧩 وأركّب لك جدولاً كاملاً بلا تعارض\n\n'
+  + '<b>جرّب:</b> «ركّب لي جدول بدون خميس»\n\n'
+  + '📌 جدولك وخطتك من اللي عبّيته في jadwalik.com — لو ما عبّيتها، عبّها أول '
+  + 'عشان يطلع كلامي صح.\n\n'
+  + '<i>🚪 خروج — تطلع منه متى ما خلصت.</i>';
+const AI_TG_INTRO_GUEST = '✨ <b>مساعد جدولك</b>\n\n'
+  + 'أساعدك الحين في استعمال الموقع: كيف تراقب شعبة، كيف تضيف جدولك، '
+  + 'كيف تعبّي خطتك — اسألني أي شي عنه.\n\n'
+  + AI_TG_LINK + '\n\n'
+  + '<i>🚪 خروج — تطلع منه متى ما خلصت.</i>';
 
 /* ترجع true لو تعاملت مع الرسالة — والمعالج يتوقف عندها */
 async function aiTgRoute(chatId, text) {
@@ -8662,18 +8858,9 @@ async function aiTgRoute(chatId, text) {
     if (q) { await aiTgAnswer(chatId, q); return true }
     if (AI_TG_MODE.size > 3000) AI_TG_MODE.clear();
     AI_TG_MODE.set(key, Date.now() + AI_TG_TTL);
-    await sendMsg(chatId,
-      '✨ <b>مساعد جدولك</b>\n\n'
-      + 'اسألني بلغتك عن أي شي في جدولك — كل جوابي من بياناتك في الموقع، وما أخترع.\n\n'
-      + '📅 جدولك واليوم والفراغات\n'
-      + '🎓 خطتك والمتطلبات وكم باقي لك\n'
-      + '🔍 الشعب والدكاترة وتقييمات الطلاب\n'
-      + '🚪 القاعات الفاضية الحين\n'
-      + '🗓️ الغياب والمواعيد والنهائيات\n'
-      + '🧩 وأركّب لك جدولاً كاملاً بلا تعارض\n\n'
-      + '<b>جرّب:</b> «ركّب لي جدول بدون خميس»\n\n'
-      + '<i>🚪 خروج — تطلع منه متى ما خلصت.</i>',
-      AI_TG_KB);
+    const guest = !(await aiTgUser(chatId));
+    await sendMsg(chatId, guest ? AI_TG_INTRO_GUEST : AI_TG_INTRO,
+                  guest ? AI_TG_KB_GUEST : AI_TG_KB);
     return true;
   }
   /* ضغطة زر من لوحتنا بعد انتهاء الوضع: نرجّعه للمساعد لا للدعم */
@@ -8693,8 +8880,8 @@ async function aiTgRoute(chatId, text) {
 
 /* ═══ الكلام الحر: للمساعد ولا للفريق؟ ═══
    رسالة جديدة خارج وضع المساعد ⇒ نرد عليها بزرّين، والنص محفوظ حتى
-   يختار — ما يكتبه مرة ثانية. وغير المربوط: خطوات الربط + زر الفريق
-   وحده — المساعد ما يجاوبه قبل الربط، وزرّ لطريق مسدود أسوأ من تذكرة.
+   يختار — ما يكتبه مرة ثانية. وغير المربوط (قرار محمد): الزرّان وخطوات
+   الربط — المساعد يساعده في استعمال الموقع وحده حتى يربط.
 
    ويروح للفريق مباشرة بلا سؤال، كالسابق:
    · المساعد مو متاح لهذي المحادثة (off · nokey · admin لغير صاحب الموقع).
@@ -8721,7 +8908,7 @@ function aiTgTeamOpen(chatId, ms) {
 }
 
 /* كلام حر خارج وضع المساعد — وش نسوي فيه؟
-   'ask' الزرّان · 'link' خطوات الربط + زر الفريق · null للفريق مباشرة */
+   'ask' الزرّان · 'link' الزرّان وخطوات الربط (غير مربوط) · null للفريق مباشرة */
 async function aiTgAskMode(chatId, text, photo) {
   if (photo || !String(text || '').trim()) return null;
   if ((AI_TG_TEAM.get(String(chatId)) || 0) > Date.now()) return null;
@@ -8741,14 +8928,20 @@ async function aiTgAsk(chatId, msgId, text, mode) {
   /* رد على رسالته نفسها: يشوف أي رسالة نقصد، وتيليغرام يرجّعها مع الضغطة */
   const reply = { reply_parameters: { message_id: Number(msgId),
                                       allow_sending_without_reply: true } };
+  const both = kb([[btn('✨ اسأل المساعد', `ask:ai:${msgId}`)], team]);
+  /* غير المربوط (قرار محمد): المساعد يساعده في استعمال الموقع وحده،
+     وخطوات الربط قدّامه لو يبي جدوله وخطته */
   if (mode === 'link')
-    return sendMsg(chatId, AI_TG_LINK + '\n\nوإلا نوصل رسالتك لفريق جدولك 👇',
-                   kb([team]), reply);
+    return sendMsg(chatId,
+      '💬 <b>وين نوصل رسالتك؟</b>\n\n'
+      + '✨ <b>المساعد</b> — يساعدك الحين في استعمال الموقع.\n'
+      + '📩 <b>فريق جدولك</b> — للمشاكل والاقتراحات، ونرد عليك هنا.\n\n'
+      + AI_TG_LINK, both, reply);
   return sendMsg(chatId,
     '💬 <b>وين نوصل رسالتك؟</b>\n\n'
-    + '✨ <b>المساعد</b> — يجاوبك الحين عن جدولك وخطتك والشعب والقاعات.\n'
-    + '📩 <b>فريق جدولك</b> — للمشاكل والاقتراحات، ونرد عليك هنا.',
-    kb([[btn('✨ اسأل المساعد', `ask:ai:${msgId}`)], team]), reply);
+    + '✨ <b>المساعد</b> — يجاوبك الحين عن أي شي: جدولك وخطتك (من اللي عبّيته '
+    + 'في الموقع)، والشعب والقاعات، والتذكير.\n'
+    + '📩 <b>فريق جدولك</b> — للمشاكل والاقتراحات، ونرد عليك هنا.', both, reply);
 }
 
 /* الطالب ضغط أحد الزرّين (من handleCallback) */
