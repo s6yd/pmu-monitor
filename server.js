@@ -1008,7 +1008,7 @@ function payHdr(v) {
 /* اسم ترويسة للعرض — واسم يشبه مفتاحاً ما يُكتب */
 const payHdrName = n => /^[a-z][a-z0-9_.-]{0,39}$/i.test(n) && !/^[0-9a-f_-]{16,}$/i.test(n)
   ? n.toLowerCase() : `‹${n.length} حرف›`;
-function payHookOk(req) {
+function payHookOk(req, q) {
   const isKey = v => !!PL_HOOK_KEY && safeEqual(payKeyNorm(v), PL_HOOK_KEY);
   /* المفتاح هو السرّ لا اسم الترويسة: X-Jadwalik-Key أو Authorization — أو
      أي اسم ثاني لو انكتب الاسم غلط في Paylink (واللوحة تقول باسم وش وصل).
@@ -1022,10 +1022,17 @@ function payHookOk(req) {
     names.push(payHdrName(n));
     if (!via && isKey(v)) { via = payHdrName(n); raw = v }
   }
+  /* **والرابط** (`?key=`): زر Test في Paylink ما أرسل ولا ترويسة من عندنا — شفناها
+     في «آخر إشعار» على الإنتاج: ١٧ ترويسة كلها من Cloudflare وRender. والرابط يوصل
+     دائماً. الإشعار جرس لا إثبات، فأقصى ضرر لرابط يتسرّب تسوية زائدة لا تفعيل —
+     وما نسجّل روابط الطلبات أبداً */
+  const qk = [].concat((q && q.key) || []).map(String);
+  if (!via) { const k = qk.find(isKey); if (k !== undefined) { via = 'url'; raw = k } }
   const ok = !!via;
   if (!ok) {
     const c = ['x-jadwalik-key', 'authorization'].find(h => String(req.headers[h] || '') !== '');
     if (c) { via = c; raw = payHdr(req.headers[c]) }
+    else if (qk.some(Boolean)) { via = 'url'; raw = qk.find(Boolean) }
   }
   const got = payKeyNorm(raw);
   const why = !PL_HOOK_KEY ? 'nokey' : ok ? 'ok' : swapped ? 'swapped' : !got ? 'noheader' : 'mismatch';
@@ -1038,10 +1045,11 @@ function payHookOk(req) {
     PAY_HOOK_LOGGED[why] = Date.now();
     const L = PAY_HOOK_LAST;
     console.log('pay: إشعار ' + ({
-      ok: `مقبول (${via})`,
+      ok: `مقبول (${via === 'url' ? 'المفتاح في الرابط' : via})`,
       nokey: 'مرفوض — PAYLINK_WEBHOOK_KEY ناقص في Render',
-      noheader: 'مرفوض — ما وصلت ترويسة X-Jadwalik-Key · وصلت: ' + L.headers.join(', '),
-      mismatch: `مرفوض — المفتاح في ${via} ما طابق (وصل ${L.len} حرف · المضبوط ${L.want})`,
+      noheader: 'مرفوض — ما وصل المفتاح (لا ?key= في الرابط ولا ترويسة X-Jadwalik-Key) · وصلت: ' +
+        L.headers.join(', '),
+      mismatch: `مرفوض — المفتاح في ${via === 'url' ? 'الرابط' : via} ما طابق (وصل ${L.len} حرف · المضبوط ${L.want})`,
       swapped: 'مرفوض — المفتاح مكتوب في خانة اسم الترويسة لا القيمة',
     }[why]) + (L.hidden ? ` · فيه ${L.hidden} حرف مخفي تجاهلناه` : ''));
   }
@@ -10215,7 +10223,7 @@ const server = http.createServer(async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     /* الرفض يقول رمز سببه: زر Test في Paylink يعرض الرد كما هو، فمحمد يشوف
        السبب هناك بلا سجل. أسماء وأطوال؟ في اللوحة وحدها */
-    if (!payHookOk(req)) {
+    if (!payHookOk(req, parsed.query)) {
       res.writeHead(401); res.end(JSON.stringify({ ok: false, why: req.payHookWhy })); return;
     }
     const b = await readBody(req);

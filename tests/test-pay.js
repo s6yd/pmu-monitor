@@ -14,6 +14,8 @@
    ٨) **الإشعار يرفض بلا سبب**: زر Test في Paylink رجّع `{"ok":false}` وبس، فما
       عرفنا وش الغلط. الرفض يقول رمز سببه، واللوحة الأسماء والأطوال (لا القيم)،
       وعلامات الاتجاه المخفية من النسخ على الجوال ما تكسر المطابقة.
+   ٩) **Paylink ما يرسل ترويستنا** (شفناها في اللوحة على الإنتاج) ⇒ المفتاح في
+      الرابط (`?key=`) يُقبل — وما ينكتب في سجل ولا لوحة.
 
    node tests/test-pay.js [server.js]
    (يشغّل نفسه أربع مرات إضافية كعمليات مستقلة: dev · إنتاج بلا مفاتيح ·
@@ -570,14 +572,33 @@ async function prodSuite() {
   eq((await hook({}, 'hook-key-123456789')).code, 401, 'والمفتاح الناقص حرفاً مرفوض كما هو');
   eq((await hook({}, 'hook-key-1234567890x')).code, 401, 'والزائد حرفاً ظاهراً مرفوض');
 
+  /* ── المفتاح في الرابط: زر Test في Paylink ما أرسل ولا ترويسة من عندنا — «آخر
+     إشعار» على الإنتاج عرض ١٧ ترويسة كلها من Cloudflare وRender. والرابط يوصل دائماً ── */
+  const hookUrl = qs => call('POST', '/api/paylink/webhook' + qs, { body: {} });
+  h = await hookUrl('?key=hook-key-1234567890');
+  eq(h.code, 200, '**المفتاح في رابط الإشعار (?key=): مقبول** — بلا أي ترويسة');
+  L = await hookLast();
+  eq([L.ok, L.via], [true, 'url'], 'واللوحة تقول: وصل في الرابط');
+  ok(!JSON.stringify(L).includes('hook-key-1234567890'), '**والمفتاح ما ينكتب في اللوحة**');
+  h = await hookUrl('?key=url-wrong-key-77');
+  L = await hookLast();
+  eq([h.code, h.j && h.j.why, L.why, L.via, L.len], [401, 'mismatch', 'mismatch', 'url', 16],
+     'مفتاح غلط في الرابط: mismatch بطوله — يعرف إنه نسخ ناقص');
+  eq((await hookUrl('?key=%E2%80%8Fhook-key-1234567890%E2%80%8E')).code, 200,
+     'ولو لُصق بعلامات مخفية (مرمّزة في الرابط): مقبول');
+  eq((await hookUrl('?k=hook-key-1234567890')).code, 401, 'باسم ثاني في الرابط: مرفوض — `key` وحده');
+  eq((await hookUrl('?key=hook-key-123456789')).code, 401, 'والناقص حرفاً في الرابط مرفوض');
+
   const n0 = LOGS.length;
   for (let i = 0; i < 8; i++) await hook({}, 'wrong-key-' + i);
   const re = /^pay: إشعار مرفوض — المفتاح/;
   ok(LOGS.some(l => re.test(l)), '**السجل يقول ليش رفض** — ' + (LOGS.find(l => /إشعار/.test(l)) || 'ولا سطر'));
   ok(LOGS.slice(n0).filter(l => re.test(l)).length <= 1, '**ثمانية رفضات ورا بعض: سطر واحد بالدقيقة** لا ثمانية');
-  ok(LOGS.some(l => /^pay: إشعار مرفوض — ما وصلت ترويسة X-Jadwalik-Key · وصلت: .*content-type/.test(l)),
-     'وسطر «ما وصلت» فيه أسماء اللي وصل');
-  ok(!LOGS.some(l => /hook-key-1234567890|wrong-key|paylink-own-token/.test(l)), '**ولا قيمة ترويسة في السجل أبداً**');
+  /* صياغة السطر تغيّرت عمداً: صار يذكر الرابط (?key=) لأنه الطريقة اللي تشتغل مع Paylink */
+  ok(LOGS.some(l => /^pay: إشعار مرفوض — ما وصل المفتاح \(لا \?key= في الرابط ولا ترويسة X-Jadwalik-Key\) · وصلت: .*content-type/.test(l)),
+     'وسطر «ما وصل» فيه أسماء اللي وصل — ' + (LOGS.find(l => /ما وصل/.test(l)) || 'ولا سطر'));
+  ok(!LOGS.some(l => /hook-key-1234567890|wrong-key|paylink-own-token|url-wrong-key/.test(l)),
+     '**ولا قيمة ترويسة ولا مفتاح رابط في السجل أبداً**');
   ok(LOGS.some(l => /^pay: paylink .* الإشعار مضبوط \(19 حرف\)$/.test(l)),
      'وسطر الإقلاع فيه طول المفتاح — ' + (LOGS.find(l => /^pay: paylink/.test(l)) || ''));
 }
