@@ -1286,6 +1286,48 @@ function fakeModel(ctx) {
     ctxObj.coursesCache.clear();
   }
 
+  /* ══════ ٨) البيانات من اللي عبّاه الطالب — ملاحظة محمد ══════
+     الجدول والخطة يعبّيها الطالب بنفسه. طالب ما أضاف جدوله يسأل
+     «وش عندي بكرة؟» فيجيه «ما عندك محاضرات» — ويظن الموقع غلطان.
+     الأداة لازم تفرّق: جدول فاضي ≠ يوم فاضي ≠ جدول ثانٍ فاضي. */
+  {
+    const EMPTY = await aiStudentCtx('u-meen');          /* بلا جدول وبلا منجزات */
+    const callE = fakeModel(EMPTY);
+    const sc = await callE('my_schedule', '{}');
+    eq(sc.scheduleEmpty, true, '**جدول فاضي كله: الأداة تقولها صريحة** (scheduleEmpty)');
+    ok(/عبّي|يعبّي|أضاف/.test(sc.note || '') && /jadwalik/.test(sc.note || ''),
+       'وتقول إنه من اللي يعبّيه في موقعنا — ' + sc.note);
+    const dy = await callE('my_day', '{"day":"U"}');
+    eq(dy.scheduleEmpty, true, '**«وش عندي بكرة؟» بجدول فاضي: جدول فاضي لا يوم فاضي**');
+    ok(!/ما فيه محاضرات هذا اليوم/.test(dy.note || ''),
+       'وما تقول «ما فيه محاضرات» كأنها حقيقة — ' + dy.note);
+    ok(/محاضرات/.test(dy.note || '') && /حقيقة/.test(dy.note || ''),
+       'وتنبّه النموذج ما يقولها');
+    const ab = await callE('my_absences', '{}');
+    eq(ab.scheduleEmpty, true, 'والغياب كذلك');
+
+    /* يوم فاضي فعلاً في جدول فيه مواد: الملاحظة العادية بلا scheduleEmpty */
+    const pr = await call('my_day', '{"day":"R"}');
+    eq([pr.count, !!pr.scheduleEmpty], [0, false], 'يوم فاضي في جدول فيه مواد ما يصير «جدول فاضي»');
+    /* جدول ثالث فاضي وعنده مواد في الأول: غير «ما عبّا جدوله» */
+    const s3 = await call('my_schedule', '{"slot":3}');
+    eq(s3.scheduleEmpty, false, 'جدول ثانٍ فاضي وعنده مواد في غيره: مو «ما عبّا جدوله»');
+    ok(/جدول ثانٍ/.test(s3.note || ''), 'ويقول إن عنده مواد في جدول ثانٍ — ' + s3.note);
+
+    /* الخطة: صفر منجزات = ما علّمها، لا «ما خلّص شي» */
+    const ov0 = await callE('plan_overview', '{}');
+    eq(ov0.completedRecorded, 0, 'ملخص الخطة يقول كم مادة علّمها منجزة');
+    ok(/خطتي/.test(ov0.note || ''), '**وبلا منجزات: يقول إن الحساب من اللي علّمه في «خطتي»**');
+    const ov1 = await call('plan_overview', '{}');
+    eq([ov1.completedRecorded, ov1.note], [3, undefined], 'وطالب علّم منجزاته: بلا الملاحظة');
+    for (const t of ['next_term_suggestion', 'graduation_forecast', 'retake_list']) {
+      const r = await callE(t, '{}');
+      ok(/خطتي/.test(r.note || ''), `${t}: بلا منجزات يقولها — ${String(r.note).slice(0, 50)}`);
+    }
+    const g0 = await callE('gpa', '{}');
+    ok(/خطتي/.test(g0.note || ''), 'والمعدل بلا درجات: يعلّمها في «خطتي»');
+  }
+
   console.log(`\n${pass} نجحت · ${fail} فشلت`);
   process.exit(fail ? 1 : 0);
 })().catch(e => {
