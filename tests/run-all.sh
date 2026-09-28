@@ -59,6 +59,7 @@ run test-ai-chat        "$S"
 run test-reminders      "$S"
 run test-pay            "$S"
 run test-tg-ai          "$S" "$F"
+run test-tg-ask         "$S"
 run test-prep-sync      "$F"
 run test-ai-page        "$F"
 
