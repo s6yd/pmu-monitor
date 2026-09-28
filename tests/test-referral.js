@@ -29,7 +29,10 @@ const DB = {
     { id: 2, user_id: 'u2', amount_halalas: 500, expires_at: '2027-08-17T20:59:59+00:00',
       created_at: '2026-09-01T10:00:00+00:00' }],
   referrals: [{ id: 1, referrer_id: 'u1', invited_id: 'u9' }],
-  subscriptions: [], app_state: [], app_events: [], monitored_courses: []
+  subscriptions: [], app_events: [], monitored_courses: [],
+  /* التنبيه الطارئ مضبوط (رابط + وضع «addon») — بدونه ما يُباع أصلاً: ما نبيع
+     إضافة بطاقة تفعيلها مخفية. أسعاره هنا نفس ما كانت */
+  app_state: [{ key: 'runtime-dev', value: { toggles: { pushoverMode: 'addon' } } }]
 };
 let patchCalls = 0, collideOnce = true;
 
@@ -100,7 +103,8 @@ Object.assign(process.env, {
   PORT: String(PORT), ADMIN_TOKEN: 'admin-token-for-tests', SITE_ENV: 'dev', ACTIVE_TERM: '202710',
   SB_URL: 'https://fake.supabase.co', SUPABASE_URL: 'https://fake.supabase.co',
   SB_SERVICE_KEY: 'k', SUPABASE_SERVICE_KEY: 'k', SUPABASE_SERVICE_ROLE_KEY: 'k',
-  TELEGRAM_TOKEN: 'tg', ADMIN_CHAT_ID: '5555'
+  TELEGRAM_TOKEN: 'tg', ADMIN_CHAT_ID: '5555',
+  PUSHOVER_SUBSCRIBE_URL: 'https://pushover.net/subscribe/Jadwalik-test'
 });
 const realLog = console.log;
 console.log = () => {};

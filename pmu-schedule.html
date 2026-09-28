@@ -538,6 +538,7 @@ display:flex;align-items:center;justify-content:center}
   flex-direction:column;gap:6px;font-size:12.5px;color:var(--text2);line-height:1.5}
 .ps-col b{color:var(--text);font-size:13.5px;margin-bottom:2px}
 .ps-col.pro{border:2px solid var(--accent)}
+.ps-col .ps-when{font-size:11.5px;color:var(--text3);line-height:1.45}
 .ps-addon{display:flex;align-items:center;gap:10px;border:1px solid var(--border);
   border-radius:13px;padding:10px 12px;margin-bottom:12px;font-size:13px;cursor:pointer}
 .ps-addon input[type=checkbox]{width:20px;height:20px;flex:none;padding:0;margin:0;
@@ -4824,6 +4825,9 @@ async function loadMonitorState(){
   catch(e){ MON_STATE=null; }
   poCheckUnlock();
   poHandleReturn().catch(()=>{});
+  /* بطاقة التنبيه الطارئ تعتمد على هالحالة — الإعدادات المفتوحة قبل وصولها
+     (رابط الإيصال يفتحها أول ما يدخل) كانت تبقى بلا البطاقة */
+  try{ if(CUR_TAB==='set')renderPushover() }catch(e){}
   try{ syncTermSelect() }catch(e){}
   try{ syncPlanHint() }catch(e){}
   /* أول قراءة تثبّت بصمة النسخة المحمّلة، وما بعدها يقارن بها */
@@ -5815,7 +5819,7 @@ function planInfo(){
   return { term:n(p.termHalalas,1900), po:n(p.pushoverHalalas,1000),
            friend:n(p.friendDiscountHalalas,300), referrer:n(p.referrerCreditHalalas,500),
            freeMonitors:n(p.freeMonitors,2), freeSchedules:n(p.freeSchedules,1),
-           termEnd:p.termEnd||null, poOffered:!!p.pushoverOffered };
+           termEnd:p.termEnd||null, termCode:p.termCode||null, poOffered:!!p.pushoverOffered };
 }
 function sarTxt(h){ const v=(Number(h)||0)/100; return v%1?v.toFixed(2):String(v) }
 
@@ -6265,7 +6269,6 @@ function openPlans(reason){
                 :'Schedules 2 and 3 are for subscribers — yours is saved',
     pushover: ar?'التنبيه الطارئ إضافة على اشتراك الترم':'Urgent alerts are an add-on to the term plan'
   }[reason]||'';
-  const end=P.termEnd?new Date(P.termEnd).toLocaleDateString(ar?'ar-u-ca-gregory-nu-latn':'en-GB',{day:'numeric',month:'long'}):'';
   el.innerHTML=`<div class="ps-sheet" role="dialog" aria-modal="true">
     <div class="ps-grab"></div>
     ${ctx?`<div class="ps-ctx">🔒 ${ctx}</div>`:''}
@@ -6278,12 +6281,15 @@ function openPlans(reason){
         <span>${ar?'مراقبة بلا حد':'Unlimited watches'}</span>
         <span>${ar?'كل شعب المادة':'Every section of a course'}</span>
         <span>${ar?'3 جداول':'3 schedules'}</span>
-        <span>${end?(ar?'حتى '+end:'Until '+end):(ar?'حتى نهاية الترم':'Until term end')}</span></div>
+        ${aiShown()?`<span>${ar?'Jadwalik AI كامل':'Full Jadwalik AI'}</span>`:''}
+        <span id="psEnd">${psEndTxt(P.termEnd)}</span>
+        <span class="ps-when" id="psTerm">${psTermTxt(P.termCode)}</span></div>
     </div>
     ${P.poOffered?`<label class="ps-addon">
       <input type="checkbox" id="psPo" ${reason==='pushover'?'checked':''} onchange="plansTotal()">
       <span class="ps-a-t"><b>🚨 ${ar?'التنبيه الطارئ':'Urgent alert'}</b><br>
-        <small>${ar?'يرن حتى لو الجوال صامت':'Rings even on silent'}</small></span>
+        <small>${ar?'يرن حتى لو الجوال صامت، ويعيد لين تأكّده':'Rings even on silent, repeats until you confirm'}<br>
+          ${ar?'عبر تطبيق Pushover — خطوات تفعيله توصلك بعد الدفع':'Via the Pushover app — setup steps come after payment'}</small></span>
       <span dir="ltr">+${sarTxt(P.po)}</span></label>`:''}
     <div class="ps-lines" id="psLines"></div>
     <div class="ps-total"><span>${ar?'الإجمالي':'Total'}</span><b id="psTotal"></b></div>
@@ -6299,6 +6305,20 @@ function openPlans(reason){
   plansTotal();
   el.hidden=false;
   requestAnimationFrame(()=>el.classList.add('open'));
+}
+/* «من اليوم حتى 9 يونيو 2027» و«يشمل تسجيل ربيع 2026/2027» — لقاها محمد: كانت
+   «حتى 9 يونيو» بلا سنة ولا ترم، والشراء بعد ما ينقفل التسجيل يروح للترم الجاي
+   (payTermNow). والتفعيل فوري، فـ«من اليوم» صادقة في كل الحالات */
+function psEndTxt(iso){
+  const ar=LANG==='ar';
+  if(!iso)return ar?'حتى نهاية الترم':'Until term end';
+  const d=new Date(iso).toLocaleDateString(ar?'ar-u-ca-gregory-nu-latn':'en-GB',{day:'numeric',month:'long',year:'numeric'});
+  /* التاريخ ما ينقسم: كانت السنة تنزل سطراً وحدها في العمود الضيّق */
+  return (ar?'من اليوم حتى ':'From today until ')+`<span style="white-space:nowrap">${d}</span>`;
+}
+function psTermTxt(code){
+  if(!/^\d{6}$/.test(String(code||'')))return '';
+  return LANG==='ar'?`يشمل تسجيل ${termLabel(code)}`:`Covers ${termLabel(code)} registration`;
 }
 /* الإجمالي فوراً من الأسعار العامة، ثم نستبدله بحساب السيرفر: الخصم
    والرصيد يعرفهما السيرفر وحده، وهو اللي بيحاسب عند الدفع */
@@ -6330,6 +6350,10 @@ async function plansQuote(){
   if(q.ref==='used')h+=`<div class="ps-note">${ar?'خصم الصديق لأول اشتراك فقط':'Friend discount is for a first purchase only'}</div>`;
   const lines=document.getElementById('psLines'), tot=document.getElementById('psTotal');
   if(lines)lines.innerHTML=h;
+  /* ترم السعر هو اللي ينباع — لو اختلف عن حالة الصفحة (قديمة) يغلب */
+  const pe=document.getElementById('psEnd'), pt=document.getElementById('psTerm');
+  if(pe&&q.termEnd)pe.innerHTML=psEndTxt(q.termEnd);   /* تاريخ من التقويم — لا نص مستخدم */
+  if(pt&&q.term)pt.textContent=psTermTxt(q.term);
   if(tot)tot.textContent=sarTxt(q.amount)+R;
   payUi(q);
 }
@@ -6346,6 +6370,11 @@ let PAY_BACK=(()=>{ const m=/[?&]pay=(\d{1,12})(?:&|$)/.exec(location.search); r
 /* ‎?plans=1‎ يفتح ورقة الباقات مباشرة — وقت الفترة المجانية ما فيه زر «الباقات»،
    فهذا مدخل صاحب الموقع لتجربة الدفع (والزر نفسه يقرّره السيرفر كما هو) */
 let PLANS_OPEN=/[?&]plans=1(?:&|$)/.test(location.search);
+/* ‎?pushover=1‎ من رابط الإيصال: بعد الدخول نفتح الإعدادات على بطاقة التفعيل.
+   يُقرأ عند تحميل السكربت — poCheckUnlock وinitAuth يمسحان الرابط */
+let PO_GO=/[?&]pushover=1(?:&|$)/.test(location.search);
+/* جا بغرض (رابط الإيصال · زر التفعيل): دليل أول زيارة ما يقتحم فوق البطاقة */
+let GUIDE_HOLD=false;
 function payClosedText(why){
   const ar=LANG==='ar';
   return ({beta:ar?'الدفع يفتح مع نهاية الفترة المجانية':'Checkout opens when the free period ends',
@@ -6402,6 +6431,8 @@ async function payStart(){
   if(r.ok&&r.activated){ payShow('paid',r); payRefresh(); return }
   if(r.why==='pending'){ payPendingBox(r); return }
   payMsg(escapeHtml(r.error||(ar?'تعذّر — جرّب بعد شوي':'Something went wrong')),'err');
+  /* الجوال غلط: نرجّعه للخانة عشان يصلّحه — الرسالة تقول وش الصح */
+  if(r.why==='phone'&&inp){ inp.focus(); try{ inp.select() }catch(e){} }
 }
 function payPendingBox(r){
   const ar=LANG==='ar', id=Number(r.id)||0;
@@ -6432,7 +6463,8 @@ function payShow(status,r){
     {day:'numeric',month:'long',year:'numeric'}):'';
   const M={
     paid:['✅',ar?'تم الدفع — اشتراكك فعّال':'Paid — your plan is active',
-          end?(ar?`حتى ${end}. شكراً لأنك معنا 🤍`:`Until ${end}. Thank you 🤍`):''],
+          (end?(ar?`حتى ${end}. شكراً لأنك معنا 🤍`:`Until ${end}. Thank you 🤍`):'')+
+          (PROFILE&&PROFILE.telegram_chat_id?(ar?' وإيصالك وصلك على تلقرام.':' Your receipt is on Telegram.'):'')],
     pending:['⏳',ar?'ننتظر تأكيد الدفع':'Waiting for payment confirmation',
           ar?'لو دفعت، يتفعّل تلقائياً خلال دقائق ويوصلك خبر على تلقرام.':'If you paid, it activates automatically within minutes.'],
     failed:['↩️',ar?'ما تم الدفع':'The payment did not go through',
@@ -6441,6 +6473,7 @@ function payShow(status,r){
   const V=M[status]||M.failed;
   el.innerHTML=`<div class="ps-sheet" role="dialog" aria-modal="true"><div class="ps-grab"></div>
     <div class="pay-res"><div class="pay-ico">${V[0]}</div><b>${V[1]}</b>${V[2]?`<p>${V[2]}</p>`:''}</div>
+    ${status==='paid'&&r&&r.pushover?`<button class="ps-pay" onclick="poGo()">🚨 ${ar?'فعّل التنبيه الطارئ الحين':'Set up the urgent alert now'}</button>`:''}
     ${status==='pending'?`<button class="ps-pay" onclick="payReturn(${Number(r&&r.id)||0})">${ar?'حدّث الحالة':'Check again'}</button>`:''}
     ${status==='failed'?`<button class="ps-pay" onclick="openPlans()">${ar?'جرّب مرة ثانية':'Try again'}</button>`:''}
     <button class="ps-close" onclick="closePlans()">${status==='paid'?(ar?'تمام':'Done'):(ar?'إغلاق':'Close')}</button></div>`;
@@ -6466,6 +6499,9 @@ async function payReturn(given){
     await new Promise(z=>setTimeout(z,2500));
   }
   if(!r||!r.ok)return;
+  /* الإضافة سارية من الحين — زر التفعيل ما ينتظر تحديث الملف (البطاقة كانت
+     بتطلع «أضفه» لمن دفع للتو) */
+  if(r.status==='paid'&&r.pushover&&PROFILE)PROFILE=Object.assign({},PROFILE,{pushover_until:r.until});
   payShow(r.status==='paid'?'paid':r.status==='pending'?'pending':'failed',r);
   if(r.status==='paid')payRefresh();
 }
@@ -7099,6 +7135,18 @@ function poStart(){
   const ok=base+'?rand='+n;
   location.href=c.url+'?success='+encodeURIComponent(ok)+
                 '&failure='+encodeURIComponent(base);
+}
+
+/* رابط الإيصال وزر «فعّل التنبيه الطارئ» بعد الدفع: الإعدادات على بطاقة التفعيل.
+   في وضع link البطاقة تنفتح لهذا الجهاز — والمشتري دفع عليها */
+function poGo(){
+  PO_GO=false; GUIDE_HOLD=true;
+  try{ localStorage.setItem(PO_UNLOCK,'1') }catch(e){}
+  closePlans();
+  try{ closeGuide() }catch(e){}
+  switchTab('set');
+  setTimeout(()=>{ const el=document.getElementById('poRow');
+    if(el&&el.scrollIntoView)el.scrollIntoView({behavior:'smooth',block:'center'}) },250);
 }
 
 /* الرجوع من Pushover: نتحقق من الرمز، نخزّن المفتاح، وننظّف الرابط */
@@ -8006,7 +8054,7 @@ function maybeShowGuide(){
        نتركه — وزر «؟» باقٍ له متى ما بغاه. */
     setTimeout(()=>{
       const ai=document.getElementById('aiOv');
-      if(ai&&ai.classList.contains('open'))return;
+      if(GUIDE_HOLD||(ai&&ai.classList.contains('open')))return;
       openGuide();
     },900);
   }
@@ -9037,11 +9085,12 @@ function redrawTodayAfterAuth(){
   if(USER){await pullCloud();setAuthUI();renderPlan();enforceSlotAndRedraw();redrawTodayAfterAuth();
     loadAccount(true).then(()=>{ try{ if(CUR_TAB==='set')renderSettings() }catch(e){} });
     payReturn().catch(()=>{});          /* رجع من صفحة الدفع؟ */
+    if(PO_GO)poGo();                    /* جا من رابط الإيصال؟ */
     if(document.getElementById('pageSched').classList.contains('active'))renderSchedule();}
   sb.auth.onAuthStateChange(async(ev,sess)=>{
     const was=!!USER;USER=sess?sess.user:null;
     if(USER&&!was){await pullCloud();setAuthUI();renderPlan();redrawTodayAfterAuth();
-      payReturn().catch(()=>{});}
+      payReturn().catch(()=>{}); if(PO_GO)poGo();}
     aiProbe().catch(()=>{});
   });
 })();
