@@ -2075,6 +2075,54 @@ function unlinkBlocked(chatId, why) {
     .catch(e => console.log('فكّ الربط فشل: ' + (e && e.message)));
 }
 
+/* ═══ سرّ الـwebhook — يثبت إن التحديث من تيليغرام فعلاً ═══
+   كان /tg-webhook يقبل أي طلب بلا تحقق إنه من تيليغرام. تيليغرام يرسل
+   مع كل تحديث ترويسة نختارها (secret_token في setWebhook)، ونرفض ما
+   يحملها.
+   **السرّ مشتق من رمز البوت** لا متغيّر جديد: البيئتان بنفس الرمز
+   تشتقان نفس السرّ، فتسجيله من أيّهما يطابق الثانية. ومن يعرف رمز
+   البوت يملك البوت أصلاً — فالاشتقاق ما يضعّف شيئاً.
+   التسجيل عند الإقلاع **بنفس الرابط المسجّل** (getWebhookInfo) — ما
+   نخمّن رابطاً ولا ننقل البوت من خدمة لخدمة.
+   قبل ما ينجح التسجيل نقبل بلا ترويسة (ثوانٍ عند الإقلاع، أو تيليغرام
+   ما يرد) — وإلا انقفل البوت على نفسه: الربط بـ/start يمر من هنا.
+   وبعده: بلا ترويسة = مرفوض. ويمكن أحد غيّر الرابط يدوياً بلا سرّ،
+   فالمرفوض يعيد التسجيل (مرة كل ٥ دقائق على الأكثر) وتيليغرام يعيد
+   إرسال ما رفضناه — ما يضيع تحديث. */
+const TG_HOOK_SECRET = TELEGRAM_TOKEN ? crypto.createHash('sha256')
+  .update('jadwalik-tg-webhook:' + TELEGRAM_TOKEN).digest('hex') : '';
+const TG_HOOK = { ready: false, at: 0, url: '', err: '', rejected: 0 };
+const TG_HOOK_RETRY = 5 * 60 * 1000;
+
+async function tgHookSecure() {
+  if (!TELEGRAM_TOKEN) return;
+  if (TG_HOOK.at && Date.now() - TG_HOOK.at < TG_HOOK_RETRY) return;
+  TG_HOOK.at = Date.now();
+  const info = await tg('getWebhookInfo', {});
+  const cur = info && info.ok && info.result;
+  if (!cur || !cur.url) {
+    TG_HOOK.err = (info && info.description) || 'ما فيه رابط مسجّل';
+    console.log('webhook: ما سجّلنا السرّ — ' + TG_HOOK.err);
+    return;
+  }
+  /* نفس الإعداد كما هو، والسرّ فوقه */
+  const body = { url: cur.url, secret_token: TG_HOOK_SECRET };
+  if (Array.isArray(cur.allowed_updates)) body.allowed_updates = cur.allowed_updates;
+  if (cur.max_connections) body.max_connections = cur.max_connections;
+  const r = await tg('setWebhook', body);
+  TG_HOOK.url = cur.url;
+  TG_HOOK.ready = !!(r && r.ok);
+  TG_HOOK.err = TG_HOOK.ready ? '' : ((r && r.description) || 'فشل بلا سبب');
+  console.log('webhook: ' + (TG_HOOK.ready ? 'السرّ مسجّل' : 'ما انضبط السرّ — ' + TG_HOOK.err));
+}
+
+function tgHookOk(req) {
+  const h = String(req.headers['x-telegram-bot-api-secret-token'] || '');
+  /* ترويسة غلط = مو من تيليغرام، دائماً */
+  if (h) return !!TG_HOOK_SECRET && safeEqual(h, TG_HOOK_SECRET);
+  return !TG_HOOK.ready;
+}
+
 /* أزرار داخلية أسفل الرسالة */
 const btn = (label, data) => ({ text: label, callback_data: data });
 const kb  = rows => ({ inline_keyboard: rows });
@@ -9082,6 +9130,15 @@ const server = http.createServer(async (req, res) => {
 
   /* Telegram webhook */
   if (parsed.pathname === '/tg-webhook' && req.method === 'POST') {
+    /* السرّ: تيليغرام وحده يعرفه (tgHookSecure). بلا ترويسته = مو منه */
+    if (!tgHookOk(req)) {
+      TG_HOOK.rejected++;
+      /* يمكن أحد غيّر الرابط يدوياً بلا سرّ — نعيد التسجيل (بحدّه) */
+      tgHookSecure().catch(() => {});
+      req.resume();
+      res.writeHead(401); res.end('no');
+      return;
+    }
     let body = '';
     req.on('data', c => body += c);
     req.on('end', async () => {
@@ -10503,6 +10560,12 @@ server.listen(PORT, () => {
   reportsWatch().catch(() => {});
   /* قائمة أوامر البوت — مرة عند الإقلاع، ومن الإنتاج وحده */
   tgSetCommands().catch(e => console.log('أوامر البوت: ' + (e && e.message)));
+  /* سرّ الـwebhook — في البيئتين (كل بيئة تحرس رابطها، والسرّ واحد لنفس
+     البوت فالتسجيل من أيّهما واحد). وما انضبط؟ نعيد كل ١٠ دقائق */
+  tgHookSecure().catch(e => console.log('webhook: ' + (e && e.message)));
+  setInterval(() => {
+    if (!TG_HOOK.ready) tgHookSecure().catch(() => {});
+  }, 10 * 60 * 1000);
 
   /* الاستعادة أولاً، ثم نسمح بالكتابة — وإلا ضاعفنا ما استعدناه */
   (async () => {
