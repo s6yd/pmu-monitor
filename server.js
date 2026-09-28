@@ -9250,8 +9250,11 @@ const server = http.createServer(async (req, res) => {
             const merged = Object.assign({}, AI_CAPS, p.caps);
             const err = validateAiCaps(merged);
             if (err) return send(400, { error: err });
-            AI_CAPS = { day: Number(merged.day), dayFree: Number(merged.dayFree),
-                        term: Number(merged.term), monthSar: Number(merged.monthSar) };
+            /* كل مفاتيح الافتراضي: كانت أربعة بالاسم، فأول حفظ من اللوحة
+               (وهي ترسل الأربعة وحدها) يُسقط سقفي الزوار — ويسأل الزائر
+               بلا حد يومي ولا شهري حتى النشر الجاي. */
+            AI_CAPS = Object.fromEntries(Object.keys(AI_CAPS_DEFAULT)
+              .map(k => [k, Number(merged[k])]));
           }
           await saveState().catch(() => {});
         }
