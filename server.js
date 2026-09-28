@@ -491,7 +491,7 @@ async function meQuote(uid, { pushover, ref }) {
   const pt = payTermNow();
   return { ok: true, includesTerm, pushover: wantPo, base, po, discount, credit,
            amount, ref: refState, creditAvailable: bal.available,
-           term: pt.term, termEnd: pt.until, late: pt.late,
+           term: pt.term, termEnd: pt.until, late: pt.late, termNote: pt.note,
            /* أقل من ٥ وما يغطيه الرصيد: ما نقدر نبيعه (سعر من اللوحة أقل من الحد) */
            belowMin: amount > 0 && amount < PAY_MIN_HALALAS };
 }
@@ -534,24 +534,37 @@ const PAY_PENDING_MS = 24 * 3600 * 1000;     /* المعلّقة تنلغي بع
 const PAY_TICK = 5 * 60 * 1000;
 const PAY_ORIGIN_PROD = 'https://jadwalik.com';
 
-/* ترم الشراء: ترم النافذة المفتوحة، وإلا ترم الدراسة (كما في ورقة
-   الباقات). والشراء في **آخر lateDays من النافذة** للترم الجاي — التسجيل
-   خلص تقريباً، فباقي الحالي هدية. وما نبيع اشتراكاً ينتهي قبل ما يبدأ:
-   ترم دراسة خلصت نهائياته وما تقدّم في اللوحة بعد ⇒ الترم اللي بعده. */
+/* ترم الشراء — **الاشتراك لتسجيل قدّامك** (قرار محمد):
+   · داخل نافذة: ترمها. وفي **آخر lateDays منها** للترم الجاي — التسجيل
+     خلص تقريباً، فباقي الحالي هدية.
+   · **خارج النوافذ** (التسجيل انقفل، أو ما بدأ): للترم الجاي — ترم النافذة
+     الجاية من التقويم، وإلا الترم بعد ترم الدراسة. كان ترم الدراسة، فمن
+     يشتري بعد ما ينقفل التسجيل يدفع لترم ما بقى فيه شي يراقبه. وباقي
+     الحالي هدية بنفس فكرة آخر أيام النافذة.
+   وما نبيع اشتراكاً ينتهي قبل ما يبدأ: ترم خلصت نهائياته ⇒ اللي بعده.
+   `note` يُكتب في صف الاشتراك — تعرف من اللوحة ليش ترمه غير الحالي. */
 function payTermNow() {
   const w = currentWindow();
-  let term = (w && w.term) || activeTerm();
-  let late = false;
-  if (w && PRICING.lateDays > 0) {
-    const left = Math.round((Date.parse(w.to + 'T00:00:00Z') -
-                             Date.parse(riyadhDate() + 'T00:00:00Z')) / 864e5);
-    if (left < PRICING.lateDays) { term = nextTerm(term); late = true }
+  let term, note = null;
+  if (w) {
+    term = w.term || activeTerm();
+    if (PRICING.lateDays > 0) {
+      const left = Math.round((Date.parse(w.to + 'T00:00:00Z') -
+                               Date.parse(riyadhDate() + 'T00:00:00Z')) / 864e5);
+      if (left < PRICING.lateDays) { term = nextTerm(term); note = 'شراء آخر النافذة — للترم الجاي' }
+    }
+  } else {
+    /* النافذة اليدوية من اللوحة بلا ترم — فالرجوع للترم بعد ترم الدراسة */
+    const nw = nextWindow();
+    term = (nw && nw.term) || nextTerm(activeTerm());
+    note = 'شراء خارج التسجيل — للترم الجاي';
   }
   let until = termEndApprox(term);
   for (let i = 0; i < 3 && !(Date.parse(until) > Date.now()); i++) {
-    term = nextTerm(term); until = termEndApprox(term); late = true;
+    term = nextTerm(term); until = termEndApprox(term);
+    note = note || 'ترم الدراسة خلص — للترم الجاي';
   }
-  return { term, until, late };
+  return { term, until, late: !!note, note };
 }
 
 /* من يقدر يدفع الحين — الفحص الوحيد، والصفحة تعرض جوابه */
@@ -871,7 +884,7 @@ async function payCheckout(uid, opt, origin) {
     credit_halalas: q.credit, amount_halalas: q.amount,
     referral_code: q.ref === 'ok' ? code : null, valid_until: q.termEnd,
     gateway: q.amount > 0 ? PL_GATEWAY : PL_CREDIT_GATEWAY,
-    note: q.late ? 'شراء آخر النافذة — للترم الجاي' : null },
+    note: q.termNote || null },
     prefer: 'return=representation' }).catch(e => ({ message: e.message }));
   if (!Array.isArray(ins) || !ins.length) {
     if (ins && ins.code === '23505')
@@ -9864,8 +9877,8 @@ const server = http.createServer(async (req, res) => {
          يُقفل بانتهاء نافذة التسجيل فقط، أو بإيقافك اليدوي. */
       term: activeTerm(),
       regTerm: regTerm(),
-      /* ما تحتاجه ورقة الباقات وحدود المجاني. الشراء يغطي ترم التسجيل
-         وقت النافذة، وإلا ترم الدراسة */
+      /* ما تحتاجه ورقة الباقات وحدود المجاني. الشراء لتسجيل قدّام الطالب:
+         ترم النافذة المفتوحة، وبعد ما تنقفل الترم الجاي (payTermNow) */
       plans: {
         termHalalas: PRICING.termHalalas,
         pushoverHalalas: PRICING.pushoverHalalas,
@@ -9873,7 +9886,7 @@ const server = http.createServer(async (req, res) => {
         referrerCreditHalalas: PRICING.referrerCreditHalalas,
         freeMonitors: PRICING.freeMonitors,
         freeSchedules: PRICING.freeSchedules,
-        /* نفس ترم الشراء اللي يحسبه meQuote — آخر أيام النافذة للترم الجاي */
+        /* نفس ترم الشراء اللي يحسبه meQuote — ورقة الباقات تعرض «حتى …» منه */
         termEnd: payTermNow().until,
         pushoverOffered: !!PUSHOVER_SUBSCRIBE_URL
       },
