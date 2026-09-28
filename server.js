@@ -6705,8 +6705,28 @@ async function aiSchedule(ctx, slot) {
     : Math.min(...rows.map(r => Number(r.slot) || 1).concat([3]));
   const out = rows.filter(r => (Number(r.slot) || 1) === pick);
   out.slot = pick;          /* عشان الأداة تقول «من جدولك ٢» لا تسكت */
+  /* كل صفوفه في الجداول الثلاثة: صفر = ما أضاف مواده في موقعنا أصلاً،
+     وهذا غير «جدولك هذا فاضي» وغير «ما عندك محاضرات هذا اليوم» */
+  out.total = rows.length;
   return out;
 }
+
+/* ═══ بيانات الطالب من اللي يعبّيه هو في موقعنا ═══
+   الجدول والخطة والدرجات ما تجينا من الجامعة — الطالب يعبّيها. فأداة
+   رجّعت فاضياً ما تعني «ما عندك محاضرات» بل ربما «ما عبّيت جدولك».
+   بلا هذي الملاحظات جاوب المساعد طالباً ما أضاف جدوله: «ما عندك
+   محاضرات بكرة» — فيظن إن الموقع غلطان (ملاحظة محمد). */
+const AI_SCHED_EMPTY = 'جدوله في موقعنا فاضي — ما أضاف مواده بعد، والجدول يعبّيه الطالب '
+  + 'بنفسه (ما يجينا من الجامعة). قل له إن جوابك من الجدول اللي يعبّيه في jadwalik.com، '
+  + 'ويضيف مواده من تبويب 🔍 البحث بزر ➕ — ولا تقل «ما عندك محاضرات» كأنها حقيقة.';
+const AI_SLOT_EMPTY = 'هذا الجدول فاضي، وعنده مواد في جدول ثانٍ من جداوله الثلاثة في '
+  + 'الموقع — قل له يختار جدوله في jadwalik.com أو يسمّي رقمه.';
+const AI_PLAN_EMPTY = 'ما علّم ولا مادة منجزة في «خطتي» على موقعنا، فالحساب يفترض إنه '
+  + 'ما خلّص شي. الخطة يعبّيها الطالب بنفسه — قل له إن الأرقام من اللي علّمه، ويعلّم '
+  + 'مواده المنجزة ودرجاتها في تبويب «خطتي» عشان يطلع الحساب صح.';
+const aiPlanEmpty = ctx => !((ctx.plan && ctx.plan.completed) || []).length;
+/* جدول فاضي: أي الحالتين؟ */
+const aiSchedEmptyNote = rows => rows.total ? AI_SLOT_EMPTY : AI_SCHED_EMPTY;
 
 /* صف جدول → ما يراه النموذج. ولا حقل يخصّ طالباً آخر. */
 function aiSchedRow(r) {
@@ -7000,13 +7020,17 @@ const AI_TOOLS = {
       const p = PLANS_DATA.planOf(ctx.plan.major, ctx.plan.planVer);
       if (!p) return { error: AI_UNKNOWN };
       const cr = PLANS_DATA.doneCredits(ctx.plan);
-      return { major: ctx.plan.major, majorAr: p.ar, majorEn: p.name,
+      const out = { major: ctx.plan.major, majorAr: p.ar, majorEn: p.name,
         planVersion: ctx.plan.planVer, totalCredits: p.total,
         doneCredits: cr, remainingCredits: Math.max(0, p.total - cr),
         level: PLANS_DATA.level(cr),
         percent: p.total ? Math.round(cr / p.total * 100) : 0,
         prep: ctx.prep, prepInferred: ctx.prepInferred,
-        semesters: ctx.plan.sems.length };
+        semesters: ctx.plan.sems.length,
+        /* كم مادة علّمها منجزة — صفر يعني ما عبّا خطته، لا إنه ما خلّص شي */
+        completedRecorded: (ctx.plan.completed || []).length };
+      if (aiPlanEmpty(ctx)) out.note = AI_PLAN_EMPTY;
+      return out;
     },
   },
 
@@ -7032,7 +7056,7 @@ const AI_TOOLS = {
       const crit = s.crit.filter(c => !taking(c)).map(map);
       const opt = s.opt.filter(c => !taking(c)).map(map);
       const hrs = l => l.reduce((n, c) => n + (Number(c.credits) || 0), 0);
-      return { critical: crit, optional: opt,
+      const out = { critical: crit, optional: opt,
         hours: hrs(crit) + hrs(opt),
         alreadyTaking: s.crit.concat(s.opt).filter(taking).map(c => c.c),
         planHours: s.hours,
@@ -7040,6 +7064,10 @@ const AI_TOOLS = {
         internshipAvailable: !!s.internAvailable,
         adminPlacedOnly: !!s.admOnly,
         prepLevel: s.prepSem ? s.prepSem.id : null };
+      /* بلا منجزات المقترح مواد الترم الأول — صحيحة لطالب جديد، وغلط
+         لطالب ما عبّا خطته. نقولها ولا نخمّن أيّهما هو */
+      if (aiPlanEmpty(ctx)) out.note = AI_PLAN_EMPTY;
+      return out;
     },
   },
 
@@ -7073,9 +7101,9 @@ const AI_TOOLS = {
         plan: g.terms.map(x => ({ term: x.term, season: season(x.term),
           hours: x.hours, courses: x.courses })),
         blocked: g.stuck ? g.remaining : [],
-        note: g.stuck
+        note: (aiPlanEmpty(ctx) ? AI_PLAN_EMPTY + ' ' : '') + (g.stuck
           ? 'وقف الحساب: فيه مواد متطلبها ما ينفتح من الخطة — راجع مرشدك'
-          : 'تقدير من خطتك — الطرح الفعلي والمقاعد وقرار مرشدك تغيّره',
+          : 'تقدير من خطتك — الطرح الفعلي والمقاعد وقرار مرشدك تغيّره'),
       };
     },
   },
@@ -7086,8 +7114,10 @@ const AI_TOOLS = {
     input_schema: { type: 'object', properties: {}, required: [] },
     run: (ctx) => {
       const r = PLANS_DATA.retakeList(ctx.plan);
-      return { count: r.length, courses: r.map(c => ({ code: c.c, name: c.n,
+      const out = { count: r.length, courses: r.map(c => ({ code: c.c, name: c.n,
         credits: c.h, grade: c.grade, reason: c.why })) };
+      if (aiPlanEmpty(ctx)) out.note = AI_PLAN_EMPTY;
+      return out;
     },
   },
 
@@ -7104,7 +7134,8 @@ const AI_TOOLS = {
       const g = PLANS_DATA.calcGPA(ctx.plan);
       const out = { gpa: g.gpa === null ? null : Number(g.gpa.toFixed(4)),
         gradedCredits: g.hrs, gradedCourses: g.n, scale: 4 };
-      if (g.gpa === null) out.note = 'ما فيه درجات محفوظة بعد';
+      if (g.gpa === null) out.note = 'ما عبّا درجاته في «خطتي» على موقعنا بعد — المعدل '
+        + 'يُحسب من الدرجات اللي يعلّمها هو. قل له يعلّمها هناك.';
       if (a.whatIf && typeof a.whatIf === 'object' && Object.keys(a.whatIf).length) {
         const p = PLANS_DATA.calcProjected(ctx.plan, a.whatIf);
         out.projected = { gpa: p.gpa === null ? null : Number(p.gpa.toFixed(4)),
@@ -7129,7 +7160,7 @@ const AI_TOOLS = {
     run: async (ctx, a) => {
       const rows = await aiSchedule(ctx, a.slot);
       if (!rows.length) return { count: 0, courses: [], slot: rows.slot,
-        note: 'ما فيه مواد في هذا الجدول' };
+        scheduleEmpty: !rows.total, note: aiSchedEmptyNote(rows) };
       /* المحاضرة والمعمل صفّان بنفس كود المادة (§٦)، فجمع الساعات صفاً
          صفاً يعدّها مرتين: ٢٥ ساعة لطالب عنده ٢٠. نعدّ الأكواد الفريدة. */
       const seen = new Set();
@@ -7160,6 +7191,10 @@ const AI_TOOLS = {
       if (!'UMTWRFS'.includes(day) || day.length !== 1)
         return { error: 'يوم غير معروف — استعمل U M T W R F S' };
       const rows = await aiSchedule(ctx, a.slot);
+      /* جدول فاضي غير «يوم فاضي»: «ما عندك محاضرات بكرة» لطالب ما
+         أضاف جدوله أصلاً كذبة تخلّيه يظن الموقع غلطان */
+      if (!rows.length) return { day, count: 0, lectures: [], gaps: [],
+        scheduleEmpty: !rows.total, note: aiSchedEmptyNote(rows) };
       const today = rows
         .filter(r => schedDays(r.course_date).includes(day))
         .map(r => ({ row: r, t: schedTime(r.course_timing) }))
@@ -7167,7 +7202,7 @@ const AI_TOOLS = {
         .sort((x, y) => x.t.start - y.t.start);
 
       if (!today.length) return { day, count: 0, lectures: [], gaps: [],
-        note: 'ما فيه محاضرات هذا اليوم' };
+        note: 'ما فيه محاضرات هذا اليوم في جدوله على موقعنا' };
 
       /* الفراغ بين نهاية محاضرة وبداية اللي بعدها — بالدقيقة لا بالساعة،
          فمحاضرة تنتهي ٨:٥٠ وأخرى تبدأ ٩:٠٠ فراغها ١٠ دقائق لا صفر. */
@@ -7200,7 +7235,8 @@ const AI_TOOLS = {
       required: [] },
     run: async (ctx, a) => {
       const rows = await aiSchedule(ctx);
-      if (!rows.length) return { count: 0, courses: [], note: 'ما فيه مواد مسجّلة' };
+      if (!rows.length) return { count: 0, courses: [],
+        scheduleEmpty: !rows.total, note: aiSchedEmptyNote(rows) };
       const id = encodeURIComponent(ctx.userId);
       const term = rows[0].term || regTerm();
       const abs = await sb('GET', 'absences',
@@ -8120,6 +8156,10 @@ const AI_SYSTEM = `أنت «مساعد جدولك» — مساعد داخل مو
 - ما لقيت الجواب في أداة؟ قل «ما أعرف» بصراحة، واقترح عليه وش يسوي.
 - ممنوع تخترع: مادة، متطلب، ساعات، وقت، قاعة، دكتور، تاريخ، رقم شعبة، مقعد.
 - رجّعت الأداة خطأ أو «ما لقيتها»؟ انقلها للطالب ولا تكمّل من عندك.
+- **جدول الطالب وخطته ودرجاته وغيابه ومواعيده يعبّيها هو في موقعنا** — ما تجينا
+  من الجامعة. رجّعت الأداة فاضياً أو صفراً؟ قل له إن جوابك من اللي عبّاه ووين
+  يعبّيه (النتيجة تقول لك وين) — لا تقول «ما عندك محاضرات» ولا «باقي لك الخطة
+  كلها» كأنها حقيقة عنه.
 - **لا تفسّر نتيجة أداة بما ليس فيها.** الأداة ما رجّعت شعباً؟ معناها ما
   عندنا بياناتها الآن — لا «لأنك خلّصت المادة» ولا «لأنها ما تُطرح».
   السبب الوحيد اللي تقوله هو السبب المكتوب في النتيجة نفسها.
@@ -8148,9 +8188,9 @@ const AI_SYSTEM = `أنت «مساعد جدولك» — مساعد داخل مو
 
 حدودك:
 - ترد على صاحب السؤال ببياناته هو فقط. ما عندك أي طريقة توصل بيانات طالب ثاني، ولا تحاول، ولا تعد بذلك.
-- **ما تنفّذ شيئاً بنفسك.** أدوات الاقتراح تجهّز الفعل والطالب يضغط «تأكيد» في الموقع.
+- **ما تنفّذ شيئاً بنفسك.** أدوات الاقتراح تجهّز الفعل والطالب يضغط «تأكيد».
   فلا تقول «سجّلت» ولا «ضفت» ولا «تم» — قل «جهّزت لك التسجيل، اضغط تأكيد».
-  والأفعال اللي ما لها أداة اقتراح (المراقبة، إضافة شعبة، التذكير) دلّه على مكانها في الموقع.
+  والأفعال اللي ما لها أداة اقتراح دلّه على مكانها في الموقع.
 - ما تحل واجبات ولا كويزات ولا اختبارات ولا تعطي حلولها، ولا تلخّص حلاً لعمل مقيّم.
 - الدكاترة: تلخّص تقييمات الطلاب الموجودة فقط. ما تضيف رأيك ولا تفاضل بين دكتور ودكتور من عندك.
 - الغياب والمعدل حساب إرشادي — ذكّره إن المرجع الرسمي سجل الجامعة.
