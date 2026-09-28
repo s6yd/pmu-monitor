@@ -143,7 +143,15 @@ const crnsTo = chat => TG.filter(m => String(m.chat_id) === chat).map(m => m.tex
   ok(st.freeBeta === false, 'الفترة المجانية منتهية في هذا الاختبار');
   ok(st.plans && st.plans.termHalalas === 1900 && st.plans.freeMonitors === 2 && st.plans.freeSchedules === 1,
      'الصفحة تستلم الأسعار والحدود — ' + JSON.stringify(st.plans));
-  ok(st.plans && st.plans.termEnd === '2026-12-30T20:59:59.000Z', 'ونهاية الترم لورقة الباقات');
+  /* **توقّع تغيّر عمداً — قرار محمد:** كان '2026-12-30…' (نهاية ترم الدراسة
+     202710)، وصار الشراء خارج النوافذ للترم الجاي — فالقيمة تتبع موقع
+     التاريخ الحقيقي من التقويم (والقديمة كانت بتنكسر وحدها بعد ٣٠ ديسمبر).
+     القاعدة نفسها بتواريخ مضبوطة في test-pay (وسط النافذة · آخرها ·
+     بعدها · قبلها · التقويم الحقيقي)، وهنا نثبت إن الحقل واصل وسليم:
+     نهاية ترم (منتصف ليل الرياض) وما انتهت. */
+  const te = st.plans && st.plans.termEnd;
+  ok(/^\d{4}-\d{2}-\d{2}T20:59:59\.000Z$/.test(te || '') && Date.parse(te) > Date.now(),
+     'ونهاية ترم الشراء لورقة الباقات — ' + te);
 
   await call('/api/run-check', 'GET');
   await wait(6500);

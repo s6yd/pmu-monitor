@@ -10,7 +10,7 @@
    ٥) **البيئتان تتشاركان القاعدة**: dev ببطاقات تجريبية عامة ⇒ لصاحب الموقع
       وحده، وما يلمس صفوف الإنتاج. والإنتاج يرفض مفتاح التجربة العام.
    ٦) **قبل الإطلاق** الطلاب ما يدفعون (الفترة المجانية) — صاحب الموقع وحده.
-   ٧) آخر أيام النافذة ⇒ الترم الجاي.
+   ٧) آخر أيام النافذة ⇒ الترم الجاي — وخارج النوافذ كذلك (قرار محمد).
 
    node tests/test-pay.js [server.js]
    (يشغّل نفسه ثلاث مرات إضافية كعمليات مستقلة: dev · إنتاج بلا مفاتيح ·
@@ -273,8 +273,10 @@ const END_NOW = '2029-12-31T20:59:59.000Z';    /* termEndApprox('203010') */
 const END_NEXT = '2030-06-15T20:59:59.000Z';   /* termEndApprox('203020') */
 
 async function prodSuite() {
-  /* بلا نافذة: قائمة يدوية في الماضي تلغي نوافذ التقويم الحقيقية */
-  await setWindow('2000-01-01', '2000-01-02');
+  /* وسط نافذة يدوية: ترم الشراء = ترم الدراسة، فالتواريخ ثابتة (END_NOW).
+     **كانت «بلا نافذة»** — وبلا نافذة صار الشراء للترم الجاي (قرار محمد،
+     القسم ٨ب)، فنقلنا الحالة الأساسية لوسط النافذة: نفس ما كان يختبره. */
+  await setWindow(riyadh(-5), riyadh(+10));
 
   /* ── ١) قبل الإطلاق: الطالب ما يدفع، وصاحب الموقع يجرّب ── */
   let q = (await call('GET', '/api/me/quote', { tok: tokOf('u-st') })).j;
@@ -284,7 +286,7 @@ async function prodSuite() {
   eq(adds().length, 0, 'وما انفتحت فاتورة');
   q = (await call('GET', '/api/me/quote', { tok: tokOf('u-own') })).j;
   eq(q.pay && q.pay.open, true, '**وصاحب الموقع يقدر يجرّب بدفعة حقيقية**');
-  eq([q.term, q.termEnd, q.late], ['203010', END_NOW, false], 'ترم الشراء بلا نافذة: ترم الدراسة');
+  eq([q.term, q.termEnd, q.late], ['203010', END_NOW, false], 'ترم الشراء وسط النافذة: ترمها');
 
   /* ── ٢) بدء الدفع ── */
   r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-own'), body: {} })).j;
@@ -422,6 +424,38 @@ async function prodSuite() {
   await setWindow(riyadh(-5), riyadh(+5));
   q = (await call('GET', '/api/me/quote', { tok: tokOf('u-late') })).j;
   eq([q.late, q.term], [false, '203010'], 'وسط النافذة: الترم الحالي');
+
+  /* ── ٨ب) خارج النوافذ ⇒ الترم الجاي (قرار محمد) ──
+     كان ترم الدراسة: من يشتري بعد ما ينقفل التسجيل يدفع لترم ما بقى
+     فيه شي يراقبه. صار للترم الجاي، وباقي الحالي هدية. */
+  await setWindow('2000-01-01', '2000-01-02');                 /* انقفلت من زمان */
+  q = (await call('GET', '/api/me/quote', { tok: tokOf('u-late') })).j;
+  eq([q.late, q.term, q.termEnd], [true, '203020', END_NEXT],
+     '**بعد ما انقفل التسجيل: الاشتراك للترم الجاي**');
+  eq((await call('GET', '/api/monitor-status')).j.plans.termEnd, END_NEXT,
+     'وورقة الباقات تعرض نفس التاريخ — معادلة وحدة');
+  {
+    const P3 = prof('u-after', { phone: '0500000008' });
+    DB.profiles.push(P3); TOK['tok-after-jjjjjjjjjjjjjjjjjjjjjj'] = 'u-after';
+    const ra = (await call('POST', '/api/me/checkout', { tok: 'tok-after-jjjjjjjjjjjjjjjjjjjjjj', body: {} })).j;
+    const sa = sub(ra.id) || {};
+    eq([sa.term, sa.valid_until], ['203020', END_NEXT], '**والطلب نفسه للترم الجاي** — لا للي انقفل تسجيله');
+    ok(/خارج التسجيل/.test(sa.note || ''), 'وسبب الترم مكتوب في الصف — ' + sa.note);
+    await call('POST', '/api/me/pay-cancel', { tok: 'tok-after-jjjjjjjjjjjjjjjjjjjjjj', body: { id: ra.id } });
+  }
+  await setWindow(riyadh(+10), riyadh(+20));                   /* ما بدأت بعد */
+  q = (await call('GET', '/api/me/quote', { tok: tokOf('u-late') })).j;
+  eq([q.late, q.term, q.termEnd], [true, '203020', END_NEXT],
+     '**قبل ما يبدأ التسجيل: لترم النافذة الجاية**');
+  /* والتقويم الحقيقي (بلا نافذة يدوية): ترم نافذته الجاية بالاسم */
+  const cal = (await call('POST', '/api/admin/monitor-window', { admin: true, body: { reset: true } })).j;
+  q = (await call('GET', '/api/me/quote', { tok: tokOf('u-late') })).j;
+  if (!cal.current && cal.next && cal.next.term)
+    eq([q.late, q.term], [true, cal.next.term], '**التقويم الحقيقي: ترم نافذته الجاية** — ' + cal.next.ar);
+  else if (!cal.current)
+    eq([q.late, q.term], [true, '203020'], 'التقويم الحقيقي بلا نافذة جاية: الترم بعد ترم الدراسة');
+  ok(Date.parse(q.termEnd) > Date.now(), 'وما نبيع اشتراكاً منتهياً — ' + q.termEnd);
+  await setWindow(riyadh(-5), riyadh(+5));
 
   /* ── ٩) ألغاها ثم دفعها من تبويب قديم: فلوسه وصلت ⇒ نفعّل ── */
   r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-late'), body: {} })).j;
