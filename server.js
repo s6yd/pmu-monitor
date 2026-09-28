@@ -3191,7 +3191,11 @@ async function handleTelegramUpdate(update) {
   if (!text.startsWith('/') && !(isAdmin && msg.reply_to_message)) {
     if (!ADMIN_CHAT_ID) return;
     const mode = await aiTgAskMode(chatId, text, photo);
-    if (mode) return aiTgAsk(chatId, msg.message_id, text, mode);
+    if (mode) {
+      const sent = await aiTgAsk(chatId, msg.message_id, text, mode);
+      if (sent && sent.ok) return;
+      /* تيليغرام رفض السؤال: رسالته ما تضيع — للفريق كالسابق */
+    }
     return tgToTeam(chatId, msg.from, text, photo);
   }
 

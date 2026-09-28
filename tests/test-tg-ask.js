@@ -14,6 +14,7 @@
    ٥) المساعد مقفل (off · admin) ونعرضه — كذلك طريق مسدود.
    ٦) النشر يمسح الذاكرة فيضيع النص — نقرأه من رسالته اللي رددنا عليها.
    ٧) الصورة تروح للمساعد وهو ما يقرأ الصور.
+   ٨) تيليغرام يرفض رسالة الزرّين فتضيع رسالة الطالب — ترجع تذكرة كالسابق.
 
    node tests/test-tg-ask.js [server.js] */
 const path = require('path');
@@ -38,7 +39,7 @@ const DB = {
   profiles: [
     prof('u-own', '5555'),                     /* صاحب الموقع = ADMIN_CHAT_ID */
     ...['6101', '6102', '6103', '6104', '6105', '6106', '6107', '6108', '6109', '6110', '6111',
-        '6112']
+        '6112', '6113']
       .map(c => prof('u-' + c, c)),
   ],
   tickets: [], ticket_messages: [], app_state: [], app_events: [],
@@ -110,6 +111,7 @@ function supabase(method, urlPath, body, prefer) {
 const TG = [];                 /* كل نداء: { method, b } */
 let BOT_MID = 50000;           /* أرقام رسائل البوت */
 const AI = [];                 /* كل سؤال وصل النموذج */
+const REJECT_ASK = new Set();  /* محادثات يرفض فيها تيليغرام رسالة الزرّين */
 const https = require('https');
 https.request = function (opts, cb) {
   const host = opts.hostname || '';
@@ -126,6 +128,10 @@ https.request = function (opts, cb) {
         let b = {}; try { b = JSON.parse(body || '{}') } catch (e) {}
         const method = String(opts.path || '').split('/').pop();
         TG.push({ method, b });
+        if (REJECT_ASK.has(String(b.chat_id)) && b.reply_parameters) {
+          ++BOT_MID; code = 400;
+          o = { ok: false, error_code: 400, description: 'Bad Request: rejected in test' };
+        } else
         o = { ok: true, result: { message_id: ++BOT_MID, date: Math.floor(Date.now() / 1000),
               chat: { id: Number(b.chat_id) }, text: b.text || '' } };
       } else if (host === 'api.anthropic.com') {
@@ -416,6 +422,14 @@ async function main() {
   eq(AI.length - aiBefore, 1, '**ثلاث ضغطات بنفس اللحظة = سؤال واحد للنموذج**');
   eq(sentTo(since(n), '6112').filter(c => /جواب المساعد/.test(c.b.text || '')).length, 1,
      'وجواب واحد');
+
+  /* ── ١٠ج) تيليغرام رفض رسالة الزرّين: رسالته ما تضيع ── */
+  REJECT_ASK.add('6113');
+  n = TG.length;
+  await say('6113', 'رسالة والزرّان مرفوضان');
+  ok(!!ticketOf('6113'), '**تيليغرام رفض الزرّين: رسالته تصير تذكرة كالسابق** — ما تضيع');
+  ok(sentTo(since(n), '5555').some(c => /والزرّان مرفوضان/.test(c.b.text || '')), 'ومحمد يوصله');
+  ok(sentTo(since(n), '6113').some(c => /رقم تذكرتك/.test(c.b.text || '')), 'والطالب يستلم رقم تذكرته');
 
   /* ── ١١) المساعد لصاحب الموقع وحده (admin): الطلاب للفريق مباشرة ── */
   await call('POST', '/api/admin/ai', { admin: true, body: { mode: 'admin' } });
