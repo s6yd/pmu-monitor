@@ -16,6 +16,9 @@
       وعلامات الاتجاه المخفية من النسخ على الجوال ما تكسر المطابقة.
    ٩) **Paylink ما يرسل ترويستنا** (شفناها في اللوحة على الإنتاج) ⇒ المفتاح في
       الرابط (`?key=`) يُقبل — وما ينكتب في سجل ولا لوحة.
+   ١٠) **الإيصال** (لقاها محمد): «اشتراكك فعّال» وحدها ما تقول وش اشترى ولا كم
+      دفع — ومن اشترى التنبيه الطارئ ما يدري إن فيه خطوة تفعيل. **وما نبيع
+      إضافة ما تنفعّل**: وضعها «off» يخفي بطاقة التفعيل.
 
    node tests/test-pay.js [server.js]
    (يشغّل نفسه أربع مرات إضافية كعمليات مستقلة: dev · إنتاج بلا مفاتيح ·
@@ -47,6 +50,7 @@ const TOK = {
   'tok-late-ffffffffffffffffffffff': 'u-late',
   'tok-miss-gggggggggggggggggggggg': 'u-miss',
   'tok-race-hhhhhhhhhhhhhhhhhhhhhh': 'u-race',
+  'tok-po-iiiiiiiiiiiiiiiiiiiiiiiii': 'u-po',
 };
 const tokOf = u => Object.keys(TOK).find(k => TOK[k] === u);
 const prof = (id, extra) => Object.assign({ id, email: id + '@x.com', name: 'Name ' + id,
@@ -57,13 +61,14 @@ const DB = {
     prof('u-own', { telegram_chat_id: '5555' }),
     prof('u-st', { telegram_chat_id: '6001' }),
     prof('u-cr', { phone: '0500000001' }),
-    prof('u-full'),
+    prof('u-full', { telegram_chat_id: '6011' }),
     prof('u-ref', { phone: '0500000003', telegram_chat_id: '6003' }),
     prof('u-friend', { invite_code: 'FRD234', telegram_chat_id: '7777' }),
     prof('u-late', { phone: '0500000004' }),
     prof('u-miss', { phone: '0500000005' }),
     prof('u-race', { phone: '0500000006', telegram_chat_id: '6006' }),
     prof('u-friend2', { invite_code: 'FRE234', telegram_chat_id: '7778' }),
+    prof('u-po', { phone: '0500000010', telegram_chat_id: '6010' }),
   ],
   credit_ledger: [
     { id: 1, user_id: 'u-cr', amount_halalas: 1500, reason: 'reviews',
@@ -250,7 +255,9 @@ Object.assign(process.env, { PAYLINK_WEBHOOK_KEY: 'hook-key-1234567890' }, KEYS,
   /* ترم بعيد وثابت: الاختبار ما يتغيّر مع التاريخ الحقيقي (نهايته 2029-12-31) */
   ACTIVE_TERM: '203010', FREE_BETA: 'true', MONITOR_ENABLED: 'false',
   SB_URL: 'https://fake.supabase.co', SUPABASE_URL: 'https://fake.supabase.co',
-  SB_SERVICE_KEY: 'k', SUPABASE_SERVICE_KEY: 'k', TELEGRAM_TOKEN: 'tg'
+  SB_SERVICE_KEY: 'k', SUPABASE_SERVICE_KEY: 'k', TELEGRAM_TOKEN: 'tg',
+  /* رابط اشتراك Pushover موجود — والوضع يبدأ «off» كما في الإنتاج قبل ما يُشغَّل */
+  PUSHOVER_SUBSCRIBE_URL: 'https://pushover.net/subscribe/Jadwalik-test'
 });
 const realLog = console.log;
 /* سجل السيرفر محفوظ لا مطبوع: نفحص إن سطوره ما فيها قيمة مفتاح أبداً */
@@ -368,6 +375,14 @@ async function prodSuite() {
   eq(P('u-own').subscription_expires_at, END_NOW, 'والاشتراك حتى نهاية نهائيات الترم');
   ok(!!P('u-own').paid_at, 'وpaid_at للدفع الحقيقي');
   eq(tgTo('5555', /اشتراكك فعّال/).length, 1, 'الطالب وصله «اشتراكك فعّال»');
+  /* الإيصال — لقاها محمد: كانت «اشتراكك فعّال حتى …» وبس */
+  const rt = String((tgTo('5555', /إيصال/).pop() || {}).text || '');
+  ok(rt.includes('إيصال JDW-' + r.id), '**بعد الدفع يوصله إيصال برقم الطلب** — ' + rt.slice(0, 120));
+  ok(rt.includes('• اشتراك خريف 2029/2030: 19 ريال'), 'وش اشترى: الترم باسمه وسعره');
+  ok(rt.includes('<b>المدفوع: 19 ريال</b> · عبر Paylink'), 'وكم دفع ووين');
+  ok(rt.includes('رقم العملية: <code>' + tx + '</code>'), 'ورقم العملية عند Paylink');
+  ok(rt.includes('ساري حتى: 31 ديسمبر 2029'), 'وحتى متى — بالسنة');
+  ok(!/Pushover/.test(rt), 'وبلا التنبيه الطارئ: ما فيه خطوات تفعيل');
 
   await hook({ transactionNo: tx });
   await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-own') });
@@ -409,6 +424,8 @@ async function prodSuite() {
   eq([sub(r.id).status, sub(r.id).gateway], ['paid', 'credit'], 'صفّه مدفوع بالرصيد');
   eq(P('u-full').subscription_expires_at, END_NOW, 'والاشتراك فعّال');
   eq(P('u-full').paid_at, null, '**ورصيد ما يُحسب «دفع فعلي»** في الإحصاء');
+  ok(tgTo('6011', /إيصال JDW-/).some(m => /المدفوع: 0 ريال<\/b> — غطّاه رصيدك/.test(m.text)
+     && /• من رصيدك: −19 ريال/.test(m.text)), 'وإيصاله يقول: غطّاه رصيدك');
 
   /* ── ٧) رصيد الداعي لحظة التسوية — مرة للأبد ── */
   q = (await call('GET', '/api/me/quote?ref=FRD234', { tok: tokOf('u-ref') })).j;
@@ -601,6 +618,31 @@ async function prodSuite() {
      '**ولا قيمة ترويسة ولا مفتاح رابط في السجل أبداً**');
   ok(LOGS.some(l => /^pay: paylink .* الإشعار مضبوط \(19 حرف\)$/.test(l)),
      'وسطر الإقلاع فيه طول المفتاح — ' + (LOGS.find(l => /^pay: paylink/.test(l)) || ''));
+
+  /* ── ١٣) التنبيه الطارئ: ما يُباع وهو ما ينفعّل، ومن اشتراه يوصله كيف يفعّله ── */
+  let ms13 = (await call('GET', '/api/monitor-status')).j || {};
+  eq(ms13.plans && ms13.plans.pushoverOffered, false, '**وضع التنبيه الطارئ «off»: الورقة ما تعرضه**');
+  q = (await call('GET', '/api/me/quote?pushover=1', { tok: tokOf('u-po') })).j;
+  eq([q.pushover, q.po, q.amount], [false, 0, 1900],
+     '**ولو طلبه بنفسه: ما يُحسب** — كان يدفع على شي بطاقة تفعيله مخفية');
+  await call('POST', '/api/admin/pushover-mode', { admin: true, body: { mode: 'addon' } });
+  ms13 = (await call('GET', '/api/monitor-status')).j || {};
+  eq(ms13.plans && ms13.plans.pushoverOffered, true, 'وضع «addon»: تنعرض');
+  eq(ms13.plans && ms13.plans.termCode, q.term, 'والورقة تعرف أي ترم تبيع — نفس ترم السعر');
+  r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-po'), body: { pushover: true } })).j;
+  ok(r.ok, 'اشترى الترم مع التنبيه الطارئ — ' + JSON.stringify(r));
+  const s13 = sub(r.id) || {};
+  eq([s13.pushover, s13.amount_halalas], [true, 2900], 'الصف: مع الإضافة · ٢٩ ريال');
+  PL.inv[s13.gateway_ref].orderStatus = 'Paid';
+  await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-po') });
+  eq(sub(r.id).status, 'paid', 'ودفع');
+  const rp = String((tgTo('6010', /إيصال/).pop() || {}).text || '');
+  ok(rp.includes('• التنبيه الطارئ: 10 ريال') && rp.includes('<b>المدفوع: 29 ريال</b>'),
+     'الإيصال فيه الإضافة والمجموع — ' + rp.slice(0, 160));
+  ok(/فعّل التنبيه الطارئ/.test(rp) && /تطبيق <b>Pushover<\/b>/.test(rp) &&
+     rp.includes('https://jadwalik.com/?pushover=1'), '**ومعه خطوات تفعيل التنبيه الطارئ ورابطها**');
+  ok(/Critical Alerts/.test(rp), 'وكيف يرن وهو صامت');
+  ok(/لو طلب منك دفعاً/.test(rp), 'ووعد الصفحة نفسه: إضافتك تغطي التطبيق');
 }
 
 async function devSuite() {
@@ -629,6 +671,8 @@ async function devSuite() {
   await call('POST', '/api/paylink/webhook', { body: { orderNumber: 'JDWT-' + r.id },
     headers: { 'X-Jadwalik-Key': 'hook-key-1234567890' } });
   eq(sub(r.id).status, 'paid', 'إشعار برقم طلب التجربة: مدفوع');
+  ok(tgTo('5555', new RegExp('إيصال JDWT-' + r.id + '</b> \\(تجربة\\)')).length === 1,
+     'وإيصال التجربة مكتوب عليه «تجربة»');
   eq(P('u-own').paid_at, null, '**دفعة تجريبية ما تُحسب «دفع فعلي»** في إحصاء الإنتاج');
   await hook({ transactionNo: 'PROD-TX-1' });
   await hook({});
