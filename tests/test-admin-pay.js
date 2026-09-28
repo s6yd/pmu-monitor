@@ -1,6 +1,8 @@
 /* بطاقة «بوابة الدفع» في اللوحة — اختبار عرض حقيقي في Chromium.
    محمد يتأكد منها قبل الإطلاق من جواله: المفاتيح · الإشعار · مين يدفع ·
    الطلبات، وزر يثبت الاتصال بـPaylink. اللوحة تعرض ما يقوله السيرفر وبس.
+   و**«آخر إشعار»**: زر Test في Paylink يرجّع `{"ok":false}` وبس — البطاقة
+   تقول ليش انرفض ووش يكتب في أي خانة.
 
    node tests/test-admin-pay.js [مسار admin.html] */
 const { chromium } = require('playwright');
@@ -94,8 +96,55 @@ const server = http.createServer((req, res) => {
   const t2 = await page.evaluate(() => (document.querySelector('.toast') || {}).textContent || '');
   ok(/401/.test(t2), 'والفشل يوصل بنص Paylink — ' + t2);
 
+  /* ── ٥) آخر إشعار: ليش انرفض ووش يصلّح ── */
+  const base = { ok: true, env: 'prod', live: true, host: 'restapi.paylink.sa', gateway: 'paylink',
+    ready: true, idSet: true, secretSet: true, testIdInProd: false, hookSet: true, hookLen: 48, hookHidden: 0,
+    freeBeta: true, openTo: 'owner', counts: { pending: 0, paid: 0, failed: 0 }, paidHalalas: 0, recent: [] };
+  const ago = m => new Date(Date.now() - m * 60000).toISOString();
+  const last = o => Object.assign({}, base, { hookLast: Object.assign({ at: ago(2), ok: false, why: 'noheader',
+    via: '', len: 0, want: 48, hidden: 0, headers: [], okAt: null }, o) });
+
+  t = await card(Object.assign({}, base, { hookLast: null }));
+  ok(/مضبوط · 48 حرف/.test(t), 'الإشعار مضبوط وطول مفتاحه — ' + t.slice(0, 160));
+  ok(/آخر إشعار/.test(t) && /ما وصل شي/.test(t) && /Test/.test(t), '**ما وصل شي: يقول جرّب زر Test**');
+
+  t = await card(last({ headers: ['host', 'content-type', 'user-agent', '<img src=x onerror=alert(1)>'] }));
+  ok(/مرفوض · قبل 2 د/.test(t), 'مرفوض ومتى — ' + t.slice(0, 200));
+  ok(/HTTP Header 1/.test(t) && /X-Jadwalik-Key/.test(t) && /Value/.test(t),
+     '**ما وصلت الترويسة: يقول وش يكتب في أي خانة**');
+  ok(/content-type/.test(t) && /user-agent/.test(t), 'ويعرض أسماء الترويسات اللي وصلت');
+  ok(await page.$('#payCard img') === null, '**اسم ترويسة فيه وسم يُهرَّب**');
+
+  t = await card(last({ why: 'mismatch', via: 'x-jadwalik-key', len: 49, hidden: 1 }));
+  ok(/ما طابق/.test(t) && /وصل 49 حرف/.test(t) && /Render 48/.test(t), '**ما طابق: بالأطوال** — ' + t.slice(0, 260));
+  ok(/1 حرف مخفي/.test(t), 'والحروف المخفية');
+  ok(!/Authorization/.test(t), 'وما يذكر Authorization لو ما وصلت');
+
+  t = await card(last({ why: 'mismatch', via: 'authorization', len: 12 }));
+  ok(/Authorization/.test(t) && /HTTP Header 1/.test(t), 'Authorization بمفتاح غيرنا: يقول اسم الترويسة ناقص');
+
+  t = await card(last({ why: 'swapped' }));
+  ok(/خانة اسم الترويسة/.test(t) && /Value/.test(t), 'المفتاح في خانة الاسم: يقولها');
+
+  t = await card(Object.assign(last({ why: 'nokey', want: 0 }), { hookSet: false, hookLen: 0 }));
+  ok(/PAYLINK_WEBHOOK_KEY/.test(t) && /Render/.test(t), 'بلا مفتاح في Render: يسمّي المتغيّر');
+
+  t = await card(last({ ok: true, why: 'ok', via: 'x-jadwalik-key', at: ago(0), len: 48 }));
+  ok(/✅ مقبول · الآن/.test(t), '**مقبول**');
+  ok(!/الأصح/.test(t), 'وبالاسم الصحيح ما فيه ملاحظة');
+  t = await card(last({ ok: true, why: 'ok', via: 'x-jadwalik_key', len: 48 }));
+  ok(/x-jadwalik_key/.test(t) && /الأصح/.test(t), 'وصل باسم ثاني: يشتغل ويقول الأصح');
+
+  t = await card(last({ okAt: ago(90) }));
+  ok(/آخر إشعار مقبول: قبل 2 س/.test(t), '**رفض بعد قبول: يذكر آخر مقبول** — ' + t.slice(-200));
+
+  ok(await page.evaluate(() => !!document.querySelector('#payCard button[onclick*="loadPay"]')),
+     'زر «تحديث» يقرأ آخر إشعار بلا ما تعيد فتح اللوحة');
+
   ok(errs.length === 0, 'بلا أخطاء JS — ' + errs.slice(0, 2).join(' | '));
   if (SHOT) {
+    t = await card(last({ why: 'mismatch', via: 'x-jadwalik-key', len: 49, hidden: 1, okAt: ago(90),
+      headers: ['host', 'content-type', 'x-jadwalik-key'] }));
     /* صورة البطاقة وحدها على مقاس الجوال */
     await page.evaluate(() => {
       const el = document.getElementById('payCard');
