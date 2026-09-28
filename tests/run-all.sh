@@ -61,6 +61,7 @@ run test-reminders      "$S"
 run test-pay            "$S"
 run test-tg-ai          "$S" "$F"
 run test-tg-ask         "$S"
+run test-tg-hook        "$S"
 run test-prep-sync      "$F"
 run test-ai-page        "$F"
 
