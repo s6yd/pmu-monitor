@@ -491,7 +491,7 @@ async function meQuote(uid, { pushover, ref }) {
   const pt = payTermNow();
   return { ok: true, includesTerm, pushover: wantPo, base, po, discount, credit,
            amount, ref: refState, creditAvailable: bal.available,
-           term: pt.term, termEnd: pt.until, late: pt.late,
+           term: pt.term, termEnd: pt.until, late: pt.late, termNote: pt.note,
            /* أقل من ٥ وما يغطيه الرصيد: ما نقدر نبيعه (سعر من اللوحة أقل من الحد) */
            belowMin: amount > 0 && amount < PAY_MIN_HALALAS };
 }
@@ -534,24 +534,37 @@ const PAY_PENDING_MS = 24 * 3600 * 1000;     /* المعلّقة تنلغي بع
 const PAY_TICK = 5 * 60 * 1000;
 const PAY_ORIGIN_PROD = 'https://jadwalik.com';
 
-/* ترم الشراء: ترم النافذة المفتوحة، وإلا ترم الدراسة (كما في ورقة
-   الباقات). والشراء في **آخر lateDays من النافذة** للترم الجاي — التسجيل
-   خلص تقريباً، فباقي الحالي هدية. وما نبيع اشتراكاً ينتهي قبل ما يبدأ:
-   ترم دراسة خلصت نهائياته وما تقدّم في اللوحة بعد ⇒ الترم اللي بعده. */
+/* ترم الشراء — **الاشتراك لتسجيل قدّامك** (قرار محمد):
+   · داخل نافذة: ترمها. وفي **آخر lateDays منها** للترم الجاي — التسجيل
+     خلص تقريباً، فباقي الحالي هدية.
+   · **خارج النوافذ** (التسجيل انقفل، أو ما بدأ): للترم الجاي — ترم النافذة
+     الجاية من التقويم، وإلا الترم بعد ترم الدراسة. كان ترم الدراسة، فمن
+     يشتري بعد ما ينقفل التسجيل يدفع لترم ما بقى فيه شي يراقبه. وباقي
+     الحالي هدية بنفس فكرة آخر أيام النافذة.
+   وما نبيع اشتراكاً ينتهي قبل ما يبدأ: ترم خلصت نهائياته ⇒ اللي بعده.
+   `note` يُكتب في صف الاشتراك — تعرف من اللوحة ليش ترمه غير الحالي. */
 function payTermNow() {
   const w = currentWindow();
-  let term = (w && w.term) || activeTerm();
-  let late = false;
-  if (w && PRICING.lateDays > 0) {
-    const left = Math.round((Date.parse(w.to + 'T00:00:00Z') -
-                             Date.parse(riyadhDate() + 'T00:00:00Z')) / 864e5);
-    if (left < PRICING.lateDays) { term = nextTerm(term); late = true }
+  let term, note = null;
+  if (w) {
+    term = w.term || activeTerm();
+    if (PRICING.lateDays > 0) {
+      const left = Math.round((Date.parse(w.to + 'T00:00:00Z') -
+                               Date.parse(riyadhDate() + 'T00:00:00Z')) / 864e5);
+      if (left < PRICING.lateDays) { term = nextTerm(term); note = 'شراء آخر النافذة — للترم الجاي' }
+    }
+  } else {
+    /* النافذة اليدوية من اللوحة بلا ترم — فالرجوع للترم بعد ترم الدراسة */
+    const nw = nextWindow();
+    term = (nw && nw.term) || nextTerm(activeTerm());
+    note = 'شراء خارج التسجيل — للترم الجاي';
   }
   let until = termEndApprox(term);
   for (let i = 0; i < 3 && !(Date.parse(until) > Date.now()); i++) {
-    term = nextTerm(term); until = termEndApprox(term); late = true;
+    term = nextTerm(term); until = termEndApprox(term);
+    note = note || 'ترم الدراسة خلص — للترم الجاي';
   }
-  return { term, until, late };
+  return { term, until, late: !!note, note };
 }
 
 /* من يقدر يدفع الحين — الفحص الوحيد، والصفحة تعرض جوابه */
@@ -871,7 +884,7 @@ async function payCheckout(uid, opt, origin) {
     credit_halalas: q.credit, amount_halalas: q.amount,
     referral_code: q.ref === 'ok' ? code : null, valid_until: q.termEnd,
     gateway: q.amount > 0 ? PL_GATEWAY : PL_CREDIT_GATEWAY,
-    note: q.late ? 'شراء آخر النافذة — للترم الجاي' : null },
+    note: q.termNote || null },
     prefer: 'return=representation' }).catch(e => ({ message: e.message }));
   if (!Array.isArray(ins) || !ins.length) {
     if (ins && ins.code === '23505')
@@ -1985,10 +1998,11 @@ async function restoreState() {
       ? WINDOW_OVERRIDE.from + '←' + WINDOW_OVERRIDE.to + ' يدوية' : 'من التقويم'));
 }
 
-const sendMsg = async (chatId, text, markup) => {
+/* extra: حقول إضافية لتيليغرام — مثل reply_parameters ليكون الرد على رسالة بعينها */
+const sendMsg = async (chatId, text, markup, extra) => {
   const r = await tg('sendMessage', Object.assign(
     { chat_id: chatId, text, parse_mode: 'HTML', disable_web_page_preview: true },
-    markup ? { reply_markup: markup } : {}));
+    markup ? { reply_markup: markup } : {}, extra || {}));
   try {
     logMsg(chatId, text, msgKind(text), r && r.ok,
            r && !r.ok ? (r.description || 'فشل') : null);
@@ -2642,6 +2656,10 @@ async function handleCallback(cq) {
   const am = data.match(/^n(ok|no):(\d+)$/);
   if (am && chatId) return acadDecision(cq, ack, chatId, am[1], am[2]);
 
+  /* كلام حر: الطالب اختار المساعد ولا الفريق (aiTgAsk) */
+  const ask = data.match(/^ask:(ai|team):(\d+)$/);
+  if (ask) return aiTgPick(cq, ack, ask[1], ask[2]);
+
   const mm = data.match(/^(stop|keep):(\d+)$/);
   if (!mm || !chatId) return ack();
   const action = mm[1], rowId = mm[2];
@@ -2741,6 +2759,75 @@ async function refreshTgUsername(chatId, from) {
   console.log(`تيليغرام: تحديث معرّف ${chatId} — ${stored || '(فارغ)'} ← ${fresh || '(فارغ)'}`);
 }
 
+/* ═══ رسالة للفريق: تذكرة + إشعار للمشرف ═══
+   من الكلام الحر مباشرة (صورة · محادثة جارية · المساعد مو متاح)، أو من
+   زر «📩 أرسلها لفريق جدولك» (aiTgPick). و`from` صاحب الرسالة كما يرسله
+   تيليغرام. و`markup` لوحة ترافق التأكيد (شيل لوحة المساعد لو كان فيه). */
+async function tgToTeam(chatId, from, text, photo, markup) {
+  if (!ADMIN_CHAT_ID) return;
+
+  /* حد بسيط: 6 رسائل لكل محادثة في الساعة */
+  const now = Date.now(), rec = botMsgLimit.get(String(chatId));
+  if (rec && now - rec.first < 3600e3 && rec.count >= 6) {
+    return sendMsg(chatId, '⏳ وصلتنا رسائلك، نقرأها ونرد عليك قريب.', markup);
+  }
+  if (!rec || now - rec.first >= 3600e3) botMsgLimit.set(String(chatId), { first: now, count: 1 });
+  else rec.count++;
+  if (botMsgLimit.size > 3000) botMsgLimit.clear();
+
+  /* نجيب اسمه من حسابه لو مربوط */
+  let who = '', profName = null, profEmail = null, profMajor = null;
+  try {
+    const rows = await sb('GET', 'profiles',
+      { query: `?telegram_chat_id=eq.${encodeURIComponent(chatId)}&select=name,email,major` });
+    const p = Array.isArray(rows) && rows[0];
+    if (p) {
+      profName = p.name || null; profEmail = p.email || null; profMajor = p.major || null;
+      who = `${p.name || ''}${p.email ? ` · ${p.email}` : ''}${p.major ? ` · ${p.major}` : ''}`;
+    }
+  } catch (e) { /* ما يهم */ }
+  if (!who && from)
+    who = (from.first_name || '') + (from.username ? ` @${from.username}` : '');
+
+  OPS.feedback++;
+
+  /* كل رسالة تلتصق بتذكرة الطالب المفتوحة، أو تفتح وحدة جديدة */
+  const tk = await getOrCreateTicket({
+    chatId, name: profName || who, email: profEmail, major: profMajor,
+    telegram: from && from.username ? from.username : null,
+    text, category: 'other'
+  });
+  if (tk) await addTicketMessage(tk.id, 'student', text || '(صورة)', photo);
+  else {
+    FEEDBACK_MEM.unshift({ at: now, text, category: 'other', email: profEmail,
+      name: who || null, major: profMajor, lang: 'ar',
+      telegram: from && from.username ? from.username : null,
+      chatId: String(chatId) });
+    if (FEEDBACK_MEM.length > 200) FEEDBACK_MEM.pop();
+  }
+
+  const tag = tk ? `🎫 تذكرة <b>#${tk.id}</b>\n` : '';
+  if (photo) {
+    await tg('sendPhoto', { chat_id: ADMIN_CHAT_ID, photo,
+      caption: `${tag}💬 <b>صورة من طالب</b>\n${text ? '\n' + text.replace(/[<>]/g,'') + '\n' : ''}` +
+               `👤 ${(who || 'غير معروف').replace(/[<>]/g,'')}\n\n#u${chatId}`,
+      parse_mode: 'HTML' });
+  } else {
+    await sendMsg(ADMIN_CHAT_ID,
+      `${tag}💬 <b>رسالة من طالب</b>\n\n<blockquote>${text.replace(/[<>]/g, '')}</blockquote>\n` +
+      `👤 ${(who || 'غير معروف').replace(/[<>]/g, '')}\n\n` +
+      `<i>↩️ رد على هذي الرسالة عشان يوصله ردك</i>\n` +
+      `<code>#u${chatId}</code>`);
+  }
+
+  /* كلامه الجاي للفريق مباشرة: «طيب» بعد رسالته ما نرجع نسأله */
+  aiTgTeamOpen(chatId, AI_TG_TEAM_PICK);
+  return sendMsg(chatId,
+    (tk ? `✅ وصلتنا رسالتك — رقم تذكرتك <b>#${tk.id}</b>\n\n`
+        : '✅ وصلتنا رسالتك\n\n') +
+    'نقرأ كل رسالة ونرد عليك هنا 🙏', markup);
+}
+
 async function handleTelegramUpdate(update) {
   if (update.callback_query) return handleCallback(update.callback_query);
   const msg = update.message;
@@ -2836,6 +2923,8 @@ async function handleTelegramUpdate(update) {
           query: `?chat_id=eq.${encodeURIComponent(target)}&status=eq.open&select=id&limit=1` });
         if (Array.isArray(t) && t[0]) await addTicketMessage(t[0].id, 'admin', text || '(صورة)', photo);
       } catch (e) { /* ما يهم */ }
+      /* ردّنا يقول له «اكتب رسالتك هنا مباشرة» — فكلامه الجاي لنا بلا سؤال */
+      if (r && r.ok) aiTgTeamOpen(target, AI_TG_TEAM_REPLY);
       return sendMsg(chatId, (r && r.ok)
         ? `✅ وصلت رسالتك للطالب.`
         : `⚠️ ما وصلت: ${(r && r.description) || 'الطالب قد يكون حظر البوت'}`);
@@ -2860,6 +2949,8 @@ async function handleTelegramUpdate(update) {
         `👤 ${who.replace(/[<>]/g,'') || 'غير معروف'}\n\n` +
         `<code>#u${chatId}</code>`);
     }
+    /* يكلّمنا الحين — فكلامه الجاي بلا «ردّ» يوصلنا بلا سؤال كذلك */
+    aiTgTeamOpen(chatId, AI_TG_TEAM_PICK);
     return sendMsg(chatId, '✅ وصلتنا رسالتك، شكراً لك 🙏');
   }
 
@@ -2943,6 +3034,7 @@ async function handleTelegramUpdate(update) {
       const rp = await tg('sendPhoto', { chat_id: target, photo,
         caption: (bare ? body : `💬 <b>رد من فريق جدولك</b>\n\n${body}`).slice(0, 1000),
         parse_mode: 'HTML' });
+      if (rp && rp.ok) aiTgTeamOpen(target, AI_TG_TEAM_REPLY);
       return sendMsg(chatId, (rp && rp.ok) ? `✅ وصلت مع الصورة.` :
         `⚠️ ما وصلت: ${(rp && rp.description) || 'تأكد أن الوسوم مغلقة صح'}`);
     }
@@ -2951,6 +3043,9 @@ async function handleTelegramUpdate(update) {
       ? `${body}\n\n<i>💬 عندك ملاحظة؟ اكتبها هنا مباشرة.</i>`
       : `💬 <b>رد من فريق جدولك</b>\n\n${body}\n\n` +
         `<i>💬 تبي ترد؟ اكتب رسالتك هنا مباشرة وبتوصلنا.</i>`);
+    /* رسالة لطالب واحد — بترويسة أو بلا — تدعوه يكتب هنا مباشرة،
+       فردّه لنا بلا سؤال. (البث للكل لا: يلغي السؤال عن الجميع) */
+    if (r && r.ok) aiTgTeamOpen(target, AI_TG_TEAM_REPLY);
     return sendMsg(chatId, (r && r.ok) ? `✅ وصلت.` :
       `⚠️ ما وصلت: ${(r && r.description) || 'تأكد أن الوسوم مغلقة صح'}`);
   }
@@ -3086,73 +3181,22 @@ async function handleTelegramUpdate(update) {
       `<code>/status</code> — تشوف اللي تراقبه الحين`);
   }
 
-  /* المساعد قبل الدعم: يحتاج /ai أو وضعاً يدخله الطالب، فما يزاحم
-     الكلام الحر اللي يوصلك كتذكرة. */
+  /* المساعد قبل الكلام الحر: `/ai` أو وضعه أو زر من لوحته */
   if (await aiTgRoute(chatId, text)) return;
 
-  /* ═══ أي كلام حر من طالب = رسالة توصل المشرف ═══
+  /* ═══ الكلام الحر ═══
+     جديد وما فيه محادثة جارية مع الفريق ⇒ نسأله: المساعد ولا الفريق
+     (aiTgAsk — قرار محمد). وإلا يوصل المشرف كتذكرة كالسابق.
      نخليها آخر شي بعد الأوامر، فما تتعارض معها. */
   if (!text.startsWith('/') && !(isAdmin && msg.reply_to_message)) {
     if (!ADMIN_CHAT_ID) return;
-
-    /* حد بسيط: 6 رسائل لكل محادثة في الساعة */
-    const now = Date.now(), rec = botMsgLimit.get(String(chatId));
-    if (rec && now - rec.first < 3600e3 && rec.count >= 6) {
-      return sendMsg(chatId, '⏳ وصلتنا رسائلك، نقرأها ونرد عليك قريب.');
+    const mode = await aiTgAskMode(chatId, text, photo);
+    if (mode) {
+      const sent = await aiTgAsk(chatId, msg.message_id, text, mode);
+      if (sent && sent.ok) return;
+      /* تيليغرام رفض السؤال: رسالته ما تضيع — للفريق كالسابق */
     }
-    if (!rec || now - rec.first >= 3600e3) botMsgLimit.set(String(chatId), { first: now, count: 1 });
-    else rec.count++;
-    if (botMsgLimit.size > 3000) botMsgLimit.clear();
-
-    /* نجيب اسمه من حسابه لو مربوط */
-    let who = '', profName = null, profEmail = null, profMajor = null;
-    try {
-      const rows = await sb('GET', 'profiles',
-        { query: `?telegram_chat_id=eq.${encodeURIComponent(chatId)}&select=name,email,major` });
-      const p = Array.isArray(rows) && rows[0];
-      if (p) {
-        profName = p.name || null; profEmail = p.email || null; profMajor = p.major || null;
-        who = `${p.name || ''}${p.email ? ` · ${p.email}` : ''}${p.major ? ` · ${p.major}` : ''}`;
-      }
-    } catch (e) { /* ما يهم */ }
-    if (!who && msg.from)
-      who = (msg.from.first_name || '') + (msg.from.username ? ` @${msg.from.username}` : '');
-
-    OPS.feedback++;
-
-    /* كل رسالة تلتصق بتذكرة الطالب المفتوحة، أو تفتح وحدة جديدة */
-    const tk = await getOrCreateTicket({
-      chatId, name: profName || who, email: profEmail, major: profMajor,
-      telegram: msg.from && msg.from.username ? msg.from.username : null,
-      text, category: 'other'
-    });
-    if (tk) await addTicketMessage(tk.id, 'student', text || '(صورة)', photo);
-    else {
-      FEEDBACK_MEM.unshift({ at: now, text, category: 'other', email: profEmail,
-        name: who || null, major: profMajor, lang: 'ar',
-        telegram: msg.from && msg.from.username ? msg.from.username : null,
-        chatId: String(chatId) });
-      if (FEEDBACK_MEM.length > 200) FEEDBACK_MEM.pop();
-    }
-
-    const tag = tk ? `🎫 تذكرة <b>#${tk.id}</b>\n` : '';
-    if (photo) {
-      await tg('sendPhoto', { chat_id: ADMIN_CHAT_ID, photo,
-        caption: `${tag}💬 <b>صورة من طالب</b>\n${text ? '\n' + text.replace(/[<>]/g,'') + '\n' : ''}` +
-                 `👤 ${(who || 'غير معروف').replace(/[<>]/g,'')}\n\n#u${chatId}`,
-        parse_mode: 'HTML' });
-    } else {
-      await sendMsg(ADMIN_CHAT_ID,
-        `${tag}💬 <b>رسالة من طالب</b>\n\n<blockquote>${text.replace(/[<>]/g, '')}</blockquote>\n` +
-        `👤 ${(who || 'غير معروف').replace(/[<>]/g, '')}\n\n` +
-        `<i>↩️ رد على هذي الرسالة عشان يوصله ردك</i>\n` +
-        `<code>#u${chatId}</code>`);
-    }
-
-    return sendMsg(chatId,
-      (tk ? `✅ وصلتنا رسالتك — رقم تذكرتك <b>#${tk.id}</b>\n\n`
-          : '✅ وصلتنا رسالتك\n\n') +
-      'نقرأ كل رسالة ونرد عليك هنا 🙏');
+    return tgToTeam(chatId, msg.from, text, photo);
   }
 
   if (text === '/status') {
@@ -4432,6 +4476,8 @@ async function adminReply(chatId, email, text) {
     `💬 <b>رد من فريق جدولك</b>\n\n${body.slice(0,3000)}\n\n` +
     `<i>💬 تبي ترد؟ اكتب رسالتك هنا مباشرة وبتوصلنا.</i>`);
   if (!r || r.ok !== true) return { ok: false, error: (r && r.description) || 'ما وصل تأكيد' };
+  /* ردّنا يقول له «اكتب رسالتك هنا مباشرة» — فكلامه الجاي لنا بلا سؤال */
+  aiTgTeamOpen(target, AI_TG_TEAM_REPLY);
   return { ok: true };
 }
 
@@ -8448,9 +8494,12 @@ async function aiStatus(userId, opt) {
 /* ═══ المساعد داخل البوت (CLAUDE.md §٩-أ-٥) ═══
    نفس aiChat ونفس السقوف والأوضاع — الجديد هو المدخل فقط.
 
-   **لا يزاحم الدعم:** الكلام الحر في البوت يوصلك كتذكرة، وهذا يبقى
-   كما هو. المساعد يحتاج `/ai` صريحاً، أو وضعاً يدخله الطالب ويخرج منه.
-   بلا هذا الفصل ما عاد أحد يقدر يكلّمك.
+   **الكلام الحر يُسأل عنه (قرار محمد — غيّر قاعدة قديمة):** كان كله
+   يوصل محمد كتذكرة، فصارت أغلب التذاكر أسئلة للمساعد («كم باقيلي
+   واتخرج؟» · «جدول الترم») — الطالب يستلم «رقم تذكرتك» بدل جواب.
+   صار الجديد منه يسأل بزرّين: المساعد ولا الفريق (`aiTgAsk` تحت).
+   والمساعد ما ياخذ شي بلا اختيار: `/ai`، أو وضعه، أو زرّه.
+   بلا هذا الفصل ما عاد أحد يقدر يكلّم الفريق.
 
    و`/stop` محجوز لإيقاف الإشعارات — فالخروج بـ`/خروج` أو `/end`.
 
@@ -8494,6 +8543,13 @@ const AI_TG_KB_TEXTS = new Set(AI_TG_KB.keyboard
   .reduce((a, row) => a.concat(row.map(b => b.text)), [])
   .filter(t => !AI_TG_EXIT.includes(t)));
 
+/* غير المربوط: خطوات يقدر ينفذها — لا «اربط حسابك» وبس.
+   الأسماء كما في الصفحة: ⚙️ فوق ← «إشعارات تيليغرام» ← زر «ربط». */
+const AI_TG_LINK = '🔗 <b>اربط حسابك أول</b> عشان أعرف جدولك وخطتك:\n\n'
+  + '1️⃣ افتح jadwalik.com وسجّل دخولك\n'
+  + '2️⃣ اضغط ⚙️ فوق ← «إشعارات تيليغرام» ← ربط\n'
+  + '3️⃣ ارجع هنا واسألني';
+
 async function aiTgUser(chatId) {
   const rows = await sb('GET', 'profiles', { query:
     `?telegram_chat_id=eq.${encodeURIComponent(chatId)}&select=id&limit=1` })
@@ -8503,8 +8559,7 @@ async function aiTgUser(chatId) {
 
 async function aiTgAnswer(chatId, q) {
   const uid = await aiTgUser(chatId);
-  if (!uid) return sendMsg(chatId,
-    '🔗 اربط حسابك من الموقع أول عشان أعرف جدولك.\n\njadwalik.com');
+  if (!uid) return sendMsg(chatId, AI_TG_LINK);
   let r;
   try { r = await aiChat(uid, String(q || '')) }
   catch (e) {
@@ -8550,8 +8605,9 @@ async function aiTgRoute(chatId, text) {
     if (!inMode && !AI_TG_KB.keyboard.some(r => r.some(b => b.text === raw)))
       return false;
     AI_TG_MODE.delete(key);
+    /* ما نقول «كلامك يوصل الدعم»: رسالته الجاية نسأله وين يبيها */
     await sendMsg(chatId,
-      '👋 خرجت من المساعد. كلامك بعد كذا يوصل الدعم.\n\n'
+      '👋 خرجت من المساعد.\n\n'
       + '<i>/ai يرجّعك له أي وقت.</i>', AI_TG_KB_OFF);
     return true;
   }
@@ -8576,7 +8632,7 @@ async function aiTgRoute(chatId, text) {
       + '🗓️ الغياب والمواعيد والنهائيات\n'
       + '🧩 وأركّب لك جدولاً كاملاً بلا تعارض\n\n'
       + '<b>جرّب:</b> «ركّب لي جدول بدون خميس»\n\n'
-      + '<i>🚪 خروج — تطلع منه، وبعدها كلامك يوصل الدعم عادي.</i>',
+      + '<i>🚪 خروج — تطلع منه متى ما خلصت.</i>',
       AI_TG_KB);
     return true;
   }
@@ -8593,6 +8649,99 @@ async function aiTgRoute(chatId, text) {
     return true;
   }
   return false;
+}
+
+/* ═══ الكلام الحر: للمساعد ولا للفريق؟ ═══
+   رسالة جديدة خارج وضع المساعد ⇒ نرد عليها بزرّين، والنص محفوظ حتى
+   يختار — ما يكتبه مرة ثانية. وغير المربوط: خطوات الربط + زر الفريق
+   وحده — المساعد ما يجاوبه قبل الربط، وزرّ لطريق مسدود أسوأ من تذكرة.
+
+   ويروح للفريق مباشرة بلا سؤال، كالسابق:
+   · المساعد مو متاح لهذي المحادثة (off · nokey · admin لغير صاحب الموقع).
+   · صورة — المساعد ما يقرأ الصور.
+   · **محادثة جارية مع الفريق** (`AI_TG_TEAM`): اختار الفريق قبل شوي
+     (٣٠ دقيقة)، أو ردّينا عليه (٢٤ ساعة). ردّنا يقول له «اكتب رسالتك
+     هنا مباشرة وبتوصلنا» — فما نكسر الوعد بسؤال.
+   والذاكرة تضيع مع كل نشر: النص نقرأه وقتها من رسالته اللي رددنا
+   عليها (تيليغرام يرجّعها مع الضغطة)، والمحادثة الجارية يسأله الزرّان
+   فيختار الفريق بنفسه — ما يضيع شي. */
+const AI_TG_HELD = new Map();       /* `${chat}:${msgId}` → { text, at } */
+const AI_TG_DONE = new Set();       /* ضغطة ثانية على نفس الزر ما تعيد */
+const AI_TG_TEAM = new Map();       /* chat → حتى متى كلامه للفريق مباشرة */
+const AI_TG_HELD_TTL = 24 * 3600e3;
+const AI_TG_TEAM_PICK = 30 * 60e3;
+const AI_TG_TEAM_REPLY = 24 * 3600e3;
+
+function aiTgTeamOpen(chatId, ms) {
+  if (!chatId) return;
+  const key = String(chatId), until = Date.now() + ms;
+  if (AI_TG_TEAM.size > 3000) AI_TG_TEAM.clear();   /* قبل الإضافة لا بعدها */
+  /* ما نقصّر مدة أطول: رسالته بعد ردّنا ما تنزّل الـ٢٤ ساعة لنص ساعة */
+  if ((AI_TG_TEAM.get(key) || 0) < until) AI_TG_TEAM.set(key, until);
+}
+
+/* كلام حر خارج وضع المساعد — وش نسوي فيه؟
+   'ask' الزرّان · 'link' خطوات الربط + زر الفريق · null للفريق مباشرة */
+async function aiTgAskMode(chatId, text, photo) {
+  if (photo || !String(text || '').trim()) return null;
+  if ((AI_TG_TEAM.get(String(chatId)) || 0) > Date.now()) return null;
+  if (!aiGate({ telegram_chat_id: String(chatId) }).ok) return null;
+  const rows = await sb('GET', 'profiles', { query:
+    `?telegram_chat_id=eq.${encodeURIComponent(chatId)}&select=id&limit=1` })
+    .catch(() => null);
+  /* القاعدة ما ردّت: الزرّان — والمساعد نفسه يقول «اربط» لو لزم */
+  if (!Array.isArray(rows)) return 'ask';
+  return rows.length ? 'ask' : 'link';
+}
+
+async function aiTgAsk(chatId, msgId, text, mode) {
+  if (AI_TG_HELD.size > 3000) AI_TG_HELD.clear();
+  AI_TG_HELD.set(String(chatId) + ':' + msgId, { text: String(text), at: Date.now() });
+  const team = [btn('📩 أرسلها لفريق جدولك', `ask:team:${msgId}`)];
+  /* رد على رسالته نفسها: يشوف أي رسالة نقصد، وتيليغرام يرجّعها مع الضغطة */
+  const reply = { reply_parameters: { message_id: Number(msgId),
+                                      allow_sending_without_reply: true } };
+  if (mode === 'link')
+    return sendMsg(chatId, AI_TG_LINK + '\n\nوإلا نوصل رسالتك لفريق جدولك 👇',
+                   kb([team]), reply);
+  return sendMsg(chatId,
+    '💬 <b>وين نوصل رسالتك؟</b>\n\n'
+    + '✨ <b>المساعد</b> — يجاوبك الحين عن جدولك وخطتك والشعب والقاعات.\n'
+    + '📩 <b>فريق جدولك</b> — للمشاكل والاقتراحات، ونرد عليك هنا.',
+    kb([[btn('✨ اسأل المساعد', `ask:ai:${msgId}`)], team]), reply);
+}
+
+/* الطالب ضغط أحد الزرّين (من handleCallback) */
+async function aiTgPick(cq, ack, pick, msgId) {
+  const m = cq.message || {};
+  const chatId = m.chat && m.chat.id;
+  const key = String(chatId) + ':' + msgId;
+  /* الفحص والحجز قبل أي await: ضغطتان متتاليتان ما ترسلان مرتين */
+  if (!chatId || AI_TG_DONE.has(key)) return ack();
+  const held = AI_TG_HELD.get(key);
+  let text = (held && Date.now() - held.at < AI_TG_HELD_TTL) ? held.text : '';
+  /* ضاع من الذاكرة بنشر جديد: من رسالته اللي رددنا عليها */
+  const r = m.reply_to_message;
+  if (!text && r && String(r.message_id) === String(msgId) &&
+      m.date && Date.now() - m.date * 1000 < AI_TG_HELD_TTL)
+    text = String(r.text || '').trim();
+  if (!text) {
+    await ack('انتهت — اكتب رسالتك مرة ثانية');
+    return editMsg(cq, '⌛ انتهت هذي — اكتب رسالتك مرة ثانية.');
+  }
+  if (AI_TG_DONE.size > 3000) AI_TG_DONE.clear();
+  AI_TG_DONE.add(key);
+  AI_TG_HELD.delete(key);
+  await ack();
+  if (pick === 'ai') {
+    await editMsg(cq, '✨ <b>للمساعد</b>');
+    return aiTgAnswer(chatId, text);
+  }
+  await editMsg(cq, '📩 <b>لفريق جدولك</b>');
+  /* زر قديم ضغطه وهو داخل المساعد: يطلع منه — وإلا راح كلامه الجاي
+     للمساعد وهو يظن إنه يكلّم الفريق */
+  const wasAi = AI_TG_MODE.delete(String(chatId));
+  return tgToTeam(chatId, cq.from, text, null, wasAi ? AI_TG_KB_OFF : undefined);
 }
 
 /* ═══ دورة التذكيرات (CLAUDE.md §٩-أ-٤) ═══
@@ -9105,8 +9254,11 @@ const server = http.createServer(async (req, res) => {
             const merged = Object.assign({}, AI_CAPS, p.caps);
             const err = validateAiCaps(merged);
             if (err) return send(400, { error: err });
-            AI_CAPS = { day: Number(merged.day), dayFree: Number(merged.dayFree),
-                        term: Number(merged.term), monthSar: Number(merged.monthSar) };
+            /* كل مفاتيح الافتراضي: كانت أربعة بالاسم، فأول حفظ من اللوحة
+               (وهي ترسل الأربعة وحدها) يُسقط سقفي الزوار — ويسأل الزائر
+               بلا حد يومي ولا شهري حتى النشر الجاي. */
+            AI_CAPS = Object.fromEntries(Object.keys(AI_CAPS_DEFAULT)
+              .map(k => [k, Number(merged[k])]));
           }
           await saveState().catch(() => {});
         }
@@ -9732,8 +9884,8 @@ const server = http.createServer(async (req, res) => {
          يُقفل بانتهاء نافذة التسجيل فقط، أو بإيقافك اليدوي. */
       term: activeTerm(),
       regTerm: regTerm(),
-      /* ما تحتاجه ورقة الباقات وحدود المجاني. الشراء يغطي ترم التسجيل
-         وقت النافذة، وإلا ترم الدراسة */
+      /* ما تحتاجه ورقة الباقات وحدود المجاني. الشراء لتسجيل قدّام الطالب:
+         ترم النافذة المفتوحة، وبعد ما تنقفل الترم الجاي (payTermNow) */
       plans: {
         termHalalas: PRICING.termHalalas,
         pushoverHalalas: PRICING.pushoverHalalas,
@@ -9741,7 +9893,7 @@ const server = http.createServer(async (req, res) => {
         referrerCreditHalalas: PRICING.referrerCreditHalalas,
         freeMonitors: PRICING.freeMonitors,
         freeSchedules: PRICING.freeSchedules,
-        /* نفس ترم الشراء اللي يحسبه meQuote — آخر أيام النافذة للترم الجاي */
+        /* نفس ترم الشراء اللي يحسبه meQuote — ورقة الباقات تعرض «حتى …» منه */
         termEnd: payTermNow().until,
         pushoverOffered: !!PUSHOVER_SUBSCRIBE_URL
       },
