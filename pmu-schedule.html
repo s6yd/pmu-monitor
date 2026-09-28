@@ -561,6 +561,25 @@ display:flex;align-items:center;justify-content:center}
 .ps-line{display:flex;justify-content:space-between;color:var(--text2)}
 .ps-line.good{color:var(--open)}
 .ps-note{font-size:12px;color:var(--text3);line-height:1.6}
+/* ═══ الدفع (§٩-ب) — بادئة pay- عمداً: ps- مستعملة في ورقة الطباعة كذلك ═══ */
+.pay-phone{margin:0 0 12px}
+.pay-phone label{display:block;font-size:12.5px;color:var(--text2);margin-bottom:6px}
+/* ١٦px: سفاري الآيفون يزوّم على أي حقل أصغر ولا يرجع */
+.pay-phone input{width:100%;height:44px;box-sizing:border-box;border-radius:12px;
+  border:1px solid var(--border2);background:var(--bg);color:var(--text);
+  font-size:16px;font-family:var(--mono);padding:0 12px;text-align:left;direction:ltr}
+.pay-phone input:focus{outline:none;border-color:var(--accent)}
+.pay-msg{font-size:12.5px;line-height:1.7;border-radius:11px;padding:9px 12px;margin-bottom:12px}
+.pay-msg[hidden]{display:none}
+.pay-msg.err{background:var(--close-bg);color:var(--close)}
+.pay-msg.warn{background:var(--warn-bg);color:var(--text)}
+.pay-acts{display:flex;gap:8px;margin-top:8px}
+.pay-acts .btn-sm{flex:1;text-align:center;text-decoration:none;font-family:inherit}
+.pay-by{text-align:center;margin-top:8px}
+.pay-res{text-align:center;padding:10px 4px 2px}
+.pay-res .pay-ico{font-size:42px;line-height:1}
+.pay-res b{display:block;font-size:17px;margin:12px 0 6px;color:var(--text)}
+.pay-res p{font-size:13px;color:var(--text2);line-height:1.75;margin:0 0 16px}
 /* بطاقة «اشتراكي»: الرصيد والدعوة */
 .pro-price.bare{background:none;border:none;padding:0;box-shadow:none}
 #proSub{white-space:pre-line}
@@ -6268,7 +6287,13 @@ function openPlans(reason){
       <span dir="ltr">+${sarTxt(P.po)}</span></label>`:''}
     <div class="ps-lines" id="psLines"></div>
     <div class="ps-total"><span>${ar?'الإجمالي':'Total'}</span><b id="psTotal"></b></div>
-    <button class="ps-pay" id="psPay" disabled>${ar?'الدفع يفتح قريباً':'Checkout opens soon'}</button>
+    <div class="pay-phone" id="psPhoneBox" hidden>
+      <label for="psPhone">${ar?'رقم جوالك — تطلبه بوابة الدفع':'Your mobile — the payment gateway needs it'}</label>
+      <input id="psPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="05XXXXXXXX">
+    </div>
+    <div class="pay-msg" id="psMsg" hidden></div>
+    <button class="ps-pay" id="psPay" disabled onclick="payStart()">${ar?'الدفع يفتح قريباً':'Checkout opens soon'}</button>
+    <div class="ps-note pay-by" id="psBy" hidden>🔒 ${ar?'الدفع الآمن عبر بوابة Paylink':'Secure checkout by Paylink'}</div>
     <button class="ps-close" onclick="closePlans()">${ar?'مو الحين':'Not now'}</button>
   </div>`;
   plansTotal();
@@ -6306,6 +6331,143 @@ async function plansQuote(){
   const lines=document.getElementById('psLines'), tot=document.getElementById('psTotal');
   if(lines)lines.innerHTML=h;
   if(tot)tot.textContent=sarTxt(q.amount)+R;
+  payUi(q);
+}
+
+/* ═══ الدفع (§٩-ب) ═══
+   الصفحة ما تقرر شيئاً: هل يدفع، وكم، ولأي ترم — كله من السيرفر
+   (payGate · meQuote). هنا العرض والتوجيه لصفحة Paylink والرجوع منها.
+   والرجوع **جرس لا إثبات**: الصفحة تسأل السيرفر، والسيرفر يسأل Paylink. */
+let PS_Q=null, PAY_BUSY=false;
+/* رقم الطلب من ‎?pay=‎ يُقرأ **عند تحميل السكربت**: initAuth تمسح الرابط
+   كله أول ما تلقى جلسة — قبل ما يوصل دور payReturn — فكان الطالب يرجع من
+   Paylink وما يشوف أي نتيجة */
+let PAY_BACK=(()=>{ const m=/[?&]pay=(\d{1,12})(?:&|$)/.exec(location.search); return m?m[1]:null })();
+/* ‎?plans=1‎ يفتح ورقة الباقات مباشرة — وقت الفترة المجانية ما فيه زر «الباقات»،
+   فهذا مدخل صاحب الموقع لتجربة الدفع (والزر نفسه يقرّره السيرفر كما هو) */
+let PLANS_OPEN=/[?&]plans=1(?:&|$)/.test(location.search);
+function payClosedText(why){
+  const ar=LANG==='ar';
+  return ({beta:ar?'الدفع يفتح مع نهاية الفترة المجانية':'Checkout opens when the free period ends',
+           test:ar?'الدفع في نسخة التجربة لصاحب الموقع وحده':'Test build: checkout is owner-only'})[why]
+    ||(ar?'الدفع يفتح قريباً':'Checkout opens soon');
+}
+function payMsg(html,cls){
+  const el=document.getElementById('psMsg');
+  if(!el)return;
+  el.hidden=!html; el.className='pay-msg'+(cls?' '+cls:''); el.innerHTML=html||'';
+}
+function payUi(q){
+  PS_Q=q;
+  const ar=LANG==='ar', btn=document.getElementById('psPay');
+  const box=document.getElementById('psPhoneBox'), inp=document.getElementById('psPhone');
+  const by=document.getElementById('psBy');
+  if(!btn)return;
+  const pay=(q&&q.pay)||{};
+  const off=txt=>{ btn.disabled=true; btn.textContent=txt; if(box)box.hidden=true; if(by)by.hidden=true };
+  if(!q||!pay.open)return off(payClosedText(pay.why));
+  if(!q.base&&!q.po)return off(ar?'اشتراكك فعّال':'Your plan is active');
+  if(q.belowMin)return off(ar?'أقل مبلغ للدفع ٥ ريال':'The minimum payment is 5 SAR');
+  btn.disabled=PAY_BUSY;
+  if(q.amount===0){
+    btn.textContent=ar?'فعّل برصيدك':'Activate with your credit';
+    if(box)box.hidden=true; if(by)by.hidden=true;
+    return;
+  }
+  btn.textContent=ar?`ادفع ${sarTxt(q.amount)} ريال`:`Pay ${sarTxt(q.amount)} SAR`;
+  if(box)box.hidden=false; if(by)by.hidden=false;
+  if(inp&&!inp.value&&q.phone)inp.value=q.phone;
+}
+const payUrlOk=u=>/^https:\/\/([a-z0-9-]+\.)*paylink\.sa\//i.test(String(u||''));
+async function payStart(){
+  const q=PS_Q, ar=LANG==='ar';
+  if(PAY_BUSY||!q||!(q.pay&&q.pay.open))return;
+  const inp=document.getElementById('psPhone'), po=document.getElementById('psPo');
+  const phone=(inp&&inp.value||'').trim();
+  if(q.amount>0&&!phone){
+    payMsg(ar?'اكتب رقم جوالك — بوابة الدفع تطلبه':'Enter your mobile — the gateway needs it','err');
+    if(inp)inp.focus();
+    return;
+  }
+  PAY_BUSY=true; payMsg('');
+  const btn=document.getElementById('psPay');
+  if(btn){ btn.disabled=true; btn.textContent=ar?'لحظة…':'One moment…' }
+  const r=await meFetch('/api/me/checkout','POST',
+    {pushover:!!(po&&po.checked), ref:storedRef(), phone}).catch(()=>null);
+  PAY_BUSY=false;
+  if(r&&r.ok&&r.url&&payUrlOk(r.url)){ location.href=r.url; return }
+  payUi(q);
+  if(!r){ payMsg(ar?'تعذّر الاتصال — جرّب بعد شوي':'Could not connect — try again shortly','err'); return }
+  /* بلا closePlans: مؤقّت إخفائها يسبق النتيجة فتختفي — نبدّل محتوى الورقة نفسها */
+  if(r.ok&&r.activated){ payShow('paid',r); payRefresh(); return }
+  if(r.why==='pending'){ payPendingBox(r); return }
+  payMsg(escapeHtml(r.error||(ar?'تعذّر — جرّب بعد شوي':'Something went wrong')),'err');
+}
+function payPendingBox(r){
+  const ar=LANG==='ar', id=Number(r.id)||0;
+  payMsg(`${ar?'عندك دفعة ما كملت':'You have an unfinished payment'}`+
+    (r.amount?` — ${sarTxt(r.amount)} ${ar?'ريال':'SAR'}`:'')+
+    `<div class="pay-acts">${payUrlOk(r.url)?`<a class="btn-sm" href="${escapeHtml(r.url)}">${ar?'كمّلها':'Continue'}</a>`:''}`+
+    `<button class="btn-sm ghost" onclick="payCancelPending(${id})">${ar?'ألغها وابدأ من جديد':'Cancel and start over'}</button></div>`,'warn');
+}
+async function payCancelPending(id){
+  const ar=LANG==='ar';
+  const r=await meFetch('/api/me/pay-cancel','POST',{id}).catch(()=>null);
+  if(r&&r.status==='paid'){ payShow('paid',r); payRefresh(); return }
+  if(r&&r.status==='failed'){ payMsg(ar?'انلغت — تقدر تدفع من جديد':'Cancelled — you can pay again'); plansQuote(); return }
+  payMsg(ar?'تعذّر الإلغاء — جرّب بعد شوي':'Could not cancel — try again','err');
+}
+
+/* نتيجة الدفع في نفس الورقة: مدفوع · ينتظر التأكيد · ما تم */
+function payShow(status,r){
+  const ar=LANG==='ar';
+  let el=document.getElementById('planSheet');
+  if(!el){
+    el=document.createElement('div');
+    el.id='planSheet'; el.className='ps-overlay'; el.hidden=true;
+    el.addEventListener('click',e=>{ if(e.target===el)closePlans() });
+    document.body.appendChild(el);
+  }
+  const end=r&&r.until?new Date(r.until).toLocaleDateString(ar?'ar-u-ca-gregory-nu-latn':'en-GB',
+    {day:'numeric',month:'long',year:'numeric'}):'';
+  const M={
+    paid:['✅',ar?'تم الدفع — اشتراكك فعّال':'Paid — your plan is active',
+          end?(ar?`حتى ${end}. شكراً لأنك معنا 🤍`:`Until ${end}. Thank you 🤍`):''],
+    pending:['⏳',ar?'ننتظر تأكيد الدفع':'Waiting for payment confirmation',
+          ar?'لو دفعت، يتفعّل تلقائياً خلال دقائق ويوصلك خبر على تلقرام.':'If you paid, it activates automatically within minutes.'],
+    failed:['↩️',ar?'ما تم الدفع':'The payment did not go through',
+          ar?'ما انخصم شي، ورصيدك رجع لك لو استعملته.':'Nothing was charged, and any credit you used is back.']
+  };
+  const V=M[status]||M.failed;
+  el.innerHTML=`<div class="ps-sheet" role="dialog" aria-modal="true"><div class="ps-grab"></div>
+    <div class="pay-res"><div class="pay-ico">${V[0]}</div><b>${V[1]}</b>${V[2]?`<p>${V[2]}</p>`:''}</div>
+    ${status==='pending'?`<button class="ps-pay" onclick="payReturn(${Number(r&&r.id)||0})">${ar?'حدّث الحالة':'Check again'}</button>`:''}
+    ${status==='failed'?`<button class="ps-pay" onclick="openPlans()">${ar?'جرّب مرة ثانية':'Try again'}</button>`:''}
+    <button class="ps-close" onclick="closePlans()">${status==='paid'?(ar?'تمام':'Done'):(ar?'إغلاق':'Close')}</button></div>`;
+  el.hidden=false;
+  requestAnimationFrame(()=>el.classList.add('open'));
+}
+function payRefresh(){
+  loadAccount(true).catch(()=>{});
+  pullCloud().then(()=>{ try{ enforceSlotAndRedraw(); if(CUR_TAB==='set')renderSettings() }catch(e){} }).catch(()=>{});
+}
+/* رجع من Paylink على ‎?pay=رقم‎ — نسأل السيرفر (وهو يسأل Paylink) مرتين
+   ثلاث قبل ما نقول «ننتظر التأكيد»: الإشعار عادة يسبق الطالب بثوانٍ */
+async function payReturn(given){
+  if(!given&&PLANS_OPEN&&USER&&!PAY_BACK){ PLANS_OPEN=false; openPlans('compare'); return }
+  const id=given||PAY_BACK;
+  if(!id||!USER)return;
+  if(!given)PAY_BACK=null;                       /* مرة وحدة */
+  if(/[?&]pay=/.test(location.search)){ try{ history.replaceState(null,'',location.pathname+location.hash) }catch(e){} }
+  let r=null;
+  for(let i=0;i<3;i++){
+    r=await meFetch('/api/me/pay?id='+encodeURIComponent(id)).catch(()=>null);
+    if(r&&r.ok&&r.status!=='pending')break;
+    await new Promise(z=>setTimeout(z,2500));
+  }
+  if(!r||!r.ok)return;
+  payShow(r.status==='paid'?'paid':r.status==='pending'?'pending':'failed',r);
+  if(r.status==='paid')payRefresh();
 }
 function closePlans(){
   const el=document.getElementById('planSheet');
@@ -8874,10 +9036,12 @@ function redrawTodayAfterAuth(){
   aiProbe().catch(()=>{});
   if(USER){await pullCloud();setAuthUI();renderPlan();enforceSlotAndRedraw();redrawTodayAfterAuth();
     loadAccount(true).then(()=>{ try{ if(CUR_TAB==='set')renderSettings() }catch(e){} });
+    payReturn().catch(()=>{});          /* رجع من صفحة الدفع؟ */
     if(document.getElementById('pageSched').classList.contains('active'))renderSchedule();}
   sb.auth.onAuthStateChange(async(ev,sess)=>{
     const was=!!USER;USER=sess?sess.user:null;
-    if(USER&&!was){await pullCloud();setAuthUI();renderPlan();redrawTodayAfterAuth();}
+    if(USER&&!was){await pullCloud();setAuthUI();renderPlan();redrawTodayAfterAuth();
+      payReturn().catch(()=>{});}
     aiProbe().catch(()=>{});
   });
 })();
