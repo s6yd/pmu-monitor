@@ -6431,6 +6431,8 @@ async function payStart(){
   if(r.ok&&r.activated){ payShow('paid',r); payRefresh(); return }
   if(r.why==='pending'){ payPendingBox(r); return }
   payMsg(escapeHtml(r.error||(ar?'تعذّر — جرّب بعد شوي':'Something went wrong')),'err');
+  /* الجوال غلط: نرجّعه للخانة عشان يصلّحه — الرسالة تقول وش الصح */
+  if(r.why==='phone'&&inp){ inp.focus(); try{ inp.select() }catch(e){} }
 }
 function payPendingBox(r){
   const ar=LANG==='ar', id=Number(r.id)||0;

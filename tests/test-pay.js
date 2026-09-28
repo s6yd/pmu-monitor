@@ -325,6 +325,13 @@ async function prodSuite() {
   /* ── ٢) بدء الدفع ── */
   r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-own'), body: {} })).j;
   eq([r.ok, r.why], [false, 'phone'], 'بلا جوال: نطلبه — Paylink يشترطه');
+  /* رقم غلط: يقول له الصح بالضبط (لقاها محمد) — كانت «اكتب رقم جوالك» وهو كاتبه */
+  for (const bad of ['051234567', '05123456789', '0612345678', '12345']) {
+    r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-own'), body: { phone: bad } })).j;
+    ok(r.ok === false && r.why === 'phone' && /يبدأ بـ05 ويكون 10 أرقام/.test(r.error || ''),
+       `رقم غلط (${bad}): «لازم يبدأ بـ05 ويكون 10 أرقام» — ` + JSON.stringify(r));
+  }
+  eq(adds().length, 0, 'وما انفتحت فاتورة برقم غلط');
   r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-own'), body: { phone: '٠٥١٢٣٤٥٦٧٨' } })).j;
   ok(r.ok && /^https:\/\/payment\.paylink\.sa\//.test(r.url || ''), 'رابط صفحة الدفع — ' + JSON.stringify(r));
   const s1 = sub(r.id) || {};
@@ -399,6 +406,12 @@ async function prodSuite() {
   /* ── ٥) أقل فاتورة ٥ ريال، والرصيد المحجوز يرجع بصلاحيته ── */
   q = (await call('GET', '/api/me/quote', { tok: tokOf('u-cr') })).j;
   eq([q.credit, q.amount], [1400, 500], '**رصيد ١٥ وسعر ١٩: نصرف ١٤ ونترك ٥** — لا فاتورة ٤ ترفضها البوابة');
+  /* رقم جديد غلط والقديم محفوظ (ولا دفعة معلّقة): كان يُتجاهل بصمت ويكمل بالقديم */
+  const nA = adds().length;
+  r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-cr'), body: { phone: '05123' } })).j;
+  eq([r.ok, r.why], [false, 'phone'], '**رقم جديد غلط: نقوله له — ما نكمل بالمحفوظ بصمت**');
+  eq([adds().length, ledger('u-cr').filter(x => x.reason === 'spend').length, P('u-cr').phone],
+     [nA, 0, '0500000001'], 'وما انفتحت فاتورة ولا انحجز رصيد، والمحفوظ ما تغيّر');
   r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-cr'), body: {} })).j;
   ok(r.ok && r.url, 'الجوال المحفوظ يكفي — ' + JSON.stringify(r));
   const sp = ledger('u-cr').find(x => x.reason === 'spend');

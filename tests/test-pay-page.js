@@ -7,6 +7,7 @@
    ٤) الرجوع من Paylink يُعتبر دفعاً — الصفحة لازم تسأل السيرفر.
    ٥) دفعة معلّقة قديمة تعلّق الطالب بلا مخرج (كمّلها · ألغها).
    ٦) نص خطأ من السيرفر يُعرض HTML.
+   ٨) رقم جوال غلط: الرسالة تقول الصح والمؤشر يرجع للخانة.
    ٧) الورقة ما تقول أي ترم تبيع (لقاها محمد: «حتى 9 يونيو» بلا سنة ولا ترم،
       والشراء بعد ما ينقفل التسجيل يروح للترم الجاي)، ولا إن التنبيه الطارئ
       تطبيق ثاني تفعيله بعد الدفع — والمشتري ما يلقى وين يفعّله.
@@ -283,6 +284,24 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: pa
        '**‎?plans=1‎ يفتح ورقة الباقات** — مدخل تجربة الدفع وقت الفترة المجانية');
     const b = await btn(page);
     ok(b && !b.dis && /ادفع/.test(b.txt), 'وزر الدفع حسب ما قاله السيرفر');
+    eq(errs, [], 'بلا أخطاء');
+    await ctx.close();
+  }
+
+  /* ── ١٠) رقم الجوال غلط: رسالة السيرفر تقول الصح، والمؤشر يرجع للخانة ── */
+  {
+    ST.quote = baseQuote(); ST.posts = [];
+    ST.checkout = { ok: false, why: 'phone', error: 'رقم الجوال لازم يبدأ بـ05 ويكون 10 أرقام — مثل 0512345678' };
+    const { page, ctx, errs } = await open(browser);
+    await sheet(page);
+    await page.fill('#psPhone', '05123');
+    await page.click('#psPay');
+    await page.waitForTimeout(500);
+    ok(/يبدأ بـ05 ويكون 10 أرقام/.test(await page.textContent('#psMsg')), 'الرسالة تقول وش الصح');
+    eq(await page.evaluate(() => document.activeElement && document.activeElement.id), 'psPhone',
+       '**والمؤشر يرجع لخانة الجوال** يصلّحه');
+    eq(ST.posts[ST.posts.length - 1] && ST.posts[ST.posts.length - 1].phone, '05123',
+       'والصفحة ما تحكم بنفسها — السيرفر يقرر');
     eq(errs, [], 'بلا أخطاء');
     await ctx.close();
   }

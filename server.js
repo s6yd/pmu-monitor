@@ -911,7 +911,13 @@ async function payCheckout(uid, opt, origin) {
   if (!q.ok) return q;
   if (!q.base && !q.po) return { ok: false, why: 'nothing', error: 'اشتراكك فعّال — ما فيه شي تدفعه الحين' };
   if (q.belowMin) return { ok: false, why: 'min', error: 'أقل مبلغ للدفع ٥ ريال' };
-  const mob = payPhone(opt.phone) || payPhone(p.phone);
+  /* الجوال: 05 وبعدها 8 أرقام — payPhone تقبل ‎+966‎ والأرقام العربية وتحوّلها.
+     رقم مكتوب وغلط نقوله له بالضبط (لقاها محمد): كان يُتجاهل بصمت ويُستعمل
+     المحفوظ قبله، ولو ما فيه محفوظ جاته «اكتب رقم جوالك» وهو كاتبه */
+  const typed = String(opt.phone || '').trim();
+  if (q.amount > 0 && typed && !payPhone(typed))
+    return { ok: false, why: 'phone', error: 'رقم الجوال لازم يبدأ بـ05 ويكون 10 أرقام — مثل 0512345678' };
+  const mob = payPhone(typed) || payPhone(p.phone);
   if (q.amount > 0 && !mob) return { ok: false, why: 'phone', error: 'اكتب رقم جوالك — بوابة الدفع تطلبه' };
   /* الجوال يُحفظ في الملف بلا تحقق (§٧). والكتابة تفشل بصمت قبل SQL العمود */
   if (mob && mob !== p.phone)
