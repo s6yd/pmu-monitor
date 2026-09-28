@@ -7,6 +7,10 @@
    ٤) الرجوع من Paylink يُعتبر دفعاً — الصفحة لازم تسأل السيرفر.
    ٥) دفعة معلّقة قديمة تعلّق الطالب بلا مخرج (كمّلها · ألغها).
    ٦) نص خطأ من السيرفر يُعرض HTML.
+   ٨) رقم جوال غلط: الرسالة تقول الصح والمؤشر يرجع للخانة.
+   ٧) الورقة ما تقول أي ترم تبيع (لقاها محمد: «حتى 9 يونيو» بلا سنة ولا ترم،
+      والشراء بعد ما ينقفل التسجيل يروح للترم الجاي)، ولا إن التنبيه الطارئ
+      تطبيق ثاني تفعيله بعد الدفع — والمشتري ما يلقى وين يفعّله.
 
    node tests/test-pay-page.js [pmu-schedule.html] */
 const { chromium } = require('playwright');
@@ -24,7 +28,12 @@ const eq = (a, b, m) => ok(JSON.stringify(a) === JSON.stringify(b),
   `${m} — توقّعنا ${JSON.stringify(b)} وجانا ${JSON.stringify(a)}`);
 
 /* السيرفر المزيّف: كل اختبار يضبط ردوده */
-const ST = { quote: null, checkout: null, pay: [], cancel: null, posts: [], heads: [], pays: 0 };
+const ST = { quote: null, checkout: null, pay: [], cancel: null, posts: [], heads: [], pays: 0, ms: null, ai: null };
+/* حالة الصفحة كما يرجّعها السيرفر — القسم ٩ يزيد عليها ترم الشراء والتنبيه الطارئ */
+const MS = { term: '202710', freeBeta: false, canWatch: false,
+  build: '"x"', plans: { termHalalas: 1900, pushoverHalalas: 1000, freeMonitors: 2, freeSchedules: 1,
+    termEnd: '2027-06-15T20:59:59.000Z' } };
+const msWith = (plans, extra) => Object.assign({}, MS, { plans: Object.assign({}, MS.plans, plans) }, extra || {});
 const baseQuote = over => Object.assign({ ok: true, includesTerm: true, pushover: false, base: 1900,
   po: 0, discount: 0, credit: 0, amount: 1900, ref: null, creditAvailable: 0, term: '202720',
   termEnd: '2027-06-15T20:59:59.000Z', late: false, belowMin: false,
@@ -41,9 +50,7 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/javascript' });
     return res.end(fs.readFileSync(path.join(__dirname, '..', 'shared', 'plans.js')));
   }
-  if (u === '/api/monitor-status') return json({ term: '202710', freeBeta: false, canWatch: false,
-    build: '"x"', plans: { termHalalas: 1900, pushoverHalalas: 1000, freeMonitors: 2, freeSchedules: 1,
-      termEnd: '2027-06-15T20:59:59.000Z' } });
+  if (u === '/api/monitor-status') return json(ST.ms || MS);
   if (u.startsWith('/api/me/')) {
     let body = '';
     req.on('data', c => { body += c });
@@ -54,6 +61,7 @@ const server = http.createServer((req, res) => {
       if (u === '/api/me/pay-cancel') { ST.posts.push(JSON.parse(body || '{}')); return json(ST.cancel) }
       if (u === '/api/me/pay') { ST.pays++; return json(ST.pay.length > 1 ? ST.pay.shift() : ST.pay[0]) }
       if (u === '/api/me/account') return json({ ok: true, active: false, credit: { available: 0 }, invite: { code: 'ABC234', paidFriends: 0 } });
+      if (u === '/api/me/ai') return json(ST.ai || { ok: true });
       return json({ ok: true });
     });
   }
@@ -69,14 +77,16 @@ const sbStub = 'window.supabase={createClient:()=>({' +
   'signInWithOAuth:async()=>({}),signOut:async()=>({})},' +
   'from:()=>({select(){return this},eq(){return this},order(){return this},in(){return this},' +
   'limit(){return this},insert(){return this},delete(){return this},' +
-  'upsert(){return this},single(){return Promise.resolve({data:{id:"u-me",major:"COSC"},error:null})},' +
+  /* ملف الطالب: الأساسي، وفوقه ما يضبطه الاختبار في window.__P (تلقرام · الإضافة) */
+  'upsert(){return this},single(){return Promise.resolve({data:Object.assign({id:"u-me",major:"COSC"},window.__P||{}),error:null})},' +
   'update(){return {eq:async()=>({data:[],error:null})}},' +
   'then:(f)=>f({data:[],error:null})}),' +
   'channel:()=>({on(){return this},subscribe(){return this}}),' +
   'storage:{from:()=>({list:async()=>({data:[],error:null})})}})};';
 
-async function open(browser, scheme, query) {
+async function open(browser, scheme, query, prof) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: scheme || 'dark' });
+  if (prof) await ctx.addInitScript(p => { window.__P = p }, prof);
   const page = await ctx.newPage();
   const errs = [];
   page.on('pageerror', e => errs.push(String(e)));
@@ -275,6 +285,116 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: pa
     const b = await btn(page);
     ok(b && !b.dis && /ادفع/.test(b.txt), 'وزر الدفع حسب ما قاله السيرفر');
     eq(errs, [], 'بلا أخطاء');
+    await ctx.close();
+  }
+
+  /* ── ١٠) رقم الجوال غلط: رسالة السيرفر تقول الصح، والمؤشر يرجع للخانة ── */
+  {
+    ST.quote = baseQuote(); ST.posts = [];
+    ST.checkout = { ok: false, why: 'phone', error: 'رقم الجوال لازم يبدأ بـ05 ويكون 10 أرقام — مثل 0512345678' };
+    const { page, ctx, errs } = await open(browser);
+    await sheet(page);
+    await page.fill('#psPhone', '05123');
+    await page.click('#psPay');
+    await page.waitForTimeout(500);
+    ok(/يبدأ بـ05 ويكون 10 أرقام/.test(await page.textContent('#psMsg')), 'الرسالة تقول وش الصح');
+    eq(await page.evaluate(() => document.activeElement && document.activeElement.id), 'psPhone',
+       '**والمؤشر يرجع لخانة الجوال** يصلّحه');
+    eq(ST.posts[ST.posts.length - 1] && ST.posts[ST.posts.length - 1].phone, '05123',
+       'والصفحة ما تحكم بنفسها — السيرفر يقرر');
+    eq(errs, [], 'بلا أخطاء');
+    await ctx.close();
+  }
+
+  /* ── ٩) الورقة تقول وش تبيع — لقاها محمد: «حتى 9 يونيو» بلا سنة ولا ترم، والتنبيه
+     الطارئ ما يقول إنه تطبيق ثاني ولا إن تفعيله بعد الدفع. ومن اشتراه يلقى وين يفعّله ── */
+  const PO = { mode: 'addon', url: 'https://pushover.net/subscribe/Jadwalik-test' };
+  const text = async page => ((await page.textContent('#planSheet').catch(() => '')) || '').replace(/\s+/g, ' ');
+  for (const scheme of ['dark', 'light']) {
+    ST.quote = baseQuote(); ST.ms = msWith({ pushoverOffered: true, termCode: '202720' }, { pushover: PO });
+    const { page, ctx, errs } = await open(browser, scheme);
+    await sheet(page);
+    const t = await text(page);
+    ok(/من اليوم حتى 15 يونيو 2027/.test(t), `**التاريخ بالسنة ومن اليوم** (${scheme}) — ` + t.slice(0, 180));
+    /* قطع الاتجاه (عربي + أرقام) يقسم الصندوق قطعاً على نفس السطر — نقيس السطور لا القطع */
+    eq(await page.evaluate(() => { const r = document.querySelector('#psEnd span');
+         return !!r && new Set([...r.getClientRects()].map(x => Math.round(x.top))).size === 1 }), true,
+       'والتاريخ ما ينقسم سطرين');
+    ok(/يشمل تسجيل ربيع 2026\/2027/.test(t), '**وأي ترم يشمل تسجيله**');
+    ok(/Jadwalik AI كامل/.test(t), 'والمساعد من ميزات الاشتراك');
+    ok(/عبر تطبيق Pushover/.test(t) && /خطوات تفعيله توصلك بعد الدفع/.test(t),
+       '**التنبيه الطارئ: تطبيق Pushover، وخطوات تفعيله بعد الدفع**');
+    await page.evaluate(() => { const c = document.getElementById('psPo'); c.checked = true; c.onchange() });
+    await page.waitForTimeout(300);
+    await shot(page, 'plans-details-' + scheme);
+    eq(errs, [], 'بلا أخطاء');
+    await ctx.close();
+  }
+  {
+    /* ترم السعر هو اللي ينباع — لو حالة الصفحة قديمة يغلب */
+    ST.quote = baseQuote({ term: '202730', termEnd: '2027-08-20T20:59:59.000Z' });
+    ST.ms = msWith({ termCode: '202720' });
+    const { page, ctx } = await open(browser);
+    await sheet(page);
+    const t = await text(page);
+    ok(/يشمل تسجيل صيف 2026\/2027/.test(t) && /حتى 20 أغسطس 2027/.test(t), 'ترم السعر يغلب حالة الصفحة — ' + t.slice(0, 180));
+    await ctx.close();
+  }
+  {
+    /* المساعد مطفأ: ما نعد به */
+    ST.quote = baseQuote(); ST.ms = null; ST.ai = { on: false, why: 'off' };
+    const { page, ctx } = await open(browser);
+    await sheet(page);
+    ok(!/Jadwalik AI/.test(await text(page)), 'المساعد مطفأ: الورقة ما تذكره');
+    ST.ai = null;
+    await ctx.close();
+  }
+  const until = '2027-06-15T20:59:59.000Z';
+  const buyer = { telegram_chat_id: '6010', pushover_until: until };
+  for (const scheme of ['dark', 'light']) {
+    /* دفع مع التنبيه الطارئ: زر التفعيل يودّيه للبطاقة */
+    ST.ms = msWith({ pushoverOffered: true, termCode: '202720' }, { pushover: PO });
+    ST.pay = [{ ok: true, id: 79, status: 'paid', until, amount: 2900, pushover: true }];
+    const { page, ctx, errs } = await open(browser, scheme, '?pay=79', buyer);
+    await page.waitForTimeout(900);
+    const t = await text(page);
+    ok(/فعّل التنبيه الطارئ الحين/.test(t), `**بعد الدفع: زر «فعّل التنبيه الطارئ»** (${scheme}) — ` + t.slice(0, 160));
+    ok(/إيصالك وصلك على تلقرام/.test(t), 'ويقول وين الإيصال');
+    await shot(page, 'pay-return-pushover-' + scheme);
+    await page.click('text=فعّل التنبيه الطارئ الحين');
+    await page.waitForTimeout(600);
+    ok(await page.evaluate(() => document.getElementById('pageSet').classList.contains('active')), '**والزر يفتح الإعدادات**');
+    ok(/تفعيل/.test(await page.textContent('#poRow')), '**على بطاقة التفعيل نفسها**');
+    await page.waitForTimeout(700);
+    eq(await page.evaluate(() => document.getElementById('guideOverlay').classList.contains('open')), false,
+       '**ودليل أول زيارة ما يغطّيها** — كان يفتح فوقها في جهاز جديد');
+    await shot(page, 'pay-pushover-card-' + scheme);
+    eq(errs, [], 'بلا أخطاء');
+    await ctx.close();
+  }
+  {
+    /* بلا الإضافة: ما فيه زر ولا وعد */
+    ST.ms = null; ST.pay = [{ ok: true, id: 80, status: 'paid', until, amount: 1900, pushover: false }];
+    const { page, ctx } = await open(browser, 'dark', '?pay=80');
+    await page.waitForTimeout(900);
+    const t = await text(page);
+    ok(/تم الدفع/.test(t) && !/فعّل التنبيه الطارئ/.test(t), 'بلا الإضافة: ما فيه زر تفعيل');
+    ok(!/إيصالك/.test(t), 'وبلا تلقرام مربوط: ما نقول «وصلك على تلقرام»');
+    await ctx.close();
+  }
+  {
+    /* رابط الإيصال ‎?pushover=1‎ */
+    ST.ms = msWith({ pushoverOffered: true }, { pushover: PO });
+    const { page, ctx, errs } = await open(browser, 'dark', '?pushover=1', buyer);
+    await page.waitForTimeout(700);
+    ok(await page.evaluate(() => document.getElementById('pageSet').classList.contains('active')),
+       '**رابط الإيصال يفتح الإعدادات على بطاقة التفعيل**');
+    ok(/تفعيل/.test(await page.textContent('#poRow')), 'والبطاقة ظاهرة فيها «تفعيل»');
+    eq(await page.evaluate(() => document.getElementById('guideOverlay').classList.contains('open')), false,
+       'ودليل أول زيارة ما يغطّيها');
+    ok(!/pushover=1/.test(page.url()), 'والرابط تنظّف');
+    eq(errs, [], 'بلا أخطاء');
+    ST.ms = null;
     await ctx.close();
   }
 

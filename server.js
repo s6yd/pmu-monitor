@@ -461,7 +461,9 @@ async function meQuote(uid, { pushover, ref }) {
 
   const includesTerm = !isActive(p);
   const poActive = !!(p.pushover_until && new Date(p.pushover_until) > new Date());
-  const wantPo = !!pushover && !poActive;
+  /* ما نبيع إضافة ما تنفعّل: وضع التنبيه الطارئ «off» يخفي بطاقة التفعيل
+     ويمنع الإرسال — فالمشتري يدفع على شي ما يوصله */
+  const wantPo = !!pushover && !poActive && pushoverOn();
   const base = includesTerm ? PRICING.termHalalas : 0;
   const po = wantPo ? PRICING.pushoverHalalas : 0;
 
@@ -780,6 +782,41 @@ async function payReferral(s) {
       'ينخصم تلقائياً من اشتراكك الجاي.').catch(() => {});
 }
 
+/* اسم الترم كما تعرضه الصفحة (termLabel): 202720 ⇒ «ربيع 2026/2027» */
+function payTermName(term) {
+  const c = String(term || ''), y = parseInt(c.slice(0, 4), 10);
+  if (!y) return c;
+  return ({ '10': 'خريف', '20': 'ربيع', '30': 'صيف' }[c.slice(4)] || 'ترم') + ` ${y - 1}/${y}`;
+}
+/* الإيصال على تلقرام — لقاها محمد: «اشتراكك فعّال» وحدها ما تقول وش اشترى ولا
+   كم دفع، ومن اشترى التنبيه الطارئ ما يدري إن فيه خطوة تفعيل. الأرقام من صف
+   الاشتراك نفسه (حسبته meQuote وتحقّقنا منه عند Paylink) — ما نعيد حساب شي هنا.
+   ورابط التفعيل فيه ‎?pushover=1‎: يفتح بطاقة التفعيل في الإعدادات حتى في وضع
+   «link» (وفي «addon» تظهر للمشتري أصلاً) */
+function payReceipt(s) {
+  const d = v => new Date(v).toLocaleDateString('ar-u-ca-gregory-nu-latn',
+    { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Riyadh' });
+  const n = k => Number(s[k]) || 0;
+  const test = /-test$/.test(String(s.gateway || ''));
+  const L = ['✅ <b>اشتراكك فعّال</b> — شكراً لأنك معنا 🤍', '',
+    `🧾 <b>إيصال ${test ? 'JDWT' : 'JDW'}-${s.id}</b>` + (test ? ' (تجربة)' : '')];
+  if (s.includes_term) L.push(`• اشتراك ${payTermName(s.term)}: ${paySar(n('base_halalas'))} ريال`);
+  if (s.pushover) L.push(`• التنبيه الطارئ: ${paySar(n('pushover_halalas'))} ريال`);
+  if (n('discount_halalas')) L.push(`• خصم صديقك: −${paySar(n('discount_halalas'))} ريال`);
+  if (n('credit_halalas')) L.push(`• من رصيدك: −${paySar(n('credit_halalas'))} ريال`);
+  L.push(`<b>المدفوع: ${paySar(n('amount_halalas'))} ريال</b>` +
+    (n('amount_halalas') ? ' · عبر Paylink' : ' — غطّاه رصيدك'));
+  if (s.gateway_ref) L.push(`رقم العملية: <code>${esc(s.gateway_ref)}</code>`);
+  L.push(`التاريخ: ${d(s.paid_at || Date.now())}`, `ساري حتى: ${d(s.valid_until)}`);
+  if (s.pushover) L.push('', '🚨 <b>فعّل التنبيه الطارئ</b> — مرة وحدة من جوالك:',
+    '1️⃣ نزّل تطبيق <b>Pushover</b> من App Store أو Google Play وسوّ حساباً فيه',
+    `2️⃣ افتح ${PAY_ORIGIN_PROD}/?pushover=1 واضغط «تفعيل»`,
+    '3️⃣ وافق في صفحة Pushover — ترجع للموقع ويطلع لك «🔔 التنبيه الطارئ شغّال»',
+    '4️⃣ في إعدادات تطبيق Pushover فعّل <b>Critical Alerts</b> عشان يرن حتى لو الجوال صامت',
+    'إضافتك تغطي التطبيق: لو طلب منك دفعاً، راسلنا هنا ونتكفّل فيه.');
+  return L.join('\n');
+}
+
 /* التسوية: الحجز أولاً (pending|failed ⇒ paid)، والرابح وحده يكمل.
    «failed» لأن الدفعة قد توصل بعد الإلغاء (الطالب دفع من تبويب قديم) —
    فلوسه وصلت فنفعّله، ونعيد صرف رصيده اللي رجع له عند الإلغاء.
@@ -807,10 +844,7 @@ async function paySettle(sub) {
     return { ok: false, error: 'وصلت دفعتك ونكمل التفعيل — ثواني ويصير' };
   }
   await payReferral(s).catch(() => {});
-  const end = new Date(act.until).toLocaleDateString('ar-u-ca-gregory-nu-latn',
-    { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Riyadh' });
-  if (act.chat)
-    sendMsg(act.chat, `✅ <b>اشتراكك فعّال</b>\n\nحتى ${end}. شكراً لأنك معنا 🤍`).catch(() => {});
+  if (act.chat) sendMsg(act.chat, payReceipt(s)).catch(() => {});
   if (ADMIN_CHAT_ID) sendMsg(ADMIN_CHAT_ID, `💳 <b>اشتراك جديد</b> · ${s.gateway}\n\n` +
     `${paySar(s.amount_halalas)} ريال` + (Number(s.credit_halalas) ? ` + رصيد ${paySar(s.credit_halalas)}` : '') +
     ` · ترم ${s.term}` + (s.pushover ? ' · مع التنبيه الطارئ' : '')).catch(() => {});
@@ -877,7 +911,13 @@ async function payCheckout(uid, opt, origin) {
   if (!q.ok) return q;
   if (!q.base && !q.po) return { ok: false, why: 'nothing', error: 'اشتراكك فعّال — ما فيه شي تدفعه الحين' };
   if (q.belowMin) return { ok: false, why: 'min', error: 'أقل مبلغ للدفع ٥ ريال' };
-  const mob = payPhone(opt.phone) || payPhone(p.phone);
+  /* الجوال: 05 وبعدها 8 أرقام — payPhone تقبل ‎+966‎ والأرقام العربية وتحوّلها.
+     رقم مكتوب وغلط نقوله له بالضبط (لقاها محمد): كان يُتجاهل بصمت ويُستعمل
+     المحفوظ قبله، ولو ما فيه محفوظ جاته «اكتب رقم جوالك» وهو كاتبه */
+  const typed = String(opt.phone || '').trim();
+  if (q.amount > 0 && typed && !payPhone(typed))
+    return { ok: false, why: 'phone', error: 'رقم الجوال لازم يبدأ بـ05 ويكون 10 أرقام — مثل 0512345678' };
+  const mob = payPhone(typed) || payPhone(p.phone);
   if (q.amount > 0 && !mob) return { ok: false, why: 'phone', error: 'اكتب رقم جوالك — بوابة الدفع تطلبه' };
   /* الجوال يُحفظ في الملف بلا تحقق (§٧). والكتابة تفشل بصمت قبل SQL العمود */
   if (mob && mob !== p.phone)
@@ -10257,7 +10297,9 @@ const server = http.createServer(async (req, res) => {
         freeSchedules: PRICING.freeSchedules,
         /* نفس ترم الشراء اللي يحسبه meQuote — ورقة الباقات تعرض «حتى …» منه */
         termEnd: payTermNow().until,
-        pushoverOffered: !!PUSHOVER_SUBSCRIBE_URL
+        /* وأي ترم — الورقة تسمّيه («يشمل تسجيل ربيع 2026/2027») */
+        termCode: payTermNow().term,
+        pushoverOffered: pushoverOn()
       },
       canWatch: MONITOR_ENABLED && !MONITOR_PAUSED && !!currentWindow(),
       window: currentWindow(),
