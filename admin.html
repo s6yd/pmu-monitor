@@ -2053,18 +2053,22 @@ function payHookHTML(d){
     (d.hookSet?tip('جرّبه: زر <b>Test</b> في إعدادات الإشعار في Paylink، وبعدها «🔄 تحديث» هنا.'):'');
   const when=esc(payAgo(L.at));
   if(L.ok)return `<div class="kv"><span>آخر إشعار</span><b style="color:var(--open)">✅ مقبول · ${when}</b></div>`+
-    (L.via&&L.via!=='x-jadwalik-key'&&L.via!=='authorization'
+    (L.via&&L.via!=='x-jadwalik-key'&&L.via!=='authorization'&&L.via!=='url'
       ?tip(`وصل المفتاح باسم ${code(L.via)} — يشتغل، والأصح ${code('X-Jadwalik-Key')}.`):'');
   const H=(L.headers||[]).length?`<div dir="ltr" style="text-align:left;font-family:var(--mono)">${
     (L.headers||[]).map(esc).join(' · ')}</div>`:'';
   const why={
     nokey:`${code('PAYLINK_WEBHOOK_KEY')} ناقص في Render — أضفه في خدمة الإنتاج وانشر.`,
-    noheader:`ما وصلت ترويسة المفتاح. في Paylink: خانة <b>HTTP Header 1</b> = ${code('X-Jadwalik-Key')}، وخانة <b>Value</b> = المفتاح.`+
-      (H?`<br>الترويسات اللي وصلت:${H}`:''),
+    /* زر Test في Paylink ما يرسل ترويساتنا (شفناها على الإنتاج) — الرابط يوصل دائماً */
+    noheader:`ما وصل المفتاح: Paylink ما أرسل ترويسة ${code('X-Jadwalik-Key')} ولو كتبتها في خانة <b>HTTP Header 1</b>. `+
+      `<b>الحل:</b> حط المفتاح في رابط الإشعار نفسه:<div dir="ltr" style="text-align:left;font-family:var(--mono)">${
+        esc(location.origin)}/api/paylink/webhook?key=<span dir="rtl">المفتاح</span></div>`+
+      (H?`الترويسات اللي وصلت:${H}`:''),
     mismatch:(L.via==='authorization'
       ?`ما وصلت ${code('X-Jadwalik-Key')}، ووصلت ${code('Authorization')} بمفتاح غير مفتاحنا — تأكد من اسم الترويسة في خانة <b>HTTP Header 1</b>. `
-      :'المفتاح ما طابق. ')+
-      `وصل ${Number(L.len)||0} حرف، والمضبوط في Render ${Number(L.want)||0} — انسخ نفس المفتاح في الخانتين بزر النسخ.`,
+      :L.via==='url'?'المفتاح اللي في رابط الإشعار ما طابق. ':'المفتاح ما طابق. ')+
+      `وصل ${Number(L.len)||0} حرف، والمضبوط في Render ${Number(L.want)||0} — `+
+      (L.via==='url'?'انسخ الرابط كامل مرة ثانية بزر النسخ.':'انسخ نفس المفتاح في الخانتين بزر النسخ.'),
     swapped:`المفتاح مكتوب في خانة اسم الترويسة. الاسم ${code('X-Jadwalik-Key')} في <b>HTTP Header 1</b>، والمفتاح في <b>Value</b>.`
   }[L.why]||esc(L.why);
   return `<div class="kv"><span>آخر إشعار</span><b style="color:var(--close)">❌ مرفوض · ${when}</b></div>`+

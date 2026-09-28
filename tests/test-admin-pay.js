@@ -110,8 +110,13 @@ const server = http.createServer((req, res) => {
 
   t = await card(last({ headers: ['host', 'content-type', 'user-agent', '<img src=x onerror=alert(1)>'] }));
   ok(/مرفوض · قبل 2 د/.test(t), 'مرفوض ومتى — ' + t.slice(0, 200));
-  ok(/HTTP Header 1/.test(t) && /X-Jadwalik-Key/.test(t) && /Value/.test(t),
-     '**ما وصلت الترويسة: يقول وش يكتب في أي خانة**');
+  /* تغيّر عمداً: كان «اكتبها في HTTP Header 1 وValue» — وزر Test في Paylink ما أرسلها
+     أصلاً (شفناها على الإنتاج)، فصار يعطيه الرابط اللي فيه المفتاح */
+  ok(/\/api\/paylink\/webhook\?key=/.test(t) && /X-Jadwalik-Key/.test(t) && /الحل/.test(t),
+     '**ما وصل المفتاح: يعطيه رابط الإشعار اللي فيه المفتاح** — ' + t.slice(0, 260));
+  ok(await page.evaluate(() => (document.querySelector('#payCard').innerHTML.match(/webhook\?key=/) || []).length === 1
+     && document.querySelector('#payCard').textContent.includes(location.origin + '/api/paylink/webhook?key=')),
+     'والرابط على نطاق اللوحة نفسها (الإنتاج أو dev)');
   ok(/content-type/.test(t) && /user-agent/.test(t), 'ويعرض أسماء الترويسات اللي وصلت');
   ok(await page.$('#payCard img') === null, '**اسم ترويسة فيه وسم يُهرَّب**');
 
@@ -119,6 +124,10 @@ const server = http.createServer((req, res) => {
   ok(/ما طابق/.test(t) && /وصل 49 حرف/.test(t) && /Render 48/.test(t), '**ما طابق: بالأطوال** — ' + t.slice(0, 260));
   ok(/1 حرف مخفي/.test(t), 'والحروف المخفية');
   ok(!/Authorization/.test(t), 'وما يذكر Authorization لو ما وصلت');
+
+  t = await card(last({ why: 'mismatch', via: 'url', len: 47 }));
+  ok(/رابط الإشعار ما طابق/.test(t) && /وصل 47 حرف/.test(t) && /انسخ الرابط كامل/.test(t),
+     '**المفتاح اللي في الرابط ما طابق: يقول انسخ الرابط كامل**');
 
   t = await card(last({ why: 'mismatch', via: 'authorization', len: 12 }));
   ok(/Authorization/.test(t) && /HTTP Header 1/.test(t), 'Authorization بمفتاح غيرنا: يقول اسم الترويسة ناقص');
@@ -132,6 +141,8 @@ const server = http.createServer((req, res) => {
   t = await card(last({ ok: true, why: 'ok', via: 'x-jadwalik-key', at: ago(0), len: 48 }));
   ok(/✅ مقبول · الآن/.test(t), '**مقبول**');
   ok(!/الأصح/.test(t), 'وبالاسم الصحيح ما فيه ملاحظة');
+  t = await card(last({ ok: true, why: 'ok', via: 'url', at: ago(0), len: 48 }));
+  ok(/✅ مقبول/.test(t) && !/الأصح/.test(t), '**المفتاح في الرابط: مقبول بلا ملاحظة**');
   t = await card(last({ ok: true, why: 'ok', via: 'x-jadwalik_key', len: 48 }));
   ok(/x-jadwalik_key/.test(t) && /الأصح/.test(t), 'وصل باسم ثاني: يشتغل ويقول الأصح');
 
