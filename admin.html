@@ -2002,6 +2002,55 @@ async function savePricing(){
   }catch(e){ toast(e.message,'err') }
 }
 
+/* ══ بوابة الدفع ══ الإعداد والعدّادات من السيرفر — اللوحة ما تحسب سعراً
+   ولا تقرر مين يدفع. تُحمَّل مع تبويب الحالة، مرة بالدقيقة على الأكثر. */
+let PAYST=null, PAYST_AT=0;
+const PAY_ST_AR={pending:'معلّق',paid:'مدفوع',failed:'فشل'};
+function payCardHTML(){
+  const d=PAYST;
+  if(!d)return `<div class="gauge" style="margin-bottom:12px">
+    <div class="maint-t">💳 بوابة الدفع — Paylink</div><div class="gauge-sub">جاري التحميل…</div></div>`;
+  const keys=d.ready?'<b style="color:var(--open)">جاهزة</b>'
+    :d.testIdInProd?'<b style="color:var(--close)">مفتاح التجربة العام — حط مفاتيحك الحقيقية</b>'
+    :'<b style="color:var(--close)">ناقصة — PAYLINK_API_ID · PAYLINK_SECRET</b>';
+  const hook=d.hookSet?'<b style="color:var(--open)">مضبوط</b>'
+    :'<b style="color:var(--warn)">بلا مفتاح — PAYLINK_WEBHOOK_KEY</b>';
+  const who={none:'ولا أحد',all:'كل الطلاب',
+    owner:d.live?'أنت فقط — الفترة المجانية شغّالة':'أنت فقط — نسخة التجربة'}[d.openTo]||d.openTo;
+  const c=d.counts||{};
+  const rec=(d.recent||[]).slice(0,5).map(x=>`<div class="cr-row">
+      <span>#${esc(x.id)} · ${esc(x.term)} · <b>${esc(PAY_ST_AR[x.status]||x.status)}</b>${
+        x.note?`<span style="color:var(--text3)"> — ${esc(x.note)}</span>`:''}</span>
+      <span>${sar(x.amount)} ريال${x.credit?` + رصيد ${sar(x.credit)}`:''}</span></div>`).join('');
+  return `<div class="gauge" style="margin-bottom:12px">
+    <div class="maint-t">💳 بوابة الدفع — Paylink</div>
+    <div class="kv"><span>البيئة</span><b>${d.live?'الإنتاج':'التجربة'} ·
+      <span class="ltr" style="font-family:var(--mono)">${esc(d.host)}</span></b></div>
+    <div class="kv"><span>المفاتيح</span>${keys}</div>
+    <div class="kv"><span>الإشعار</span>${hook}</div>
+    <div class="kv"><span>مين يقدر يدفع</span><b>${esc(who)}</b></div>
+    <div class="kv"><span>الطلبات</span><b>معلّقة ${c.pending||0} · مدفوعة ${c.paid||0} · فاشلة ${c.failed||0}</b></div>
+    ${d.live?`<div class="kv"><span>المحصّل عبر Paylink</span><b>${sar(d.paidHalalas||0)} ريال</b></div>`:''}
+    ${rec?`<div style="margin-top:8px">${rec}</div>`:''}
+    <div class="row-meta" style="margin-top:10px">
+      <button class="mini go" onclick="payPing(this)">🔌 جرّب الاتصال</button></div>
+  </div>`;
+}
+async function loadPay(force){
+  if(!force&&PAYST&&Date.now()-PAYST_AT<60000)return;
+  try{ PAYST=await api('pay'); PAYST_AT=Date.now() }catch(e){ return }
+  const el=document.getElementById('payCard');
+  if(el)el.innerHTML=payCardHTML();
+}
+async function payPing(b){
+  if(b)b.disabled=true;
+  try{
+    const r=await api('pay-ping',{body:{}});
+    toast(r.ok?`✅ الاتصال بـPaylink شغّال (${r.ms} م.ث)`:('❌ '+(r.error||'فشل')),r.ok?'ok':'err');
+  }catch(e){ toast(e.message,'err') }
+  finally{ if(b)b.disabled=false }
+}
+
 async function toggleBeta(on){
   if(!on&&!confirm('إنهاء الفترة المجانية؟\n\n'+
     'المجاني يصير مراقبتين وجدولاً واحداً فوراً، والمراقبات الزائدة تتوقف.\n\n'+
@@ -2758,7 +2807,9 @@ function renderSys(){
     </div>
   </div>`;
 
-  box.innerHTML=maint+beta+pricing+monCard+pwCard+cacheCard+finals+alerts+liveBox+gauge+spark+detail;
+  box.innerHTML=maint+beta+pricing+`<div id="payCard">${payCardHTML()}</div>`+
+    monCard+pwCard+cacheCard+finals+alerts+liveBox+gauge+spark+detail;
+  loadPay();
 }
 
 /* ══════════ المراقبة ══════════ */
