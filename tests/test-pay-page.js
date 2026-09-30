@@ -8,6 +8,8 @@
    ٥) دفعة معلّقة قديمة تعلّق الطالب بلا مخرج (كمّلها · ألغها).
    ٦) نص خطأ من السيرفر يُعرض HTML.
    ٨) رقم جوال غلط: الرسالة تقول الصح والمؤشر يرجع للخانة.
+   ١١) الضغط على الدفع يُبرم العقد (اللائحة التنفيذية لنظام التجارة الإلكترونية)
+      فتحت الزر سطر موافقة بروابط الشروط والاسترجاع — والإنجليزي لقسميهما الإنجليزيين.
    ٧) الورقة ما تقول أي ترم تبيع (لقاها محمد: «حتى 9 يونيو» بلا سنة ولا ترم،
       والشراء بعد ما ينقفل التسجيل يروح للترم الجاي)، ولا إن التنبيه الطارئ
       تطبيق ثاني تفعيله بعد الدفع — والمشتري ما يلقى وين يفعّله.
@@ -113,6 +115,15 @@ const phoneShown = page => page.evaluate(() => {
   const b = document.getElementById('psPhoneBox');
   return !!b && !b.hidden && getComputedStyle(b).display !== 'none';
 });
+/* سطر الموافقة تحت زر الدفع: ظاهر؟ تحت الزر؟ ووين تودّي روابطه؟ */
+const agree = page => page.evaluate(() => {
+  const el = document.getElementById('psTerms'), b = document.getElementById('psPay');
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  return { vis: !el.hidden && r.height > 0, under: !!b && r.top >= b.getBoundingClientRect().bottom - 1,
+           links: [...el.querySelectorAll('a')].map(a => [a.getAttribute('href'), a.target]),
+           text: el.textContent.replace(/\s+/g, ' ').trim() };
+});
 const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: path.join(SHOTS, name + '.png') }) };
 
 (async () => {
@@ -127,6 +138,7 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: pa
     const b = await btn(page);
     ok(b && b.dis && re.test(b.txt), `مقفل (${why}): الزر مقفل ويقول ليش — ${JSON.stringify(b)}`);
     eq(await phoneShown(page), false, `مقفل (${why}): ولا حقل جوال`);
+    eq((await agree(page) || {}).vis, false, `مقفل (${why}): ولا سطر موافقة على شراء ما يصير`);
     ST.posts = [];
     await page.evaluate(() => payStart());
     eq(ST.posts.length, 0, `مقفل (${why}): ولا طلب دفع ولو نودي بنفسه`);
@@ -143,6 +155,12 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: pa
     let b = await btn(page);
     ok(b && !b.dis && /19/.test(b.txt) && /ادفع/.test(b.txt), 'الزر يقول كم يدفع — ' + JSON.stringify(b));
     eq(await phoneShown(page), true, 'وحقل الجوال ظاهر');
+    /* اللائحة التنفيذية لنظام التجارة الإلكترونية: الضغط على الدفع يُبرم العقد */
+    const ag = await agree(page);
+    ok(ag && ag.vis && ag.under, `**سطر الموافقة ظاهر تحت زر الدفع** (${scheme}) — ` + JSON.stringify(ag));
+    eq(ag && ag.text, 'بالضغط على الدفع توافق على الشروط والأحكام وسياسة الاسترجاع.', 'نصّه كما كُتب');
+    eq(ag && ag.links, [['/terms#payment', '_blank'], ['/terms#refund', '_blank']],
+       'روابطه لقسمي الدفع والاسترجاع — في صفحة جديدة فالورقة ما تضيع');
     const fs16 = await page.evaluate(() => getComputedStyle(document.getElementById('psPhone')).fontSize);
     eq(fs16, '16px', '**حقل الجوال ١٦px** — أصغر منه يزوّم سفاري الآيفون ولا يرجع');
     await shot(page, 'pay-sheet-' + scheme);
@@ -184,6 +202,7 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: pa
     const b = await btn(page);
     ok(b && !b.dis && /رصيدك/.test(b.txt), 'الزر: فعّل برصيدك — ' + JSON.stringify(b));
     eq(await phoneShown(page), false, 'وبلا حقل جوال');
+    eq((await agree(page) || {}).vis, true, 'والتفعيل بالرصيد شراء كذلك: سطر الموافقة ظاهر');
     await page.click('#psPay');
     await page.waitForTimeout(700);
     const t = await page.textContent('#planSheet');
@@ -395,6 +414,29 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: pa
     ok(!/pushover=1/.test(page.url()), 'والرابط تنظّف');
     eq(errs, [], 'بلا أخطاء');
     ST.ms = null;
+    await ctx.close();
+  }
+
+  /* ── ١١) سطر الموافقة بالإنجليزي، ومن اشتراكه فعّال ما يشوفه ── */
+  {
+    ST.quote = baseQuote(); ST.ms = null;
+    const { page, ctx, errs } = await open(browser, 'dark');
+    await page.evaluate(() => { LANG = 'en'; applyLang() });
+    await sheet(page);
+    const ag = await agree(page);
+    ok(ag && ag.vis && ag.under, 'بالإنجليزي: ظاهر تحت الزر — ' + JSON.stringify(ag));
+    eq(ag && ag.text, 'By continuing to payment, you agree to the Terms and the Refund policy.', 'نصّه الإنجليزي كما كُتب');
+    eq(ag && ag.links, [['/terms#en-payment', '_blank'], ['/terms#en-refund', '_blank']],
+       '**وروابطه للنسخة الإنجليزية** (‎#en-‎ يفتحها على القسم)');
+    await shot(page, 'plans-agree-en');
+    eq(errs, [], 'بلا أخطاء');
+    await ctx.close();
+  }
+  {
+    ST.quote = baseQuote({ includesTerm: false, base: 0, po: 0, amount: 0 });
+    const { page, ctx } = await open(browser);
+    await sheet(page);
+    eq((await agree(page) || {}).vis, false, 'اشتراكه فعّال وما فيه شي يشتريه: ولا سطر موافقة');
     await ctx.close();
   }
 
