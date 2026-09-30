@@ -43,6 +43,9 @@ vm.runInContext(src.slice(a, b) + ';this.PRICING_DEFAULT=PRICING_DEFAULT;', ctx)
   ok(ctx.validatePricing(Object.assign({}, D, { minCashHalalas: 400 })) !== null, 'أقل دفع ٤ ريال مرفوض — تحت أقل فاتورة');
   ok(ctx.validatePricing(Object.assign({}, D, { minCashHalalas: 2000 })) !== null, 'أقل دفع فوق سعر الترم مرفوض');
   ok(ctx.validatePricing(Object.assign({}, D, { minCashHalalas: 500 })) === null, 'وخمسة ريال مقبولة');
+  /* رصيد الداعي بعد مدة الاسترجاع (الشروط §٣) */
+  ok(D.referralHoldDays === 7, 'رصيد الداعي بعد ٧ أيام افتراضياً — ' + D.referralHoldDays);
+  ok(ctx.validatePricing(Object.assign({}, D, { referralHoldDays: 31 })) !== null, 'أكثر من ٣٠ يوم مرفوض');
   ok(ctx.validatePricing(Object.assign({}, D, { termHalalas: 19.5 })) !== null, 'الكسور مرفوضة — هللات صحيحة فقط');
 
   ok(ctx.nextTerm('202710') === '202720' && ctx.nextTerm('202720') === '202730' &&
@@ -255,7 +258,8 @@ function call(p, method, payload) {
       if (u.endsWith('/health')) return res.end(JSON.stringify({ telegramOk: true, freeBeta: true,
         pricing: { termHalalas: 1900, pushoverHalalas: 1000, friendDiscountHalalas: 300,
                    referrerCreditHalalas: 500, reviewsCreditHalalas: 500, reviewsNeeded: 5,
-                   creditTerms: 2, lateDays: 3, freeMonitors: 2, freeSchedules: 1, minCashHalalas: 1000 },
+                   creditTerms: 2, lateDays: 3, freeMonitors: 2, freeSchedules: 1, minCashHalalas: 1000,
+                   referralHoldDays: 7 },
         monitorInfo: {}, cache: [] }));
       if (u.endsWith('/users')) return res.end(JSON.stringify({ users: USERS }));
       if (u.endsWith('/user')) return res.end(JSON.stringify(DETAIL));
@@ -284,7 +288,7 @@ function call(p, method, payload) {
       return { term: t ? t.value : null, fields: document.querySelectorAll('.price-grid input').length };
     });
     ok(sys.term === '19', 'محرر الأسعار يعرض ١٩ ريالاً لا ١٩٠٠ هللة — ' + sys.term);
-    ok(sys.fields === 11, 'وأحد عشر حقلاً (مع أقل دفع نقدي) — ' + sys.fields);
+    ok(sys.fields === 12, 'واثنا عشر حقلاً (مع أقل دفع نقدي وأيام رصيد الداعي) — ' + sys.fields);
 
     await p.evaluate(() => { document.getElementById('pf_termHalalas').value = '22.5'; savePricing() });
     await p.waitForTimeout(500);

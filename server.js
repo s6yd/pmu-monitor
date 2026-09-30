@@ -66,6 +66,7 @@ const PRICING_DEFAULT = Object.freeze({
   pushoverHalalas: 1500,        /* إضافة التنبيه الطارئ — ١٥ ريال (قرار محمد ٣٠ سبتمبر ٢٠٢٦) */
   friendDiscountHalalas: 300,   /* خصم الصديق على أول شراء */
   referrerCreditHalalas: 500,   /* رصيد الداعي لما يدفع صديقه */
+  referralHoldDays: 7,          /* …بعد كم يوم من دفعه — مدة الاسترجاع (الشروط §٣) */
   reviewsCreditHalalas: 500,    /* رصيد طلب التقييم المقبول */
   reviewsNeeded: 5,             /* تقييمات لطلب الرصيد */
   creditTerms: 2,               /* صلاحية الرصيد: ترمان بعد ترم المنح */
@@ -93,6 +94,7 @@ function validatePricing(p) {
   if (!int(p.creditTerms, 1, 6)) return 'صلاحية الرصيد بين ترم و٦ ترمات';
   if (!int(p.lateDays, 0, 14)) return 'أيام الشراء المتأخر بين ٠ و١٤';
   if (!int(p.freeMonitors, 0, 20)) return 'مراقبات المجاني بين ٠ و٢٠';
+  if (!int(p.referralHoldDays, 0, 30)) return 'أيام رصيد الداعي بين ٠ و٣٠';
   if (!int(p.freeSchedules, 1, 3)) return 'جداول المجاني بين ١ و٣';
   /* ٥ ريال أقل فاتورة عند البوابة (PAY_MIN_HALALAS) — تحته ما ينباع شي */
   if (!int(p.minCashHalalas, 500, p.termHalalas)) return 'أقل دفع نقدي بين ٥ ريال وسعر الترم';
@@ -761,8 +763,11 @@ async function payActivate(s) {
            chat: p.telegram_chat_id };
 }
 
-/* رصيد الداعي لحظة التسوية — أول شراء للصديق، وreferrals.invited_id
-   فريد فيُمنح مرة للأبد. ودفعة التجربة ما تمنح رصيداً حقيقياً */
+/* الدعوة تنسجّل لحظة التسوية — أول شراء للصديق، وreferrals.invited_id فريد
+   فتنحسب مرة للأبد. ودفعة التجربة ما تمنح رصيداً حقيقياً.
+   **والرصيد بعد مدة الاسترجاع** (الشروط §٣ — الجولة الثانية): كان ينزل لحظة الدفع،
+   فصديق يسترجع اشتراكه يخلّي رصيد داعيه عندنا بلا مقابل. صار ينزل بعد
+   `referralHoldDays` (٧) لو اشتراك الصديق باقٍ مدفوعاً — referralTick */
 async function payReferral(s) {
   if (!s.referral_code || !(Number(s.discount_halalas) > 0) || s.gateway !== 'paylink') return;
   const own = await sb('GET', 'profiles', { query:
@@ -773,17 +778,62 @@ async function payReferral(s) {
     body: { referrer_id: o.id, invited_id: s.user_id, subscription_id: s.id },
     prefer: 'return=representation' }).catch(e => ({ message: e.message }));
   if (!Array.isArray(rf) || !rf.length) return;          /* 23505: انحسب له من قبل */
+  const amt = PRICING.referrerCreditHalalas, days = PRICING.referralHoldDays;
+  if (amt > 0 && o.telegram_chat_id)
+    sendMsg(o.telegram_chat_id, `🎁 <b>صديقك اشترك بكودك</b>\n\nينزل لك ${amt / 100} ريال رصيد ` +
+      (days > 0 ? `بعد ${days} أيام، لما تخلص مدة الاسترجاع.` : 'خلال دقائق.')).catch(() => {});
+}
+
+/* رصيد الداعي لما تخلص مدة الاسترجاع — من الدورة، **والإنتاج وحده**: القاعدة
+   مشتركة ودفعات dev تجريبية. نافذة ٦٠ يوم: دعوة اشتراكها انسترجع ما تنفحص للأبد.
+   **مرة وحدة**: نكتب الرصيد ثم نحجز الدعوة بتحديث مشروط (credit_id فاضي)، والخاسر
+   في سباق (نسختان وقت النشر) يشيل صفّه — ما ينكتب رصيدان */
+const REF_WINDOW_MS = 60 * 864e5;
+async function referralTick() {
+  if (!PL_LIVE) return;
   const amt = PRICING.referrerCreditHalalas;
   if (!(amt > 0)) return;
-  const cr = await sb('POST', 'credit_ledger', { body: {
-    user_id: o.id, amount_halalas: amt, reason: 'referral', ref: 'subscription:' + s.id,
-    note: 'صديقك اشترك بكودك', created_by: 'system', expires_at: creditExpiryISO(activeTerm()) },
-    prefer: 'return=representation' }).catch(() => null);
-  if (Array.isArray(cr) && cr.length)
-    await sb('PATCH', 'referrals', { query: `?id=eq.${rf[0].id}`, body: { credit_id: cr[0].id } }).catch(() => {});
-  if (o.telegram_chat_id)
-    sendMsg(o.telegram_chat_id, `🎁 <b>صديقك اشترك بكودك</b>\n\nنزل لك ${amt / 100} ريال رصيد، ` +
-      'ينخصم تلقائياً من اشتراكك الجاي.').catch(() => {});
+  const now = Date.now();
+  const cut = new Date(now - PRICING.referralHoldDays * 864e5).toISOString();
+  const from = new Date(now - REF_WINDOW_MS).toISOString();
+  const r = await sb('GET', 'referrals', { query: `?credit_id=is.null` +
+    `&created_at=lt.${encodeURIComponent(cut)}&created_at=gt.${encodeURIComponent(from)}` +
+    `&select=id,referrer_id,invited_id,subscription_id,created_at&order=created_at.asc&limit=50` });
+  for (const rf of (Array.isArray(r) ? r : [])) {
+    await referralGrant(rf, amt).catch(e => console.log('referral ' + rf.id + ': ' + e.message));
+  }
+}
+async function referralGrant(rf, amt) {
+  if (!rf.subscription_id) return;
+  const sr = await sb('GET', 'subscriptions', { query:
+    `?id=eq.${encodeURIComponent(rf.subscription_id)}&select=id,status,gateway&limit=1` });
+  const s = Array.isArray(sr) && sr[0];
+  if (!s || s.status !== 'paid' || s.gateway !== 'paylink') return;   /* انسترجع أو ما انحسم */
+  const ref = 'referral:' + rf.id;
+  /* انكتب الرصيد وانقطع قبل الحجز؟ نربطه بدل ما نكتب ثانٍ */
+  const had = await sb('GET', 'credit_ledger', { query:
+    `?ref=eq.${encodeURIComponent(ref)}&reason=eq.referral&select=id&limit=1` });
+  let id = Array.isArray(had) && had[0] && had[0].id, mine = false;
+  if (!id) {
+    const cr = await sb('POST', 'credit_ledger', { body: {
+      user_id: rf.referrer_id, amount_halalas: amt, reason: 'referral', ref,
+      note: 'صديقك اشترك بكودك', created_by: 'system', expires_at: creditExpiryISO(activeTerm()) },
+      prefer: 'return=representation' });
+    if (!Array.isArray(cr) || !cr.length) return;
+    id = cr[0].id; mine = true;
+  }
+  const won = await sb('PATCH', 'referrals', { query: `?id=eq.${rf.id}&credit_id=is.null`,
+    body: { credit_id: id }, prefer: 'return=representation' });
+  if (!Array.isArray(won) || !won.length) {
+    if (mine) await sb('DELETE', 'credit_ledger', { query: `?id=eq.${id}` }).catch(() => {});
+    return;
+  }
+  if (!mine) return;
+  const pr = await sb('GET', 'profiles', { query:
+    `?id=eq.${encodeURIComponent(rf.referrer_id)}&select=telegram_chat_id&limit=1` }).catch(() => []);
+  const chat = Array.isArray(pr) && pr[0] && pr[0].telegram_chat_id;
+  if (chat) sendMsg(chat, `🎁 <b>نزل لك ${amt / 100} ريال رصيد</b>\n\nصديقك اشترك بكودك وخلصت مدة ` +
+    'استرجاعه — الرصيد ينخصم تلقائياً من اشتراكك الجاي.').catch(() => {});
 }
 
 /* اسم الترم كما تعرضه الصفحة (termLabel): 202720 ⇒ «ربيع 2026/2027» */
@@ -1141,6 +1191,7 @@ async function payTick(all) {
     for (const s of (Array.isArray(r) ? r : [])) {
       await payReconcile(s).catch(e => console.log('payTick: ' + s.id + ' — ' + e.message));
     }
+    await referralTick().catch(e => console.log('referralTick: ' + e.message));
   } finally { PAY_BUSY = false }
 }
 

@@ -169,6 +169,12 @@ function supabase(method, urlPath, body, prefer) {
     hit.forEach(r => Object.assign(r, b));
     return [200, rep ? hit.map(r => Object.assign({}, r)) : []];
   }
+  /* DELETE بفلتر يشيل ما طابق — كان يرجع ٢٠٠ وما يشيل شي، فحذف يعوّض سباقاً ما ينفحص */
+  if (method === 'DELETE') {
+    const hit = filt(L, qs);
+    for (const r of hit) L.splice(L.indexOf(r), 1);
+    return [rep ? 200 : 204, rep ? hit : []];
+  }
   return [200, []];
 }
 
@@ -458,7 +464,9 @@ async function prodSuite() {
   ok(tgTo('6011', /إيصال JDW-/).some(m => /• من رصيدك: −9 ريال/.test(m.text)
      && /<b>المدفوع: 10 ريال<\/b> · عبر Paylink/.test(m.text)), 'وإيصاله: من رصيدك −٩ والمدفوع ١٠');
 
-  /* ── ٧) رصيد الداعي لحظة التسوية — مرة للأبد ── */
+  /* ── ٧) الدعوة تنسجّل لحظة التسوية — مرة للأبد، والرصيد بعد ٧ أيام (§١٠ تحت) ──
+     الشروط §٣ (الجولة الثانية): «٥ ريال رصيد بعد ٧ أيام من اشتراكه… وإذا استُرجع
+     اشتراكه قبلها، ما ينضاف لك» — كان ينزل لحظة الدفع. تغيّرت القاعدة عمداً */
   q = (await call('GET', '/api/me/quote?ref=FRD234', { tok: tokOf('u-ref') })).j;
   eq([q.discount, q.amount], [300, 1600], 'كود صديق: −٣');
   r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-ref'), body: { ref: 'frd234' } })).j;
@@ -470,12 +478,14 @@ async function prodSuite() {
   st = (await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-ref') })).j;
   eq(st.status, 'paid', 'رجع من صفحة الدفع وقد دفع: مدفوع (بلا انتظار الإشعار)');
   eq(DB.referrals.filter(x => x.invited_id === 'u-ref').length, 1, 'صف دعوة واحد');
-  eq(ledger('u-friend').map(x => [x.amount_halalas, x.reason]), [[500, 'referral']], '**والداعي نزل له ٥**');
-  eq(tgTo('7777', /صديقك اشترك/).length, 1, 'ووصله خبر على تلقرام');
+  eq(ledger('u-friend').length, 0, '**والداعي ما نزل له شي قبل مدة الاسترجاع**');
+  ok(tgTo('7777', /صديقك اشترك/).some(m => /بعد 7 أيام، لما تخلص مدة الاسترجاع/.test(m.text)),
+     'ووصله خبر: ينزل لك ٥ بعد ٧ أيام');
   await hook({ transactionNo: txr });
   await wait(4100);
   await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-ref') });
-  eq(ledger('u-friend').length, 1, '**إشعار ورجوع بعد التسوية: ولا رصيد ثانٍ**');
+  eq([ledger('u-friend').length, DB.referrals.filter(x => x.invited_id === 'u-ref').length], [0, 1],
+     '**إشعار ورجوع بعد التسوية: ولا دعوة ثانية ولا رصيد**');
 
   /* ── ٧ب) سباق: الإشعار ورجوع الطالب بنفس اللحظة ──
      الاثنان يقرون الطلب «معلّقاً» قبل ما يسوّيه أحدهما — التحديث المشروط
@@ -488,7 +498,7 @@ async function prodSuite() {
                      hook({ orderNumber: 'JDW-' + r.id })]);
   eq(sub(r.id).status, 'paid', 'السباق: مدفوع');
   eq(tgTo('6006', /اشتراكك فعّال/).length, 1, '**ثلاثة أجراس بنفس اللحظة: تفعيل واحد ورسالة وحدة**');
-  eq(ledger('u-friend2').length, 1, 'ورصيد داعٍ واحد');
+  eq(DB.referrals.filter(x => x.invited_id === 'u-race').length, 1, 'ودعوة وحدة');
 
   /* ── ٨) آخر أيام النافذة ⇒ الترم الجاي ── */
   await setWindow(riyadh(-5), riyadh(0));
@@ -559,9 +569,31 @@ async function prodSuite() {
   r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-miss'), body: {} })).j;
   sub(r.id).created_at = new Date(Date.now() - 26 * 3600e3).toISOString();
   PL.inv[sub(r.id).gateway_ref].orderStatus = 'Paid';
+  /* ودعوتان: وحدة مرّ عليها ٨ أيام واشتراكها مدفوع، والثانية انسترجع اشتراكها (§٧) */
+  const rfA = DB.referrals.find(x => x.invited_id === 'u-ref'), rfB = DB.referrals.find(x => x.invited_id === 'u-race');
+  const d8 = new Date(Date.now() - 8 * 864e5).toISOString();
+  rfA.created_at = d8; rfB.created_at = d8;
+  sub(rfB.subscription_id).status = 'refunded';
+  /* وثالثة: كتبنا رصيدها وانقطعنا قبل ما نحجز الدعوة — الدورة تربطه، ما تكتب ثانٍ */
+  DB.profiles.push(prof('u-inv3'), prof('u-friend3', { telegram_chat_id: '7779' }));
+  DB.subscriptions.push({ id: 991, user_id: 'u-inv3', status: 'paid', gateway: 'paylink', term: '203010',
+    base_halalas: 1900, pushover_halalas: 0, discount_halalas: 300, credit_halalas: 0, amount_halalas: 1600 });
+  DB.referrals.push({ id: 93, referrer_id: 'u-friend3', invited_id: 'u-inv3', subscription_id: 991,
+    credit_id: null, created_at: d8 });
+  DB.credit_ledger.push({ id: 991, user_id: 'u-friend3', amount_halalas: 500, reason: 'referral', ref: 'referral:93',
+    expires_at: '2031-01-01T20:59:59+00:00', created_at: d8 });
   await wait(10100);                              /* جرس المعلّقات مرة كل ١٠ ثواني */
   await hook({});
   eq(sub(r.id).status, 'paid', '**مدفوعة فاتها الإشعار: تُسوّى لا تُلغى**');
+  eq(ledger('u-friend').map(x => [x.amount_halalas, x.reason, x.ref]), [[500, 'referral', 'referral:' + rfA.id]],
+     '**بعد ٧ أيام والاشتراك مدفوع: الداعي نزل له ٥** — مرة وحدة');
+  eq(rfA.credit_id, ledger('u-friend')[0] && ledger('u-friend')[0].id, 'والدعوة مربوطة برصيدها — ما تنمنح ثانية');
+  await wait(300);                                  /* رسالة تلقرام ما تُنتظر */
+  ok(tgTo('7777', /<b>نزل لك 5 ريال رصيد<\/b>/).length === 1, 'ووصله «نزل لك ٥» مرة وحدة');
+  eq([ledger('u-friend2').length, rfB.credit_id || null], [0, null],
+     '**صديقه استرجع اشتراكه: ما ينزل للداعي شي**');
+  eq([ledger('u-friend3').length, (DB.referrals.find(x => x.id === 93) || {}).credit_id], [1, 991],
+     '**انقطع بين الكتابة والحجز: ربطنا رصيده ولا كتبنا ثانٍ**');
 
   /* ── ١١) اللوحة ── */
   const ap = (await call('GET', '/api/admin/pay', { admin: true })).j;
@@ -709,9 +741,16 @@ async function devSuite() {
   ok(tgTo('5555', new RegExp('إيصال JDWT-' + r.id + '</b> \\(تجربة\\)')).length === 1,
      'وإيصال التجربة مكتوب عليه «تجربة»');
   eq(P('u-own').paid_at, null, '**دفعة تجريبية ما تُحسب «دفع فعلي»** في إحصاء الإنتاج');
+  /* دعوة إنتاج نضجت (٨ أيام واشتراكها مدفوع): dev ما يمنحها — القاعدة مشتركة */
+  DB.profiles.push(prof('u-dinv'), prof('u-dref'));
+  DB.subscriptions.push({ id: 9002, user_id: 'u-dinv', status: 'paid', gateway: 'paylink', term: '203010',
+    base_halalas: 1900, pushover_halalas: 0, discount_halalas: 300, credit_halalas: 0, amount_halalas: 1600 });
+  DB.referrals.push({ id: 94, referrer_id: 'u-dref', invited_id: 'u-dinv', subscription_id: 9002, credit_id: null,
+    created_at: new Date(Date.now() - 8 * 864e5).toISOString() });
   await hook({ transactionNo: 'PROD-TX-1' });
   await hook({});
   eq(sub(9001).status, 'pending', '**صف الإنتاج المعلّق ما لمسه dev** — كل بيئة تنظّف صفوفها');
+  eq(ledger('u-dref').length, 0, '**ورصيد دعوة الإنتاج ما يمنحه dev** — الإنتاج وحده يمنح');
 }
 
 async function nokeysSuite() {
