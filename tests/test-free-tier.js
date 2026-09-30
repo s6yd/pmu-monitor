@@ -266,7 +266,8 @@ const crnsTo = chat => TG.filter(m => String(m.chat_id) === chat).map(m => m.tex
   ok(JSON.stringify(r.paused) === '[3,4]', 'المتوقفة: الثالثة و«كل الشعب» — نفس قاعدة السيرفر — ' + JSON.stringify(r.paused));
   ok(r.noPoRow === true, 'Pushover غير مضبوط في Render ⇒ ما يُعرض كإضافة');
   ok(/^19/.test(r.total0 || ''), 'الإجمالي ١٩ ريال — ' + r.total0);
-  ok(/^29/.test(r.total1 || ''), 'ومع التنبيه الطارئ ٢٩ — ' + r.total1);
+  /* السعر ١٥ ريال (قرار محمد ٣٠ سبتمبر ٢٠٢٦ — كان ١٠) */ 
+  ok(/^34/.test(r.total1 || ''), 'ومع التنبيه الطارئ ٣٤ — ' + r.total1);
   ok(r.payDisabled === true, 'زر الدفع معطّل حتى تجهز البوابة');
   ok(/حساب مجاني/.test(r.cardTitle) && /المراقبة 2 من 2/.test(r.cardSub), 'البطاقة: «حساب مجاني · المراقبة 2 من 2» — ' + r.cardSub);
   ok(r.proCap === false && r.proSlot === false && r.proPaused === 0, 'المشترك: لا حد ولا قفل ولا متوقفة');

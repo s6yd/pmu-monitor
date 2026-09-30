@@ -562,6 +562,9 @@ display:flex;align-items:center;justify-content:center}
 .ps-line{display:flex;justify-content:space-between;color:var(--text2)}
 .ps-line.good{color:var(--open)}
 .ps-note{font-size:12px;color:var(--text3);line-height:1.6}
+.ps-terms{font-size:12px;color:var(--text3);line-height:1.7;text-align:center;margin-top:8px}
+.ps-refund{font-size:12px;color:var(--text2);line-height:1.7;text-align:center;margin:0 4px 8px}
+.ps-terms a{color:var(--accent2);text-decoration:underline;text-underline-offset:2px}
 /* ═══ الدفع (§٩-ب) — بادئة pay- عمداً: ps- مستعملة في ورقة الطباعة كذلك ═══ */
 .pay-phone{margin:0 0 12px}
 .pay-phone label{display:block;font-size:12.5px;color:var(--text2);margin-bottom:6px}
@@ -774,6 +777,8 @@ color:var(--text3);display:flex;flex-wrap:wrap;gap:8px;justify-content:center;al
 .legal-foot a{color:var(--text2);text-decoration:none}
 .legal-foot a:hover{color:var(--accent2)}
 .legal-note{width:100%;margin-top:9px;font-size:11px;color:var(--text3);line-height:1.6}
+/* الجوال: البريد سطر لحاله — كانت النقطة قبله تبقى معلّقة آخر السطر الأول */
+@media (max-width:440px){.lf-dot-mail{display:none}.legal-foot .lf-mail{width:100%}}
 .guide-fab{position:fixed;bottom:20px;left:16px;z-index:200;
 background:var(--accent);color:#fff;border:none;border-radius:50%;
 width:48px;height:48px;font-size:21px;cursor:pointer;
@@ -2032,17 +2037,19 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     <div id="myRevList" class="acc-body"></div>
   </div>
 
-  <div class="legal-foot">
-    <a href="/about" target="_blank" data-i18n="legalAbout">عن جدولك</a>
-    <span>·</span>
-    <a href="/privacy" target="_blank" data-i18n="legalPrivacy">سياسة الخصوصية</a>
-    <span>·</span>
-    <a href="/terms" target="_blank" data-i18n="legalTerms">الشروط والأحكام</a>
-    <span>·</span>
-    <a href="mailto:jadwalik@gmail.com">jadwalik@gmail.com</a>
-    <div class="legal-note" data-i18n="legalNote">موقع مستقل غير تابع لجامعة الأمير محمد بن فهد</div>
-  </div>
+</div>
 
+<!-- التذييل: الروابط ووسيلة التواصل تحت كل الشاشات لا في الإعدادات وحدها (كان هناك،
+     والزائر ما يشوفه). رقم السجل التجاري في «عن جدولك» وحدها، بلا اسم المؤسسة — قرار محمد -->
+<div class="legal-foot">
+  <a href="/about" target="_blank" data-i18n="legalAbout">عن جدولك</a>
+  <span>·</span>
+  <a href="/terms" target="_blank" data-i18n="legalTerms">الشروط والأحكام</a>
+  <span>·</span>
+  <a href="/privacy" target="_blank" data-i18n="legalPrivacy">سياسة الخصوصية</a>
+  <span class="lf-dot-mail">·</span>
+  <a class="lf-mail" href="mailto:jadwalik@gmail.com">jadwalik@gmail.com</a>
+  <div class="legal-note" data-i18n="legalNote">موقع مستقل غير تابع لجامعة الأمير محمد بن فهد</div>
 </div>
 
 </div>
@@ -6298,8 +6305,14 @@ function openPlans(reason){
       <input id="psPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="05XXXXXXXX">
     </div>
     <div class="pay-msg" id="psMsg" hidden></div>
+    <div class="ps-refund" id="psRefund" hidden>${ar
+      ?'الاسترجاع خلال 7 أيام إذا ما استخدمت أي ميزة مدفوعة، بعد خصم رسوم الدفع (بحد أقصى 3 ريال).'
+      :'Refunds within 7 days if you haven\'t used any paid feature, less payment fees (up to SAR 3).'}</div>
     <button class="ps-pay" id="psPay" disabled onclick="payStart()">${ar?'الدفع يفتح قريباً':'Checkout opens soon'}</button>
-    <div class="ps-note pay-by" id="psBy" hidden>🔒 ${ar?'الدفع الآمن عبر بوابة Paylink':'Secure checkout by Paylink'}</div>
+    <div class="ps-terms" id="psTerms" hidden>${ar
+      ?'بالضغط على الدفع توافق على <a href="/terms#payment" target="_blank" rel="noopener">الشروط والأحكام</a> و<a href="/terms#refund" target="_blank" rel="noopener">سياسة الاسترجاع</a>.'
+      :'By continuing to payment, you agree to the <a href="/terms#en-payment" target="_blank" rel="noopener">Terms</a> and the <a href="/terms#en-refund" target="_blank" rel="noopener">Refund policy</a>.'}</div>
+    <div class="ps-note pay-by" id="psBy" hidden>🔒 ${ar?'الدفع الآمن عبر بوابة دفع إلكتروني':'Secure payment via an online payment gateway'}</div>
     <button class="ps-close" onclick="closePlans()">${ar?'مو الحين':'Not now'}</button>
   </div>`;
   plansTotal();
@@ -6346,6 +6359,10 @@ async function plansQuote(){
   if(q.po)h+=row(ar?'التنبيه الطارئ':'Urgent alert','+'+sarTxt(q.po));
   if(q.discount)h+=row(ar?'خصم صديقك':'Friend discount','−'+sarTxt(q.discount),'good');
   if(q.credit)h+=row(ar?'رصيدك':'Your credit','−'+sarTxt(q.credit),'good');
+  /* أقل دفع نقدي (الشروط §٣): الرقم من السيرفر — قيمة في اللوحة لا ثابت هنا */
+  if(q.credit&&q.minCash)h+=`<div class="ps-note" id="psMinCash">${ar
+    ?`أقل مبلغ تدفعه ${sarTxt(q.minCash)} ريال، والرصيد يغطي الباقي.`
+    :`You pay at least SAR ${sarTxt(q.minCash)}; credit covers the rest.`}</div>`;
   if(q.ref==='own')h+=`<div class="ps-note">${ar?'هذا كود دعوتك أنت — ما ينطبق على حسابك':'That is your own invite code'}</div>`;
   if(q.ref==='used')h+=`<div class="ps-note">${ar?'خصم الصديق لأول اشتراك فقط':'Friend discount is for a first purchase only'}</div>`;
   const lines=document.getElementById('psLines'), tot=document.getElementById('psTotal');
@@ -6360,12 +6377,13 @@ async function plansQuote(){
 
 /* ═══ الدفع (§٩-ب) ═══
    الصفحة ما تقرر شيئاً: هل يدفع، وكم، ولأي ترم — كله من السيرفر
-   (payGate · meQuote). هنا العرض والتوجيه لصفحة Paylink والرجوع منها.
-   والرجوع **جرس لا إثبات**: الصفحة تسأل السيرفر، والسيرفر يسأل Paylink. */
+   (payGate · meQuote). هنا العرض والتوجيه لصفحة الدفع عند EdfaPay والرجوع منها.
+   والرجوع **جرس لا إثبات**: الصفحة تسأل السيرفر، والسيرفر يسأل EdfaPay.
+   والنص للطالب ما يسمّي البوابة (ملف التسليم §٨-٧): «بوابة دفع إلكتروني». */
 let PS_Q=null, PAY_BUSY=false;
 /* رقم الطلب من ‎?pay=‎ يُقرأ **عند تحميل السكربت**: initAuth تمسح الرابط
    كله أول ما تلقى جلسة — قبل ما يوصل دور payReturn — فكان الطالب يرجع من
-   Paylink وما يشوف أي نتيجة */
+   صفحة الدفع وما يشوف أي نتيجة */
 let PAY_BACK=(()=>{ const m=/[?&]pay=(\d{1,12})(?:&|$)/.exec(location.search); return m?m[1]:null })();
 /* ‎?plans=1‎ يفتح ورقة الباقات مباشرة — وقت الفترة المجانية ما فيه زر «الباقات»،
    فهذا مدخل صاحب الموقع لتجربة الدفع (والزر نفسه يقرّره السيرفر كما هو) */
@@ -6391,13 +6409,19 @@ function payUi(q){
   const ar=LANG==='ar', btn=document.getElementById('psPay');
   const box=document.getElementById('psPhoneBox'), inp=document.getElementById('psPhone');
   const by=document.getElementById('psBy');
+  /* سطر الموافقة (اللائحة التنفيذية لنظام التجارة الإلكترونية: الضغط على زر الدفع
+     يُبرم العقد) — يظهر مع زر يشتري فعلاً، والتفعيل بالرصيد شراء كذلك */
+  const terms=document.getElementById('psTerms'), refund=document.getElementById('psRefund');
   if(!btn)return;
   const pay=(q&&q.pay)||{};
-  const off=txt=>{ btn.disabled=true; btn.textContent=txt; if(box)box.hidden=true; if(by)by.hidden=true };
+  const off=txt=>{ btn.disabled=true; btn.textContent=txt; if(box)box.hidden=true; if(by)by.hidden=true;
+    if(terms)terms.hidden=true; if(refund)refund.hidden=true };
   if(!q||!pay.open)return off(payClosedText(pay.why));
   if(!q.base&&!q.po)return off(ar?'اشتراكك فعّال':'Your plan is active');
   if(q.belowMin)return off(ar?'أقل مبلغ للدفع ٥ ريال':'The minimum payment is 5 SAR');
   btn.disabled=PAY_BUSY;
+  if(terms)terms.hidden=false;
+  if(refund)refund.hidden=false;                /* سياسة الاسترجاع قبل الزر — الجولة الثانية من الشروط */
   if(q.amount===0){
     btn.textContent=ar?'فعّل برصيدك':'Activate with your credit';
     if(box)box.hidden=true; if(by)by.hidden=true;
@@ -6407,7 +6431,8 @@ function payUi(q){
   if(box)box.hidden=false; if(by)by.hidden=false;
   if(inp&&!inp.value&&q.phone)inp.value=q.phone;
 }
-const payUrlOk=u=>/^https:\/\/([a-z0-9-]+\.)*paylink\.sa\//i.test(String(u||''));
+/* صفحة الدفع عند EdfaPay وحدها — نفس فحص السيرفر (epUrlOk) */
+const payUrlOk=u=>/^https:\/\/([a-z0-9-]+\.)*edfapay\.com\//i.test(String(u||''));
 async function payStart(){
   const q=PS_Q, ar=LANG==='ar';
   if(PAY_BUSY||!q||!(q.pay&&q.pay.open))return;
@@ -6484,7 +6509,7 @@ function payRefresh(){
   loadAccount(true).catch(()=>{});
   pullCloud().then(()=>{ try{ enforceSlotAndRedraw(); if(CUR_TAB==='set')renderSettings() }catch(e){} }).catch(()=>{});
 }
-/* رجع من Paylink على ‎?pay=رقم‎ — نسأل السيرفر (وهو يسأل Paylink) مرتين
+/* رجع من صفحة الدفع على ‎?pay=رقم‎ — نسأل السيرفر (وهو يسأل EdfaPay) مرتين
    ثلاث قبل ما نقول «ننتظر التأكيد»: الإشعار عادة يسبق الطالب بثوانٍ */
 async function payReturn(given){
   if(!given&&PLANS_OPEN&&USER&&!PAY_BACK){ PLANS_OPEN=false; openPlans('compare'); return }
