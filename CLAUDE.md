@@ -48,7 +48,7 @@
 - **Pushover:** طبقة تنبيه طارئ اختيارية (إضافة مدفوعة).
 
 ### متغيّرات Render
-`SITE_ENV` (prod / dev) · `SUPABASE_URL` · `SUPABASE_SERVICE_KEY` · `TELEGRAM_TOKEN` · `ADMIN_CHAT_ID` · `ADMIN_TOKEN` · `ACTIVE_TERM` · `FREE_BETA` · `MONITOR_ENABLED` · `FINALS_ENABLED` · `MAINTENANCE` · `MAINTENANCE_MSG` · `PUSHOVER_TOKEN` · `PUSHOVER_USER` · `PUSHOVER_SUBSCRIBE_URL` · `PORT` · `ANTHROPIC_API_KEY` · `AI_MODEL` · `PAYLINK_API_ID` · `PAYLINK_SECRET` · `PAYLINK_WEBHOOK_KEY`
+`SITE_ENV` (prod / dev) · `SUPABASE_URL` · `SUPABASE_SERVICE_KEY` · `TELEGRAM_TOKEN` · `ADMIN_CHAT_ID` · `ADMIN_TOKEN` · `ACTIVE_TERM` · `FREE_BETA` · `MONITOR_ENABLED` · `FINALS_ENABLED` · `MAINTENANCE` · `MAINTENANCE_MSG` · `PUSHOVER_TOKEN` · `PUSHOVER_USER` · `PUSHOVER_SUBSCRIBE_URL` · `PORT` · `ANTHROPIC_API_KEY` · `AI_MODEL` · `PAYLINK_API_ID` · `PAYLINK_SECRET` · `PAYLINK_WEBHOOK_KEY` · `EDFAPAY_API_KEY` · `EDFAPAY_WEBHOOK_SECRET`
 
 **لا يدخل أي سر المستودع أبداً.**
 
@@ -384,6 +384,15 @@
   - `paid_at` في الملف **للدفع الحقيقي وحده** (`gateway='paylink'`) — لا رصيد ولا تجربة.
     ورصيد الداعي لا يُمنح من دفعة تجريبية.
   - **`beta-toggle` في الإنتاج يرفض إطفاء الفترة المجانية بلا مفاتيح** (§١٠ صار حارساً في الكود).
+  - **EdfaPay (البوابة الجديدة، §٨ في ملف التسليم) — الدفعة الأولى: الإشعار وحده.** الدفع نفسه
+    لسا عبر Paylink، وفتح الدفع وسؤال الحالة عند EdfaPay في دفعة بعدها (شكلهما ما وصلنا كاملاً).
+    `/api/edfapay/webhook` (`epHookCheck`): توثيقهم يوقّع كل إشعار بـ`X-EdfaPay-Signature` =
+    HMAC-SHA256(السرّ، الجسم) hex، والسرّ **نختاره نحن** في لوحتهم ونفسه في `EDFAPAY_WEBHOOK_SECRET`.
+    **التوقيع على البايتات كما وصلت** (`readRaw`) — تحليل JSON وإعادته يغيّر `100.00` ⇒ `100`
+    فما يطابق أبداً (الاختبار يمسكها بمثالهم نفسه). بلا سرّ في Render ⇒ مقفل. الرفض ٤٠١ برمز
+    سببه (`no-signature` = السرّ ناقص **عندهم**: بلاه ما يرسلون الترويسة)، والمقبول ٢٠٠ فوراً وإلا
+    يعيدون ٣ مرات. ومن الجسم ما نحفظ إلا الحالة ونوعها ورقم طلبنا — واللوحة («💳 EdfaPay — الإشعار»)
+    تعرض آخر إشعار ورابط الإشعار بزر نسخ. وحتى الموقَّع **جرس لا إثبات**: التفعيل بعد سؤال الحالة.
   - الصفحة: الزر من `q.pay` (ما تقرّر شيئاً)، والجوال ١٦px، والتوجيه لرابط `paylink.sa`
     وحده. **والجوال 05 وبعدها 8 أرقام** (`payPhone` تقبل ‎+966‎ والأرقام العربية وتحوّلها) —
     **ورقم مكتوب وغلط يُرفض برسالة تقول الصح** (لقاها محمد): كان يُتجاهل بصمت ويكمل
@@ -404,7 +413,7 @@
 
 ## ٥. الاختبارات
 
-- `bash tests/run-all.sh` — فحص الصياغة + كل الاختبارات (٤١ ملفاً، ٣٣٧٥ حالة · كانت ٢١ ملفاً و٥٣٢ حالة وقت التسليم).
+- `bash tests/run-all.sh` — فحص الصياغة + كل الاختبارات (٤٢ ملفاً، ٣٤٢٦ حالة · كانت ٢١ ملفاً و٥٣٢ حالة وقت التسليم).
 - **يحتاج Playwright — ثبّته بنسخة تطابق المتصفح المثبّت مسبقاً:**
 
   ```bash

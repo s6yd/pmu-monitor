@@ -1208,6 +1208,7 @@ async function adminPay() {
     testIdInProd: PL_LIVE && PL_ID === PL_PUBLIC_TEST_ID, hookSet: !!PL_HOOK_KEY,
     hookLen: PL_HOOK_KEY.length, hookHidden: PL_HOOK_HIDDEN, hookLast: PAY_HOOK_LAST,
     freeBeta: FREE_BETA, openTo: !PL_READY ? 'none' : (!PL_LIVE || FREE_BETA) ? 'owner' : 'all',
+    edfapay: adminPayEdfa(),
     counts: { pending: n('pending'), paid: n('paid'), failed: n('failed') },
     paidHalalas: rows.filter(x => x.status === 'paid' && x.gateway === PL_GATEWAY)
       .reduce((s, x) => s + (Number(x.amount_halalas) || 0), 0),
@@ -1221,6 +1222,83 @@ async function adminPayPing() {
   const t0 = Date.now();
   try { await plToken(true); return { ok: true, ms: Date.now() - t0, host: PL_HOST } }
   catch (e) { return { ok: false, error: e.message } }
+}
+/* ── EdfaPay (§٨ في ملف التسليم): الإشعار الموقَّع ──
+   هذي أول دفعة منها: **استقبال الإشعار والتحقق من توقيعه** — محمد يضبطه في
+   لوحة EdfaPay ويجرّبه من الحين، واللوحة تقول وصل ولا لا وليش. فتح الدفع
+   وسؤال الحالة في دفعة بعدها (شكلهما في توثيقهم ما وصلنا كاملاً بعد).
+
+   من توثيقهم (Webhook · Webhook Validation):
+   · POST بـ`Content-Type: text/plain` وجسمه JSON، والرد لازم ٢٠٠ — وإلا يعيدون
+     الإرسال ٣ مرات.
+   · ترويسة `X-EdfaPay-Signature` = HMAC-SHA256(السرّ، الجسم كما وصل) بصيغة hex.
+     السرّ **نختاره نحن** في لوحتهم، ونفسه في Render: `EDFAPAY_WEBHOOK_SECRET`.
+   · **التوقيع على البايتات كما وصلت**: تحليل JSON ثم إعادته نصاً يغيّر الجسم
+     (`100.00` ⇒ `100`) فما يطابق أبداً — توثيقهم يحذّر منها بالاسم.
+   · بلا سرّ عندهم ما يرسلون الترويسة أصلاً — فغيابها يعني السرّ ناقص **عندهم**،
+     والرد واللوحة يقولان كذا.
+   بلا سرّ في Render الإشعار مقفل (لا «مفتوح للكل») · المقارنة ثابتة الزمن ·
+   السرّ والتوقيع ما ينكتبان في سجل ولا لوحة — أطوال وأسباب بس. وحتى الموقَّع
+   **جرس لا إثبات** (§٨-٣): التفعيل بعد ما نسأل EdfaPay بأنفسنا. */
+const EP_KEY = (process.env.EDFAPAY_API_KEY || '').trim();
+const EP_HOOK_SECRET = payKeyNorm(process.env.EDFAPAY_WEBHOOK_SECRET);
+const EP_HOOK_HIDDEN = payKeyHidden(process.env.EDFAPAY_WEBHOOK_SECRET);
+const EP_HOOK_MAX = 256 * 1024;
+let EP_HOOK_LAST = null;
+let EP_HOOK_OK_AT = null;                     /* آخر إشعار مقبول — ما يغطّيه رفض بعده */
+const EP_HOOK_LOGGED = {};                    /* سطر لكل سبب بالدقيقة على الأكثر */
+const EP_HOOK_WHY = { nosecret: 'no-secret-configured', nosig: 'no-signature',
+  bad: 'bad-signature', big: 'too-large' };
+
+/* الجسم بايتات كما وصل — لا JSON.parse قبل التحقق */
+function readRaw(req, max) {
+  return new Promise(resolve => {
+    const parts = [];
+    let n = 0, big = false;
+    req.on('data', c => { n += c.length; if (n > max) big = true; else parts.push(c) });
+    req.on('end', () => resolve({ raw: Buffer.concat(parts), big }));
+    req.on('error', () => resolve({ raw: Buffer.alloc(0), big: true }));
+  });
+}
+const epSign = (secret, raw) => crypto.createHmac('sha256', secret).update(raw).digest('hex');
+
+function epHookCheck(req, raw, big) {
+  const sig = String(req.headers['x-edfapay-signature'] || '').trim().toLowerCase();
+  const why = !EP_HOOK_SECRET ? 'nosecret' : big ? 'big' : !sig ? 'nosig'
+    : safeEqual(sig, epSign(EP_HOOK_SECRET, raw)) ? 'ok' : 'bad';
+  const ok = why === 'ok';
+  /* الجسم نقرأه **بعد** التوقيع وحده، وما نحفظ منه إلا الحالة ونوعها ورقم
+     الطلب لو من طلباتنا — لا بطاقة ولا مبلغ ولا اسم */
+  let info = {};
+  if (ok) {
+    let b = null;
+    try { b = JSON.parse(raw.toString('utf8')) } catch (e) {}
+    const w = v => /^[A-Za-z _-]{1,30}$/.test(String(v || '')) ? String(v) : '';
+    const ord = String((b && b.orderId) || '');
+    info = { json: !!b, status: w(b && b.status), type: w(b && b.type),
+      order: /^JDWT?-\d{1,12}$/.test(ord) ? ord : ord ? 'other' : '' };
+  }
+  const at = new Date().toISOString();
+  if (ok) EP_HOOK_OK_AT = at;
+  EP_HOOK_LAST = Object.assign({ at, ok, why, sigLen: sig.length, bytes: raw.length,
+    want: EP_HOOK_SECRET.length, okAt: EP_HOOK_OK_AT }, info);
+  req.epHookWhy = EP_HOOK_WHY[why] || '';
+  if (Date.now() - (EP_HOOK_LOGGED[why] || 0) >= 60 * 1000) {
+    EP_HOOK_LOGGED[why] = Date.now();
+    console.log('pay: إشعار EdfaPay ' + ({
+      ok: `مقبول (${info.status || '؟'} · ${info.type || '؟'}` +
+        (info.order && info.order !== 'other' ? ' · ' + info.order : '') + ')',
+      nosecret: 'مرفوض — EDFAPAY_WEBHOOK_SECRET ناقص في Render',
+      nosig: 'مرفوض — بلا ترويسة توقيع: سرّ الإشعار ما انكتب في لوحة EdfaPay',
+      bad: `مرفوض — التوقيع ما طابق: السرّ في لوحة EdfaPay غير اللي في Render (${EP_HOOK_SECRET.length} حرف)`,
+      big: 'مرفوض — الجسم أكبر من المعقول',
+    }[why]));
+  }
+  return ok;
+}
+function adminPayEdfa() {
+  return { keySet: !!EP_KEY, hookSet: !!EP_HOOK_SECRET, hookLen: EP_HOOK_SECRET.length,
+    hookHidden: EP_HOOK_HIDDEN, hookLast: EP_HOOK_LAST };
 }
 /* ═══ نهاية بوابة الدفع ═══ */
 
@@ -10314,6 +10392,18 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  /* إشعار EdfaPay: التوقيع أولاً على الجسم كما وصل. الرفض ٤٠١ برمز سببه
+     (توثيقهم: 401 أو 403)، والمقبول ٢٠٠ فوراً — وإلا يعيدون الإرسال */
+  if (parsed.pathname === '/api/edfapay/webhook' && req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    const { raw, big } = await readRaw(req, EP_HOOK_MAX);
+    if (!epHookCheck(req, raw, big)) {
+      res.writeHead(401); res.end(JSON.stringify({ ok: false, why: req.epHookWhy })); return;
+    }
+    res.writeHead(200); res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
   /* إشعار Paylink: جرس لا إثبات — نسأل Paylink بأنفسنا قبل أي تفعيل.
      نرد ٢٠٠ بعد ما نتحقق من الترويسة، حتى لو ما لقينا الطلب: ردّ غيره
      يخلّيهم يعيدون الإرسال بلا فايدة. */
@@ -10716,6 +10806,8 @@ server.listen(PORT, () => {
     : (PL_ID && PL_SECRET) ? 'مفتاح التجربة العام مرفوض في الإنتاج' : 'المفاتيح ناقصة') +
     ` · الإشعار ${!PL_HOOK_KEY ? 'بلا مفتاح' : `مضبوط (${PL_HOOK_KEY.length} حرف` +
       (PL_HOOK_HIDDEN ? ` · تجاهلنا ${PL_HOOK_HIDDEN} حرف مخفي` : '') + ')'}`);
+  console.log(`pay: EdfaPay · المفتاح ${EP_KEY ? 'مضبوط' : 'ناقص'} · الإشعار ` + (!EP_HOOK_SECRET ? 'بلا سرّ'
+    : `مضبوط (${EP_HOOK_SECRET.length} حرف` + (EP_HOOK_HIDDEN ? ` · تجاهلنا ${EP_HOOK_HIDDEN} حرف مخفي` : '') + ')'));
   /* التسخين المسبق: فحص كل 20 ثانية، وما يسحب إلا لو فيه تركيبة
      مطلوبة قاربت صلاحيتها تنتهي — والمفتاح مطفأ افتراضياً. */
   setInterval(() => { prewarmTick().catch(() => {}) }, 20000);

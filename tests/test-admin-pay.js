@@ -152,6 +152,52 @@ const server = http.createServer((req, res) => {
   ok(await page.evaluate(() => !!document.querySelector('#payCard button[onclick*="loadPay"]')),
      'زر «تحديث» يقرأ آخر إشعار بلا ما تعيد فتح اللوحة');
 
+  /* ── ٦) EdfaPay: الإشعار الموقَّع — محمد يضبطه في لوحتهم ويشوف هنا وصل ولا لا ── */
+  const epc = () => page.evaluate(() => [...document.querySelectorAll('#payCard .maint-t')]
+    .some(x => /EdfaPay/.test(x.textContent)));
+  t = await card(Object.assign({}, base, { hookLast: null }));
+  ok(!(await epc()), 'سيرفر بلا معلومات EdfaPay: ما فيه بطاقة');
+  const ep = e => Object.assign({}, base, { hookLast: null,
+    edfapay: Object.assign({ keySet: true, hookSet: true, hookLen: 29, hookHidden: 0, hookLast: null }, e) });
+  const epLast = o => ep({ hookLast: Object.assign({ at: ago(3), ok: false, why: 'bad', sigLen: 64, bytes: 420,
+    want: 29, okAt: null }, o) });
+
+  t = await card(ep({ keySet: false, hookSet: false, hookLen: 0 }));
+  ok(await epc(), '**بطاقة EdfaPay تطلع**');
+  ok(/EDFAPAY_API_KEY/.test(t) && /EDFAPAY_WEBHOOK_SECRET/.test(t), 'بلا مفاتيح: يسمّي المتغيّرين — ' + t.slice(-400));
+  ok(/الدفع الحين عبر Paylink/.test(t), 'ويقول بصدق إن الدفع نفسه لسا عبر Paylink');
+  ok(await page.evaluate(() => document.querySelector('#payCard').textContent
+     .includes(location.origin + '/api/edfapay/webhook')), '**رابط الإشعار على نطاق اللوحة نفسها** (الإنتاج أو dev)');
+
+  t = await card(ep({}));
+  ok(/سرّ الإشعار\s*مضبوط · 29 حرف/.test(t), 'السرّ مضبوط وطوله');
+  ok(/ما وصل شي من آخر تشغيل/.test(t.slice(t.indexOf('EdfaPay'))) && /لوحة EdfaPay/.test(t), 'ما وصل شي: يقول جرّبه من لوحتهم');
+
+  t = await card(epLast({ ok: true, why: 'ok', at: ago(0), json: true, status: 'Approved', type: 'Purchase', order: 'JDW-77' }));
+  ok(/✅ مقبول · الآن/.test(t) && /Approved/.test(t) && /Purchase/.test(t) && /JDW-77/.test(t),
+     '**مقبول: الحالة والنوع ورقم طلبنا** — ' + t.slice(-300));
+  t = await card(epLast({ ok: true, why: 'ok', json: true, status: 'Success', type: 'Purchase', order: 'other' }));
+  ok(/مو من طلباتنا/.test(t), 'رقم طلب مو من طلباتنا: يقول إنه تجربة');
+  t = await card(epLast({ ok: true, why: 'ok', json: false }));
+  ok(/مو JSON/.test(t), 'موقَّع وجسمه مو JSON: يقولها');
+
+  t = await card(epLast({ why: 'nosig', sigLen: 0 }));
+  ok(/❌ مرفوض · قبل 3 د/.test(t) && /بلا توقيع/.test(t) && /Webhook Secret/.test(t),
+     '**بلا توقيع: يقول اكتب السرّ في خانة Webhook Secret عندهم** — ' + t.slice(-300));
+  t = await card(epLast({ why: 'bad' }));
+  ok(/التوقيع ما طابق/.test(t) && /عندنا 29 حرف/.test(t), '**توقيع غلط: السرّان مختلفان، بطول سرّنا**');
+  t = await card(epLast({ why: 'nosecret', want: 0 }));
+  ok(/EDFAPAY_WEBHOOK_SECRET/.test(t) && /ناقص في Render/.test(t), 'بلا سرّ في Render: يسمّي المتغيّر');
+  t = await card(epLast({ why: 'bad', okAt: ago(120) }));
+  ok(/آخر إشعار مقبول: قبل 2 س/.test(t), 'رفض بعد قبول: يذكر آخر مقبول');
+  t = await card(epLast({ ok: true, why: 'ok', json: true, status: '<img src=x onerror=alert(1)>', order: '<img src=y>' }));
+  ok(await page.$('#payCard img') === null, '**قيم فيها وسم تُهرَّب**');
+
+  await page.evaluate(() => document.querySelector('#payCard button[onclick^="payCopy"]').click());
+  await page.waitForTimeout(300);
+  const tc = await page.evaluate(() => (document.querySelector('.toast') || {}).textContent || '');
+  ok(/انسخ الرابط|\/api\/edfapay\/webhook/.test(tc), 'زر «انسخ» ينسخ الرابط — ' + tc);
+
   ok(errs.length === 0, 'بلا أخطاء JS — ' + errs.slice(0, 2).join(' | '));
   if (SHOT) {
     t = await card(last({ why: 'mismatch', via: 'x-jadwalik-key', len: 49, hidden: 1, okAt: ago(90),
@@ -163,6 +209,11 @@ const server = http.createServer((req, res) => {
       document.body.appendChild(el); document.body.style.display = 'block';
     });
     await page.screenshot({ path: path.join(SHOT, 'admin-pay-card.png'), fullPage: true });
+    /* واللوحة ثيم واحد (داكن) — بطاقة EdfaPay بحالتين: مرفوض بلا توقيع · مقبول */
+    await card(epLast({ why: 'nosig', sigLen: 0, okAt: ago(90) }));
+    await page.screenshot({ path: path.join(SHOT, 'admin-edfapay-nosig.png'), fullPage: true });
+    await card(epLast({ ok: true, why: 'ok', at: ago(0), json: true, status: 'Approved', type: 'Purchase', order: 'JDW-77' }));
+    await page.screenshot({ path: path.join(SHOT, 'admin-edfapay-ok.png'), fullPage: true });
   }
   await browser.close();
   server.close();

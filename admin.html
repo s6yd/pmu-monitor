@@ -2040,7 +2040,51 @@ function payCardHTML(){
     <div class="row-meta" style="margin-top:10px">
       <button class="mini go" onclick="payPing(this)">🔌 جرّب الاتصال</button>
       <button class="mini" onclick="loadPay(true)">🔄 تحديث</button></div>
+  </div>`+payEpHTML(d.edfapay);
+}
+/* EdfaPay — أول دفعة: الإشعار وحده (الدفع نفسه عبر Paylink لين نربطه). محمد يضبط
+   الرابط والسرّ في لوحة EdfaPay ويجرّب من هناك، وهنا يشوف وصل ولا لا وليش.
+   الأسباب رموز من السيرفر، والسرّ ما يوصل اللوحة — طوله بس */
+function payEpHTML(e){
+  if(!e)return '';
+  const tip=s=>`<div class="gauge-sub" style="margin:2px 0 8px;line-height:1.7;font-size:12px;color:var(--text2)">${s}</div>`;
+  const code=s=>`<span class="ltr" style="font-family:var(--mono)">${esc(s)}</span>`;
+  const url=location.origin+'/api/edfapay/webhook';
+  const key=e.keySet?'<b style="color:var(--open)">مضبوط</b>'
+    :`<b style="color:var(--warn)">ناقص — ${code('EDFAPAY_API_KEY')}</b>`;
+  const sec=e.hookSet?`<b style="color:var(--open)">مضبوط · ${Number(e.hookLen)||0} حرف${
+      e.hookHidden?` · تجاهلنا ${Number(e.hookHidden)} حرف مخفي`:''}</b>`
+    :`<b style="color:var(--warn)">بلا سرّ — ${code('EDFAPAY_WEBHOOK_SECRET')}</b>`;
+  const L=e.hookLast;
+  let last;
+  if(!L)last=`<div class="kv"><span>آخر إشعار</span><b style="color:var(--text3)">ما وصل شي من آخر تشغيل</b></div>`+
+    (e.hookSet?tip('جرّبه من إعدادات الإشعار في لوحة EdfaPay، وبعدها «🔄 تحديث» هنا.'):'');
+  else if(L.ok)last=`<div class="kv"><span>آخر إشعار</span><b style="color:var(--open)">✅ مقبول · ${esc(payAgo(L.at))}</b></div>`+
+    tip(!L.json?'التوقيع صحيح، والجسم مو JSON (إشعار تجربة؟).'
+      :`الحالة ${code(L.status||'؟')} · النوع ${code(L.type||'؟')}`+
+       (L.order&&L.order!=='other'?` · الطلب ${code(L.order)}`:L.order==='other'?' · رقم طلب مو من طلباتنا (تجربة)':''));
+  else last=`<div class="kv"><span>آخر إشعار</span><b style="color:var(--close)">❌ مرفوض · ${esc(payAgo(L.at))}</b></div>`+
+    tip(({
+      nosecret:`${code('EDFAPAY_WEBHOOK_SECRET')} ناقص في Render — أضفه بنفس السرّ اللي في لوحة EdfaPay وانشر.`,
+      nosig:'وصل الإشعار <b>بلا توقيع</b>: EdfaPay ما يوقّع إلا لو كتبت السرّ في خانة <b>Webhook Secret</b> عندهم. اكتب نفس السرّ اللي في Render.',
+      bad:`التوقيع ما طابق: السرّ في لوحة EdfaPay غير اللي في Render (عندنا ${Number(L.want)||0} حرف). انسخ نفس السرّ في الخانتين.`,
+      big:`الجسم أكبر من المعقول (${Number(L.bytes)||0} بايت) — ما قريناه.`
+    })[L.why]||esc(L.why))+(L.okAt&&L.okAt!==L.at?tip(`وآخر إشعار مقبول: ${esc(payAgo(L.okAt))}.`):'');
+  return `<div class="gauge" style="margin-bottom:12px">
+    <div class="maint-t">💳 EdfaPay — الإشعار</div>
+    <div class="gauge-sub" style="margin-bottom:6px">الدفع الحين عبر Paylink. هنا تجرّب إشعار EdfaPay قبل ما نربط الدفع نفسه.</div>
+    <div class="kv"><span>المفتاح</span>${key}</div>
+    <div class="kv"><span>سرّ الإشعار</span>${sec}</div>
+    <div class="kv"><span>رابط الإشعار</span><button class="mini" data-v="${esc(url)}" onclick="payCopy(this)">📋 انسخ</button></div>
+    <div dir="ltr" style="text-align:left;font-family:var(--mono);font-size:12px;overflow-wrap:break-word;margin:-2px 0 8px">${esc(url)}</div>
+    ${last}
   </div>`;
+}
+function payCopy(b){
+  const v=b&&b.dataset.v||'';
+  if(navigator.clipboard&&navigator.clipboard.writeText)
+    navigator.clipboard.writeText(v).then(()=>toast('انسخ الرابط','ok'),()=>toast(v,'ok'));
+  else toast(v,'ok');
 }
 /* آخر إشعار وصل من Paylink وليش انرفض — زر Test عندهم يرجّع رمزاً بس،
    والسيرفر يحفظ الأسماء والأطوال (لا القيم). في الذاكرة: يفضى مع كل نشر */
