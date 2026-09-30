@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>عن جدولك | About Jadwalik</title>
-<meta name="description" content="عن جدولك — أداة مستقلة لطلاب جامعة الأمير محمد بن فهد لبناء الجدول ومتابعة الخطة الدراسية.">
+<meta name="description" content="عن جدولك — منصة مستقلة لطلاب جامعة الأمير محمد بن فهد: بناء الجدول، ومراقبة الشعب، والخطة الدراسية، والباقات والأسعار.">
 <style>
 :root{
 --bg:#080b12;--card:#131928;--border:#1e2740;--accent:#3d6fff;--accent2:#6b8fff;
@@ -30,6 +30,7 @@ h1{font-size:23px;font-weight:700;margin-bottom:6px;line-height:1.3}
 .updated{font-size:12px;color:var(--text3);font-family:var(--mono);margin-bottom:24px}
 h2{font-size:16px;font-weight:700;margin:30px 0 10px;color:var(--accent2)}
 h3{font-size:14px;font-weight:600;margin:18px 0 7px}
+h2[id]{scroll-margin-top:16px}
 p{font-size:14.5px;color:var(--text2);margin-bottom:12px}
 ul{margin:0 0 14px;padding-inline-start:20px}
 li{font-size:14.5px;color:var(--text2);margin-bottom:8px}
@@ -68,7 +69,7 @@ background:var(--card);padding:2px 7px;border-radius:5px}
 <h1>عن جدولك</h1>
 <div class="updated">jadwalik.com</div>
 
-<p><b>جدولك</b> أداة مستقلة تساعد طلاب جامعة الأمير محمد بن فهد على بناء جداولهم ومتابعة خططهم الدراسية، من الجوال، بالعربي والإنجليزي.</p>
+<p><b>جدولك</b> منصة مستقلة تساعد طلاب جامعة الأمير محمد بن فهد على بناء جداولهم ومتابعة خططهم الدراسية ويومهم الدراسي، من الجوال، بالعربي والإنجليزي. تشتغل في الموقع وفي بوت تيليغرام <b>@JadwalikBot</b>.</p>
 
 <div class="box">
 <p>بدأ لأن ترتيب الجدول كل ترم كان يستهلك وقتاً أطول مما يستحق: تفتح الجدول الرئيسي، تنسخ الأوقات، تحسب التعارض بيدك، وترجع تتأكد. جدولك يختصر هذا في مكان واحد.</p>
@@ -76,35 +77,55 @@ background:var(--card);padding:2px 7px;border-radius:5px}
 
 <h2>وش يسوّي</h2>
 <ul>
-<li><b>البحث في المواد</b> — بكود المادة أو رقم الشعبة أو اسم الدكتور، مع حالة المقاعد</li>
-<li><b>بناء الجدول</b> — ثلاثة جداول تجريبية، وكشف التعارض في الأوقات تلقائياً</li>
-<li><b>الخطة الدراسية</b> — المواد المنتهية، الساعات المتبقية، المعدل، ومقترح الترم القادم</li>
-<li><b>مراقبة المواد المسكّرة</b> — إشعار على تيليغرام أول ما ينفتح مقعد</li>
+<li><b>البحث في الشعب</b> — بكود المادة أو رقم الشعبة أو اسم الدكتور: الأوقات والقاعة وحالة المقاعد</li>
+<li><b>بناء الجدول</b> — مع كشف التعارض تلقائياً، وباني الجداول الذكي اللي يقترح أفضل ٣ توليفات حسب تفضيلاتك</li>
+<li><b>مراقبة الشعب الممتلئة</b> — تنبيه على تيليغرام أول ما يتوفّر مقعد، خلال فترات التسجيل</li>
+<li><b>الخطة الدراسية</b> — لواحد وعشرين تخصصاً: المواد المنتهية، والساعات المتبقية، والمعدل و«ماذا لو»، ومقترح الترم الجاي، وتوقّع التخرج</li>
+<li><b>يومك الدراسي</b> — جدول اليوم، وعدّاد الغياب مع تحذير قبل الحرمان، ومواعيد المواد، وتذكيرات على تيليغرام</li>
+<li><b>المساعد الذكي Jadwalik AI</b> — اسأله في الموقع أو في البوت عن يومك وغيابك وخطتك والقاعات الفاضية</li>
 <li><b>تقييمات الدكاترة</b> — آراء الطلاب، تُنشر بدون أسماء</li>
-<li><b>التقويم الأكاديمي</b> — تواريخ الحذف والإضافة والانسحاب والإجازات</li>
+<li><b>معلومات عامة</b> — القاعات الفاضية، وجدول الاختبارات النهائية، والتقويم الأكاديمي</li>
 </ul>
 
 <h2>من وين تجي بيانات المواد</h2>
-<p>من الجدول الرئيسي المعلن على موقع الجامعة، وهي معلومات عامة متاحة للجميع. جدولك يقرأها ويعرضها بشكل أسهل، ولا يصل لأي حساب طالب في أنظمة الجامعة، ولا يسجّل لك في أي مادة.</p>
+<p>من الجدول الرئيسي المعلن على موقع الجامعة، وهي معلومات عامة متاحة للجميع. جدولك يقرأها ويعرضها بشكل أسهل، ولا يصل لأي حساب طالب في أنظمة الجامعة، ولا يسجّل لك في أي مادة. أما جدولك الشخصي وخطتك ودرجاتك فتدخلها أنت بنفسك، وما تجينا من الجامعة.</p>
 
 <div class="box warn">
 <p><b>مستقل تماماً:</b> جدولك غير تابع لجامعة الأمير محمد بن فهد ولا معتمد منها ولا مرتبط بها بأي صفة رسمية. اسم الجامعة يُذكر للتعريف بمجال الخدمة فقط. التسجيل الفعلي في المواد يتم حصراً عبر أنظمة الجامعة.</p>
 </div>
 
-<h2>الوضع الحالي</h2>
-<p>الموقع في <b>فترة تجريبية مجانية بالكامل</b>. كل الميزات مفتوحة للجميع بدون أي رسوم، وما فيه أي عملية دفع ولا وسيلة دفع داخل الموقع. نخطط لإضافة خطة مدفوعة لبعض الميزات لاحقاً، وبنعلن التفاصيل داخل الموقع قبل وقت كافٍ. التفاصيل في <a href="/terms">الشروط والأحكام</a>.</p>
+<h2 id="pricing">الباقات والأسعار</h2>
+<div class="box">
+<p><b>الحين فترة مجانية:</b> كل الميزات مفتوحة للجميع بدون رسوم حتى نعلن إطلاق الاشتراكات. بنعلن موعد انتهائها داخل الموقع وعلى تيليغرام قبلها بوقت كافٍ، وما يُخصم منك أي مبلغ بدون موافقتك.</p>
+</div>
+<table>
+<tr><th>الباقة</th><th>السعر</th><th>تشمل</th></tr>
+<tr><td><b>المجانية</b></td><td>مجاناً، دائماً</td><td>مراقبة شعبتين، وجدول واحد، وتنبيهات تيليغرام، وباقي ميزات الموقع، والمساعد الذكي بأدواته العامة</td></tr>
+<tr><td><b>اشتراك الترم</b></td><td>١٩ ريال للترم</td><td>مراقبة بلا حد، ومراقبة كل شعب المادة مرة وحدة، و٣ جداول بديلة، والمساعد الذكي كامل بأدواته الشخصية</td></tr>
+<tr><td><b>التنبيه الطارئ</b><br>إضافة اختيارية</td><td>+١٠ ريال للترم</td><td>تنبيه يرن حتى لو الجوال صامت، مع اشتراك الترم فقط</td></tr>
+</table>
+<ul>
+<li>تدفع <b>مرة وحدة للترم</b> بدون تجديد تلقائي، والاشتراك يمتد لآخر يوم في الاختبارات النهائية</li>
+<li>الأسعار نهائية، بدون أي رسوم أو ضرائب إضافية وقت الدفع</li>
+<li><b>ما نبيع الأسبقية:</b> سرعة فحص الشعب واحدة للكل، مجانيين ومشتركين</li>
+</ul>
+<p>التفاصيل الكاملة في <a href="/terms#payment">الاشتراك والدفع</a> و<a href="/terms#refund">سياسة الاسترجاع</a>.</p>
+
+<h2>مين يدير جدولك</h2>
+<p>تدير جدولك <b>مؤسسة محمد اسامه المسبح لتقنية المعلومات</b>، سجل تجاري رقم 7055288521، في المملكة العربية السعودية.</p>
 
 <h2>الخصوصية باختصار</h2>
 <ul>
 <li>ما نستخدم أي أداة تتبع إعلاني — ولا واحدة</li>
 <li>ما نبيع بياناتك ولا نشاركها لأغراض إعلانية</li>
-<li>ما نطلب رقم هويتك ولا رقمك الجامعي ولا أي بيانات بنكية</li>
+<li>ما نطلب رقم هويتك ولا رقمك الجامعي</li>
+<li>بيانات بطاقتك تدخلها في صفحة بوابة الدفع مباشرة، وما توصلنا أبداً</li>
 <li>تقدر تطلب حذف حسابك وكل بياناتك في أي وقت</li>
 </ul>
 <p>التفاصيل الكاملة في <a href="/privacy">سياسة الخصوصية</a>.</p>
 
 <h2>التواصل</h2>
-<p>ملاحظة أو اقتراح أو مشكلة؟ <a href="mailto:jadwalik@gmail.com">jadwalik@gmail.com</a> — أو من زر الملاحظات داخل الموقع. نقرأ كل رسالة.</p>
+<p>ملاحظة أو اقتراح أو مشكلة؟ راسلنا على <a href="mailto:jadwalik@gmail.com">jadwalik@gmail.com</a>، أو من زر الملاحظات داخل الموقع، أو اكتب لبوت تيليغرام <b>@JadwalikBot</b> واختر «📩 أرسلها لفريق جدولك». نقرأ كل رسالة.</p>
 
 </div>
 
@@ -114,7 +135,7 @@ background:var(--card);padding:2px 7px;border-radius:5px}
 <h1>About Jadwalik</h1>
 <div class="updated">jadwalik.com</div>
 
-<p><b>Jadwalik</b> is an independent tool that helps students at Prince Mohammad Bin Fahd University build their schedules and follow their degree plans — from a phone, in Arabic and English.</p>
+<p><b>Jadwalik</b> is an independent platform that helps students at Prince Mohammad Bin Fahd University build their schedules and keep track of their degree plans and their study day — from a phone, in Arabic and English. It works on the website and in the Telegram bot <b>@JadwalikBot</b>.</p>
 
 <div class="box">
 <p>It started because arranging a schedule each term took longer than it should: open the master schedule, copy the times, work out the clashes by hand, then check again. Jadwalik puts that in one place.</p>
@@ -122,35 +143,55 @@ background:var(--card);padding:2px 7px;border-radius:5px}
 
 <h2>What it does</h2>
 <ul>
-<li><b>Course search</b> — by course code, CRN or instructor name, with live seat status</li>
-<li><b>Schedule building</b> — three draft schedules, with automatic time-conflict detection</li>
-<li><b>Degree plan</b> — completed courses, remaining hours, GPA, and a suggestion for next term</li>
-<li><b>Closed-section monitoring</b> — a Telegram alert the moment a seat opens</li>
+<li><b>Section search</b> — by course code, CRN or instructor name: times, room and seat status</li>
+<li><b>Schedule building</b> — with automatic conflict detection, plus a smart schedule builder that suggests the best 3 combinations for your preferences</li>
+<li><b>Full-section monitoring</b> — a Telegram alert the moment a seat opens, during registration periods</li>
+<li><b>Degree plan</b> — for twenty-one majors: completed courses, remaining hours, GPA and "what if", next-term suggestions, and a graduation estimate</li>
+<li><b>Your study day</b> — today's classes, an absence counter that warns you before exclusion, course deadlines, and reminders on Telegram</li>
+<li><b>Jadwalik AI assistant</b> — ask it on the website or in the bot about your day, your absences, your plan or free rooms</li>
 <li><b>Instructor ratings</b> — students' opinions, published without names</li>
-<li><b>Academic calendar</b> — add/drop, withdrawal and holiday dates</li>
+<li><b>General information</b> — free rooms, the final exam schedule, and the academic calendar</li>
 </ul>
 
 <h2>Where course data comes from</h2>
-<p>From the master schedule published publicly on the university's website — information already available to everyone. Jadwalik reads it and presents it more conveniently. It never accesses any student account in university systems, and it never registers you in any course.</p>
+<p>From the master schedule published publicly on the university's website — information already available to everyone. Jadwalik reads it and presents it more conveniently. It never accesses any student account in university systems, and it never registers you in any course. Your personal schedule, plan and grades are entered by you; they do not come to us from the university.</p>
 
 <div class="box warn">
 <p><b>Fully independent:</b> Jadwalik is not affiliated with, endorsed by, or officially connected to Prince Mohammad Bin Fahd University in any capacity. The university name is used only to describe the scope of the service. Actual course registration happens exclusively through the university's own systems.</p>
 </div>
 
-<h2>Where things stand</h2>
-<p>The site is in a <b>completely free trial period</b>. Every feature is open to everyone at no charge, and there is no payment process or payment method inside the site. We plan to add a paid plan for some features later, and we will announce the details in the app well in advance. See the <a href="/terms">Terms of Service</a>.</p>
+<h2 id="en-pricing">Plans and prices</h2>
+<div class="box">
+<p><b>Free period right now:</b> every feature is open to everyone at no cost until we announce the launch of subscriptions. We will announce when it ends in the app and on Telegram well in advance, and you will never be charged without your consent.</p>
+</div>
+<table>
+<tr><th>Plan</th><th>Price</th><th>Includes</th></tr>
+<tr><td><b>Free</b></td><td>Free, always</td><td>Two section watches, one schedule, Telegram alerts, the rest of the site, and the AI assistant's general tools</td></tr>
+<tr><td><b>Term subscription</b></td><td>SAR 19 per term</td><td>Unlimited watches, watching every section of a course at once, 3 alternative schedules, and the full AI assistant with its personal tools</td></tr>
+<tr><td><b>Emergency alert</b><br>optional add-on</td><td>+ SAR 10 per term</td><td>An alert that rings even when your phone is on silent; available with a term subscription only</td></tr>
+</table>
+<ul>
+<li>You pay <b>once per term</b> with no auto-renewal, and your subscription runs until the last day of that term's final exams</li>
+<li>Prices are final, with no extra fees or taxes added at checkout</li>
+<li><b>We do not sell priority:</b> section checking runs at the same speed for everyone, free or paid</li>
+</ul>
+<p>Full details in <a href="/terms#en-payment">Subscription and payment</a> and the <a href="/terms#en-refund">Refund policy</a>.</p>
+
+<h2>Who runs Jadwalik</h2>
+<p>Jadwalik is operated by <b>Mohammad Osama AlMusabbeh Establishment for Information Technology</b>, commercial registration no. 7055288521, Saudi Arabia.</p>
 
 <h2>Privacy in short</h2>
 <ul>
 <li>We use no advertising trackers — not one</li>
 <li>We do not sell your data or share it for advertising</li>
-<li>We never ask for your national ID, university ID, or any banking details</li>
+<li>We never ask for your national ID or university ID</li>
+<li>You enter your card details directly on the payment gateway's page; they never reach us</li>
 <li>You can request deletion of your account and all your data at any time</li>
 </ul>
 <p>Full details in the <a href="/privacy">Privacy Policy</a>.</p>
 
 <h2>Contact</h2>
-<p>Feedback, a suggestion, or a problem? <a href="mailto:jadwalik@gmail.com">jadwalik@gmail.com</a> — or use the feedback button inside the site. We read every message.</p>
+<p>Feedback, a suggestion, or a problem? Email <a href="mailto:jadwalik@gmail.com">jadwalik@gmail.com</a>, use the feedback button inside the site, or message the Telegram bot <b>@JadwalikBot</b> and choose «📩 أرسلها لفريق جدولك» (send it to the Jadwalik team). We read every message.</p>
 
 </div>
 
@@ -159,6 +200,7 @@ background:var(--card);padding:2px 7px;border-radius:5px}
   <a href="/privacy">سياسة الخصوصية · Privacy</a> &nbsp;·&nbsp;
   <a href="/terms">الشروط والأحكام · Terms</a> &nbsp;·&nbsp;
   <a href="mailto:jadwalik@gmail.com">jadwalik@gmail.com</a>
+  <div style="margin-top:8px">مؤسسة محمد اسامه المسبح لتقنية المعلومات · سجل تجاري 7055288521</div>
 </div>
 
 </div>
@@ -172,6 +214,11 @@ function sw(){
   document.documentElement.dir=en?'rtl':'ltr';
   document.getElementById('lb').textContent=en?'English':'العربية';
 }
+// روابط مثل /about#en-pricing تفتح النسخة الإنجليزية على القسم المطلوب
+(function(){
+  var h=location.hash;
+  if(h&&h.indexOf('#en-')===0){sw();var el=document.getElementById(h.slice(1));if(el)el.scrollIntoView();}
+})();
 </script>
 </body>
 </html>

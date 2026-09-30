@@ -51,6 +51,7 @@ run test-referral       "$S" "$F"
 run test-review-credit  "$S" "$F" "$A"
 run test-pushover-addon "$S" "$F" "$A"
 run test-static-pages   "$S"
+run test-legal          .
 run test-plans          "$S" "$F"
 run test-plan-logic     "$S" "$F"
 run test-sched-builder  "$S"

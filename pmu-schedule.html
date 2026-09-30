@@ -776,6 +776,10 @@ color:var(--text3);display:flex;flex-wrap:wrap;gap:8px;justify-content:center;al
 .legal-foot a{color:var(--text2);text-decoration:none}
 .legal-foot a:hover{color:var(--accent2)}
 .legal-note{width:100%;margin-top:9px;font-size:11px;color:var(--text3);line-height:1.6}
+.legal-co{width:100%;margin-top:9px;font-size:11px;color:var(--text2);line-height:1.6}
+.legal-co+.legal-note{margin-top:3px}
+/* الجوال: البريد سطر لحاله — كانت النقطة قبله تبقى معلّقة آخر السطر الأول */
+@media (max-width:440px){.lf-dot-mail{display:none}.legal-foot .lf-mail{width:100%}}
 .guide-fab{position:fixed;bottom:20px;left:16px;z-index:200;
 background:var(--accent);color:#fff;border:none;border-radius:50%;
 width:48px;height:48px;font-size:21px;cursor:pointer;
@@ -2034,17 +2038,20 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     <div id="myRevList" class="acc-body"></div>
   </div>
 
-  <div class="legal-foot">
-    <a href="/about" target="_blank" data-i18n="legalAbout">عن جدولك</a>
-    <span>·</span>
-    <a href="/privacy" target="_blank" data-i18n="legalPrivacy">سياسة الخصوصية</a>
-    <span>·</span>
-    <a href="/terms" target="_blank" data-i18n="legalTerms">الشروط والأحكام</a>
-    <span>·</span>
-    <a href="mailto:jadwalik@gmail.com">jadwalik@gmail.com</a>
-    <div class="legal-note" data-i18n="legalNote">موقع مستقل غير تابع لجامعة الأمير محمد بن فهد</div>
-  </div>
+</div>
 
+<!-- التذييل النظامي: نظام التجارة الإلكترونية يطلب اسم المتجر وسجله ووسيلة التواصل
+     ظاهرة — فهو تحت كل الشاشات لا في الإعدادات وحدها (كان هناك، والزائر ما يشوفه) -->
+<div class="legal-foot">
+  <a href="/about" target="_blank" data-i18n="legalAbout">عن جدولك</a>
+  <span>·</span>
+  <a href="/terms" target="_blank" data-i18n="legalTerms">الشروط والأحكام</a>
+  <span>·</span>
+  <a href="/privacy" target="_blank" data-i18n="legalPrivacy">سياسة الخصوصية</a>
+  <span class="lf-dot-mail">·</span>
+  <a class="lf-mail" href="mailto:jadwalik@gmail.com">jadwalik@gmail.com</a>
+  <div class="legal-co" data-i18n="legalCo">مؤسسة محمد اسامه المسبح لتقنية المعلومات · سجل تجاري 7055288521</div>
+  <div class="legal-note" data-i18n="legalNote">موقع مستقل غير تابع لجامعة الأمير محمد بن فهد</div>
 </div>
 
 </div>
@@ -8188,6 +8195,7 @@ optGroup:'⚪ اختيارية — لك الخيار تنزلها أو تأجل�
 unlocks:'يفتح',unlocks2:'مادة',
 acctSection:'الحساب',legalAbout:'عن جدولك',legalPrivacy:'سياسة الخصوصية',legalTerms:'الشروط والأحكام',
 legalNote:'موقع مستقل غير تابع لجامعة الأمير محمد بن فهد',
+legalCo:'مؤسسة محمد اسامه المسبح لتقنية المعلومات · سجل تجاري 7055288521',
 calTitle:'🗓️ مواعيد تهمك',calSub:'من التقويم الأكاديمي المعتمد',
 calNow:'جارٍ الآن',calToday:'اليوم',calTomorrow:'بكرة',calIn:'بعد',calDays:'يوم',
 calDone:'ما في مواعيد قادمة في التقويم الحالي.',
@@ -8357,6 +8365,7 @@ optGroup:'⚪ Optional — take them or postpone',
 unlocks:'unlocks',unlocks2:'courses',
 acctSection:'Account',legalAbout:'About',legalPrivacy:'Privacy Policy',legalTerms:'Terms of Service',
 legalNote:'An independent site, not affiliated with Prince Mohammad Bin Fahd University',
+legalCo:'Mohammad Osama AlMusabbeh Establishment for Information Technology · CR 7055288521',
 calTitle:'🗓️ Dates that matter',calSub:'From the official academic calendar',
 calNow:'Now',calToday:'Today',calTomorrow:'Tomorrow',calIn:'in',calDays:'days',
 calDone:'No upcoming dates in the current calendar.',
