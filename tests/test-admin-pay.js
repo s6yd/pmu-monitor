@@ -1,8 +1,8 @@
 /* بطاقة «بوابة الدفع» في اللوحة — اختبار عرض حقيقي في Chromium.
-   محمد يتأكد منها قبل الإطلاق من جواله: المفاتيح · الإشعار · مين يدفع ·
-   الطلبات، وزر يثبت الاتصال بـPaylink. اللوحة تعرض ما يقوله السيرفر وبس.
-   و**«آخر إشعار»**: زر Test في Paylink يرجّع `{"ok":false}` وبس — البطاقة
-   تقول ليش انرفض ووش يكتب في أي خانة.
+   **EdfaPay وحدها — قرار محمد** (كانت Paylink؛ حالات مفتاح إشعارها انشالت مع البوابة).
+   محمد يتأكد منها قبل الإطلاق من جواله: الخادم · المفتاح · سرّ الإشعار ورابطه ·
+   آخر إشعار وليش انرفض · مين يدفع · الطلبات، وزر يثبت الاتصال. اللوحة تعرض ما
+   يقوله السيرفر وبس، والسرّ ما يوصلها (طوله بس).
 
    node tests/test-admin-pay.js [مسار admin.html] */
 const { chromium } = require('playwright');
@@ -52,168 +52,100 @@ const server = http.createServer((req, res) => {
       return el.textContent.replace(/\s+/g, ' ');
     });
   };
+  const ago = m => new Date(Date.now() - m * 60000).toISOString();
+  const base = { ok: true, env: 'prod', live: true, host: 'app-api.edfapay.com', hostBad: false, gateway: 'edfapay',
+    ready: true, keySet: true, hookSet: true, hookLen: 29, hookHidden: 0, hookLast: null, freeBeta: true,
+    openTo: 'owner', counts: { pending: 0, paid: 0, failed: 0 }, paidHalalas: 0, recent: [] };
+  const D = o => Object.assign({}, base, o);
+  const last = o => D({ hookLast: Object.assign({ at: ago(3), ok: false, why: 'bad', sigLen: 64, bytes: 420,
+    want: 29, okAt: null }, o) });
 
-  /* ── ١) بلا مفاتيح ── */
-  let t = await card({ ok: true, env: 'prod', live: true, host: 'restapi.paylink.sa', gateway: 'paylink',
-    ready: false, idSet: false, secretSet: false, testIdInProd: false, hookSet: false, freeBeta: true,
-    openTo: 'none', counts: { pending: 0, paid: 0, failed: 0 }, paidHalalas: 0, recent: [] });
-  ok(/ناقصة/.test(t) && /PAYLINK_API_ID/.test(t), 'بلا مفاتيح: يقول وش الناقص باسم المتغيّر — ' + t.slice(0, 120));
+  /* ── ١) بلا مفتاح ولا سرّ ── */
+  let t = await card(D({ ready: false, keySet: false, hookSet: false, hookLen: 0, openTo: 'none' }));
+  ok(/EdfaPay/.test(t) && !/Paylink/.test(t), '**البطاقة لـEdfaPay وحدها** — ' + t.slice(0, 80));
+  ok(/ناقص/.test(t) && /EDFAPAY_API_KEY/.test(t), 'بلا مفتاح: يسمّي المتغيّر — ' + t.slice(0, 200));
+  ok(/EDFAPAY_WEBHOOK_SECRET/.test(t), 'وبلا سرّ: يسمّيه');
   ok(/ولا أحد/.test(t), 'ومين يدفع: ولا أحد');
+  ok(await page.evaluate(() => document.querySelector('#payCard').textContent
+     .includes(location.origin + '/api/edfapay/webhook')), '**رابط الإشعار على نطاق اللوحة نفسها** (الإنتاج أو dev)');
 
-  /* ── ٢) مفتاح التجربة العام في الإنتاج ── */
-  t = await card(Object.assign({}, ST.pay, { idSet: true, secretSet: true, testIdInProd: true }));
-  ok(/مفتاح التجربة العام/.test(t), 'مفتاح التجربة في الإنتاج: يسمّيه');
+  /* ── ٢) خادم من EDFAPAY_HOST ما نعرفه ── */
+  t = await card(D({ live: false, host: 'demo-api.edfapay.com', hostBad: true }));
+  ok(/التجربة/.test(t) && /demo-api\.edfapay\.com/.test(t), 'نسخة التجربة وخادمها');
+  ok(/EDFAPAY_HOST/.test(t) && /تجاهلناه/.test(t), '**EDFAPAY_HOST غريب: يقول تجاهلناه**');
 
   /* ── ٣) جاهز قبل الإطلاق ── */
-  t = await card({ ok: true, env: 'prod', live: true, host: 'restapi.paylink.sa', gateway: 'paylink',
-    ready: true, idSet: true, secretSet: true, testIdInProd: false, hookSet: false, freeBeta: true,
-    openTo: 'owner', counts: { pending: 1, paid: 2, failed: 1 }, paidHalalas: 3800,
-    recent: [{ id: 101, term: '202720', status: 'paid', amount: 1900, credit: 0, gateway: 'paylink', note: null },
-             { id: 102, term: '202720', status: 'failed', amount: 500, credit: 1400, gateway: 'paylink',
-               note: '<img src=x onerror=alert(1)>انتهت المهلة' }] });
-  ok(/جاهزة/.test(t), 'جاهز: المفاتيح جاهزة');
-  ok(/PAYLINK_WEBHOOK_KEY/.test(t), 'والإشعار بلا مفتاح يسمّي المتغيّر');
+  t = await card(D({ counts: { pending: 1, paid: 2, failed: 1 }, paidHalalas: 3800,
+    recent: [{ id: 101, term: '202720', status: 'paid', amount: 1900, credit: 0, gateway: 'edfapay', note: null },
+             { id: 102, term: '202720', status: 'failed', amount: 1000, credit: 900, gateway: 'edfapay',
+               note: '<img src=x onerror=alert(1)>انتهت المهلة' }] }));
+  ok(/المفتاح\s*مضبوط/.test(t), 'جاهز: المفتاح مضبوط');
+  ok(/سرّ الإشعار\s*مضبوط · 29 حرف/.test(t), 'والسرّ مضبوط وطوله');
   ok(/أنت فقط — الفترة المجانية/.test(t), '**قبل الإطلاق: أنت فقط** — واضح ليش');
   ok(/معلّقة 1 · مدفوعة 2 · فاشلة 1/.test(t), 'العدّادات');
-  ok(/38 ريال/.test(t), 'والمحصّل بالريال — ' + t);
-  ok(/رصيد 14/.test(t), 'والرصيد المصروف في الطلب');
+  ok(/المحصّل عبر EdfaPay\s*38 ريال/.test(t), 'والمحصّل بالريال — ' + t);
+  ok(/رصيد 9/.test(t), 'والرصيد المصروف في الطلب');
   ok(await page.$('#payCard img') === null, '**ملاحظة فيها وسم تُهرَّب**');
-  ok(/restapi\.paylink\.sa/.test(t), 'واسم الخادم');
+  ok(/app-api\.edfapay\.com/.test(t), 'واسم الخادم');
 
   /* ── ٤) زر جرّب الاتصال ── */
-  ST.ping = { ok: true, ms: 312, host: 'restapi.paylink.sa' };
-  /* الضغط من الصفحة نفسها: البطاقة مرسومة في جسم الصفحة خارج التبويبات */
-  const press = () => page.evaluate(() => document.querySelector('#payCard button').click());
+  ST.ping = { ok: true, ms: 312, host: 'app-api.edfapay.com' };
+  const press = () => page.evaluate(() => document.querySelector('#payCard button[onclick^="payPing"]').click());
   await press();
   await page.waitForTimeout(400);
   ok(ST.pings === 1, 'الزر نادى pay-ping مرة');
   const toastTxt = await page.evaluate(() => (document.querySelector('.toast') || {}).textContent || '');
-  ok(/شغّال/.test(toastTxt) && /312/.test(toastTxt), 'والنتيجة ظاهرة — ' + toastTxt);
-  ST.ping = { ok: false, error: 'Paylink auth: 401 Invalid credentials' };
+  ok(/EdfaPay شغّال/.test(toastTxt) && /312/.test(toastTxt), 'والنتيجة ظاهرة — ' + toastTxt);
+  ST.ping = { ok: false, error: 'EdfaPay رفض المفتاح (401) — حط مفتاح حسابك الحقيقي (Test Mode مطفأ في لوحتهم)' };
   await page.waitForTimeout(3500);
   await press();
   await page.waitForTimeout(400);
   const t2 = await page.evaluate(() => (document.querySelector('.toast') || {}).textContent || '');
-  ok(/401/.test(t2), 'والفشل يوصل بنص Paylink — ' + t2);
+  ok(/401/.test(t2) && /Test Mode/.test(t2), 'والفشل يوصل بنص السيرفر — ' + t2);
 
   /* ── ٥) آخر إشعار: ليش انرفض ووش يصلّح ── */
-  const base = { ok: true, env: 'prod', live: true, host: 'restapi.paylink.sa', gateway: 'paylink',
-    ready: true, idSet: true, secretSet: true, testIdInProd: false, hookSet: true, hookLen: 48, hookHidden: 0,
-    freeBeta: true, openTo: 'owner', counts: { pending: 0, paid: 0, failed: 0 }, paidHalalas: 0, recent: [] };
-  const ago = m => new Date(Date.now() - m * 60000).toISOString();
-  const last = o => Object.assign({}, base, { hookLast: Object.assign({ at: ago(2), ok: false, why: 'noheader',
-    via: '', len: 0, want: 48, hidden: 0, headers: [], okAt: null }, o) });
+  t = await card(D({}));
+  ok(/ما وصل شي من آخر تشغيل/.test(t) && /لوحة EdfaPay/.test(t), 'ما وصل شي: يقول جرّبه من لوحتهم');
 
-  t = await card(Object.assign({}, base, { hookLast: null }));
-  ok(/مضبوط · 48 حرف/.test(t), 'الإشعار مضبوط وطول مفتاحه — ' + t.slice(0, 160));
-  ok(/آخر إشعار/.test(t) && /ما وصل شي/.test(t) && /Test/.test(t), '**ما وصل شي: يقول جرّب زر Test**');
+  t = await card(last({ ok: true, why: 'ok', at: ago(0), json: true, status: 'Approved', type: 'Purchase', order: 'JDW-77' }));
+  ok(/✅ مقبول · الآن/.test(t) && /Approved/.test(t) && /Purchase/.test(t) && /JDW-77/.test(t),
+     '**مقبول: الحالة والنوع ورقم طلبنا** — ' + t.slice(0, 400));
+  t = await card(last({ ok: true, why: 'ok', json: true, status: 'Success', type: 'Purchase', order: 'other' }));
+  ok(/مو من طلباتنا/.test(t), 'رقم طلب مو من طلباتنا: يقول إنه تجربة');
+  t = await card(last({ ok: true, why: 'ok', json: false }));
+  ok(/مو JSON/.test(t), 'موقَّع وجسمه مو JSON: يقولها');
 
-  t = await card(last({ headers: ['host', 'content-type', 'user-agent', '<img src=x onerror=alert(1)>'] }));
-  ok(/مرفوض · قبل 2 د/.test(t), 'مرفوض ومتى — ' + t.slice(0, 200));
-  /* تغيّر عمداً: كان «اكتبها في HTTP Header 1 وValue» — وزر Test في Paylink ما أرسلها
-     أصلاً (شفناها على الإنتاج)، فصار يعطيه الرابط اللي فيه المفتاح */
-  ok(/\/api\/paylink\/webhook\?key=/.test(t) && /X-Jadwalik-Key/.test(t) && /الحل/.test(t),
-     '**ما وصل المفتاح: يعطيه رابط الإشعار اللي فيه المفتاح** — ' + t.slice(0, 260));
-  ok(await page.evaluate(() => (document.querySelector('#payCard').innerHTML.match(/webhook\?key=/) || []).length === 1
-     && document.querySelector('#payCard').textContent.includes(location.origin + '/api/paylink/webhook?key=')),
-     'والرابط على نطاق اللوحة نفسها (الإنتاج أو dev)');
-  ok(/content-type/.test(t) && /user-agent/.test(t), 'ويعرض أسماء الترويسات اللي وصلت');
-  ok(await page.$('#payCard img') === null, '**اسم ترويسة فيه وسم يُهرَّب**');
-
-  t = await card(last({ why: 'mismatch', via: 'x-jadwalik-key', len: 49, hidden: 1 }));
-  ok(/ما طابق/.test(t) && /وصل 49 حرف/.test(t) && /Render 48/.test(t), '**ما طابق: بالأطوال** — ' + t.slice(0, 260));
-  ok(/1 حرف مخفي/.test(t), 'والحروف المخفية');
-  ok(!/Authorization/.test(t), 'وما يذكر Authorization لو ما وصلت');
-
-  t = await card(last({ why: 'mismatch', via: 'url', len: 47 }));
-  ok(/رابط الإشعار ما طابق/.test(t) && /وصل 47 حرف/.test(t) && /انسخ الرابط كامل/.test(t),
-     '**المفتاح اللي في الرابط ما طابق: يقول انسخ الرابط كامل**');
-
-  t = await card(last({ why: 'mismatch', via: 'authorization', len: 12 }));
-  ok(/Authorization/.test(t) && /HTTP Header 1/.test(t), 'Authorization بمفتاح غيرنا: يقول اسم الترويسة ناقص');
-
-  t = await card(last({ why: 'swapped' }));
-  ok(/خانة اسم الترويسة/.test(t) && /Value/.test(t), 'المفتاح في خانة الاسم: يقولها');
-
-  t = await card(Object.assign(last({ why: 'nokey', want: 0 }), { hookSet: false, hookLen: 0 }));
-  ok(/PAYLINK_WEBHOOK_KEY/.test(t) && /Render/.test(t), 'بلا مفتاح في Render: يسمّي المتغيّر');
-
-  t = await card(last({ ok: true, why: 'ok', via: 'x-jadwalik-key', at: ago(0), len: 48 }));
-  ok(/✅ مقبول · الآن/.test(t), '**مقبول**');
-  ok(!/الأصح/.test(t), 'وبالاسم الصحيح ما فيه ملاحظة');
-  t = await card(last({ ok: true, why: 'ok', via: 'url', at: ago(0), len: 48 }));
-  ok(/✅ مقبول/.test(t) && !/الأصح/.test(t), '**المفتاح في الرابط: مقبول بلا ملاحظة**');
-  t = await card(last({ ok: true, why: 'ok', via: 'x-jadwalik_key', len: 48 }));
-  ok(/x-jadwalik_key/.test(t) && /الأصح/.test(t), 'وصل باسم ثاني: يشتغل ويقول الأصح');
-
-  t = await card(last({ okAt: ago(90) }));
-  ok(/آخر إشعار مقبول: قبل 2 س/.test(t), '**رفض بعد قبول: يذكر آخر مقبول** — ' + t.slice(-200));
+  t = await card(last({ why: 'nosig', sigLen: 0 }));
+  ok(/❌ مرفوض · قبل 3 د/.test(t) && /بلا توقيع/.test(t) && /Webhook Secret/.test(t),
+     '**بلا توقيع: يقول اكتب السرّ في خانة Webhook Secret عندهم** — ' + t.slice(0, 400));
+  t = await card(last({ why: 'bad' }));
+  ok(/التوقيع ما طابق/.test(t) && /عندنا 29 حرف/.test(t), '**توقيع غلط: السرّان مختلفان، بطول سرّنا**');
+  t = await card(Object.assign(last({ why: 'nosecret', want: 0 }), { hookSet: false, hookLen: 0 }));
+  ok(/EDFAPAY_WEBHOOK_SECRET/.test(t) && /ناقص في Render/.test(t), 'بلا سرّ في Render: يسمّي المتغيّر');
+  t = await card(last({ why: 'bad', okAt: ago(120) }));
+  ok(/آخر إشعار مقبول: قبل 2 س/.test(t), '**رفض بعد قبول: يذكر آخر مقبول**');
+  t = await card(last({ ok: true, why: 'ok', json: true, status: '<img src=x onerror=alert(1)>', order: '<img src=y>' }));
+  ok(await page.$('#payCard img') === null, '**قيم فيها وسم تُهرَّب**');
 
   ok(await page.evaluate(() => !!document.querySelector('#payCard button[onclick*="loadPay"]')),
      'زر «تحديث» يقرأ آخر إشعار بلا ما تعيد فتح اللوحة');
-
-  /* ── ٦) EdfaPay: الإشعار الموقَّع — محمد يضبطه في لوحتهم ويشوف هنا وصل ولا لا ── */
-  const epc = () => page.evaluate(() => [...document.querySelectorAll('#payCard .maint-t')]
-    .some(x => /EdfaPay/.test(x.textContent)));
-  t = await card(Object.assign({}, base, { hookLast: null }));
-  ok(!(await epc()), 'سيرفر بلا معلومات EdfaPay: ما فيه بطاقة');
-  const ep = e => Object.assign({}, base, { hookLast: null,
-    edfapay: Object.assign({ keySet: true, hookSet: true, hookLen: 29, hookHidden: 0, hookLast: null }, e) });
-  const epLast = o => ep({ hookLast: Object.assign({ at: ago(3), ok: false, why: 'bad', sigLen: 64, bytes: 420,
-    want: 29, okAt: null }, o) });
-
-  t = await card(ep({ keySet: false, hookSet: false, hookLen: 0 }));
-  ok(await epc(), '**بطاقة EdfaPay تطلع**');
-  ok(/EDFAPAY_API_KEY/.test(t) && /EDFAPAY_WEBHOOK_SECRET/.test(t), 'بلا مفاتيح: يسمّي المتغيّرين — ' + t.slice(-400));
-  ok(/الدفع الحين عبر Paylink/.test(t), 'ويقول بصدق إن الدفع نفسه لسا عبر Paylink');
-  ok(await page.evaluate(() => document.querySelector('#payCard').textContent
-     .includes(location.origin + '/api/edfapay/webhook')), '**رابط الإشعار على نطاق اللوحة نفسها** (الإنتاج أو dev)');
-
-  t = await card(ep({}));
-  ok(/سرّ الإشعار\s*مضبوط · 29 حرف/.test(t), 'السرّ مضبوط وطوله');
-  ok(/ما وصل شي من آخر تشغيل/.test(t.slice(t.indexOf('EdfaPay'))) && /لوحة EdfaPay/.test(t), 'ما وصل شي: يقول جرّبه من لوحتهم');
-
-  t = await card(epLast({ ok: true, why: 'ok', at: ago(0), json: true, status: 'Approved', type: 'Purchase', order: 'JDW-77' }));
-  ok(/✅ مقبول · الآن/.test(t) && /Approved/.test(t) && /Purchase/.test(t) && /JDW-77/.test(t),
-     '**مقبول: الحالة والنوع ورقم طلبنا** — ' + t.slice(-300));
-  t = await card(epLast({ ok: true, why: 'ok', json: true, status: 'Success', type: 'Purchase', order: 'other' }));
-  ok(/مو من طلباتنا/.test(t), 'رقم طلب مو من طلباتنا: يقول إنه تجربة');
-  t = await card(epLast({ ok: true, why: 'ok', json: false }));
-  ok(/مو JSON/.test(t), 'موقَّع وجسمه مو JSON: يقولها');
-
-  t = await card(epLast({ why: 'nosig', sigLen: 0 }));
-  ok(/❌ مرفوض · قبل 3 د/.test(t) && /بلا توقيع/.test(t) && /Webhook Secret/.test(t),
-     '**بلا توقيع: يقول اكتب السرّ في خانة Webhook Secret عندهم** — ' + t.slice(-300));
-  t = await card(epLast({ why: 'bad' }));
-  ok(/التوقيع ما طابق/.test(t) && /عندنا 29 حرف/.test(t), '**توقيع غلط: السرّان مختلفان، بطول سرّنا**');
-  t = await card(epLast({ why: 'nosecret', want: 0 }));
-  ok(/EDFAPAY_WEBHOOK_SECRET/.test(t) && /ناقص في Render/.test(t), 'بلا سرّ في Render: يسمّي المتغيّر');
-  t = await card(epLast({ why: 'bad', okAt: ago(120) }));
-  ok(/آخر إشعار مقبول: قبل 2 س/.test(t), 'رفض بعد قبول: يذكر آخر مقبول');
-  t = await card(epLast({ ok: true, why: 'ok', json: true, status: '<img src=x onerror=alert(1)>', order: '<img src=y>' }));
-  ok(await page.$('#payCard img') === null, '**قيم فيها وسم تُهرَّب**');
-
   await page.evaluate(() => document.querySelector('#payCard button[onclick^="payCopy"]').click());
   await page.waitForTimeout(300);
   const tc = await page.evaluate(() => (document.querySelector('.toast') || {}).textContent || '');
-  ok(/انسخ الرابط|\/api\/edfapay\/webhook/.test(tc), 'زر «انسخ» ينسخ الرابط — ' + tc);
+  ok(/انسخ الرابط|\/api\/edfapay\/webhook/.test(tc), 'زر «انسخ» ينسخ رابط الإشعار — ' + tc);
 
   ok(errs.length === 0, 'بلا أخطاء JS — ' + errs.slice(0, 2).join(' | '));
   if (SHOT) {
-    t = await card(last({ why: 'mismatch', via: 'x-jadwalik-key', len: 49, hidden: 1, okAt: ago(90),
-      headers: ['host', 'content-type', 'x-jadwalik-key'] }));
-    /* صورة البطاقة وحدها على مقاس الجوال */
+    /* صورة البطاقة وحدها على مقاس الجوال — واللوحة ثيم واحد (داكن) */
+    await card(last({ why: 'nosig', sigLen: 0, okAt: ago(90) }));
     await page.evaluate(() => {
       const el = document.getElementById('payCard');
       document.body.innerHTML = ''; el.style.padding = '16px'; el.style.background = 'var(--bg)';
       document.body.appendChild(el); document.body.style.display = 'block';
     });
     await page.screenshot({ path: path.join(SHOT, 'admin-pay-card.png'), fullPage: true });
-    /* واللوحة ثيم واحد (داكن) — بطاقة EdfaPay بحالتين: مرفوض بلا توقيع · مقبول */
-    await card(epLast({ why: 'nosig', sigLen: 0, okAt: ago(90) }));
-    await page.screenshot({ path: path.join(SHOT, 'admin-edfapay-nosig.png'), fullPage: true });
-    await card(epLast({ ok: true, why: 'ok', at: ago(0), json: true, status: 'Approved', type: 'Purchase', order: 'JDW-77' }));
-    await page.screenshot({ path: path.join(SHOT, 'admin-edfapay-ok.png'), fullPage: true });
+    await card(last({ ok: true, why: 'ok', at: ago(0), json: true, status: 'Approved', type: 'Purchase', order: 'JDW-77' }));
+    await page.screenshot({ path: path.join(SHOT, 'admin-pay-card-ok.png'), fullPage: true });
   }
   await browser.close();
   server.close();
