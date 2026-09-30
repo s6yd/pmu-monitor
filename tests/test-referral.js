@@ -168,7 +168,8 @@ const U1 = 'tok-u1-aaaaaaaaaaaaaaaaaaaa', U2 = 'tok-u2-bbbbbbbbbbbbbbbbbbbb', U3
 
     DB.credit_ledger[1].amount_halalas = 5000;
     q = (await me('/api/me/quote', U2)).j;
-    ok(q.credit === 1900 && q.amount === 0, 'رصيد أكبر من السعر: يغطيه ويبقى الباقي — المبلغ صفر');
+    /* أقل دفع نقدي ١٠ (الشروط §٣ — قرار محمد، كان «الرصيد يغطي الكل ⇒ المبلغ صفر») */
+    ok(q.credit === 900 && q.amount === 1000, 'رصيد أكبر من السعر: يدفع ١٠ والرصيد يغطي الباقي ويبقى الزائد');
     DB.credit_ledger[1].amount_halalas = 500;
 
     q = (await me(`/api/me/quote?pushover=1&ref=${code}`, U3)).j;

@@ -71,7 +71,8 @@ const PRICING_DEFAULT = Object.freeze({
   creditTerms: 2,               /* صلاحية الرصيد: ترمان بعد ترم المنح */
   lateDays: 3,                  /* آخر أيام النافذة: الشراء للترم الجاي */
   freeMonitors: 2,              /* مراقبات المجاني */
-  freeSchedules: 1              /* جداول المجاني */
+  freeSchedules: 1,             /* جداول المجاني */
+  minCashHalalas: 1000          /* أقل دفع نقدي لكل طلب — والرصيد يغطي الباقي (الشروط §٣) */
 });
 let PRICING = Object.assign({}, PRICING_DEFAULT);
 
@@ -93,6 +94,8 @@ function validatePricing(p) {
   if (!int(p.lateDays, 0, 14)) return 'أيام الشراء المتأخر بين ٠ و١٤';
   if (!int(p.freeMonitors, 0, 20)) return 'مراقبات المجاني بين ٠ و٢٠';
   if (!int(p.freeSchedules, 1, 3)) return 'جداول المجاني بين ١ و٣';
+  /* ٥ ريال أقل فاتورة عند البوابة (PAY_MIN_HALALAS) — تحته ما ينباع شي */
+  if (!int(p.minCashHalalas, 500, p.termHalalas)) return 'أقل دفع نقدي بين ٥ ريال وسعر الترم';
   return null;
 }
 
@@ -484,15 +487,16 @@ async function meQuote(uid, { pushover, ref }) {
 
   const bal = creditBalance(Array.isArray(led) ? led : []);
   const before = base + po - discount;
-  /* أقل فاتورة عند Paylink ٥ ريال: الرصيد يغطي الكل ⇒ تفعيل بلا فاتورة،
-     وإلا نصرف منه بقدر يترك ٥ على الأقل — وإلا طلعت فاتورة ٣ ريال
-     ترفضها البوابة والطالب واقف قدام زر ما يشتغل. */
-  const credit = bal.available >= before ? before
-    : Math.max(0, Math.min(bal.available, before - PAY_MIN_HALALAS));
+  /* أقل دفع نقدي لكل طلب (الشروط §٣ — الجولة الثانية): ١٠ ريال من اللوحة، أو الطلب كله
+     لو أقل، والرصيد يغطي الباقي ويبقى الزائد. كانت «الرصيد يغطي الكل ⇒ تفعيل بلا فاتورة»
+     و«نترك ٥ للبوابة»: طلب مغطّى برصيد كله ما يدفع شي، واسترجاعه يطلع على المؤسسة
+     برسوم البوابة. والحد الأدنى ≥ ٥ (validatePricing) فما تطلع فاتورة ترفضها البوابة. */
+  const floor = Math.min(before, PRICING.minCashHalalas);
+  const credit = Math.max(0, Math.min(bal.available, before - floor));
   const amount = before - credit;
   const pt = payTermNow();
   return { ok: true, includesTerm, pushover: wantPo, base, po, discount, credit,
-           amount, ref: refState, creditAvailable: bal.available,
+           amount, ref: refState, creditAvailable: bal.available, minCash: PRICING.minCashHalalas,
            term: pt.term, termEnd: pt.until, late: pt.late, termNote: pt.note,
            /* أقل من ٥ وما يغطيه الرصيد: ما نقدر نبيعه (سعر من اللوحة أقل من الحد) */
            belowMin: amount > 0 && amount < PAY_MIN_HALALAS };

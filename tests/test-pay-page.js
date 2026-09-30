@@ -10,6 +10,7 @@
    ٨) رقم جوال غلط: الرسالة تقول الصح والمؤشر يرجع للخانة.
    ١١) الضغط على الدفع يُبرم العقد (اللائحة التنفيذية لنظام التجارة الإلكترونية)
       فتحت الزر سطر موافقة بروابط الشروط والاسترجاع — والإنجليزي لقسميهما الإنجليزيين.
+   ١٢) الرصيد ما يغطي الطلب كله (أقل دفع نقدي ١٠ ريال — الشروط §٣): نقول له ليش.
    ٧) الورقة ما تقول أي ترم تبيع (لقاها محمد: «حتى 9 يونيو» بلا سنة ولا ترم،
       والشراء بعد ما ينقفل التسجيل يروح للترم الجاي)، ولا إن التنبيه الطارئ
       تطبيق ثاني تفعيله بعد الدفع — والمشتري ما يلقى وين يفعّله.
@@ -428,6 +429,39 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: pa
     ok(!/pushover=1/.test(page.url()), 'والرابط تنظّف');
     eq(errs, [], 'بلا أخطاء');
     ST.ms = null;
+    await ctx.close();
+  }
+
+  /* ── ١٢) أقل دفع نقدي (الشروط §٣): لما ينصرف رصيد نقول له ليش ما غطّى الكل ── */
+  const minLine = page => page.evaluate(() => { const e = document.getElementById('psMinCash');
+    return e ? e.textContent.replace(/\s+/g, ' ').trim() : null });
+  for (const scheme of ['dark', 'light']) {
+    ST.quote = baseQuote({ credit: 900, amount: 1000, creditAvailable: 5000, minCash: 1000 }); ST.ms = null;
+    const { page, ctx, errs } = await open(browser, scheme);
+    await sheet(page);
+    eq(await minLine(page), 'أقل مبلغ تدفعه 10 ريال، والرصيد يغطي الباقي.',
+       `**رصيد انصرف: «أقل مبلغ تدفعه 10 ريال، والرصيد يغطي الباقي»** (${scheme})`);
+    ok(/ادفع 10 ريال/.test((await btn(page) || {}).txt || ''), 'والزر يقول ١٠');
+    await shot(page, 'plans-mincash-' + scheme);
+    eq(errs, [], 'بلا أخطاء');
+    await ctx.close();
+  }
+  {
+    /* الرقم من السيرفر (قيمة في اللوحة) لا ثابت في الصفحة */
+    ST.quote = baseQuote({ credit: 400, amount: 1500, creditAvailable: 400, minCash: 1500 });
+    const { page, ctx } = await open(browser);
+    await sheet(page);
+    eq(await minLine(page), 'أقل مبلغ تدفعه 15 ريال، والرصيد يغطي الباقي.', 'الرقم من السيرفر: ١٥ لو غيّره محمد من اللوحة');
+    await page.evaluate(() => { LANG = 'en'; applyLang() });
+    await sheet(page);
+    eq(await minLine(page), 'You pay at least SAR 15; credit covers the rest.', 'وبالإنجليزي');
+    await ctx.close();
+  }
+  {
+    ST.quote = baseQuote({ minCash: 1000 });
+    const { page, ctx } = await open(browser);
+    await sheet(page);
+    eq(await minLine(page), null, 'بلا رصيد منصرف: ما نقول شي عن أقل دفع');
     await ctx.close();
   }
 

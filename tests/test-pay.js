@@ -407,9 +407,10 @@ async function prodSuite() {
   q = (await call('GET', '/api/me/quote', { tok: tokOf('u-st') })).j;
   eq(q.pay && q.pay.open, true, 'بعد الإطلاق: الطالب يدفع');
 
-  /* ── ٥) أقل فاتورة ٥ ريال، والرصيد المحجوز يرجع بصلاحيته ── */
+  /* ── ٥) أقل دفع نقدي ١٠ ريال (الشروط §٣ — قرار محمد، كان «نترك ٥ للبوابة»)،
+     والرصيد المحجوز يرجع بصلاحيته ── */
   q = (await call('GET', '/api/me/quote', { tok: tokOf('u-cr') })).j;
-  eq([q.credit, q.amount], [1400, 500], '**رصيد ١٥ وسعر ١٩: نصرف ١٤ ونترك ٥** — لا فاتورة ٤ ترفضها البوابة');
+  eq([q.credit, q.amount, q.minCash], [900, 1000, 1000], '**رصيد ١٥ وسعر ١٩: نصرف ٩ ويدفع ١٠** — أقل دفع نقدي');
   /* رقم جديد غلط والقديم محفوظ (ولا دفعة معلّقة): كان يُتجاهل بصمت ويكمل بالقديم */
   const nA = adds().length;
   r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-cr'), body: { phone: '05123' } })).j;
@@ -420,29 +421,40 @@ async function prodSuite() {
   ok(r.ok && r.url, 'الجوال المحفوظ يكفي — ' + JSON.stringify(r));
   const sp = ledger('u-cr').find(x => x.reason === 'spend');
   eq(sp && [sp.amount_halalas, sp.ref, String(sp.expires_at).slice(0, 10)],
-     [-1400, 'subscription:' + r.id, '2027-03-01'], 'حجز ١٤ من الرصيد، بصلاحية منحته');
-  eq((adds().pop() || {}).b.amount, 5, 'والفاتورة ٥ ريال');
+     [-900, 'subscription:' + r.id, '2027-03-01'], 'حجز ٩ من الرصيد، بصلاحية منحته');
+  eq((adds().pop() || {}).b.amount, 10, 'والفاتورة ١٠ ريال');
   /* ٢٥ ساعة بلا دفع ⇒ تنلغي ويرجع الرصيد */
   sub(r.id).created_at = new Date(Date.now() - 25 * 3600e3).toISOString();
   await hook({ something: 'else' });           /* جرس بجسم ما نعرفه ⇒ تسوية المعلّقات */
   eq(sub(r.id).status, 'failed', '**بعد ٢٤ ساعة بلا دفع: فشل**');
   eq(PL.inv[sub(r.id).gateway_ref].orderStatus, 'Canceled', 'وألغينا الفاتورة عند Paylink');
   const rv = ledger('u-cr').find(x => x.reason === 'reversal');
-  eq(rv && [rv.amount_halalas, String(rv.expires_at).slice(0, 10)], [1400, '2027-03-01'],
+  eq(rv && [rv.amount_halalas, String(rv.expires_at).slice(0, 10)], [900, '2027-03-01'],
      '**والرصيد رجع بصلاحيته الأصلية** — لا أطول ولا أقصر');
   q = (await call('GET', '/api/me/quote', { tok: tokOf('u-cr') })).j;
   eq(q.creditAvailable, 1500, 'ورصيده ١٥ كما كان');
 
-  /* ── ٦) الرصيد يغطي الكل: تفعيل بلا فاتورة ── */
+  /* ── ٦) رصيد أكبر من السعر: يدفع ١٠ نقداً والرصيد يغطي الباقي ──
+     كانت «الرصيد يغطي الكل ⇒ تفعيل بلا فاتورة». تغيّرت عمداً (الشروط §٣ — قرار محمد):
+     طلب بلا دفع نقدي ما يغطي رسوم البوابة لو انسترجع أو انعرض عليه اعتراض */
+  q = (await call('GET', '/api/me/quote', { tok: tokOf('u-full') })).j;
+  eq([q.credit, q.amount], [900, 1000], '**رصيد ٥٠ وسعر ١٩: يدفع ١٠ والرصيد ٩** — ما فيه تفعيل بالرصيد وحده');
   const nAdds = adds().length;
   r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-full'), body: {} })).j;
-  eq([r.ok, r.activated], [true, true], '**رصيد ٥٠ وسعر ١٩: تفعيل فوري بلا فاتورة ولا جوال**');
-  eq(adds().length, nAdds, 'وما انفتحت فاتورة');
-  eq([sub(r.id).status, sub(r.id).gateway], ['paid', 'credit'], 'صفّه مدفوع بالرصيد');
+  eq([r.ok, r.why], [false, 'phone'], 'يدفع نقداً ⇒ يحتاج جوال — ما تفعّل بلا دفع');
+  r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-full'), body: { phone: '0500000011' } })).j;
+  ok(r.ok && r.url && !r.activated, 'فاتورة لا تفعيل بالرصيد وحده — ' + JSON.stringify(r));
+  eq([adds().length, (adds()[adds().length - 1] || {}).b && adds()[adds().length - 1].b.amount], [nAdds + 1, 10],
+     'انفتحت فاتورة بعشرة ريال');
+  const sf = ledger('u-full').find(x => x.reason === 'spend');
+  eq(sf && sf.amount_halalas, -900, 'وحجز ٩ من الرصيد');
+  PL.inv[sub(r.id).gateway_ref].orderStatus = 'Paid';
+  await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-full') });
+  eq([sub(r.id).status, sub(r.id).gateway], ['paid', 'paylink'], 'مدفوع عبر البوابة');
   eq(P('u-full').subscription_expires_at, END_NOW, 'والاشتراك فعّال');
-  eq(P('u-full').paid_at, null, '**ورصيد ما يُحسب «دفع فعلي»** في الإحصاء');
-  ok(tgTo('6011', /إيصال JDW-/).some(m => /المدفوع: 0 ريال<\/b> — غطّاه رصيدك/.test(m.text)
-     && /• من رصيدك: −19 ريال/.test(m.text)), 'وإيصاله يقول: غطّاه رصيدك');
+  ok(!!P('u-full').paid_at, 'ودفع فعلي (١٠ نقداً) — يُحسب في الإحصاء');
+  ok(tgTo('6011', /إيصال JDW-/).some(m => /• من رصيدك: −9 ريال/.test(m.text)
+     && /<b>المدفوع: 10 ريال<\/b> · عبر Paylink/.test(m.text)), 'وإيصاله: من رصيدك −٩ والمدفوع ١٠');
 
   /* ── ٧) رصيد الداعي لحظة التسوية — مرة للأبد ── */
   q = (await call('GET', '/api/me/quote?ref=FRD234', { tok: tokOf('u-ref') })).j;

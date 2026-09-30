@@ -6362,6 +6362,10 @@ async function plansQuote(){
   if(q.po)h+=row(ar?'التنبيه الطارئ':'Urgent alert','+'+sarTxt(q.po));
   if(q.discount)h+=row(ar?'خصم صديقك':'Friend discount','−'+sarTxt(q.discount),'good');
   if(q.credit)h+=row(ar?'رصيدك':'Your credit','−'+sarTxt(q.credit),'good');
+  /* أقل دفع نقدي (الشروط §٣): الرقم من السيرفر — قيمة في اللوحة لا ثابت هنا */
+  if(q.credit&&q.minCash)h+=`<div class="ps-note" id="psMinCash">${ar
+    ?`أقل مبلغ تدفعه ${sarTxt(q.minCash)} ريال، والرصيد يغطي الباقي.`
+    :`You pay at least SAR ${sarTxt(q.minCash)}; credit covers the rest.`}</div>`;
   if(q.ref==='own')h+=`<div class="ps-note">${ar?'هذا كود دعوتك أنت — ما ينطبق على حسابك':'That is your own invite code'}</div>`;
   if(q.ref==='used')h+=`<div class="ps-note">${ar?'خصم الصديق لأول اشتراك فقط':'Friend discount is for a first purchase only'}</div>`;
   const lines=document.getElementById('psLines'), tot=document.getElementById('psTotal');

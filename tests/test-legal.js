@@ -116,6 +116,13 @@ for (const k of ['about', 'terms']) {
   eq(pp, D && { term: sar(D.termHalalas), po: sar(D.pushoverHalalas), termEn: sar(D.termHalalas), poEn: sar(D.pushoverHalalas) },
      `**${k}: أسعار الجدول (عربي وإنجليزي) = أسعار الكود**`);
 }
+/* أقل دفع نقدي في الشروط = الافتراضي في الكود */
+{
+  const a = /على أن تدفع <b>([٠-٩]+) ريال على الأقل<\/b>/.exec(PAGES.terms);
+  const e = /you pay <b>at least SAR (\d+)<\/b> on every order/.exec(PAGES.terms);
+  eq([a && arNum(a[1]), e && +e[1]], D && [sar(D.minCashHalalas), sar(D.minCashHalalas)],
+     '**الشروط: أقل دفع نقدي (عربي وإنجليزي) = أقل دفع في الكود**');
+}
 /* قرار محمد (٣٠ سبتمبر ٢٠٢٦): التنبيه الطارئ ١٥ ريال بدل ١٠ */
 eq(D && D.pushoverHalalas, 1500, '**التنبيه الطارئ ١٥ ريال** (قرار محمد)');
 
