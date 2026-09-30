@@ -144,8 +144,8 @@ Object.assign(process.env, {
   SB_SERVICE_KEY: 'k', SUPABASE_SERVICE_KEY: 'k', SUPABASE_SERVICE_ROLE_KEY: 'k',
   TELEGRAM_TOKEN: 'tg', ADMIN_CHAT_ID: '5555', FREE_BETA: 'true',
   /* يوم الإطلاق في الإنتاج يتطلب البوابة (§١٠): إطفاء الفترة المجانية بلا
-     مفاتيح Paylink صار يترفض. هذا الاختبار يمثّل إطلاقاً حقيقياً فمعه مفاتيح */
-  PAYLINK_API_ID: 'APP_ID_LIVE_FOR_TESTS', PAYLINK_SECRET: 'live-secret-for-tests'
+     مفتاح EdfaPay يترفض. هذا الاختبار يمثّل إطلاقاً حقيقياً فمعه مفتاح */
+  EDFAPAY_API_KEY: 'ep-live-key-for-tests'
 });
 const realLog = console.log;
 console.log = () => {};

@@ -2,12 +2,17 @@
 
    أخطار يمسكها:
    ١) زر الدفع يشتغل والسيرفر قال مقفل (الفترة المجانية · dev · بلا مفاتيح).
-   ٢) الدفع يبدأ بلا جوال — Paylink يرفضه، فالطالب يطلع بخطأ غامض.
-   ٣) الصفحة تودّي الطالب لأي رابط يرجع — لازم صفحة Paylink وحدها.
-   ٤) الرجوع من Paylink يُعتبر دفعاً — الصفحة لازم تسأل السيرفر.
+   ٢) الدفع يبدأ بلا جوال — السيرفر يطلبه، فالطالب يطلع بخطأ غامض.
+   ٣) الصفحة تودّي الطالب لأي رابط يرجع — لازم صفحة الدفع عند EdfaPay وحدها
+      (وPaylink انشالت — قرار محمد — فرابطها ما عاد يُتبع).
+   ٤) الرجوع من صفحة الدفع يُعتبر دفعاً — الصفحة لازم تسأل السيرفر.
+   ١٣) النص تحت الزر ما يسمّي البوابة (ملف التسليم §٨-٧): «بوابة دفع إلكتروني».
    ٥) دفعة معلّقة قديمة تعلّق الطالب بلا مخرج (كمّلها · ألغها).
    ٦) نص خطأ من السيرفر يُعرض HTML.
    ٨) رقم جوال غلط: الرسالة تقول الصح والمؤشر يرجع للخانة.
+   ١١) الضغط على الدفع يُبرم العقد (اللائحة التنفيذية لنظام التجارة الإلكترونية)
+      فتحت الزر سطر موافقة بروابط الشروط والاسترجاع — والإنجليزي لقسميهما الإنجليزيين.
+   ١٢) الرصيد ما يغطي الطلب كله (أقل دفع نقدي ١٠ ريال — الشروط §٣): نقول له ليش.
    ٧) الورقة ما تقول أي ترم تبيع (لقاها محمد: «حتى 9 يونيو» بلا سنة ولا ترم،
       والشراء بعد ما ينقفل التسجيل يروح للترم الجاي)، ولا إن التنبيه الطارئ
       تطبيق ثاني تفعيله بعد الدفع — والمشتري ما يلقى وين يفعّله.
@@ -93,7 +98,8 @@ async function open(browser, scheme, query, prof) {
   page.on('dialog', d => { errs.push('DIALOG:' + d.message()); d.dismiss().catch(() => {}) });
   await page.route('**/fonts.googleapis.com/**', r => r.fulfill({ status: 200, contentType: 'text/css', body: '' }));
   await page.route('**/cdn.jsdelivr.net/**', r => r.fulfill({ status: 200, contentType: 'application/javascript', body: sbStub }));
-  /* صفحة Paylink المزيّفة: نثبت إن الطالب انودّى لها فعلاً */
+  /* صفحة الدفع المزيّفة عند EdfaPay: نثبت إن الطالب انودّى لها فعلاً */
+  await page.route('https://checkout.edfapay.com/**', r => r.fulfill({ status: 200, contentType: 'text/html', body: '<h1>EdfaPay</h1>' }));
   await page.route('https://payment.paylink.sa/**', r => r.fulfill({ status: 200, contentType: 'text/html', body: '<h1>Paylink</h1>' }));
   await page.route('https://evil.example.com/**', r => r.fulfill({ status: 200, contentType: 'text/html', body: '<h1>evil</h1>' }));
   await page.goto(`http://127.0.0.1:${server.address().port}/${query || ''}`, { waitUntil: 'load' });
@@ -113,6 +119,23 @@ const phoneShown = page => page.evaluate(() => {
   const b = document.getElementById('psPhoneBox');
   return !!b && !b.hidden && getComputedStyle(b).display !== 'none';
 });
+/* سطر الموافقة تحت زر الدفع: ظاهر؟ تحت الزر؟ ووين تودّي روابطه؟ */
+const agree = page => page.evaluate(() => {
+  const el = document.getElementById('psTerms'), b = document.getElementById('psPay');
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  return { vis: !el.hidden && r.height > 0, under: !!b && r.top >= b.getBoundingClientRect().bottom - 1,
+           links: [...el.querySelectorAll('a')].map(a => [a.getAttribute('href'), a.target]),
+           text: el.textContent.replace(/\s+/g, ' ').trim() };
+});
+/* سطر الاسترجاع فوق زر الدفع (الجولة الثانية من الشروط) */
+const refundLine = page => page.evaluate(() => {
+  const el = document.getElementById('psRefund'), b = document.getElementById('psPay');
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  return { vis: !el.hidden && r.height > 0, above: !!b && r.bottom <= b.getBoundingClientRect().top + 1,
+           text: el.textContent.replace(/\s+/g, ' ').trim() };
+});
 const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: path.join(SHOTS, name + '.png') }) };
 
 (async () => {
@@ -127,6 +150,8 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: pa
     const b = await btn(page);
     ok(b && b.dis && re.test(b.txt), `مقفل (${why}): الزر مقفل ويقول ليش — ${JSON.stringify(b)}`);
     eq(await phoneShown(page), false, `مقفل (${why}): ولا حقل جوال`);
+    eq((await agree(page) || {}).vis, false, `مقفل (${why}): ولا سطر موافقة على شراء ما يصير`);
+    eq((await refundLine(page) || {}).vis, false, `مقفل (${why}): ولا سطر استرجاع`);
     ST.posts = [];
     await page.evaluate(() => payStart());
     eq(ST.posts.length, 0, `مقفل (${why}): ولا طلب دفع ولو نودي بنفسه`);
@@ -134,35 +159,48 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: pa
     await ctx.close();
   }
 
-  /* ── ٢) مفتوح: الجوال إلزامي، ثم نودّيه لصفحة Paylink ── */
+  /* ── ٢) مفتوح: الجوال إلزامي، ثم نودّيه لصفحة الدفع عند EdfaPay ── */
   for (const scheme of ['dark', 'light']) {
     ST.quote = baseQuote(); ST.posts = []; ST.heads = [];
-    ST.checkout = { ok: true, url: 'https://payment.paylink.sa/pay/order/7001234', id: 101, amount: 1900 };
+    ST.checkout = { ok: true, url: 'https://checkout.edfapay.com/pay/s-7001234', id: 101, amount: 1900 };
     const { page, ctx, errs } = await open(browser, scheme);
     await sheet(page);
     let b = await btn(page);
     ok(b && !b.dis && /19/.test(b.txt) && /ادفع/.test(b.txt), 'الزر يقول كم يدفع — ' + JSON.stringify(b));
     eq(await phoneShown(page), true, 'وحقل الجوال ظاهر');
+    /* اللائحة التنفيذية لنظام التجارة الإلكترونية: الضغط على الدفع يُبرم العقد */
+    const ag = await agree(page);
+    ok(ag && ag.vis && ag.under, `**سطر الموافقة ظاهر تحت زر الدفع** (${scheme}) — ` + JSON.stringify(ag));
+    eq(ag && ag.text, 'بالضغط على الدفع توافق على الشروط والأحكام وسياسة الاسترجاع.', 'نصّه كما كُتب');
+    eq(ag && ag.links, [['/terms#payment', '_blank'], ['/terms#refund', '_blank']],
+       'روابطه لقسمي الدفع والاسترجاع — في صفحة جديدة فالورقة ما تضيع');
+    /* الجولة الثانية من الشروط: الاسترجاع بشرط وبخصم رسوم — يُقال قبل الزر */
+    const rf = await refundLine(page);
+    ok(rf && rf.vis && rf.above, `**سطر الاسترجاع ظاهر فوق زر الدفع** (${scheme}) — ` + JSON.stringify(rf));
+    eq(rf && rf.text, 'الاسترجاع خلال 7 أيام إذا ما استخدمت أي ميزة مدفوعة، بعد خصم رسوم الدفع (بحد أقصى 3 ريال).',
+       'نصّه كما كُتب — بأرقام لاتينية مثل باقي الموقع');
+    const by = await page.evaluate(() => { const e = document.getElementById('psBy'); return e && !e.hidden ? e.textContent.trim() : null });
+    eq(by, '🔒 الدفع الآمن عبر بوابة دفع إلكتروني', '**تحت الزر: «بوابة دفع إلكتروني» بلا اسم بوابة** (§٨-٧)');
     const fs16 = await page.evaluate(() => getComputedStyle(document.getElementById('psPhone')).fontSize);
     eq(fs16, '16px', '**حقل الجوال ١٦px** — أصغر منه يزوّم سفاري الآيفون ولا يرجع');
     await shot(page, 'pay-sheet-' + scheme);
     if (scheme === 'dark') {
       await page.click('#psPay');
       await page.waitForTimeout(300);
-      eq(ST.posts.length, 0, '**بلا جوال: ما نبدأ** — Paylink يشترطه');
+      eq(ST.posts.length, 0, '**بلا جوال: ما نبدأ** — السيرفر يطلبه');
       ok(/جوالك/.test(await page.textContent('#psMsg')), 'ونقول له يكتبه');
       await shot(page, 'pay-phone-missing');
     }
     await page.fill('#psPhone', '0512345678');
-    await Promise.all([page.waitForURL(/payment\.paylink\.sa/, { timeout: 5000 }).catch(() => {}), page.click('#psPay')]);
-    ok(/^https:\/\/payment\.paylink\.sa\/pay\/order\/7001234/.test(page.url()), '**انودّى لصفحة Paylink** — ' + page.url());
+    await Promise.all([page.waitForURL(/checkout\.edfapay\.com/, { timeout: 5000 }).catch(() => {}), page.click('#psPay')]);
+    ok(/^https:\/\/checkout\.edfapay\.com\/pay\/s-7001234/.test(page.url()), '**انودّى لصفحة الدفع عند EdfaPay** — ' + page.url());
     eq(ST.posts[0], { pushover: false, ref: '', phone: '0512345678' }, 'بطلب فيه الجوال فقط — لا معرّف ولا مبلغ من الصفحة');
     ok(ST.heads.some(h => h === 'Bearer tok-pay-123456789012345678901234567890'), 'وبرمز الجلسة');
     eq(errs, [], 'بلا أخطاء');
     await ctx.close();
   }
 
-  /* ── ٣) رابط مو من Paylink: ما نودّيه ── */
+  /* ── ٣) رابط مو من EdfaPay: ما نودّيه — ولا رابط Paylink بعد ما انشالت ── */
   {
     ST.quote = baseQuote({ phone: '0512345678' });
     ST.checkout = { ok: true, url: 'https://evil.example.com/steal', id: 102 };
@@ -171,11 +209,21 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: pa
     eq(await page.inputValue('#psPhone'), '0512345678', 'الجوال المحفوظ يتعبّى تلقائياً');
     await page.click('#psPay');
     await page.waitForTimeout(700);
-    ok(!/evil/.test(page.url()), '**رابط غير Paylink: ما نودّي الطالب له** — ' + page.url());
+    ok(!/evil/.test(page.url()), '**رابط غير EdfaPay: ما نودّي الطالب له** — ' + page.url());
+    await ctx.close();
+  }
+  {
+    ST.quote = baseQuote({ phone: '0512345678' });
+    ST.checkout = { ok: true, url: 'https://payment.paylink.sa/pay/order/7001234', id: 104 };
+    const { page, ctx } = await open(browser);
+    await sheet(page);
+    await page.click('#psPay');
+    await page.waitForTimeout(700);
+    ok(!/paylink/.test(page.url()), '**ورابط Paylink ما عاد يُتبع** — انشالت (قرار محمد) — ' + page.url());
     await ctx.close();
   }
 
-  /* ── ٤) الرصيد يغطي الكل: تفعيل بلا جوال ولا Paylink ── */
+  /* ── ٤) الرصيد يغطي الكل: تفعيل بلا جوال ولا صفحة دفع ── */
   {
     ST.quote = baseQuote({ credit: 1900, amount: 0, creditAvailable: 5000 }); ST.posts = [];
     ST.checkout = { ok: true, activated: true, until: '2027-06-15T20:59:59.000Z', id: 103 };
@@ -184,6 +232,7 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: pa
     const b = await btn(page);
     ok(b && !b.dis && /رصيدك/.test(b.txt), 'الزر: فعّل برصيدك — ' + JSON.stringify(b));
     eq(await phoneShown(page), false, 'وبلا حقل جوال');
+    eq((await agree(page) || {}).vis, true, 'والتفعيل بالرصيد شراء كذلك: سطر الموافقة ظاهر');
     await page.click('#psPay');
     await page.waitForTimeout(700);
     const t = await page.textContent('#planSheet');
@@ -198,7 +247,7 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: pa
   /* ── ٥) دفعة معلّقة: كمّلها أو ألغها ── */
   {
     ST.quote = baseQuote({ phone: '0512345678' }); ST.posts = [];
-    ST.checkout = { ok: false, why: 'pending', id: 55, url: 'https://payment.paylink.sa/pay/order/55', amount: 1900,
+    ST.checkout = { ok: false, why: 'pending', id: 55, url: 'https://checkout.edfapay.com/pay/s-55', amount: 1900,
                     error: 'عندك دفعة ما كملت' };
     ST.cancel = { ok: true, id: 55, status: 'failed' };
     const { page, ctx, errs } = await open(browser);
@@ -206,7 +255,7 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: pa
     await page.click('#psPay');
     await page.waitForTimeout(500);
     const href = await page.getAttribute('#psMsg a', 'href');
-    eq(href, 'https://payment.paylink.sa/pay/order/55', 'رابط يكمّل منه');
+    eq(href, 'https://checkout.edfapay.com/pay/s-55', 'رابط يكمّل منه');
     await shot(page, 'pay-pending-box');
     await page.click('#psMsg button');
     await page.waitForTimeout(600);
@@ -229,7 +278,7 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: pa
     await ctx.close();
   }
 
-  /* ── ٧) الرجوع من Paylink: نسأل السيرفر ── */
+  /* ── ٧) الرجوع من صفحة الدفع: نسأل السيرفر ── */
   for (const scheme of ['dark', 'light']) {
     ST.pay = [{ ok: true, id: 77, status: 'paid', until: '2027-06-15T20:59:59.000Z', amount: 1900 }]; ST.pays = 0;
     const { page, ctx, errs } = await open(browser, scheme, '?pay=77&transactionNo=7001234');
@@ -395,6 +444,65 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: pa
     ok(!/pushover=1/.test(page.url()), 'والرابط تنظّف');
     eq(errs, [], 'بلا أخطاء');
     ST.ms = null;
+    await ctx.close();
+  }
+
+  /* ── ١٢) أقل دفع نقدي (الشروط §٣): لما ينصرف رصيد نقول له ليش ما غطّى الكل ── */
+  const minLine = page => page.evaluate(() => { const e = document.getElementById('psMinCash');
+    return e ? e.textContent.replace(/\s+/g, ' ').trim() : null });
+  for (const scheme of ['dark', 'light']) {
+    ST.quote = baseQuote({ credit: 900, amount: 1000, creditAvailable: 5000, minCash: 1000 }); ST.ms = null;
+    const { page, ctx, errs } = await open(browser, scheme);
+    await sheet(page);
+    eq(await minLine(page), 'أقل مبلغ تدفعه 10 ريال، والرصيد يغطي الباقي.',
+       `**رصيد انصرف: «أقل مبلغ تدفعه 10 ريال، والرصيد يغطي الباقي»** (${scheme})`);
+    ok(/ادفع 10 ريال/.test((await btn(page) || {}).txt || ''), 'والزر يقول ١٠');
+    await shot(page, 'plans-mincash-' + scheme);
+    eq(errs, [], 'بلا أخطاء');
+    await ctx.close();
+  }
+  {
+    /* الرقم من السيرفر (قيمة في اللوحة) لا ثابت في الصفحة */
+    ST.quote = baseQuote({ credit: 400, amount: 1500, creditAvailable: 400, minCash: 1500 });
+    const { page, ctx } = await open(browser);
+    await sheet(page);
+    eq(await minLine(page), 'أقل مبلغ تدفعه 15 ريال، والرصيد يغطي الباقي.', 'الرقم من السيرفر: ١٥ لو غيّره محمد من اللوحة');
+    await page.evaluate(() => { LANG = 'en'; applyLang() });
+    await sheet(page);
+    eq(await minLine(page), 'You pay at least SAR 15; credit covers the rest.', 'وبالإنجليزي');
+    await ctx.close();
+  }
+  {
+    ST.quote = baseQuote({ minCash: 1000 });
+    const { page, ctx } = await open(browser);
+    await sheet(page);
+    eq(await minLine(page), null, 'بلا رصيد منصرف: ما نقول شي عن أقل دفع');
+    await ctx.close();
+  }
+
+  /* ── ١١) سطر الموافقة بالإنجليزي، ومن اشتراكه فعّال ما يشوفه ── */
+  {
+    ST.quote = baseQuote(); ST.ms = null;
+    const { page, ctx, errs } = await open(browser, 'dark');
+    await page.evaluate(() => { LANG = 'en'; applyLang() });
+    await sheet(page);
+    const ag = await agree(page);
+    ok(ag && ag.vis && ag.under, 'بالإنجليزي: ظاهر تحت الزر — ' + JSON.stringify(ag));
+    eq(ag && ag.text, 'By continuing to payment, you agree to the Terms and the Refund policy.', 'نصّه الإنجليزي كما كُتب');
+    eq(ag && ag.links, [['/terms#en-payment', '_blank'], ['/terms#en-refund', '_blank']],
+       '**وروابطه للنسخة الإنجليزية** (‎#en-‎ يفتحها على القسم)');
+    eq((await refundLine(page) || {}).text, "Refunds within 7 days if you haven't used any paid feature, less payment fees (up to SAR 3).",
+       'وسطر الاسترجاع بالإنجليزي');
+    await shot(page, 'plans-agree-en');
+    eq(errs, [], 'بلا أخطاء');
+    await ctx.close();
+  }
+  {
+    ST.quote = baseQuote({ includesTerm: false, base: 0, po: 0, amount: 0 });
+    const { page, ctx } = await open(browser);
+    await sheet(page);
+    eq((await agree(page) || {}).vis, false, 'اشتراكه فعّال وما فيه شي يشتريه: ولا سطر موافقة');
+    eq((await refundLine(page) || {}).vis, false, 'ولا سطر استرجاع');
     await ctx.close();
   }
 

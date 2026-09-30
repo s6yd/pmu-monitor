@@ -1978,12 +1978,14 @@ const PRICE_FIELDS=[
   ['pushoverHalalas','التنبيه الطارئ',1],
   ['friendDiscountHalalas','خصم الصديق',1],
   ['referrerCreditHalalas','رصيد الداعي',1],
+  ['referralHoldDays','رصيد الداعي بعد (أيام)',0],
   ['reviewsCreditHalalas','رصيد التقييمات',1],
   ['reviewsNeeded','تقييمات للطلب',0],
   ['creditTerms','صلاحية الرصيد (ترمات)',0],
   ['lateDays','أيام الشراء المتأخر',0],
   ['freeMonitors','مراقبات المجاني',0],
-  ['freeSchedules','جداول المجاني',0]
+  ['freeSchedules','جداول المجاني',0],
+  ['minCashHalalas','أقل دفع نقدي للطلب',1]
 ];
 async function savePricing(){
   const pricing={};
@@ -2002,21 +2004,23 @@ async function savePricing(){
   }catch(e){ toast(e.message,'err') }
 }
 
-/* ══ بوابة الدفع ══ الإعداد والعدّادات من السيرفر — اللوحة ما تحسب سعراً
-   ولا تقرر مين يدفع. تُحمَّل مع تبويب الحالة، مرة بالدقيقة على الأكثر. */
+/* ══ بوابة الدفع (EdfaPay) ══ الإعداد والعدّادات من السيرفر — اللوحة ما تحسب سعراً
+   ولا تقرر مين يدفع، والسرّ ما يوصلها (طوله بس). تُحمَّل مع تبويب الحالة، مرة
+   بالدقيقة على الأكثر. محمد يضبط الرابط والسرّ في لوحة EdfaPay ويجرّب من هناك،
+   وهنا يشوف وصل الإشعار ولا لا وليش */
 let PAYST=null, PAYST_AT=0;
 const PAY_ST_AR={pending:'معلّق',paid:'مدفوع',failed:'فشل'};
 function payCardHTML(){
   const d=PAYST;
   if(!d)return `<div class="gauge" style="margin-bottom:12px">
-    <div class="maint-t">💳 بوابة الدفع — Paylink</div><div class="gauge-sub">جاري التحميل…</div></div>`;
-  const keys=d.ready?'<b style="color:var(--open)">جاهزة</b>'
-    :d.testIdInProd?'<b style="color:var(--close)">مفتاح التجربة العام — حط مفاتيحك الحقيقية</b>'
-    :'<b style="color:var(--close)">ناقصة — PAYLINK_API_ID · PAYLINK_SECRET</b>';
-  const hook=d.hookSet?`<b style="color:var(--open)">مضبوط · ${Number(d.hookLen)||0} حرف${
+    <div class="maint-t">💳 بوابة الدفع — EdfaPay</div><div class="gauge-sub">جاري التحميل…</div></div>`;
+  const code=s=>`<span class="ltr" style="font-family:var(--mono)">${esc(s)}</span>`;
+  const key=d.keySet?'<b style="color:var(--open)">مضبوط</b>'
+    :`<b style="color:var(--close)">ناقص — ${code('EDFAPAY_API_KEY')}</b>`;
+  const sec=d.hookSet?`<b style="color:var(--open)">مضبوط · ${Number(d.hookLen)||0} حرف${
       d.hookHidden?` · تجاهلنا ${Number(d.hookHidden)} حرف مخفي`:''}</b>`
-    :'<b style="color:var(--warn)">بلا مفتاح — PAYLINK_WEBHOOK_KEY</b>';
-  const hk=payHookHTML(d);
+    :`<b style="color:var(--warn)">بلا سرّ — ${code('EDFAPAY_WEBHOOK_SECRET')}</b>`;
+  const url=location.origin+'/api/edfapay/webhook';
   const who={none:'ولا أحد',all:'كل الطلاب',
     owner:d.live?'أنت فقط — الفترة المجانية شغّالة':'أنت فقط — نسخة التجربة'}[d.openTo]||d.openTo;
   const c=d.counts||{};
@@ -2025,55 +2029,50 @@ function payCardHTML(){
         x.note?`<span style="color:var(--text3)"> — ${esc(x.note)}</span>`:''}</span>
       <span>${sar(x.amount)} ريال${x.credit?` + رصيد ${sar(x.credit)}`:''}</span></div>`).join('');
   return `<div class="gauge" style="margin-bottom:12px">
-    <div class="maint-t">💳 بوابة الدفع — Paylink</div>
-    <div class="kv"><span>البيئة</span><b>${d.live?'الإنتاج':'التجربة'} ·
-      <span class="ltr" style="font-family:var(--mono)">${esc(d.host)}</span></b></div>
-    <div class="kv"><span>المفاتيح</span>${keys}</div>
-    <div class="kv"><span>الإشعار</span>${hook}</div>
-    ${hk}
+    <div class="maint-t">💳 بوابة الدفع — EdfaPay</div>
+    <div class="kv"><span>البيئة</span><b>${d.live?'الإنتاج':'التجربة'} · ${code(d.host)}</b></div>
+    ${d.hostBad?payTip(`${code('EDFAPAY_HOST')} مو من خوادمهم المعروفة — تجاهلناه.`):''}
+    <div class="kv"><span>المفتاح</span>${key}</div>
+    <div class="kv"><span>سرّ الإشعار</span>${sec}</div>
+    <div class="kv"><span>رابط الإشعار</span><button class="mini" data-v="${esc(url)}" onclick="payCopy(this)">📋 انسخ</button></div>
+    <div dir="ltr" style="text-align:left;font-family:var(--mono);font-size:12px;overflow-wrap:break-word;margin:-2px 0 8px">${esc(url)}</div>
+    ${payHookHTML(d)}
     <div class="kv"><span>مين يقدر يدفع</span><b>${esc(who)}</b></div>
     <div class="kv"><span>الطلبات</span><b>معلّقة ${c.pending||0} · مدفوعة ${c.paid||0} · فاشلة ${c.failed||0}</b></div>
-    ${d.live?`<div class="kv"><span>المحصّل عبر Paylink</span><b>${sar(d.paidHalalas||0)} ريال</b></div>`:''}
+    ${d.live?`<div class="kv"><span>المحصّل عبر EdfaPay</span><b>${sar(d.paidHalalas||0)} ريال</b></div>`:''}
     ${rec?`<div style="margin-top:8px">${rec}</div>`:''}
     <div class="row-meta" style="margin-top:10px">
       <button class="mini go" onclick="payPing(this)">🔌 جرّب الاتصال</button>
       <button class="mini" onclick="loadPay(true)">🔄 تحديث</button></div>
   </div>`;
 }
-/* آخر إشعار وصل من Paylink وليش انرفض — زر Test عندهم يرجّع رمزاً بس،
-   والسيرفر يحفظ الأسماء والأطوال (لا القيم). في الذاكرة: يفضى مع كل نشر */
+const payTip=s=>`<div class="gauge-sub" style="margin:2px 0 8px;line-height:1.7;font-size:12px;color:var(--text2)">${s}</div>`;
 function payAgo(iso){
   const m=Math.round((Date.now()-Date.parse(iso))/60000);
   return !Number.isFinite(m)?'':m<1?'الآن':m<60?`قبل ${m} د`:m<1440?`قبل ${Math.round(m/60)} س`:`قبل ${Math.round(m/1440)} يوم`;
 }
+/* آخر إشعار وصل وليش انرفض — الأسباب رموز من السيرفر. في الذاكرة: يفضى مع كل نشر */
 function payHookHTML(d){
-  const L=d.hookLast, tip=s=>`<div class="gauge-sub" style="margin:2px 0 8px;line-height:1.7;font-size:12px;color:var(--text2)">${s}</div>`;
-  const code=s=>`<span class="ltr" style="font-family:var(--mono)">${esc(s)}</span>`;
+  const L=d.hookLast, code=s=>`<span class="ltr" style="font-family:var(--mono)">${esc(s)}</span>`;
   if(!L)return `<div class="kv"><span>آخر إشعار</span><b style="color:var(--text3)">ما وصل شي من آخر تشغيل</b></div>`+
-    (d.hookSet?tip('جرّبه: زر <b>Test</b> في إعدادات الإشعار في Paylink، وبعدها «🔄 تحديث» هنا.'):'');
-  const when=esc(payAgo(L.at));
-  if(L.ok)return `<div class="kv"><span>آخر إشعار</span><b style="color:var(--open)">✅ مقبول · ${when}</b></div>`+
-    (L.via&&L.via!=='x-jadwalik-key'&&L.via!=='authorization'&&L.via!=='url'
-      ?tip(`وصل المفتاح باسم ${code(L.via)} — يشتغل، والأصح ${code('X-Jadwalik-Key')}.`):'');
-  const H=(L.headers||[]).length?`<div dir="ltr" style="text-align:left;font-family:var(--mono)">${
-    (L.headers||[]).map(esc).join(' · ')}</div>`:'';
-  const why={
-    nokey:`${code('PAYLINK_WEBHOOK_KEY')} ناقص في Render — أضفه في خدمة الإنتاج وانشر.`,
-    /* زر Test في Paylink ما يرسل ترويساتنا (شفناها على الإنتاج) — الرابط يوصل دائماً */
-    noheader:`ما وصل المفتاح: Paylink ما أرسل ترويسة ${code('X-Jadwalik-Key')} ولو كتبتها في خانة <b>HTTP Header 1</b>. `+
-      `<b>الحل:</b> حط المفتاح في رابط الإشعار نفسه:<div dir="ltr" style="text-align:left;font-family:var(--mono)">${
-        esc(location.origin)}/api/paylink/webhook?key=<span dir="rtl">المفتاح</span></div>`+
-      (H?`الترويسات اللي وصلت:${H}`:''),
-    mismatch:(L.via==='authorization'
-      ?`ما وصلت ${code('X-Jadwalik-Key')}، ووصلت ${code('Authorization')} بمفتاح غير مفتاحنا — تأكد من اسم الترويسة في خانة <b>HTTP Header 1</b>. `
-      :L.via==='url'?'المفتاح اللي في رابط الإشعار ما طابق. ':'المفتاح ما طابق. ')+
-      `وصل ${Number(L.len)||0} حرف، والمضبوط في Render ${Number(L.want)||0} — `+
-      (L.via==='url'?'انسخ الرابط كامل مرة ثانية بزر النسخ.':'انسخ نفس المفتاح في الخانتين بزر النسخ.'),
-    swapped:`المفتاح مكتوب في خانة اسم الترويسة. الاسم ${code('X-Jadwalik-Key')} في <b>HTTP Header 1</b>، والمفتاح في <b>Value</b>.`
-  }[L.why]||esc(L.why);
-  return `<div class="kv"><span>آخر إشعار</span><b style="color:var(--close)">❌ مرفوض · ${when}</b></div>`+
-    tip(why+(L.hidden?`<br>وفيه ${Number(L.hidden)} حرف مخفي (من النسخ) — تجاهلناه.`:'')+
-      (L.okAt&&L.okAt!==L.at?`<br>وآخر إشعار مقبول: ${esc(payAgo(L.okAt))}.`:''));
+    (d.hookSet?payTip('جرّبه من إعدادات الإشعار في لوحة EdfaPay، وبعدها «🔄 تحديث» هنا.'):'');
+  if(L.ok)return `<div class="kv"><span>آخر إشعار</span><b style="color:var(--open)">✅ مقبول · ${esc(payAgo(L.at))}</b></div>`+
+    payTip(!L.json?'التوقيع صحيح، والجسم مو JSON (إشعار تجربة؟).'
+      :`الحالة ${code(L.status||'؟')} · النوع ${code(L.type||'؟')}`+
+       (L.order&&L.order!=='other'?` · الطلب ${code(L.order)}`:L.order==='other'?' · رقم طلب مو من طلباتنا (تجربة)':''));
+  return `<div class="kv"><span>آخر إشعار</span><b style="color:var(--close)">❌ مرفوض · ${esc(payAgo(L.at))}</b></div>`+
+    payTip(({
+      nosecret:`${code('EDFAPAY_WEBHOOK_SECRET')} ناقص في Render — أضفه بنفس السرّ اللي في لوحة EdfaPay وانشر.`,
+      nosig:'وصل الإشعار <b>بلا توقيع</b>: EdfaPay ما يوقّع إلا لو كتبت السرّ في خانة <b>Webhook Secret</b> عندهم. اكتب نفس السرّ اللي في Render.',
+      bad:`التوقيع ما طابق: السرّ في لوحة EdfaPay غير اللي في Render (عندنا ${Number(L.want)||0} حرف). انسخ نفس السرّ في الخانتين.`,
+      big:`الجسم أكبر من المعقول (${Number(L.bytes)||0} بايت) — ما قريناه.`
+    })[L.why]||esc(L.why))+(L.okAt&&L.okAt!==L.at?payTip(`وآخر إشعار مقبول: ${esc(payAgo(L.okAt))}.`):'');
+}
+function payCopy(b){
+  const v=b&&b.dataset.v||'';
+  if(navigator.clipboard&&navigator.clipboard.writeText)
+    navigator.clipboard.writeText(v).then(()=>toast('انسخ الرابط','ok'),()=>toast(v,'ok'));
+  else toast(v,'ok');
 }
 async function loadPay(force){
   if(!force&&PAYST&&Date.now()-PAYST_AT<60000)return;
@@ -2085,7 +2084,7 @@ async function payPing(b){
   if(b)b.disabled=true;
   try{
     const r=await api('pay-ping',{body:{}});
-    toast(r.ok?`✅ الاتصال بـPaylink شغّال (${r.ms} م.ث)`:('❌ '+(r.error||'فشل')),r.ok?'ok':'err');
+    toast(r.ok?`✅ الاتصال بـEdfaPay شغّال (${r.ms} م.ث)`:('❌ '+(r.error||'فشل')),r.ok?'ok':'err');
   }catch(e){ toast(e.message,'err') }
   finally{ if(b)b.disabled=false }
 }

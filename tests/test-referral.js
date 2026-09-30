@@ -149,10 +149,11 @@ const U1 = 'tok-u1-aaaaaaaaaaaaaaaaaaaa', U2 = 'tok-u2-bbbbbbbbbbbbbbbbbbbb', U3
     ok(q.base === 1900 && q.po === 0 && q.credit === 500 && q.amount === 1400,
        'الترم ١٩ − رصيد ٥ = ١٤ — ' + JSON.stringify([q.base, q.po, q.credit, q.amount]));
     q = (await me('/api/me/quote?pushover=1', U2)).j;
-    ok(q.po === 1000 && q.amount === 2400, 'ومع التنبيه الطارئ: ٢٤');
+    /* السعر ١٥ ريال (قرار محمد ٣٠ سبتمبر ٢٠٢٦ — كان ١٠) */ 
+    ok(q.po === 1500 && q.amount === 2900, 'ومع التنبيه الطارئ ١٥: ٢٩');
     q = (await me(`/api/me/quote?pushover=1&ref=${code}`, U2)).j;
-    ok(q.ref === 'ok' && q.discount === 300 && q.amount === 2100,
-       'كود صديق صالح: −٣ ⇒ ٢١ — ' + JSON.stringify([q.ref, q.discount, q.amount]));
+    ok(q.ref === 'ok' && q.discount === 300 && q.amount === 2600,
+       'كود صديق صالح: −٣ ⇒ ٢٦ — ' + JSON.stringify([q.ref, q.discount, q.amount]));
     q = (await me('/api/me/quote?ref=KWT234', U2)).j;
     ok(q.ref === 'own' && q.discount === 0, 'كودك أنت: ما ينطبق');
     q = (await me('/api/me/quote?ref=ZZZZZZ', U2)).j;
@@ -167,11 +168,12 @@ const U1 = 'tok-u1-aaaaaaaaaaaaaaaaaaaa', U2 = 'tok-u2-bbbbbbbbbbbbbbbbbbbb', U3
 
     DB.credit_ledger[1].amount_halalas = 5000;
     q = (await me('/api/me/quote', U2)).j;
-    ok(q.credit === 1900 && q.amount === 0, 'رصيد أكبر من السعر: يغطيه ويبقى الباقي — المبلغ صفر');
+    /* أقل دفع نقدي ١٠ (الشروط §٣ — قرار محمد، كان «الرصيد يغطي الكل ⇒ المبلغ صفر») */
+    ok(q.credit === 900 && q.amount === 1000, 'رصيد أكبر من السعر: يدفع ١٠ والرصيد يغطي الباقي ويبقى الزائد');
     DB.credit_ledger[1].amount_halalas = 500;
 
     q = (await me(`/api/me/quote?pushover=1&ref=${code}`, U3)).j;
-    ok(q.includesTerm === false && q.base === 0 && q.po === 1000,
+    ok(q.includesTerm === false && q.base === 0 && q.po === 1500,
        'مشترك فعّال: ما يدفع الترم مرة ثانية — الإضافة وحدها');
     ok(q.ref === 'used', 'وكود الصديق ما ينطبق على الإضافة');
   }
