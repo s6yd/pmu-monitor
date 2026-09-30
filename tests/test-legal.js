@@ -1,13 +1,14 @@
 /* الصفحات النظامية والتذييل — اختبار.
 
-   نظام التجارة الإلكترونية ولائحته يطلبان: اسم المتجر وسجله ووسيلة التواصل ظاهرة
-   في الموقع، وإن الضغط على زر الدفع يُبرم العقد (بروابط الشروط والاسترجاع).
+   نظام التجارة الإلكترونية ولائحته: وسيلة التواصل ظاهرة، والضغط على زر الدفع يُبرم العقد
+   (بروابط الشروط والاسترجاع). والجهة: **رقم السجل التجاري وحده، بلا اسم المؤسسة** —
+   قرار محمد (٣٠ سبتمبر ٢٠٢٦): النصوص تقول «جدولك — سجل تجاري …»، والتذييلات بلا سطر سجل.
    والصفحات تحيل لبعضها بأقسام (‎/terms#refund‎) — قسم يتغيّر اسمه ينكسر رابطه بصمت.
 
    أخطار يمسكها:
    ١) رابط لقسم ما هو موجود (‎/terms#payment‎ من ورقة الباقات أو من «عن جدولك»).
    ٢) ‎#en-…‎ ما يفتح النسخة الإنجليزية — الرابط الإنجليزي من الورقة يوصل للعربي.
-   ٣) الجهة المشغّلة ناقصة من تذييل صفحة، أو من تذييل الصفحة الرئيسية.
+   ٣) اسم المؤسسة يرجع لصفحة أو للإيصال، أو رقم السجل يختفي من «عن جدولك».
    ٤) تاريخ «آخر تحديث» العربي والإنجليزي مختلفان — تحدّث واحد ونُسي الثاني.
    ٥) وصف الموقع علناً بـ«مشروع فردي» (قاعدة ثابتة في CLAUDE.md §١).
 
@@ -28,8 +29,8 @@ const eq = (a, b, m) => ok(JSON.stringify(a) === JSON.stringify(b),
 const PAGES = { terms: read('terms.html'), privacy: read('privacy.html'), about: read('about.html') };
 const HOME = read('pmu-schedule.html');
 const GUIDE = read('jadwalik-guide.html');
-const CO_AR = 'مؤسسة محمد اسامه المسبح لتقنية المعلومات';
-const CO_EN = 'Mohammad Osama AlMusabbeh Establishment for Information Technology';
+/* اسم المؤسسة بأي صيغة — ما يظهر في أي مكان (قرار محمد) */
+const CO = /مؤسسة محمد|اسامه المسبح|المسبح لتقنية المعلومات|AlMusabbeh|Establishment for Information Technology/;
 const CR = '7055288521';
 
 /* ═══ ١) الأقسام اللي تحيل لها الروابط موجودة ═══ */
@@ -56,13 +57,24 @@ ok(anchors > 0, 'فيه روابط أقسام نفحصها');
 for (const h of ['/terms#payment', '/terms#refund', '/terms#en-payment', '/terms#en-refund'])
   ok(HOME.includes(`href="${h}"`), `**سطر الموافقة تحت زر الدفع** فيه ${h}`);
 
-/* ═══ ٣) الجهة المشغّلة في تذييل كل صفحة — باللغتين ═══ */
+/* ═══ ٣) رقم السجل وحده — بلا اسم المؤسسة (قرار محمد) ═══ */
 const foot = html => { const i = html.lastIndexOf('class="foot"'); return i < 0 ? '' : html.slice(i) };
-for (const [k, html] of Object.entries(PAGES)) {
-  ok(foot(html).includes(CO_AR) && foot(html).includes(CR), `تذييل ${k}: «${CO_AR} · سجل تجاري ${CR}»`);
-  ok(foot(html).includes('href="/about"') || k === 'about', `تذييل ${k}: رابط «عن جدولك»`);
-  ok(html.includes(CO_EN), `${k}: الجهة بالإنجليزي كذلك`);
+for (const [k, html] of Object.entries(Object.assign({ guide: GUIDE, home: HOME, server: read('server.js') }, PAGES))) {
+  const m = CO.exec(html);
+  ok(!m, `**${k}: بلا اسم المؤسسة** — «${m ? m[0] : ''}»`);
 }
+ok(/<b>جدولك<\/b> — سجل تجاري رقم 7055288521/.test(PAGES.about) && /<b>Jadwalik<\/b> — commercial registration no\. 7055288521/.test(PAGES.about),
+   '**«عن جدولك» فيها رقم السجل باللغتين**');
+for (const [k, html] of Object.entries(PAGES)) {
+  ok(!foot(html).includes(CR), `تذييل ${k}: بلا سطر سجل`);
+  ok(foot(html).includes('href="/about"') || k === 'about', `تذييل ${k}: رابط «عن جدولك» (فيها رقم السجل)`);
+}
+/* والنصوص اللي كانت تسمّي المؤسسة صارت «جدولك» ومعها الرقم */
+ok(PAGES.terms.includes('كلمة «نحن» في هذي الشروط تعني جدولك') && PAGES.terms.includes('"we" means Jadwalik'),
+   'الشروط: «نحن» تعني جدولك');
+ok(/جهة التحكم\) هي <b>جدولك<\/b>، سجل تجاري رقم 7055288521/.test(PAGES.privacy) &&
+   /\(the controller\) is <b>Jadwalik<\/b>, Commercial Registration No\. 7055288521/.test(PAGES.privacy),
+   'الخصوصية: جهة التحكم «جدولك» برقم سجلها');
 
 /* ═══ ٤) تاريخ «آخر تحديث» نفسه بالعربي والإنجليزي ═══ */
 const MON_AR = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
@@ -229,7 +241,7 @@ const server = http.createServer((req, res) => {
     ok(f && f.vis, `**الصفحة الرئيسية فيها تذييل ظاهر من أول شاشة** (${scheme}) — ${JSON.stringify(f && { vis: f.vis, tab: f.tab })}`);
     eq(f && f.links, ['/about', '/terms', '/privacy', 'mailto:jadwalik@gmail.com'],
        'روابطه: عن جدولك · الشروط والأحكام · سياسة الخصوصية · البريد');
-    ok(f && f.text.includes(`${CO_AR} · سجل تجاري ${CR}`), '**وسطر الجهة وسجلها** — ' + (f && f.text));
+    ok(f && !f.text.includes(CR) && !CO.test(f.text), '**بلا سطر مؤسسة ولا سجل** (رقم السجل في «عن جدولك») — ' + (f && f.text));
     ok(f && f.w <= 390, 'ما يطلع عن عرض الجوال');
     /* ولا نقطة فاصلة معلّقة آخر السطر: كل نقطة ظاهرة على سطر الرابط اللي بعدها */
     eq(await page.evaluate(() => [...document.querySelectorAll('.legal-foot > span')]
@@ -237,23 +249,22 @@ const server = http.createServer((req, res) => {
          .filter(d => { const n = d.nextElementSibling;
            return !n || Math.round(n.getBoundingClientRect().top) !== Math.round(d.getBoundingClientRect().top) })
          .length), 0, 'ولا نقطة فاصلة معلّقة آخر سطر (البريد ينزل سطر لحاله في الجوال)');
-    /* ما يغطّيه زر الدليل العائم */
+    /* ما يغطّيه زر الدليل العائم — آخر سطر فيه */
     const hit = await page.evaluate(() => {
-      const el = document.querySelector('.legal-co');
+      const el = document.querySelector('.legal-note');
       if (!el) return 'بلا سطر';
       const r = el.getBoundingClientRect();
       const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
       return at && (at === el || el.contains(at)) ? 'ok' : (at ? at.className || at.tagName : 'لا شي');
     });
-    eq(hit, 'ok', 'سطر الجهة ما يغطّيه شي');
+    eq(hit, 'ok', 'آخر سطر فيه ما يغطّيه شي');
     if (SHOTS) await page.screenshot({ path: path.join(SHOTS, `legal-foot-${scheme}.png`) });
-    /* والإنجليزي: الجهة باسمها الإنجليزي — وترجع عربي */
+    /* والإنجليزي: الروابط بأسمائها الإنجليزية، وبلا سطر سجل كذلك */
     await page.evaluate(() => { LANG = 'en'; applyLang() });
     const en = await page.evaluate(() => document.querySelector('.legal-foot').textContent.replace(/\s+/g, ' '));
-    ok(en.includes(`${CO_EN} · CR ${CR}`), 'بالإنجليزي: الجهة بالإنجليزي — ' + en);
+    ok(/About/.test(en) && /Terms of Service/.test(en) && !en.includes(CR), 'بالإنجليزي: الروابط وبلا سجل — ' + en);
     if (SHOTS && scheme === 'dark') await page.screenshot({ path: path.join(SHOTS, 'legal-foot-en.png') });
     await page.evaluate(() => { LANG = 'ar'; applyLang() });
-    ok((await page.evaluate(() => document.querySelector('.legal-foot').textContent)).includes(CO_AR), 'ورجعت عربي');
     /* وفي باقي الشاشات كذلك — كان في الإعدادات وحدها */
     for (const tab of ['search', 'plan', 'set']) {
       await page.evaluate(t => switchTab(t), tab);
