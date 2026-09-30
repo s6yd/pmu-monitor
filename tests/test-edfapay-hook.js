@@ -131,7 +131,7 @@ async function onSuite() {
   const s1 = sign(DOC_BODY); sigs.push(s1);
   let r = await post(DOC_BODY, s1);
   eq([r.code, r.j && r.j.ok], [200, true], '**مثال توثيقهم بتوقيعه ⇒ ٢٠٠** (الجسم كما وصل، بـ100.00)');
-  let a = (await admin()).j.edfapay || {};
+  let a = (await admin()).j || {};
   eq([a.keySet, a.hookSet, a.hookLen], [true, true, SECRET.length], 'اللوحة: المفتاح والسرّ مضبوطان وطول السرّ');
   let L = a.hookLast || {};
   eq([L.ok, L.why, L.json, L.status, L.type, L.order], [true, 'ok', true, 'Success', 'Purchase', 'other'],
@@ -148,7 +148,7 @@ async function onSuite() {
   const body2 = APPROVED('JDW-77'), s2 = sign(body2); sigs.push(s2);
   r = await post(body2, s2.toUpperCase());
   eq(r.code, 200, 'التوقيع بحروف hex كبيرة يُقبل');
-  L = (await admin()).j.edfapay.hookLast;
+  L = (await admin()).j.hookLast;
   eq([L.status, L.type, L.order], ['Approved', 'Purchase', 'JDW-77'], 'ورقم طلبنا يُعرض (JDW-77)');
 
   /* ── ٤) مزوّر ── */
@@ -164,7 +164,7 @@ async function onSuite() {
   eq([r.code, r.j && r.j.why], [401, 'no-signature'], 'ترويسة فاضية ⇒ no-signature');
   r = await post(body2, s2.slice(0, 40));
   eq([r.code, r.j && r.j.why], [401, 'bad-signature'], 'توقيع ناقص ⇒ bad-signature');
-  L = (await admin()).j.edfapay.hookLast;
+  L = (await admin()).j.hookLast;
   eq([L.ok, L.why, L.want, L.sigLen], [false, 'bad', SECRET.length, 40], 'اللوحة: مرفوض · السبب · الأطوال');
   ok(L.okAt && L.okAt !== L.at, '**وآخر مقبول باقٍ** — الرفض بعده ما يغطّيه');
   ok(L.status === undefined && L.order === undefined, '**جسم مرفوض ما يُقرأ منه شي**');
@@ -172,7 +172,7 @@ async function onSuite() {
   /* ── ٥) جسم مو JSON لكن موقَّع ⇒ ٢٠٠ (التوقيع صحيح) ── */
   r = await post('ping', sign('ping'));
   eq(r.code, 200, 'موقَّع وجسمه مو JSON ⇒ ٢٠٠ (ما نخلّيهم يعيدون)');
-  eq((await admin()).j.edfapay.hookLast.json, false, 'واللوحة تقول الجسم مو JSON');
+  eq((await admin()).j.hookLast.json, false, 'واللوحة تقول الجسم مو JSON');
 
   /* ── ٦) كبير ── */
   const huge = Buffer.alloc(300 * 1024, 'a');
@@ -185,8 +185,8 @@ async function onSuite() {
   noSecretAnywhere('السجل', LOGS.join('\n'), sigs);
   ok(LOGS.some(l => /pay: إشعار EdfaPay مقبول \(Success · Purchase\)/.test(l)), 'السجل: سطر المقبول بحالته');
   ok(LOGS.some(l => /pay: إشعار EdfaPay مرفوض — التوقيع ما طابق/.test(l)), 'السجل: سطر التوقيع الغلط');
-  ok(LOGS.some(l => /pay: EdfaPay · المفتاح مضبوط · الإشعار مضبوط \(\d+ حرف\)/.test(l)),
-     'سطر الإقلاع — ' + (LOGS.find(l => /^pay: EdfaPay/.test(l)) || 'ما طلع'));
+  ok(LOGS.some(l => /pay: edfapay · app-api\.edfapay\.com · المفتاح مضبوط · الإشعار مضبوط \(\d+ حرف\)/.test(l)),
+     'سطر الإقلاع — ' + (LOGS.find(l => /^pay: /.test(l)) || 'ما طلع'));
   const once = LOGS.filter(l => /التوقيع ما طابق/.test(l)).length;
   eq(once, 1, 'سطر لكل سبب بالدقيقة — أربع محاولات غلط = سطر واحد');
 }
@@ -195,17 +195,17 @@ async function nosecretSuite() {
   const body = APPROVED('JDW-5');
   const r = await post(body, sign(body));
   eq([r.code, r.j && r.j.why], [401, 'no-secret-configured'], '**بلا سرّ في Render: مقفل — حتى الموقَّع**');
-  const a = (await admin()).j.edfapay || {};
+  const a = (await admin()).j || {};
   eq([a.keySet, a.hookSet, a.hookLast && a.hookLast.why], [false, false, 'nosecret'], 'واللوحة تقول السرّ ناقص');
   ok(LOGS.some(l => /EDFAPAY_WEBHOOK_SECRET ناقص في Render/.test(l)), 'والسجل يسمّي المتغيّر');
-  ok(LOGS.some(l => /pay: EdfaPay · المفتاح ناقص · الإشعار بلا سرّ/.test(l)), 'وسطر الإقلاع');
+  ok(LOGS.some(l => /pay: edfapay · app-api\.edfapay\.com · المفتاح ناقص · الإشعار بلا سرّ/.test(l)), 'وسطر الإقلاع');
 }
 
 async function hiddenSuite() {
   const body = APPROVED('JDW-6');
   const r = await post(body, sign(body));
   eq(r.code, 200, '**سرّ Render فيه علامات مخفية: الإشعار الصحيح يُقبل**');
-  const a = (await admin()).j.edfapay || {};
+  const a = (await admin()).j || {};
   eq([a.hookLen, a.hookHidden], [SECRET.length, 2], 'واللوحة: الطول الحقيقي، وحرفان مخفيان تجاهلناهما');
   ok(LOGS.some(l => /الإشعار مضبوط \(\d+ حرف · تجاهلنا 2 حرف مخفي\)/.test(l)), 'وسطر الإقلاع يقولها');
 }

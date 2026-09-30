@@ -1,33 +1,39 @@
-/* بوابة الدفع (Paylink) — اختبار سلوكي على السيرفر الحقيقي.
-   السيرفر يشتغل فعلاً، و https.request محاكٍ يلعب دور Supabase وPaylink وتلقرام.
+/* بوابة الدفع (EdfaPay) — اختبار سلوكي على السيرفر الحقيقي.
+   السيرفر يشتغل فعلاً، و https.request محاكٍ يلعب دور Supabase وEdfaPay وتلقرام.
+   **EdfaPay وحدها — قرار محمد** (٣٠ سبتمبر ٢٠٢٦): كان الملف لـPaylink، وكل حماية
+   فيه انتقلت هنا كما هي. اللي انشال حالات مفتاح إشعار Paylink (الترويسة · ?key= ·
+   خانة الاسم) — بوابة ما عادت موجودة؛ وإشعار EdfaPay موقَّع ويختبره test-edfapay-hook.
+
+   شكل EdfaPay من توثيقهم (OpenAPI على app-api/api-docs): رد الحالة
+   (`/api/v1/payment/status`) بأمثلتهم الثلاثة حرفاً بحرف — PAID · FAILED (ومعها
+   reason) · ACTIVE (الصفحة مفتوحة وما دفع، بلا رقم عملية) — مغلّفة بـdata كما في
+   أمثلتهم، ومرة بلا غلاف كما في مخطّطهم. والإشعار مثال «Approved» حرفاً بحرف.
+   ورد فتح الدفع `data` بلا شكل موثّق: الاسم `redirectUrl` من Postman — ونجرّبه
+   داخل data وبلا غلاف.
 
    أخطار يمسكها:
-   ١) **التفعيل بلا إثبات**: رجوع الطالب والإشعار جرس — التفعيل بعد ما نسأل
-      Paylink: Paid · المبلغ بالهللة · رقم الطلب · رقم العملية. أي اختلاف ⇒ لا.
-   ٢) **التفعيل مرتين** (إشعار يتكرر، رجوع + إشعار) ⇒ رصيد داعٍ مرتين.
+   ١) **التفعيل بلا إثبات**: رجوع الطالب والإشعار جرس — حتى الموقَّع. التفعيل بعد
+      ما نسأل EdfaPay: PAID · المبلغ بالهللة · رقم الطلب · رقم العملية. أي اختلاف ⇒ لا.
+   ٢) **التفعيل مرتين** (إشعار يتكرر، رجوع + إشعار) ⇒ رصيد داعٍ مرتين. **وعملية وحدة
+      لطلبين**: رقم العملية فريد في القاعدة.
    ٣) **رصيد يضيع**: دفعة ما اكتملت ⇒ الرصيد المحجوز يرجع بصلاحيته الأصلية.
-   ٤) **فاتورة أقل من ٥ ريال** ترفضها البوابة ⇒ الرصيد يُصرف بقدر يترك ٥.
-   ٥) **البيئتان تتشاركان القاعدة**: dev ببطاقات تجريبية عامة ⇒ لصاحب الموقع
-      وحده، وما يلمس صفوف الإنتاج. والإنتاج يرفض مفتاح التجربة العام.
+   ٤) **أقل دفع نقدي ١٠ ريال** والرصيد يغطي الباقي.
+   ٥) **البيئتان تتشاركان القاعدة**: dev لصاحب الموقع وحده، وما يلمس صفوف الإنتاج.
+      والإنتاج على خادمهم الحقيقي دائماً — `EDFAPAY_HOST` ما يغيّره.
    ٦) **قبل الإطلاق** الطلاب ما يدفعون (الفترة المجانية) — صاحب الموقع وحده.
    ٧) آخر أيام النافذة ⇒ الترم الجاي — وخارج النوافذ كذلك (قرار محمد).
-   ٨) **الإشعار يرفض بلا سبب**: زر Test في Paylink رجّع `{"ok":false}` وبس، فما
-      عرفنا وش الغلط. الرفض يقول رمز سببه، واللوحة الأسماء والأطوال (لا القيم)،
-      وعلامات الاتجاه المخفية من النسخ على الجوال ما تكسر المطابقة.
-   ٩) **Paylink ما يرسل ترويستنا** (شفناها في اللوحة على الإنتاج) ⇒ المفتاح في
-      الرابط (`?key=`) يُقبل — وما ينكتب في سجل ولا لوحة.
-   ١٠) **الإيصال** (لقاها محمد): «اشتراكك فعّال» وحدها ما تقول وش اشترى ولا كم
-       — وآخره وصف الخدمة ورقم السجل، بلا اسم المؤسسة (قرار محمد)
-      دفع — ومن اشترى التنبيه الطارئ ما يدري إن فيه خطوة تفعيل. **وما نبيع
-      إضافة ما تنفعّل**: وضعها «off» يخفي بطاقة التفعيل.
+   ٨) **عطل عند EdfaPay ما يلغي طلباً** — ما نحكم بلا جواب، وننبّهك بعد ٢٤ ساعة.
+   ٩) **رابط صفحة دفع من نطاق ثاني** ما نودّي له طالباً.
+   ١٠) **الإيصال** (لقاها محمد): وش اشترى وكم ووين — وآخره وصف الخدمة ورقم السجل،
+       بلا اسم المؤسسة. **وما نبيع إضافة ما تنفعّل**: وضعها «off» يخفيها.
 
    node tests/test-pay.js [server.js]
-   (يشغّل نفسه أربع مرات إضافية كعمليات مستقلة: dev · إنتاج بلا مفاتيح ·
-    إنتاج بمفتاح التجربة العام · مفتاح إشعار لُصق بحروف مخفية — المتغيّرات
+   (يشغّل نفسه خمس مرات إضافية كعمليات مستقلة: dev · dev بخادم من EDFAPAY_HOST ·
+    dev بمفتاح لخادم ثاني · إنتاج بلا مفتاح · مفتاح يرفضه EdfaPay — المتغيّرات
     تُقرأ مرة عند الإقلاع) */
 const path = require('path');
 const http = require('http');
-const net = require('net');
+const crypto = require('crypto');
 const { Readable } = require('stream');
 const { fork } = require('child_process');
 
@@ -178,32 +184,46 @@ function supabase(method, urlPath, body, prefer) {
   return [200, []];
 }
 
-/* ═══ Paylink المزيّف ═══ */
-const PL = { hosts: new Set(), calls: [], inv: {}, tx: 7000, auth: 0 };
-function paylink(method, p, body, headers) {
+/* ═══ EdfaPay المزيّف ═══
+   الردود بشكل توثيقهم: الحالة مثال «Paid status example» حرفاً بحرف، والخطأ
+   مثال «Bad request example» حرفاً بحرف */
+const EP = { hosts: new Set(), calls: [], ord: {}, n: 0, shape: 'data', url: null, initFail: 0, statusFail: 0 };
+const uuid = n => `7fcae16d-4035-43e4-806b-${String(870000000000 + n).padStart(12, '0')}`;
+const EP_BAD = { code: 400, message: 'Error invalid request exception, something wrong', errorCode: '400', data: null };
+function edfapay(method, p, body, headers, host) {
   const b = body ? JSON.parse(body) : {};
-  PL.calls.push({ method, p, b });
-  if (p === '/api/auth') {
-    PL.auth++;
-    if (b.apiId === process.env.PAYLINK_API_ID && b.secretKey === process.env.PAYLINK_SECRET)
-      return [200, { id_token: 'pl-token-1' }];
-    return [401, { detail: 'Invalid credentials' }];
+  EP.calls.push({ method, p, b, key: headers['X-API-KEY'] });
+  /* مفتاح يقبله خادم واحد بس (مفتاح Test Mode لخادم ما نعرفه): app-api وحده */
+  const k = headers['X-API-KEY'];
+  if (!(k === 'ep-live-key-for-tests' || (k === 'ep-app-only-key' && host === 'app-api.edfapay.com')))
+    return [401, { code: 401, message: 'Unauthorized', errorCode: '401', data: null }];
+  if (method === 'POST' && p === '/api/v1/payment/initiate') {
+    if (EP.initFail) return [EP.initFail, EP_BAD];
+    const n = ++EP.n;
+    EP.ord[b.orderId] = { number: b.orderId, amount: b.amount, currency: b.currency, status: 'ACTIVE', tx: uuid(n) };
+    const url = EP.url || 'https://checkout.edfapay.com/pay/s-' + n + '?token=sess-secret-' + n;
+    return [200, EP.shape === 'flat' ? { redirectUrl: url }
+      : { code: 200, message: 'Success', errorCode: null, data: { redirectUrl: url } }];
   }
-  if (headers.Authorization !== 'Bearer pl-token-1') return [401, { detail: 'Unauthorized' }];
-  if (p === '/api/addInvoice') {
-    const tx = String(++PL.tx) + '1234';
-    PL.inv[tx] = { transactionNo: tx, orderStatus: 'Pending', amount: b.amount, success: true,
-      url: 'https://payment.paylink.sa/pay/order/' + tx, gatewayOrderRequest: Object.assign({}, b) };
-    return [200, PL.inv[tx]];
-  }
-  const m = /^\/api\/getInvoice\/(.+)$/.exec(p);
-  if (m) return PL.inv[m[1]] ? [200, PL.inv[m[1]]] : [404, { detail: 'not found' }];
-  if (p === '/api/cancelInvoice') {
-    if (PL.inv[b.transactionNo]) PL.inv[b.transactionNo].orderStatus = 'Canceled';
-    return [200, { success: true }];
+  const m = /^\/api\/v1\/payment\/status\?orderId=([^&]+)$/.exec(p);
+  if (method === 'GET' && m) {
+    /* عطل: ٥٠٠ — أو (افتراض دفاعي، ما شفناه في توثيقهم) ٢٠٠ وفي الغلاف code ٤٠١ بلا data */
+    if (EP.statusFail === 'wrap401') return [200, { code: 401, message: 'Unauthorized', errorCode: '401', data: null }];
+    if (EP.statusFail) return [EP.statusFail, { code: EP.statusFail, message: 'Internal error', errorCode: String(EP.statusFail), data: null }];
+    const o = EP.ord[decodeURIComponent(m[1])];
+    if (!o) return [400, EP_BAD];
+    const order = { number: o.number, amount: o.amount, currency: o.currency, description: 'Test order' };
+    const customer = { name: 'Alice', email: 'alice@example.com' };
+    /* بأمثلتهم: ACTIVE بلا brand ولا rrn ولا رقم عملية · FAILED معها reason */
+    const d = o.status === 'ACTIVE' ? { date: '2026-04-07T15:30:00', status: 'ACTIVE', order, customer }
+      : Object.assign({ date: '2026-04-07T15:30:00', status: o.status, brand: 'Visa', order, customer,
+          rrn: '123456789012', transactionId: o.tx }, o.status === 'FAILED' ? { reason: 'Insufficient balance' } : {});
+    return [200, EP.flatStatus ? d : { code: 200, message: 'Success', errorCode: null, data: d }];
   }
   return [404, {}];
 }
+/* الطلب عند EdfaPay برقم صفّنا */
+const ord = id => EP.ord[(MODE.startsWith('dev') ? 'JDWT-' : 'JDW-') + id];
 
 const TG = [];
 const https = require('https');
@@ -226,9 +246,12 @@ https.request = function (opts, cb) {
         let b = {}; try { b = JSON.parse(body || '{}') } catch (e) {}
         if (/sendMessage/.test(opts.path || '')) TG.push(b);
         o = { ok: true, result: { message_id: 1 } };
+      } else if (/edfapay\.com$/.test(host)) {
+        EP.hosts.add(host);
+        [code, o] = edfapay(opts.method, opts.path, body, opts.headers || {}, host);
       } else if (/paylink\.sa$/.test(host)) {
-        PL.hosts.add(host);
-        [code, o] = paylink(opts.method, opts.path, body, opts.headers || {});
+        EP.hosts.add(host);                  /* ما لازم يوصلها شي أبداً */
+        code = 500; o = {};
       } else if (host.includes('pmu.edu.sa')) {
         o = [];
       } else {
@@ -244,20 +267,20 @@ https.request = function (opts, cb) {
   return req;
 };
 
-const BASES = { prod: 47500, dev: 47600, nokeys: 47700, testkey: 47800, hookenv: 48400 };
+const BASES = { prod: 47500, dev: 47600, nokeys: 47700, badkey: 47800, devhost: 48400, devhint: 48500 };
 const PORT = BASES[MODE] + (process.pid % 100);
+const HOOK_SECRET = 'ep-hook-secret-for-tests-5c1e';
 const KEYS = {
-  prod:    { SITE_ENV: 'prod', PAYLINK_API_ID: 'APP_ID_LIVE_9', PAYLINK_SECRET: 'live-secret' },
-  dev:     { SITE_ENV: 'dev',  PAYLINK_API_ID: 'APP_ID_1123453311', PAYLINK_SECRET: 'pub-test-secret' },
-  /* بلا مفاتيح Paylink ولا مفتاح إشعار */
-  nokeys:  { SITE_ENV: 'prod', PAYLINK_API_ID: '', PAYLINK_SECRET: '', PAYLINK_WEBHOOK_KEY: '' },
-  testkey: { SITE_ENV: 'prod', PAYLINK_API_ID: 'APP_ID_1123453311', PAYLINK_SECRET: 'pub-test-secret' },
-  /* مفتاح الإشعار لُصق في Render من رسالة عربية على الجوال: علامتا اتجاه
-     مخفيتان حوله وسطر جديد في آخره */
-  hookenv: { SITE_ENV: 'prod', PAYLINK_API_ID: 'APP_ID_LIVE_9', PAYLINK_SECRET: 'live-secret',
-             PAYLINK_WEBHOOK_KEY: '\u200fhook-key-1234567890\u200e \n' },
+  /* الإنتاج ومعه EDFAPAY_HOST لخادم التجربة: لازم يتجاهله */
+  prod:    { SITE_ENV: 'prod', EDFAPAY_API_KEY: 'ep-live-key-for-tests', EDFAPAY_HOST: 'demo-api.edfapay.com' },
+  dev:     { SITE_ENV: 'dev',  EDFAPAY_API_KEY: 'ep-live-key-for-tests', EDFAPAY_HOST: '' },
+  devhost: { SITE_ENV: 'dev',  EDFAPAY_API_KEY: 'ep-live-key-for-tests', EDFAPAY_HOST: 'https://revamp-api.edfapay.com/' },
+  /* مفتاح Test Mode ينقبل على app-api وحده، وdev على demo-api: زر التجربة يقول وين */
+  devhint: { SITE_ENV: 'dev',  EDFAPAY_API_KEY: 'ep-app-only-key', EDFAPAY_HOST: '' },
+  nokeys:  { SITE_ENV: 'prod', EDFAPAY_API_KEY: '', EDFAPAY_WEBHOOK_SECRET: '' },
+  badkey:  { SITE_ENV: 'prod', EDFAPAY_API_KEY: 'ep-wrong-key' },
 }[MODE];
-Object.assign(process.env, { PAYLINK_WEBHOOK_KEY: 'hook-key-1234567890' }, KEYS, {
+Object.assign(process.env, { EDFAPAY_WEBHOOK_SECRET: HOOK_SECRET }, KEYS, {
   PORT: String(PORT), ADMIN_TOKEN: 'admin-token-for-tests', ADMIN_CHAT_ID: '5555',
   /* ترم بعيد وثابت: الاختبار ما يتغيّر مع التاريخ الحقيقي (نهايته 2029-12-31) */
   ACTIVE_TERM: '203010', FREE_BETA: 'true', MONITOR_ENABLED: 'false',
@@ -267,16 +290,16 @@ Object.assign(process.env, { PAYLINK_WEBHOOK_KEY: 'hook-key-1234567890' }, KEYS,
   PUSHOVER_SUBSCRIBE_URL: 'https://pushover.net/subscribe/Jadwalik-test'
 });
 const realLog = console.log;
-/* سجل السيرفر محفوظ لا مطبوع: نفحص إن سطوره ما فيها قيمة مفتاح أبداً */
+/* سجل السيرفر محفوظ لا مطبوع: نفحص إن سطوره ما فيها مفتاح ولا رابط جلسة أبداً */
 const LOGS = [];
 console.log = (...a) => { LOGS.push(a.map(String).join(' ')) };
 require(SRV);
 
-function call(method, p, { tok, body, headers, admin } = {}) {
+function call(method, p, { tok, body, headers, admin, raw } = {}) {
   return new Promise((resolve, reject) => {
-    const data = body !== undefined ? JSON.stringify(body) : null;
+    const data = raw !== undefined ? raw : body !== undefined ? JSON.stringify(body) : null;
     const h = Object.assign({}, headers || {});
-    if (data) h['Content-Type'] = 'application/json';
+    if (data && !h['Content-Type']) h['Content-Type'] = 'application/json';
     if (tok) h.Authorization = 'Bearer ' + tok;
     if (admin) h['X-Admin-Token'] = 'admin-token-for-tests';
     const r = http.request({ host: '127.0.0.1', port: PORT, path: p, method, headers: h }, res => {
@@ -289,34 +312,30 @@ function call(method, p, { tok, body, headers, admin } = {}) {
 const wait = ms => new Promise(r => setTimeout(r, ms));
 const riyadh = n => new Date(Date.now() + 3 * 3600e3 + n * 864e5).toISOString().slice(0, 10);
 const setWindow = (from, to) => call('POST', '/api/admin/monitor-window', { admin: true, body: { from, to } });
-const hook = (body, key) => call('POST', '/api/paylink/webhook',
-  { body, headers: key === undefined ? { 'X-Jadwalik-Key': 'hook-key-1234567890' } : (key ? { 'X-Jadwalik-Key': key } : {}) });
-/* إشعار بالبايتات كما هي: http.request يرمّز الترويسة UTF-8 مرة ثانية لما
-   تنضم للجسم، فالعلامة المخفية توصل بغير بايتاتها الحقيقية */
-function rawHook(keyBytes) {
-  return new Promise((resolve, reject) => {
-    const req = Buffer.concat([Buffer.from('POST /api/paylink/webhook HTTP/1.1\r\nHost: 127.0.0.1\r\n' +
-      'Content-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\nX-Jadwalik-Key: '),
-      keyBytes, Buffer.from('\r\n\r\n{}')]);
-    let o = '';
-    const c = net.connect(PORT, '127.0.0.1', () => c.end(req));
-    c.on('data', d => o += d);
-    c.on('end', () => resolve(Number((/^HTTP\/1\.1 (\d+)/.exec(o) || [])[1]) || 0));
-    c.on('error', reject);
-  });
+/* إشعار EdfaPay بشكل مثالهم «Approved» حرفاً بحرف، موقَّع بسرّنا (أو بغيره).
+   السيرفر يرد ٢٠٠ **قبل** ما يسأل عن الطلب — فننتظر شوي بعد الرد */
+const sign = (raw, s) => crypto.createHmac('sha256', s || HOOK_SECRET).update(raw).digest('hex');
+async function hook(orderId, extra, sig) {
+  const raw = JSON.stringify(Object.assign({
+    transactionId: '7fcae16d-4035-43e4-806b-87b51881135e', orderId, amount: 19.0, currencyCode: '682',
+    cardScheme: 'MasterCard', status: 'Approved', channel: 'Payment Gateway', type: 'Purchase',
+    createdAt: '2026-04-02T14:09:30.764985', finishedAt: '2026-04-02T14:10:46.397810922',
+    merchantId: '7da313e4-5424-4527-befc-53d81c977b1f', pgDetails: { reason: null }, rrn: '609211300976' }, extra || {}));
+  const h = await call('POST', '/api/edfapay/webhook', { raw,
+    headers: Object.assign({ 'Content-Type': 'text/plain' }, sig === '' ? {} : { 'X-EdfaPay-Signature': sig || sign(raw) }) });
+  await wait(250);
+  return h;
 }
 const sub = id => DB.subscriptions.find(s => s.id === id);
 const P = id => DB.profiles.find(p => p.id === id);
 const ledger = u => DB.credit_ledger.filter(r => r.user_id === u);
-const adds = () => PL.calls.filter(c => c.p === '/api/addInvoice');
+const inits = () => EP.calls.filter(c => c.p === '/api/v1/payment/initiate');
 const tgTo = (chat, re) => TG.filter(m => String(m.chat_id) === chat && re.test(String(m.text || '')));
 const END_NOW = '2029-12-31T20:59:59.000Z';    /* termEndApprox('203010') */
 const END_NEXT = '2030-06-15T20:59:59.000Z';   /* termEndApprox('203020') */
 
 async function prodSuite() {
-  /* وسط نافذة يدوية: ترم الشراء = ترم الدراسة، فالتواريخ ثابتة (END_NOW).
-     **كانت «بلا نافذة»** — وبلا نافذة صار الشراء للترم الجاي (قرار محمد،
-     القسم ٨ب)، فنقلنا الحالة الأساسية لوسط النافذة: نفس ما كان يختبره. */
+  /* وسط نافذة يدوية: ترم الشراء = ترم الدراسة، فالتواريخ ثابتة (END_NOW) */
   await setWindow(riyadh(-5), riyadh(+10));
 
   /* ── ١) قبل الإطلاق: الطالب ما يدفع، وصاحب الموقع يجرّب ── */
@@ -324,39 +343,47 @@ async function prodSuite() {
   eq(q.pay && [q.pay.open, q.pay.why], [false, 'beta'], '**الفترة المجانية: الطالب ما يشوف دفعاً**');
   let r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-st'), body: { phone: '0512345678' } })).j;
   eq([r.ok, r.why], [false, 'beta'], 'ولو نادى الدفع بنفسه يترفض');
-  eq(adds().length, 0, 'وما انفتحت فاتورة');
+  eq(inits().length, 0, 'وما انفتحت صفحة دفع');
   q = (await call('GET', '/api/me/quote', { tok: tokOf('u-own') })).j;
   eq(q.pay && q.pay.open, true, '**وصاحب الموقع يقدر يجرّب بدفعة حقيقية**');
   eq([q.term, q.termEnd, q.late], ['203010', END_NOW, false], 'ترم الشراء وسط النافذة: ترمها');
 
   /* ── ٢) بدء الدفع ── */
   r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-own'), body: {} })).j;
-  eq([r.ok, r.why], [false, 'phone'], 'بلا جوال: نطلبه — Paylink يشترطه');
+  eq([r.ok, r.why], [false, 'phone'], 'بلا جوال: نطلبه');
   /* رقم غلط: يقول له الصح بالضبط (لقاها محمد) — كانت «اكتب رقم جوالك» وهو كاتبه */
   for (const bad of ['051234567', '05123456789', '0612345678', '12345']) {
     r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-own'), body: { phone: bad } })).j;
     ok(r.ok === false && r.why === 'phone' && /يبدأ بـ05 ويكون 10 أرقام/.test(r.error || ''),
        `رقم غلط (${bad}): «لازم يبدأ بـ05 ويكون 10 أرقام» — ` + JSON.stringify(r));
   }
-  eq(adds().length, 0, 'وما انفتحت فاتورة برقم غلط');
+  eq(inits().length, 0, 'وما انفتحت صفحة دفع برقم غلط');
   r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-own'), body: { phone: '٠٥١٢٣٤٥٦٧٨' } })).j;
-  ok(r.ok && /^https:\/\/payment\.paylink\.sa\//.test(r.url || ''), 'رابط صفحة الدفع — ' + JSON.stringify(r));
+  ok(r.ok && /^https:\/\/checkout\.edfapay\.com\//.test(r.url || ''), 'رابط صفحة الدفع عند EdfaPay — ' + JSON.stringify(r));
   const s1 = sub(r.id) || {};
-  const a1 = (adds()[0] || {}).b || {};
-  eq(a1.amount, 19, 'الفاتورة بالريال: ١٩');
-  eq(a1.orderNumber, 'JDW-' + r.id, 'رقم الطلب من صفّنا');
-  eq(a1.callBackUrl, 'https://jadwalik.com/?pay=' + r.id, '**رابط الرجوع على نطاقنا دائماً** — لا ترويسة Host');
-  eq(a1.clientMobile, '0512345678', '**الأرقام العربية من كيبورد الآيفون تتحوّل**');
-  eq(a1.clientName, 'Name u-own', 'اسم الطالب');
-  eq([s1.status, s1.gateway, s1.gateway_ref, s1.amount_halalas, s1.term, s1.valid_until],
-     ['pending', 'paylink', a1 && Object.keys(PL.inv).pop(), 1900, '203010', END_NOW], 'الصف معلّق بكل تفاصيله');
+  const a1 = (inits()[0] || {}).b || {};
+  eq(a1.amount, 19, 'المبلغ بالريال: ١٩');
+  eq([a1.orderId, a1.currency], ['JDW-' + r.id, 'SAR'], 'رقم الطلب من صفّنا، بالريال');
+  eq([a1.successUrl, a1.failureUrl], ['https://jadwalik.com/?pay=' + r.id, 'https://jadwalik.com/?pay=' + r.id],
+     '**رابط الرجوع على نطاقنا دائماً** — لا ترويسة Host');
+  eq(a1.customerDetails && a1.customerDetails.phone, '+966-512345678', '**الأرقام العربية من كيبورد الآيفون تتحوّل** (+966- بصيغة مثالهم)');
+  eq(a1.backButtonUrl, 'https://jadwalik.com/?pay=' + r.id, 'وزر الرجوع في صفحتهم يرجّعه لنا');
+  const exp = Date.parse(a1.expireDate) - Date.now();
+  ok(exp > 23.9 * 3600e3 && exp <= 24 * 3600e3, '**الجلسة تنتهي عندهم بعد ٢٤ ساعة** — مع مهلة الإلغاء عندنا (§٨-٨) — ' + a1.expireDate);
+  eq(a1.description, 'اشتراك جدولك — خريف 2029/2030', 'ووصف الطلب بالترم باسمه');
+  eq(a1.customerDetails && [a1.customerDetails.name, a1.customerDetails.email], ['Name u-own', 'u-own@x.com'], 'اسم الطالب وإيميله');
+  ok(!('card' in a1) && !('cardNumber' in a1), '**صفحة مستضافة: ما نرسل بطاقة أبداً** (§٨-٢)');
+  eq([s1.status, s1.gateway, s1.gateway_ref || null, s1.amount_halalas, s1.term, s1.valid_until],
+     ['pending', 'edfapay', null, 1900, '203010', END_NOW], 'الصف معلّق بكل تفاصيله — ورقم العملية بعد الدفع');
   eq(P('u-own').phone, '0512345678', 'والجوال انحفظ في الملف');
-  ok([...PL.hosts].every(h => h === 'restapi.paylink.sa'), 'الإنتاج على restapi — ' + [...PL.hosts]);
+  eq([...EP.hosts], ['app-api.edfapay.com'], '**الإنتاج على app-api — ولو EDFAPAY_HOST يقول خادم التجربة**');
+  ok(EP.calls.every(c => c.key === 'ep-live-key-for-tests'), 'وكل طلب بترويسة X-API-KEY');
+  ok(!LOGS.some(l => /sess-secret|checkout\.edfapay\.com\/pay/.test(l)), '**رابط الجلسة ما ينكتب في السجل**');
 
   const r2 = (await call('POST', '/api/me/checkout', { tok: tokOf('u-own'), body: { phone: '0512345678' } })).j;
-  eq([r2.ok, r2.why, r2.id], [false, 'pending', r.id], '**طلب ثانٍ والأول معلّق: نرجّعه له لا فاتورة ثانية**');
-  ok(/payment\.paylink\.sa/.test(r2.url || ''), 'ومعه رابط يكمّل منه');
-  eq(adds().length, 1, 'وما انفتحت فاتورة ثانية');
+  eq([r2.ok, r2.why, r2.id], [false, 'pending', r.id], '**طلب ثانٍ والأول معلّق: نرجّعه له لا صفحة ثانية**');
+  eq(r2.url, r.url, 'ومعه نفس الرابط يكمّل منه');
+  eq(inits().length, 1, 'وما انفتحت صفحة دفع ثانية');
 
   /* ── ٣) الرجوع والإشعار: جرس لا إثبات ── */
   let st = (await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-own') })).j;
@@ -365,27 +392,38 @@ async function prodSuite() {
   st = (await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-st') })).j;
   eq(st.ok, false, '**طالب ثانٍ ما يقرأ طلب غيره**');
 
-  const tx = s1.gateway_ref;
-  eq((await hook({ transactionNo: tx }, '')).code, 401, 'إشعار بلا ترويسة: مرفوض');
-  eq((await hook({ transactionNo: tx }, 'wrong-key-000000000')).code, 401, 'وبترويسة غلط: مرفوض');
+  const oid = 'JDW-' + r.id;
+  eq((await hook(oid, {}, '')).code, 401, 'إشعار بلا توقيع: مرفوض');
+  eq((await hook(oid, {}, sign('x', 'other-secret'))).code, 401, 'وبتوقيع غلط: مرفوض');
+  /* **الإشعار الموقَّع نفسه ما يفعّل**: يقول Approved وEdfaPay لسا يقول PENDING */
+  eq(sub(r.id).status, 'pending', '(الإشعارات المرفوضة ما لمست شي)');
 
-  PL.inv[tx].orderStatus = 'Paid'; PL.inv[tx].amount = 1;
-  await hook({ transactionNo: tx });
+  ord(r.id).status = 'PAID'; ord(r.id).amount = 1;
+  await hook(oid);
   eq([sub(r.id).status, P('u-own').subscription_expires_at], ['pending', null],
-     '**Paylink يقول Paid بمبلغ غلط: ما نفعّل**');
+     '**EdfaPay يقول PAID بمبلغ غلط: ما نفعّل** — ولو الإشعار موقَّع');
   ok(tgTo('5555', /تحتاج نظرك[\s\S]*المبلغ/).length === 1, 'ونبلّغ صاحب الموقع');
 
-  PL.inv[tx].amount = 19; PL.inv[tx].gatewayOrderRequest.orderNumber = 'JDW-999';
-  await hook({ transactionNo: tx });
+  ord(r.id).amount = 19; ord(r.id).number = 'JDW-999';
+  await hook(oid);
   eq(sub(r.id).status, 'pending', '**رقم طلب ما يطابق: ما نفعّل**');
-  delete PL.inv[tx].gatewayOrderRequest.orderNumber;
-  await hook({ transactionNo: tx });
+  ord(r.id).number = '';
+  await hook(oid);
   eq(sub(r.id).status, 'pending', '**ورقم طلب ناقص = ما يطابق** (نقفل عند الشك)');
+  ord(r.id).number = oid; ord(r.id).currency = 'USD';
+  await hook(oid);
+  eq(sub(r.id).status, 'pending', '**عملة غير الريال: ما نفعّل**');
+  ord(r.id).currency = 'SAR';
+  const tx = ord(r.id).tx; ord(r.id).tx = '';
+  await hook(oid);
+  eq(sub(r.id).status, 'pending', '**بلا رقم عملية: ما نفعّل**');
+  ok(tgTo('5555', /رقم العملية ناقص/).length === 1, 'ونقول ليش');
+  ord(r.id).tx = tx;
 
-  PL.inv[tx].gatewayOrderRequest.orderNumber = 'JDW-' + r.id;
-  const hk = await hook({ transactionNo: tx });
+  const hk = await hook(oid);
   eq(hk.code, 200, 'الإشعار الصحيح: ٢٠٠');
-  eq(sub(r.id).status, 'paid', '**تحقّقنا من Paylink بأنفسنا ⇒ مدفوع**');
+  eq(sub(r.id).status, 'paid', '**تحقّقنا من EdfaPay بأنفسنا ⇒ مدفوع**');
+  eq(sub(r.id).gateway_ref, tx, '**ورقم العملية انحفظ مع التسوية** (فريد في القاعدة)');
   eq(P('u-own').subscription_expires_at, END_NOW, 'والاشتراك حتى نهاية نهائيات الترم');
   ok(!!P('u-own').paid_at, 'وpaid_at للدفع الحقيقي');
   eq(tgTo('5555', /اشتراكك فعّال/).length, 1, 'الطالب وصله «اشتراكك فعّال»');
@@ -393,8 +431,8 @@ async function prodSuite() {
   const rt = String((tgTo('5555', /إيصال/).pop() || {}).text || '');
   ok(rt.includes('إيصال JDW-' + r.id), '**بعد الدفع يوصله إيصال برقم الطلب** — ' + rt.slice(0, 120));
   ok(rt.includes('• اشتراك خريف 2029/2030: 19 ريال'), 'وش اشترى: الترم باسمه وسعره');
-  ok(rt.includes('<b>المدفوع: 19 ريال</b> · عبر Paylink'), 'وكم دفع ووين');
-  ok(rt.includes('رقم العملية: <code>' + tx + '</code>'), 'ورقم العملية عند Paylink');
+  ok(rt.includes('<b>المدفوع: 19 ريال</b> · عبر EdfaPay'), 'وكم دفع ووين');
+  ok(rt.includes('رقم العملية: <code>' + tx + '</code>'), 'ورقم العملية عند EdfaPay');
   ok(rt.includes('ساري حتى: 31 ديسمبر 2029'), 'وحتى متى — بالسنة');
   /* اللائحة التنفيذية لنظام التجارة الإلكترونية: وصف الخدمة ورقم السجل في الفاتورة —
      بلا اسم المؤسسة (قرار محمد ٣٠ سبتمبر ٢٠٢٦) */
@@ -403,7 +441,8 @@ async function prodSuite() {
   ok(!/مؤسسة|المسبح/.test(rt), 'وبلا اسم المؤسسة');
   ok(!/Pushover/.test(rt), 'وبلا التنبيه الطارئ: ما فيه خطوات تفعيل');
 
-  await hook({ transactionNo: tx });
+  await hook(oid);
+  await wait(4100);
   await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-own') });
   eq(tgTo('5555', /اشتراكك فعّال/).length, 1, '**الإشعار يتكرر والرجوع بعده: تفعيل واحد بس**');
   st = (await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-own') })).j;
@@ -411,91 +450,125 @@ async function prodSuite() {
 
   /* ── ٤) الإطلاق: الطلاب يدفعون ── */
   eq((await call('POST', '/api/admin/beta-toggle', { admin: true, body: { on: false } })).code, 200,
-     'إطفاء الفترة المجانية مسموح والمفاتيح جاهزة');
+     'إطفاء الفترة المجانية مسموح والمفتاح جاهز');
   q = (await call('GET', '/api/me/quote', { tok: tokOf('u-st') })).j;
   eq(q.pay && q.pay.open, true, 'بعد الإطلاق: الطالب يدفع');
 
-  /* ── ٥) أقل دفع نقدي ١٠ ريال (الشروط §٣ — قرار محمد، كان «نترك ٥ للبوابة»)،
-     والرصيد المحجوز يرجع بصلاحيته ── */
+  /* ── ٥) أقل دفع نقدي ١٠ ريال (الشروط §٣)، والرصيد المحجوز يرجع بصلاحيته ── */
   q = (await call('GET', '/api/me/quote', { tok: tokOf('u-cr') })).j;
   eq([q.credit, q.amount, q.minCash], [900, 1000, 1000], '**رصيد ١٥ وسعر ١٩: نصرف ٩ ويدفع ١٠** — أقل دفع نقدي');
   /* رقم جديد غلط والقديم محفوظ (ولا دفعة معلّقة): كان يُتجاهل بصمت ويكمل بالقديم */
-  const nA = adds().length;
+  const nA = inits().length;
   r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-cr'), body: { phone: '05123' } })).j;
   eq([r.ok, r.why], [false, 'phone'], '**رقم جديد غلط: نقوله له — ما نكمل بالمحفوظ بصمت**');
-  eq([adds().length, ledger('u-cr').filter(x => x.reason === 'spend').length, P('u-cr').phone],
-     [nA, 0, '0500000001'], 'وما انفتحت فاتورة ولا انحجز رصيد، والمحفوظ ما تغيّر');
+  eq([inits().length, ledger('u-cr').filter(x => x.reason === 'spend').length, P('u-cr').phone],
+     [nA, 0, '0500000001'], 'وما انفتحت صفحة دفع ولا انحجز رصيد، والمحفوظ ما تغيّر');
   r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-cr'), body: {} })).j;
   ok(r.ok && r.url, 'الجوال المحفوظ يكفي — ' + JSON.stringify(r));
   const sp = ledger('u-cr').find(x => x.reason === 'spend');
   eq(sp && [sp.amount_halalas, sp.ref, String(sp.expires_at).slice(0, 10)],
      [-900, 'subscription:' + r.id, '2027-03-01'], 'حجز ٩ من الرصيد، بصلاحية منحته');
-  eq((adds().pop() || {}).b.amount, 10, 'والفاتورة ١٠ ريال');
+  eq((inits().pop() || {}).b.amount, 10, 'وصفحة الدفع بعشرة ريال');
   /* ٢٥ ساعة بلا دفع ⇒ تنلغي ويرجع الرصيد */
   sub(r.id).created_at = new Date(Date.now() - 25 * 3600e3).toISOString();
-  await hook({ something: 'else' });           /* جرس بجسم ما نعرفه ⇒ تسوية المعلّقات */
-  eq(sub(r.id).status, 'failed', '**بعد ٢٤ ساعة بلا دفع: فشل**');
-  eq(PL.inv[sub(r.id).gateway_ref].orderStatus, 'Canceled', 'وألغينا الفاتورة عند Paylink');
+  st = (await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-cr') })).j;
+  eq([st.status, sub(r.id).status], ['failed', 'failed'], '**بعد ٢٤ ساعة بلا دفع: فشل**');
   const rv = ledger('u-cr').find(x => x.reason === 'reversal');
   eq(rv && [rv.amount_halalas, String(rv.expires_at).slice(0, 10)], [900, '2027-03-01'],
      '**والرصيد رجع بصلاحيته الأصلية** — لا أطول ولا أقصر');
   q = (await call('GET', '/api/me/quote', { tok: tokOf('u-cr') })).j;
   eq(q.creditAvailable, 1500, 'ورصيده ١٥ كما كان');
 
-  /* ── ٦) رصيد أكبر من السعر: يدفع ١٠ نقداً والرصيد يغطي الباقي ──
-     كانت «الرصيد يغطي الكل ⇒ تفعيل بلا فاتورة». تغيّرت عمداً (الشروط §٣ — قرار محمد):
-     طلب بلا دفع نقدي ما يغطي رسوم البوابة لو انسترجع أو انعرض عليه اعتراض */
+  /* ── ٥ب) عطل عند EdfaPay ما يلغي طلباً: ما نحكم بلا جواب ── */
+  r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-cr'), body: {} })).j;
+  sub(r.id).created_at = new Date(Date.now() - 25 * 3600e3).toISOString();
+  EP.statusFail = 500;
+  st = (await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-cr') })).j;
+  eq([st.status, sub(r.id).status], ['pending', 'pending'],
+     '**EdfaPay ما ردّ (٥٠٠) وعمره ٢٥ ساعة: يبقى معلّقاً** — يمكن دفع، ما نلغيه');
+  ok(tgTo('5555', /ما قدرنا نسأل EdfaPay عنها من ٢٤ ساعة/).length === 1, 'وننبّهك');
+  EP.statusFail = 'wrap401';
+  await wait(4100);
+  st = (await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-cr') })).j;
+  eq(sub(r.id).status, 'pending', '**رد ٢٠٠ وفي غلافه code ٤٠١ بلا data: عطل لا «طلب ما عندهم»** — ما نلغي');
+  EP.statusFail = 0;
+  await wait(4100);
+  st = (await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-cr') })).j;
+  eq(st.status, 'failed', 'رجع يرد وما دفع: فشل ويرجع الرصيد');
+  eq(ledger('u-cr').filter(x => x.reason === 'reversal').length, 2, 'والرصيد رجع');
+
+  /* ── ٥ج) FAILED (مثالهم: رصيد البطاقة ما يكفي): ما دفع — يقدر يجرّب ثانية، وبعد ٢٤ ساعة فشل ── */
+  r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-cr'), body: {} })).j;
+  ord(r.id).status = 'FAILED';
+  await hook('JDW-' + r.id, { status: 'Declined' });
+  eq(sub(r.id).status, 'pending', '**FAILED: ما نفعّل — والطلب باقٍ يقدر يجرّب ببطاقة ثانية**');
+  sub(r.id).created_at = new Date(Date.now() - 25 * 3600e3).toISOString();
+  await wait(4100);
+  st = (await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-cr') })).j;
+  eq(st.status, 'failed', 'وبعد ٢٤ ساعة: فشل ويرجع الرصيد');
+
+  /* ── ٦) رصيد أكبر من السعر: يدفع ١٠ نقداً والرصيد يغطي الباقي ── */
   q = (await call('GET', '/api/me/quote', { tok: tokOf('u-full') })).j;
   eq([q.credit, q.amount], [900, 1000], '**رصيد ٥٠ وسعر ١٩: يدفع ١٠ والرصيد ٩** — ما فيه تفعيل بالرصيد وحده');
-  const nAdds = adds().length;
+  const nI = inits().length;
   r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-full'), body: {} })).j;
   eq([r.ok, r.why], [false, 'phone'], 'يدفع نقداً ⇒ يحتاج جوال — ما تفعّل بلا دفع');
   r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-full'), body: { phone: '0500000011' } })).j;
-  ok(r.ok && r.url && !r.activated, 'فاتورة لا تفعيل بالرصيد وحده — ' + JSON.stringify(r));
-  eq([adds().length, (adds()[adds().length - 1] || {}).b && adds()[adds().length - 1].b.amount], [nAdds + 1, 10],
-     'انفتحت فاتورة بعشرة ريال');
+  ok(r.ok && r.url && !r.activated, 'صفحة دفع لا تفعيل بالرصيد وحده — ' + JSON.stringify(r));
+  eq([inits().length, (inits().pop() || {}).b.amount], [nI + 1, 10], 'انفتحت صفحة دفع بعشرة ريال');
   const sf = ledger('u-full').find(x => x.reason === 'spend');
   eq(sf && sf.amount_halalas, -900, 'وحجز ٩ من الرصيد');
-  PL.inv[sub(r.id).gateway_ref].orderStatus = 'Paid';
+  ord(r.id).status = 'PAID';
+  EP.flatStatus = true;                  /* مخطّطهم: الرد PaymentStatusResponse بلا غلاف */
   await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-full') });
-  eq([sub(r.id).status, sub(r.id).gateway], ['paid', 'paylink'], 'مدفوع عبر البوابة');
+  EP.flatStatus = false;
+  eq([sub(r.id).status, sub(r.id).gateway], ['paid', 'edfapay'], '**مدفوع — ورد الحالة بلا غلاف data (كما في مخطّطهم) يُقرأ**');
   eq(P('u-full').subscription_expires_at, END_NOW, 'والاشتراك فعّال');
   ok(!!P('u-full').paid_at, 'ودفع فعلي (١٠ نقداً) — يُحسب في الإحصاء');
   ok(tgTo('6011', /إيصال JDW-/).some(m => /• من رصيدك: −9 ريال/.test(m.text)
-     && /<b>المدفوع: 10 ريال<\/b> · عبر Paylink/.test(m.text)), 'وإيصاله: من رصيدك −٩ والمدفوع ١٠');
+     && /<b>المدفوع: 10 ريال<\/b> · عبر EdfaPay/.test(m.text)), 'وإيصاله: من رصيدك −٩ والمدفوع ١٠');
 
-  /* ── ٧) الدعوة تنسجّل لحظة التسوية — مرة للأبد، والرصيد بعد ٧ أيام (§١٠ تحت) ──
-     الشروط §٣ (الجولة الثانية): «٥ ريال رصيد بعد ٧ أيام من اشتراكه… وإذا استُرجع
-     اشتراكه قبلها، ما ينضاف لك» — كان ينزل لحظة الدفع. تغيّرت القاعدة عمداً */
+  /* ── ٦ب) عملية وحدة لطلبين: رقم العملية فريد في القاعدة ── */
+  {
+    const Pd = prof('u-dup', { phone: '0500000012' });
+    DB.profiles.push(Pd); TOK['tok-dup-kkkkkkkkkkkkkkkkkkkkkkk'] = 'u-dup';
+    const rd = (await call('POST', '/api/me/checkout', { tok: 'tok-dup-kkkkkkkkkkkkkkkkkkkkkkk', body: {} })).j;
+    ord(rd.id).status = 'PAID'; ord(rd.id).tx = ord(r.id).tx;       /* رقم عملية طلب u-full */
+    await hook('JDW-' + rd.id);
+    eq([sub(rd.id).status, P('u-dup').subscription_expires_at], ['pending', null],
+       '**رقم عملية مستعمل لطلب ثاني: ما نفعّل** — عملية وحدة ما تفعّل طلبين');
+    ok(tgTo('5555', /رقم العملية مستعمل لطلب ثاني/).length === 1, 'وننبّهك');
+  }
+
+  /* ── ٧) الدعوة تنسجّل لحظة التسوية — مرة للأبد، والرصيد بعد ٧ أيام (§١٠ تحت) ── */
   q = (await call('GET', '/api/me/quote?ref=FRD234', { tok: tokOf('u-ref') })).j;
   eq([q.discount, q.amount], [300, 1600], 'كود صديق: −٣');
   r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-ref'), body: { ref: 'frd234' } })).j;
   ok(r.ok, 'بدأ الدفع بكود صديقه');
   eq(sub(r.id).referral_code, 'FRD234', 'والكود محفوظ في الطلب');
   eq(ledger('u-friend').length, 0, 'وما نزل رصيد للداعي قبل الدفع');
-  const txr = sub(r.id).gateway_ref;
-  PL.inv[txr].orderStatus = 'Paid';
+  ord(r.id).status = 'PAID';
   st = (await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-ref') })).j;
   eq(st.status, 'paid', 'رجع من صفحة الدفع وقد دفع: مدفوع (بلا انتظار الإشعار)');
   eq(DB.referrals.filter(x => x.invited_id === 'u-ref').length, 1, 'صف دعوة واحد');
   eq(ledger('u-friend').length, 0, '**والداعي ما نزل له شي قبل مدة الاسترجاع**');
   ok(tgTo('7777', /صديقك اشترك/).some(m => /بعد 7 أيام، لما تخلص مدة الاسترجاع/.test(m.text)),
      'ووصله خبر: ينزل لك ٥ بعد ٧ أيام');
-  await hook({ transactionNo: txr });
+  await hook('JDW-' + r.id);
   await wait(4100);
   await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-ref') });
   eq([ledger('u-friend').length, DB.referrals.filter(x => x.invited_id === 'u-ref').length], [0, 1],
      '**إشعار ورجوع بعد التسوية: ولا دعوة ثانية ولا رصيد**');
 
-  /* ── ٧ب) سباق: الإشعار ورجوع الطالب بنفس اللحظة ──
-     الاثنان يقرون الطلب «معلّقاً» قبل ما يسوّيه أحدهما — التحديث المشروط
+  /* ── ٧ب) سباق: إشعاران ورجوع الطالب بنفس اللحظة ──
+     الثلاثة يقرون الطلب «معلّقاً» قبل ما يسوّيه أحدهم — التحديث المشروط
      وحده يخلّي واحداً يفعّل. بلاه: تفعيلان ورسالتان. */
   r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-race'), body: { ref: 'FRE234' } })).j;
-  const txq = sub(r.id).gateway_ref;
-  PL.inv[txq].orderStatus = 'Paid';
-  await Promise.all([hook({ transactionNo: txq }),
+  ord(r.id).status = 'PAID';
+  await Promise.all([hook('JDW-' + r.id),
                      call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-race') }),
-                     hook({ orderNumber: 'JDW-' + r.id })]);
+                     hook('JDW-' + r.id)]);
+  await wait(300);
   eq(sub(r.id).status, 'paid', 'السباق: مدفوع');
   eq(tgTo('6006', /اشتراكك فعّال/).length, 1, '**ثلاثة أجراس بنفس اللحظة: تفعيل واحد ورسالة وحدة**');
   eq(DB.referrals.filter(x => x.invited_id === 'u-race').length, 1, 'ودعوة وحدة');
@@ -510,9 +583,7 @@ async function prodSuite() {
   q = (await call('GET', '/api/me/quote', { tok: tokOf('u-late') })).j;
   eq([q.late, q.term], [false, '203010'], 'وسط النافذة: الترم الحالي');
 
-  /* ── ٨ب) خارج النوافذ ⇒ الترم الجاي (قرار محمد) ──
-     كان ترم الدراسة: من يشتري بعد ما ينقفل التسجيل يدفع لترم ما بقى
-     فيه شي يراقبه. صار للترم الجاي، وباقي الحالي هدية. */
+  /* ── ٨ب) خارج النوافذ ⇒ الترم الجاي (قرار محمد) ── */
   await setWindow('2000-01-01', '2000-01-02');                 /* انقفلت من زمان */
   q = (await call('GET', '/api/me/quote', { tok: tokOf('u-late') })).j;
   eq([q.late, q.term, q.termEnd], [true, '203020', END_NEXT],
@@ -544,11 +615,10 @@ async function prodSuite() {
 
   /* ── ٩) ألغاها ثم دفعها من تبويب قديم: فلوسه وصلت ⇒ نفعّل ── */
   r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-late'), body: {} })).j;
-  const txl = sub(r.id).gateway_ref;
   let c = (await call('POST', '/api/me/pay-cancel', { tok: tokOf('u-late'), body: { id: r.id } })).j;
-  eq([c.status, sub(r.id).status, PL.inv[txl].orderStatus], ['failed', 'failed', 'Canceled'], 'الإلغاء: فشل + إلغاء عند Paylink');
-  PL.inv[txl].orderStatus = 'Paid';
-  await hook({ transactionNo: txl });
+  eq([c.status, sub(r.id).status], ['failed', 'failed'], 'الإلغاء: فشل');
+  ord(r.id).status = 'PAID';
+  await hook('JDW-' + r.id);
   eq(sub(r.id).status, 'paid', '**دفعة وصلت بعد الإلغاء: فعّلناه** — الفلوس ما تضيع');
   eq(P('u-late').subscription_expires_at, END_NOW, 'والاشتراك فعّال');
 
@@ -557,18 +627,17 @@ async function prodSuite() {
     const P2 = prof('u-mis2', { phone: '0500000007' });
     DB.profiles.push(P2); TOK['tok-mis2-iiiiiiiiiiiiiiiiiiiiii'] = 'u-mis2';
     const rr = (await call('POST', '/api/me/checkout', { tok: 'tok-mis2-iiiiiiiiiiiiiiiiiiiiii', body: {} })).j;
-    const tm = sub(rr.id).gateway_ref;
-    PL.inv[tm].orderStatus = 'Paid'; PL.inv[tm].amount = 18;
+    ord(rr.id).status = 'PAID'; ord(rr.id).amount = 18;
     const cc = (await call('POST', '/api/me/pay-cancel', { tok: 'tok-mis2-iiiiiiiiiiiiiiiiiiiiii', body: { id: rr.id } })).j;
     eq([cc.status, cc.review, sub(rr.id).status], ['pending', true, 'pending'],
        '**مدفوعة بمبلغ ما يطابق ثم «ألغها»: تبقى معلّقة لمراجعتك** — ما نلغي فلوساً ربما وصلت');
-    eq(PL.inv[tm].orderStatus, 'Paid', 'وما ألغيناها عند Paylink');
   }
 
-  /* ── ١٠) فاتها الإشعار والرجوع: الدورة تسوّيها ولو بعد ٢٤ ساعة ── */
+  /* ── ١٠) فاتها الإشعار والرجوع: الدورة تسوّيها ولو بعد ٢٤ ساعة ──
+     إشعار موقَّع لغير طلباتنا (زر تجربة في لوحتهم) = جرس للمعلّقات كلها */
   r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-miss'), body: {} })).j;
   sub(r.id).created_at = new Date(Date.now() - 26 * 3600e3).toISOString();
-  PL.inv[sub(r.id).gateway_ref].orderStatus = 'Paid';
+  ord(r.id).status = 'PAID';
   /* ودعوتان: وحدة مرّ عليها ٨ أيام واشتراكها مدفوع، والثانية انسترجع اشتراكها (§٧) */
   const rfA = DB.referrals.find(x => x.invited_id === 'u-ref'), rfB = DB.referrals.find(x => x.invited_id === 'u-race');
   const d8 = new Date(Date.now() - 8 * 864e5).toISOString();
@@ -576,15 +645,15 @@ async function prodSuite() {
   sub(rfB.subscription_id).status = 'refunded';
   /* وثالثة: كتبنا رصيدها وانقطعنا قبل ما نحجز الدعوة — الدورة تربطه، ما تكتب ثانٍ */
   DB.profiles.push(prof('u-inv3'), prof('u-friend3', { telegram_chat_id: '7779' }));
-  DB.subscriptions.push({ id: 991, user_id: 'u-inv3', status: 'paid', gateway: 'paylink', term: '203010',
+  DB.subscriptions.push({ id: 991, user_id: 'u-inv3', status: 'paid', gateway: 'edfapay', term: '203010',
     base_halalas: 1900, pushover_halalas: 0, discount_halalas: 300, credit_halalas: 0, amount_halalas: 1600 });
   DB.referrals.push({ id: 93, referrer_id: 'u-friend3', invited_id: 'u-inv3', subscription_id: 991,
     credit_id: null, created_at: d8 });
   DB.credit_ledger.push({ id: 991, user_id: 'u-friend3', amount_halalas: 500, reason: 'referral', ref: 'referral:93',
     expires_at: '2031-01-01T20:59:59+00:00', created_at: d8 });
-  await wait(10100);                              /* جرس المعلّقات مرة كل ١٠ ثواني */
-  await hook({});
-  eq(sub(r.id).status, 'paid', '**مدفوعة فاتها الإشعار: تُسوّى لا تُلغى**');
+  eq((await hook('ORDER-12345')).code, 200, 'إشعار تجربة من لوحتهم (رقم طلب مو لنا): ٢٠٠');
+  await wait(500);                                  /* الدورة تسوّي بعد الرد */
+  eq(sub(r.id).status, 'paid', '**مدفوعة فاتها الإشعار: تُسوّى لا تُلغى** — الجرس سوّى المعلّقات');
   eq(ledger('u-friend').map(x => [x.amount_halalas, x.reason, x.ref]), [[500, 'referral', 'referral:' + rfA.id]],
      '**بعد ٧ أيام والاشتراك مدفوع: الداعي نزل له ٥** — مرة وحدة');
   eq(rfA.credit_id, ledger('u-friend')[0] && ledger('u-friend')[0].id, 'والدعوة مربوطة برصيدها — ما تنمنح ثانية');
@@ -594,93 +663,65 @@ async function prodSuite() {
      '**صديقه استرجع اشتراكه: ما ينزل للداعي شي**');
   eq([ledger('u-friend3').length, (DB.referrals.find(x => x.id === 93) || {}).credit_id], [1, 991],
      '**انقطع بين الكتابة والحجز: ربطنا رصيده ولا كتبنا ثانٍ**');
+  const nTick = EP.calls.length;
+  await hook('ORDER-12346');
+  eq(EP.calls.length, nTick, 'وجرس ثاني خلال ١٠ ثواني ما يسأل EdfaPay عن شي');
 
   /* ── ١١) اللوحة ── */
   const ap = (await call('GET', '/api/admin/pay', { admin: true })).j;
-  eq([ap.ready, ap.gateway, ap.openTo], [true, 'paylink', 'all'], 'اللوحة: جاهز · paylink · للكل');
+  eq([ap.ready, ap.gateway, ap.host, ap.openTo], [true, 'edfapay', 'app-api.edfapay.com', 'all'],
+     'اللوحة: جاهز · edfapay · app-api · للكل');
   ok(ap.counts.paid >= 4 && ap.counts.failed >= 1, 'وعدّاداته — ' + JSON.stringify(ap.counts));
-  ok(!JSON.stringify(ap).includes('live-secret'), '**وما فيها حرف من المفتاح السري**');
+  eq([ap.keySet, ap.hookSet, ap.hookLen], [true, true, HOOK_SECRET.length], 'والمفتاح والسرّ مضبوطان');
+  ok(!/ep-live-key-for-tests|ep-hook-secret/.test(JSON.stringify(ap)), '**وما فيها حرف من المفتاح ولا السرّ**');
   const pg = (await call('POST', '/api/admin/pay-ping', { admin: true })).j;
-  eq(pg.ok, true, 'زر «جرّب الاتصال» ينجح بالمفاتيح الصحيحة');
+  eq([pg.ok, pg.host], [true, 'app-api.edfapay.com'], 'زر «جرّب الاتصال» ينجح بالمفتاح الصحيح');
+  ok(EP.calls.some(c => /orderId=JDW-PING-/.test(c.p)), 'وهو سؤال حالة لطلب ما يوجد — بلا أثر عندهم');
 
-  /* ── ١٢) الإشعار يقول ليش رفض ──
-     زر Test في Paylink رجّع لمحمد `{"ok":false}` وبس: الترويسة ما وصلت؟ المفتاح
-     ما طابق؟ ما نعرف. الرد صار فيه رمز السبب (بلا أطوال ولا أسماء)، واللوحة
-     فيها أسماء الترويسات والأطوال — **لا قيمة أبداً** */
-  const hookLast = async () => ((await call('GET', '/api/admin/pay', { admin: true })).j || {}).hookLast || {};
-  const post = headers => call('POST', '/api/paylink/webhook', { body: {}, headers });
-  let h = await hook({}, '');
-  eq([h.code, h.j && h.j.why], [401, 'no-header'], '**بلا ترويسة: الرد يقول السبب** — زر Test يعرضه كما هو');
-  let L = await hookLast();
-  eq([L.ok, L.why], [false, 'noheader'], 'واللوحة: ما وصلت الترويسة');
-  ok((L.headers || []).includes('content-type'), 'ومعها أسماء الترويسات اللي وصلت — ' + JSON.stringify(L.headers));
+  /* ── ١٢) رد فتح الدفع بلا غلاف · رابط من نطاق ثاني · بوابة ما ردّت ── */
+  {
+    const mk = (u, ph) => { DB.profiles.push(prof(u, { phone: ph })); TOK['tok-' + u + '-zzzzzzzzzzzzzzzzzzzz'] = u;
+      return 'tok-' + u + '-zzzzzzzzzzzzzzzzzzzz' };
+    EP.shape = 'flat';
+    const t1 = mk('u-flat', '0500000013');
+    let rr = (await call('POST', '/api/me/checkout', { tok: t1, body: {} })).j;
+    ok(rr.ok && /^https:\/\/checkout\.edfapay\.com\//.test(rr.url || ''), '**redirectUrl بلا غلاف data: يشتغل**');
+    await call('POST', '/api/me/pay-cancel', { tok: t1, body: { id: rr.id } });
+    EP.shape = 'data';
 
-  h = await hook({}, 'wrong-key');
-  eq([h.code, h.j && h.j.why], [401, 'mismatch'], 'مفتاح غلط: السبب mismatch');
-  L = await hookLast();
-  eq([L.why, L.via, L.len, L.want], ['mismatch', 'x-jadwalik-key', 9, 19],
-     '**واللوحة بالأطوال**: وصل ٩ حروف والمضبوط ١٩ — يعرف إن النسخ ناقص');
-  eq(Object.keys(h.j || {}).sort(), ['ok', 'why'], 'والرد العام رمز السبب وبس — بلا أطوال ولا أسماء');
+    EP.url = 'https://evil.example.com/pay?token=sess-secret-evil';
+    const t2 = mk('u-evil', '0500000014');
+    DB.credit_ledger.push({ id: 992, user_id: 'u-evil', amount_halalas: 500, reason: 'admin',
+      expires_at: '2031-01-01T20:59:59+00:00', created_at: '2026-09-01T10:00:00+00:00' });
+    rr = (await call('POST', '/api/me/checkout', { tok: t2, body: {} })).j;
+    eq([rr.ok, rr.url], [false, undefined], '**رابط صفحة دفع من نطاق ثاني: ما نودّي له الطالب**');
+    const se = DB.subscriptions.filter(x => x.user_id === 'u-evil').pop() || {};
+    eq(se.status, 'failed', 'والطلب فشل');
+    eq(ledger('u-evil').reduce((n, x) => n + x.amount_halalas, 0), 500, 'ورصيده رجع كامل');
+    ok(LOGS.some(l => /نطاق غير متوقع \(evil\.example\.com\)/.test(l)), 'والسجل يقول النطاق');
+    ok(!LOGS.some(l => /sess-secret-evil/.test(l)), '**بلا الرابط نفسه** (فيه رمز الجلسة)');
+    EP.url = null;
 
-  h = await post({ 'hook-key-1234567890': 'X-Jadwalik-Key' });
-  eq([h.code, h.j && h.j.why], [401, 'key-in-header-name'], '**المفتاح في خانة الاسم بدل القيمة: نقولها بالضبط**');
-  L = await hookLast();
-  eq(L.why, 'swapped', 'واللوحة كذلك');
-  ok(!JSON.stringify(L).includes('hook-key-1234567890'), '**والمفتاح ما ينكتب في اللوحة ولو جا اسماً**');
+    EP.initFail = 400;
+    const t3 = mk('u-down', '0500000015');
+    rr = (await call('POST', '/api/me/checkout', { tok: t3, body: {} })).j;
+    ok(rr.ok === false && /بوابة الدفع ما ردّت/.test(rr.error || ''), 'EdfaPay رفض فتح الدفع: نقول للطالب يجرّب بعد شوي');
+    eq((DB.subscriptions.filter(x => x.user_id === 'u-down').pop() || {}).status, 'failed', 'والطلب فشل');
+    EP.initFail = 0;
+  }
 
-  h = await post({ Authorization: 'Bearer paylink-own-token-xyz' });
-  L = await hookLast();
-  eq([h.code, L.why, L.via], [401, 'mismatch', 'authorization'],
-     'Authorization بمفتاح غير مفتاحنا (مفتاح Paylink نفسه؟): اللوحة تسمّي الترويسة');
-
-  h = await post({ 'X-Jadwalik_Key': 'hook-key-1234567890' });
-  eq(h.code, 200, '**المفتاح وصل باسم ترويسة مكتوب غلط: مقبول** — السرّ المفتاح لا الاسم');
-  L = await hookLast();
-  eq([L.ok, L.via], [true, 'x-jadwalik_key'], 'واللوحة تقول باسم وش وصل');
-
-  /* علامة اتجاه (U+200F) حول المفتاح — ببايتاتها UTF-8 كما يرسلها غيرنا */
-  const rlm = Buffer.from('\u200f', 'utf8');
-  eq(await rawHook(Buffer.concat([rlm, Buffer.from('hook-key-1234567890'), rlm])), 200,
-     '**مفتاح لُصق بعلامات اتجاه مخفية (نسخ من رسالة عربية): مقبول**');
-  L = await hookLast();
-  eq([L.ok, L.hidden], [true, 2], 'واللوحة تقول: حرفان مخفيان تجاهلناهما');
-  const okAt = L.at;
-  await hook({}, '');
-  L = await hookLast();
-  eq([L.ok, L.okAt], [false, okAt], '**رفض بعد قبول ما يغطّي وقت آخر مقبول**');
-
-  eq((await hook({}, 'hook-key-123456789')).code, 401, 'والمفتاح الناقص حرفاً مرفوض كما هو');
-  eq((await hook({}, 'hook-key-1234567890x')).code, 401, 'والزائد حرفاً ظاهراً مرفوض');
-
-  /* ── المفتاح في الرابط: زر Test في Paylink ما أرسل ولا ترويسة من عندنا — «آخر
-     إشعار» على الإنتاج عرض ١٧ ترويسة كلها من Cloudflare وRender. والرابط يوصل دائماً ── */
-  const hookUrl = qs => call('POST', '/api/paylink/webhook' + qs, { body: {} });
-  h = await hookUrl('?key=hook-key-1234567890');
-  eq(h.code, 200, '**المفتاح في رابط الإشعار (?key=): مقبول** — بلا أي ترويسة');
-  L = await hookLast();
-  eq([L.ok, L.via], [true, 'url'], 'واللوحة تقول: وصل في الرابط');
-  ok(!JSON.stringify(L).includes('hook-key-1234567890'), '**والمفتاح ما ينكتب في اللوحة**');
-  h = await hookUrl('?key=url-wrong-key-77');
-  L = await hookLast();
-  eq([h.code, h.j && h.j.why, L.why, L.via, L.len], [401, 'mismatch', 'mismatch', 'url', 16],
-     'مفتاح غلط في الرابط: mismatch بطوله — يعرف إنه نسخ ناقص');
-  eq((await hookUrl('?key=%E2%80%8Fhook-key-1234567890%E2%80%8E')).code, 200,
-     'ولو لُصق بعلامات مخفية (مرمّزة في الرابط): مقبول');
-  eq((await hookUrl('?k=hook-key-1234567890')).code, 401, 'باسم ثاني في الرابط: مرفوض — `key` وحده');
-  eq((await hookUrl('?key=hook-key-123456789')).code, 401, 'والناقص حرفاً في الرابط مرفوض');
-
-  const n0 = LOGS.length;
-  for (let i = 0; i < 8; i++) await hook({}, 'wrong-key-' + i);
-  const re = /^pay: إشعار مرفوض — المفتاح/;
-  ok(LOGS.some(l => re.test(l)), '**السجل يقول ليش رفض** — ' + (LOGS.find(l => /إشعار/.test(l)) || 'ولا سطر'));
-  ok(LOGS.slice(n0).filter(l => re.test(l)).length <= 1, '**ثمانية رفضات ورا بعض: سطر واحد بالدقيقة** لا ثمانية');
-  /* صياغة السطر تغيّرت عمداً: صار يذكر الرابط (?key=) لأنه الطريقة اللي تشتغل مع Paylink */
-  ok(LOGS.some(l => /^pay: إشعار مرفوض — ما وصل المفتاح \(لا \?key= في الرابط ولا ترويسة X-Jadwalik-Key\) · وصلت: .*content-type/.test(l)),
-     'وسطر «ما وصل» فيه أسماء اللي وصل — ' + (LOGS.find(l => /ما وصل/.test(l)) || 'ولا سطر'));
-  ok(!LOGS.some(l => /hook-key-1234567890|wrong-key|paylink-own-token|url-wrong-key/.test(l)),
-     '**ولا قيمة ترويسة ولا مفتاح رابط في السجل أبداً**');
-  ok(LOGS.some(l => /^pay: paylink .* الإشعار مضبوط \(19 حرف\)$/.test(l)),
-     'وسطر الإقلاع فيه طول المفتاح — ' + (LOGS.find(l => /^pay: paylink/.test(l)) || ''));
+  /* ── ١٢ب) إشعار موقَّع يقول مدفوع وEdfaPay يقول لا: نعيد السؤال ثم ننبّهك — لا تفعيل ── */
+  {
+    DB.profiles.push(prof('u-says', { phone: '0500000016' })); TOK['tok-says-yyyyyyyyyyyyyyyyyyyyyy'] = 'u-says';
+    const rr = (await call('POST', '/api/me/checkout', { tok: 'tok-says-yyyyyyyyyyyyyyyyyyyyyy', body: {} })).j;
+    const n0 = EP.calls.filter(c => c.p.includes('orderId=JDW-' + rr.id)).length;
+    await hook('JDW-' + rr.id);
+    eq(sub(rr.id).status, 'pending', '**الإشعار يقول Approved وEdfaPay يقول PENDING: ما نفعّل**');
+    await wait(10600);
+    eq(EP.calls.filter(c => c.p.includes('orderId=JDW-' + rr.id)).length, n0 + 2, 'وسألنا مرة ثانية بعد ١٠ ثواني');
+    ok(tgTo('5555', /إشعار EdfaPay يقول مدفوع وسؤال الحالة ما أكّد/).length === 1, '**وبعدها نبّهناك** — فلوس ربما وصلت');
+    eq(sub(rr.id).status, 'pending', 'والطلب باقٍ معلّقاً لمراجعتك');
+  }
 
   /* ── ١٣) التنبيه الطارئ: ما يُباع وهو ما ينفعّل، ومن اشتراه يوصله كيف يفعّله ── */
   let ms13 = (await call('GET', '/api/monitor-status')).j || {};
@@ -695,9 +736,9 @@ async function prodSuite() {
   r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-po'), body: { pushover: true } })).j;
   ok(r.ok, 'اشترى الترم مع التنبيه الطارئ — ' + JSON.stringify(r));
   const s13 = sub(r.id) || {};
-  /* السعر ١٥ ريال (قرار محمد ٣٠ سبتمبر ٢٠٢٦ — كان ١٠) */ 
+  /* السعر ١٥ ريال (قرار محمد ٣٠ سبتمبر ٢٠٢٦ — كان ١٠) */
   eq([s13.pushover, s13.amount_halalas], [true, 3400], 'الصف: مع الإضافة · ٣٤ ريال');
-  PL.inv[s13.gateway_ref].orderStatus = 'Paid';
+  ord(r.id).status = 'PAID';
   await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-po') });
   eq(sub(r.id).status, 'paid', 'ودفع');
   const rp = String((tgTo('6010', /إيصال/).pop() || {}).text || '');
@@ -710,13 +751,20 @@ async function prodSuite() {
   ok(rp.indexOf('سجل تجاري 7055288521') > rp.indexOf('ساري حتى') &&
      rp.indexOf('سجل تجاري 7055288521') < rp.indexOf('فعّل التنبيه الطارئ'),
      'ورقم السجل آخر الفاتورة — قبل خطوات التفعيل لا بعدها');
+
+  /* ── ١٤) الأسرار والسجل ── */
+  ok(!LOGS.some(l => /ep-live-key-for-tests|ep-hook-secret-for-tests/.test(l)), '**ولا المفتاح ولا السرّ في السجل أبداً**');
+  ok(LOGS.some(l => /^pay: edfapay · app-api\.edfapay\.com · المفتاح مضبوط · الإشعار مضبوط \(\d+ حرف\)$/.test(l)),
+     'سطر الإقلاع — ' + (LOGS.find(l => /^pay: /.test(l)) || ''));
+  ok(![...EP.hosts].some(h => /paylink/.test(h)), '**ولا طلب واحد لـPaylink** — انشالت كلها');
+  eq((await call('POST', '/api/paylink/webhook', { body: {} })).code === 200, false, 'ومسار إشعار Paylink ما عاد يقبل شي');
 }
 
 async function devSuite() {
   await setWindow('2000-01-01', '2000-01-02');
   let q = (await call('GET', '/api/me/quote', { tok: tokOf('u-st') })).j;
   eq(q.pay && [q.pay.open, q.pay.why], [false, 'test'],
-     '**dev ببطاقات تجريبية عامة: الطالب ما يدفع** — وإلا أخذ اشتراكاً حقيقياً ببطاقة تجريبية');
+     '**dev: الطالب ما يدفع** — الملف مشترك مع الإنتاج، فدفعة تجربة كانت بتعطيه اشتراكاً حقيقياً');
   eq((await call('POST', '/api/admin/beta-toggle', { admin: true, body: { on: false } })).code, 200,
      'في dev إطفاء الفترة المجانية ما يُحرس');
   q = (await call('GET', '/api/me/quote', { tok: tokOf('u-st') })).j;
@@ -724,82 +772,95 @@ async function devSuite() {
   const r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-own'), body: { phone: '+966 51 234 5678' } })).j;
   ok(r.ok, 'صاحب الموقع يجرّب — ' + JSON.stringify(r));
   const s = sub(r.id) || {};
-  const a = (adds()[0] || {}).b || {};
-  eq(s.gateway, 'paylink-test', '**بوابة التجربة باسمها** — خارج الإيرادات');
-  eq(a.orderNumber, 'JDWT-' + r.id, 'ورقم طلبها غير الإنتاج');
-  eq(a.clientMobile, '0512345678', '+966 بمسافات يتحوّل');
-  eq(a.callBackUrl, `https://127.0.0.1:${PORT}/?pay=${r.id}`, 'والرجوع على عنوان التجربة نفسه');
-  eq([...PL.hosts], ['restpilot.paylink.sa'], '**dev على restpilot لا الإنتاج**');
+  const a = (inits()[0] || {}).b || {};
+  eq(s.gateway, 'edfapay-test', '**بوابة التجربة باسمها** — خارج الإيرادات');
+  eq(a.orderId, 'JDWT-' + r.id, 'ورقم طلبها غير الإنتاج');
+  eq(a.customerDetails && a.customerDetails.phone, '+966-512345678', '+966 بمسافات يتحوّل');
+  eq(a.successUrl, `https://127.0.0.1:${PORT}/?pay=${r.id}`, 'والرجوع على عنوان التجربة نفسه');
+  eq([...EP.hosts], ['demo-api.edfapay.com'], '**dev على demo-api (خادم التجربة في توثيقهم) لا الإنتاج**');
   /* صف إنتاج معلّق في نفس القاعدة: dev ما يلمسه */
-  DB.subscriptions.push({ id: 9001, user_id: 'u-st', term: '203010', status: 'pending', gateway: 'paylink',
-    gateway_ref: 'PROD-TX-1', amount_halalas: 1900, credit_halalas: 0, includes_term: true,
+  DB.subscriptions.push({ id: 9001, user_id: 'u-st', term: '203010', status: 'pending', gateway: 'edfapay',
+    gateway_ref: null, amount_halalas: 1900, credit_halalas: 0, includes_term: true,
     valid_until: END_NOW, created_at: new Date(Date.now() - 30 * 3600e3).toISOString() });
-  PL.inv[s.gateway_ref].orderStatus = 'Paid';
-  await call('POST', '/api/paylink/webhook', { body: { orderNumber: 'JDWT-' + r.id },
-    headers: { 'X-Jadwalik-Key': 'hook-key-1234567890' } });
+  ord(r.id).status = 'PAID';
+  await hook('JDWT-' + r.id);
   eq(sub(r.id).status, 'paid', 'إشعار برقم طلب التجربة: مدفوع');
   ok(tgTo('5555', new RegExp('إيصال JDWT-' + r.id + '</b> \\(تجربة\\)')).length === 1,
      'وإيصال التجربة مكتوب عليه «تجربة»');
   eq(P('u-own').paid_at, null, '**دفعة تجريبية ما تُحسب «دفع فعلي»** في إحصاء الإنتاج');
   /* دعوة إنتاج نضجت (٨ أيام واشتراكها مدفوع): dev ما يمنحها — القاعدة مشتركة */
   DB.profiles.push(prof('u-dinv'), prof('u-dref'));
-  DB.subscriptions.push({ id: 9002, user_id: 'u-dinv', status: 'paid', gateway: 'paylink', term: '203010',
+  DB.subscriptions.push({ id: 9002, user_id: 'u-dinv', status: 'paid', gateway: 'edfapay', term: '203010',
     base_halalas: 1900, pushover_halalas: 0, discount_halalas: 300, credit_halalas: 0, amount_halalas: 1600 });
   DB.referrals.push({ id: 94, referrer_id: 'u-dref', invited_id: 'u-dinv', subscription_id: 9002, credit_id: null,
     created_at: new Date(Date.now() - 8 * 864e5).toISOString() });
-  await hook({ transactionNo: 'PROD-TX-1' });
-  await hook({});
+  const n0 = EP.calls.length;
+  await hook('JDW-9001');                          /* رقم طلب الإنتاج وصل dev: جرس لصفوف dev وحدها */
+  await wait(500);
   eq(sub(9001).status, 'pending', '**صف الإنتاج المعلّق ما لمسه dev** — كل بيئة تنظّف صفوفها');
+  ok(!EP.calls.slice(n0).some(c => /orderId=JDW-9001/.test(c.p)), 'وما سأل عنه EdfaPay أصلاً');
   eq(ledger('u-dref').length, 0, '**ورصيد دعوة الإنتاج ما يمنحه dev** — الإنتاج وحده يمنح');
+  const ap = (await call('GET', '/api/admin/pay', { admin: true })).j;
+  eq([ap.live, ap.host, ap.hostBad, ap.openTo], [false, 'demo-api.edfapay.com', false, 'owner'], 'اللوحة: التجربة · demo-api · لك وحدك');
+}
+
+/* مفتاح «Test Mode» من لوحة التاجر ما قالوا لأي خادم: dev يقبل EDFAPAY_HOST من خوادمهم */
+async function devhostSuite() {
+  const r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-own'), body: { phone: '0512345678' } })).j;
+  ok(r.ok, 'صاحب الموقع يجرّب — ' + JSON.stringify(r));
+  eq([...EP.hosts], ['revamp-api.edfapay.com'], '**EDFAPAY_HOST (بـhttps:// وشرطة) يغيّر خادم dev**');
+  const ap = (await call('GET', '/api/admin/pay', { admin: true })).j;
+  eq([ap.host, ap.hostBad], ['revamp-api.edfapay.com', false], 'واللوحة تقوله');
+}
+
+async function devhintSuite() {
+  const pg = (await call('POST', '/api/admin/pay-ping', { admin: true })).j;
+  eq([pg.ok, pg.hostHint], [false, 'app-api.edfapay.com'], '**مفتاح Test Mode مرفوض على demo-api: زر التجربة يجرّب الباقي ويقول وين انقبل**');
+  ok(/EDFAPAY_HOST/.test(pg.error || '') && /app-api\.edfapay\.com/.test(pg.error || ''), 'ويقول وش يضبط في Render — ' + pg.error);
+  ok(!/ep-app-only-key/.test(JSON.stringify(pg)), 'بلا المفتاح نفسه');
 }
 
 async function nokeysSuite() {
   const q = (await call('GET', '/api/me/quote', { tok: tokOf('u-own') })).j;
-  eq(q.pay && [q.pay.open, q.pay.why], [false, 'nokeys'], 'الإنتاج بلا مفاتيح: الدفع مقفل حتى لصاحب الموقع');
+  eq(q.pay && [q.pay.open, q.pay.why], [false, 'nokeys'], 'الإنتاج بلا مفتاح: الدفع مقفل حتى لصاحب الموقع');
   const b = await call('POST', '/api/admin/beta-toggle', { admin: true, body: { on: false } });
   eq(b.code, 400, '**§١٠: ما تنطفي الفترة المجانية في الإنتاج قبل البوابة**');
-  ok(/Paylink/.test(String(b.j && b.j.error)), 'والرسالة تقول ليش — ' + (b.j && b.j.error));
+  ok(/EDFAPAY_API_KEY/.test(String(b.j && b.j.error)), 'والرسالة تسمّي المتغيّر — ' + (b.j && b.j.error));
   const ap = (await call('GET', '/api/admin/pay', { admin: true })).j;
-  eq([ap.ready, ap.idSet, ap.openTo], [false, false, 'none'], 'اللوحة تقول المفاتيح ناقصة');
-  const h = await hook({});
-  eq([h.code, h.j && h.j.why], [401, 'no-key-configured'], '**بلا مفتاح إشعار في Render: الرد يقول كذا**');
-  const L = ((await call('GET', '/api/admin/pay', { admin: true })).j || {}).hookLast || {};
-  eq([L.why, L.want], ['nokey', 0], 'واللوحة كذلك');
-  ok(LOGS.some(l => /PAYLINK_WEBHOOK_KEY ناقص في Render/.test(l)), 'والسجل يسمّي المتغيّر');
-}
-
-/* مفتاح الإشعار في Render لُصق بعلامات اتجاه مخفية: `trim` ما تشيلها، فكان
-   السيرفر يقول «مضبوط» ويرفض كل إشعار صحيح */
-async function hookenvSuite() {
-  eq((await hook({})).code, 200, '**مفتاح Render فيه علامات مخفية: الإشعار الصحيح يُقبل**');
-  const ap = (await call('GET', '/api/admin/pay', { admin: true })).j || {};
-  eq([ap.hookSet, ap.hookLen, ap.hookHidden], [true, 19, 2], 'واللوحة: ١٩ حرف، وحرفان مخفيان تجاهلناهما');
-  ok(LOGS.some(l => /الإشعار مضبوط \(19 حرف · تجاهلنا 2 حرف مخفي\)/.test(l)),
-     'وسطر الإقلاع يقولها — ' + (LOGS.find(l => /^pay: paylink/.test(l)) || ''));
-  eq((await hook({}, 'hook-key-123456789')).code, 401, 'والناقص حرفاً مرفوض');
-}
-
-async function testkeySuite() {
-  const q = (await call('GET', '/api/me/quote', { tok: tokOf('u-own') })).j;
-  eq(q.pay && [q.pay.open, q.pay.why], [false, 'nokeys'], '**الإنتاج يرفض مفتاح التجربة العام**');
+  eq([ap.ready, ap.keySet, ap.hookSet, ap.openTo], [false, false, false, 'none'], 'اللوحة تقول المفتاح والسرّ ناقصان');
   const pg = (await call('POST', '/api/admin/pay-ping', { admin: true })).j;
-  ok(pg.ok === false && /الحقيقية/.test(pg.error || ''), 'وزر التجربة يقول حط مفاتيحك الحقيقية');
-  eq(PL.auth, 0, 'وما حاولنا ندخل Paylink بمفتاح عام من الإنتاج');
-  const ap = (await call('GET', '/api/admin/pay', { admin: true })).j;
-  eq(ap.testIdInProd, true, 'واللوحة تسمّي السبب');
+  ok(pg.ok === false && /EDFAPAY_API_KEY/.test(pg.error || ''), 'وزر التجربة يسمّي المتغيّر');
+  const h = await hook('JDW-1');
+  eq([h.code, h.j && h.j.why], [401, 'no-secret-configured'], '**بلا سرّ في Render: الإشعار مقفل**');
+  eq(EP.calls.length, 0, 'وما طلبنا EdfaPay بلا مفتاح');
+  ok(LOGS.some(l => /^pay: edfapay · app-api\.edfapay\.com · المفتاح ناقص · الإشعار بلا سرّ$/.test(l)), 'وسطر الإقلاع');
+}
+
+/* مفتاح يرفضه EdfaPay (تجربة في الإنتاج، أو نسخ ناقص) */
+async function badkeySuite() {
+  const pg = (await call('POST', '/api/admin/pay-ping', { admin: true })).j;
+  ok(pg.ok === false && /رفض المفتاح \(401\)/.test(pg.error || '') && /Test Mode/.test(pg.error || ''),
+     '**زر «جرّب الاتصال»: EdfaPay رفض المفتاح — ويقول وش يحط** — ' + pg.error);
+  DB.credit_ledger.push({ id: 993, user_id: 'u-own', amount_halalas: 500, reason: 'admin',
+    expires_at: '2031-01-01T20:59:59+00:00', created_at: '2026-09-01T10:00:00+00:00' });
+  const r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-own'), body: { phone: '0512345678' } })).j;
+  ok(r.ok === false && /بوابة الدفع ما ردّت/.test(r.error || ''), 'صاحب الموقع يدفع: «ما ردّت، جرّب بعد شوي»');
+  eq(ledger('u-own').reduce((n, x) => n + x.amount_halalas, 0), 500, 'ورصيده المحجوز رجع');
+  ok(LOGS.some(l => /EdfaPay initiate: 401/.test(l)), 'والسجل فيه رد EdfaPay');
+  ok(!LOGS.some(l => /ep-wrong-key/.test(l)), 'بلا المفتاح نفسه');
 }
 
 (async () => {
   await wait(400);
   try {
-    await ({ prod: prodSuite, dev: devSuite, nokeys: nokeysSuite, testkey: testkeySuite,
-             hookenv: hookenvSuite })[MODE]();
+    await ({ prod: prodSuite, dev: devSuite, devhost: devhostSuite, devhint: devhintSuite, nokeys: nokeysSuite,
+             badkey: badkeySuite })[MODE]();
   } catch (e) { fail++; out.push(`  ✗ [${MODE}] انهار: ` + (e && e.stack || e)) }
   console.log = realLog;
 
   /* الأب يشغّل البقية كعمليات مستقلة ويجمع النتائج */
   if (MODE === 'prod') {
-    for (const m of ['dev', 'nokeys', 'testkey', 'hookenv']) {
+    for (const m of ['dev', 'devhost', 'devhint', 'nokeys', 'badkey']) {
       const res = await new Promise(resolve => {
         const ch = fork(__filename, [SRV, '--mode=' + m], { silent: true });
         let o = '';
