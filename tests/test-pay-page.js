@@ -2,9 +2,11 @@
 
    أخطار يمسكها:
    ١) زر الدفع يشتغل والسيرفر قال مقفل (الفترة المجانية · dev · بلا مفاتيح).
-   ٢) الدفع يبدأ بلا جوال — Paylink يرفضه، فالطالب يطلع بخطأ غامض.
-   ٣) الصفحة تودّي الطالب لأي رابط يرجع — لازم صفحة Paylink وحدها.
-   ٤) الرجوع من Paylink يُعتبر دفعاً — الصفحة لازم تسأل السيرفر.
+   ٢) الدفع يبدأ بلا جوال — السيرفر يطلبه، فالطالب يطلع بخطأ غامض.
+   ٣) الصفحة تودّي الطالب لأي رابط يرجع — لازم صفحة الدفع عند EdfaPay وحدها
+      (وPaylink انشالت — قرار محمد — فرابطها ما عاد يُتبع).
+   ٤) الرجوع من صفحة الدفع يُعتبر دفعاً — الصفحة لازم تسأل السيرفر.
+   ١٣) النص تحت الزر ما يسمّي البوابة (ملف التسليم §٨-٧): «بوابة دفع إلكتروني».
    ٥) دفعة معلّقة قديمة تعلّق الطالب بلا مخرج (كمّلها · ألغها).
    ٦) نص خطأ من السيرفر يُعرض HTML.
    ٨) رقم جوال غلط: الرسالة تقول الصح والمؤشر يرجع للخانة.
@@ -96,7 +98,8 @@ async function open(browser, scheme, query, prof) {
   page.on('dialog', d => { errs.push('DIALOG:' + d.message()); d.dismiss().catch(() => {}) });
   await page.route('**/fonts.googleapis.com/**', r => r.fulfill({ status: 200, contentType: 'text/css', body: '' }));
   await page.route('**/cdn.jsdelivr.net/**', r => r.fulfill({ status: 200, contentType: 'application/javascript', body: sbStub }));
-  /* صفحة Paylink المزيّفة: نثبت إن الطالب انودّى لها فعلاً */
+  /* صفحة الدفع المزيّفة عند EdfaPay: نثبت إن الطالب انودّى لها فعلاً */
+  await page.route('https://checkout.edfapay.com/**', r => r.fulfill({ status: 200, contentType: 'text/html', body: '<h1>EdfaPay</h1>' }));
   await page.route('https://payment.paylink.sa/**', r => r.fulfill({ status: 200, contentType: 'text/html', body: '<h1>Paylink</h1>' }));
   await page.route('https://evil.example.com/**', r => r.fulfill({ status: 200, contentType: 'text/html', body: '<h1>evil</h1>' }));
   await page.goto(`http://127.0.0.1:${server.address().port}/${query || ''}`, { waitUntil: 'load' });
@@ -156,10 +159,10 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: pa
     await ctx.close();
   }
 
-  /* ── ٢) مفتوح: الجوال إلزامي، ثم نودّيه لصفحة Paylink ── */
+  /* ── ٢) مفتوح: الجوال إلزامي، ثم نودّيه لصفحة الدفع عند EdfaPay ── */
   for (const scheme of ['dark', 'light']) {
     ST.quote = baseQuote(); ST.posts = []; ST.heads = [];
-    ST.checkout = { ok: true, url: 'https://payment.paylink.sa/pay/order/7001234', id: 101, amount: 1900 };
+    ST.checkout = { ok: true, url: 'https://checkout.edfapay.com/pay/s-7001234', id: 101, amount: 1900 };
     const { page, ctx, errs } = await open(browser, scheme);
     await sheet(page);
     let b = await btn(page);
@@ -176,26 +179,28 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: pa
     ok(rf && rf.vis && rf.above, `**سطر الاسترجاع ظاهر فوق زر الدفع** (${scheme}) — ` + JSON.stringify(rf));
     eq(rf && rf.text, 'الاسترجاع خلال 7 أيام إذا ما استخدمت أي ميزة مدفوعة، بعد خصم رسوم الدفع (بحد أقصى 3 ريال).',
        'نصّه كما كُتب — بأرقام لاتينية مثل باقي الموقع');
+    const by = await page.evaluate(() => { const e = document.getElementById('psBy'); return e && !e.hidden ? e.textContent.trim() : null });
+    eq(by, '🔒 الدفع الآمن عبر بوابة دفع إلكتروني', '**تحت الزر: «بوابة دفع إلكتروني» بلا اسم بوابة** (§٨-٧)');
     const fs16 = await page.evaluate(() => getComputedStyle(document.getElementById('psPhone')).fontSize);
     eq(fs16, '16px', '**حقل الجوال ١٦px** — أصغر منه يزوّم سفاري الآيفون ولا يرجع');
     await shot(page, 'pay-sheet-' + scheme);
     if (scheme === 'dark') {
       await page.click('#psPay');
       await page.waitForTimeout(300);
-      eq(ST.posts.length, 0, '**بلا جوال: ما نبدأ** — Paylink يشترطه');
+      eq(ST.posts.length, 0, '**بلا جوال: ما نبدأ** — السيرفر يطلبه');
       ok(/جوالك/.test(await page.textContent('#psMsg')), 'ونقول له يكتبه');
       await shot(page, 'pay-phone-missing');
     }
     await page.fill('#psPhone', '0512345678');
-    await Promise.all([page.waitForURL(/payment\.paylink\.sa/, { timeout: 5000 }).catch(() => {}), page.click('#psPay')]);
-    ok(/^https:\/\/payment\.paylink\.sa\/pay\/order\/7001234/.test(page.url()), '**انودّى لصفحة Paylink** — ' + page.url());
+    await Promise.all([page.waitForURL(/checkout\.edfapay\.com/, { timeout: 5000 }).catch(() => {}), page.click('#psPay')]);
+    ok(/^https:\/\/checkout\.edfapay\.com\/pay\/s-7001234/.test(page.url()), '**انودّى لصفحة الدفع عند EdfaPay** — ' + page.url());
     eq(ST.posts[0], { pushover: false, ref: '', phone: '0512345678' }, 'بطلب فيه الجوال فقط — لا معرّف ولا مبلغ من الصفحة');
     ok(ST.heads.some(h => h === 'Bearer tok-pay-123456789012345678901234567890'), 'وبرمز الجلسة');
     eq(errs, [], 'بلا أخطاء');
     await ctx.close();
   }
 
-  /* ── ٣) رابط مو من Paylink: ما نودّيه ── */
+  /* ── ٣) رابط مو من EdfaPay: ما نودّيه — ولا رابط Paylink بعد ما انشالت ── */
   {
     ST.quote = baseQuote({ phone: '0512345678' });
     ST.checkout = { ok: true, url: 'https://evil.example.com/steal', id: 102 };
@@ -204,11 +209,21 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: pa
     eq(await page.inputValue('#psPhone'), '0512345678', 'الجوال المحفوظ يتعبّى تلقائياً');
     await page.click('#psPay');
     await page.waitForTimeout(700);
-    ok(!/evil/.test(page.url()), '**رابط غير Paylink: ما نودّي الطالب له** — ' + page.url());
+    ok(!/evil/.test(page.url()), '**رابط غير EdfaPay: ما نودّي الطالب له** — ' + page.url());
+    await ctx.close();
+  }
+  {
+    ST.quote = baseQuote({ phone: '0512345678' });
+    ST.checkout = { ok: true, url: 'https://payment.paylink.sa/pay/order/7001234', id: 104 };
+    const { page, ctx } = await open(browser);
+    await sheet(page);
+    await page.click('#psPay');
+    await page.waitForTimeout(700);
+    ok(!/paylink/.test(page.url()), '**ورابط Paylink ما عاد يُتبع** — انشالت (قرار محمد) — ' + page.url());
     await ctx.close();
   }
 
-  /* ── ٤) الرصيد يغطي الكل: تفعيل بلا جوال ولا Paylink ── */
+  /* ── ٤) الرصيد يغطي الكل: تفعيل بلا جوال ولا صفحة دفع ── */
   {
     ST.quote = baseQuote({ credit: 1900, amount: 0, creditAvailable: 5000 }); ST.posts = [];
     ST.checkout = { ok: true, activated: true, until: '2027-06-15T20:59:59.000Z', id: 103 };
@@ -232,7 +247,7 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: pa
   /* ── ٥) دفعة معلّقة: كمّلها أو ألغها ── */
   {
     ST.quote = baseQuote({ phone: '0512345678' }); ST.posts = [];
-    ST.checkout = { ok: false, why: 'pending', id: 55, url: 'https://payment.paylink.sa/pay/order/55', amount: 1900,
+    ST.checkout = { ok: false, why: 'pending', id: 55, url: 'https://checkout.edfapay.com/pay/s-55', amount: 1900,
                     error: 'عندك دفعة ما كملت' };
     ST.cancel = { ok: true, id: 55, status: 'failed' };
     const { page, ctx, errs } = await open(browser);
@@ -240,7 +255,7 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: pa
     await page.click('#psPay');
     await page.waitForTimeout(500);
     const href = await page.getAttribute('#psMsg a', 'href');
-    eq(href, 'https://payment.paylink.sa/pay/order/55', 'رابط يكمّل منه');
+    eq(href, 'https://checkout.edfapay.com/pay/s-55', 'رابط يكمّل منه');
     await shot(page, 'pay-pending-box');
     await page.click('#psMsg button');
     await page.waitForTimeout(600);
@@ -263,7 +278,7 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: pa
     await ctx.close();
   }
 
-  /* ── ٧) الرجوع من Paylink: نسأل السيرفر ── */
+  /* ── ٧) الرجوع من صفحة الدفع: نسأل السيرفر ── */
   for (const scheme of ['dark', 'light']) {
     ST.pay = [{ ok: true, id: 77, status: 'paid', until: '2027-06-15T20:59:59.000Z', amount: 1900 }]; ST.pays = 0;
     const { page, ctx, errs } = await open(browser, scheme, '?pay=77&transactionNo=7001234');

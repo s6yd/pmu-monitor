@@ -6312,7 +6312,7 @@ function openPlans(reason){
     <div class="ps-terms" id="psTerms" hidden>${ar
       ?'بالضغط على الدفع توافق على <a href="/terms#payment" target="_blank" rel="noopener">الشروط والأحكام</a> و<a href="/terms#refund" target="_blank" rel="noopener">سياسة الاسترجاع</a>.'
       :'By continuing to payment, you agree to the <a href="/terms#en-payment" target="_blank" rel="noopener">Terms</a> and the <a href="/terms#en-refund" target="_blank" rel="noopener">Refund policy</a>.'}</div>
-    <div class="ps-note pay-by" id="psBy" hidden>🔒 ${ar?'الدفع الآمن عبر بوابة Paylink':'Secure checkout by Paylink'}</div>
+    <div class="ps-note pay-by" id="psBy" hidden>🔒 ${ar?'الدفع الآمن عبر بوابة دفع إلكتروني':'Secure payment via an online payment gateway'}</div>
     <button class="ps-close" onclick="closePlans()">${ar?'مو الحين':'Not now'}</button>
   </div>`;
   plansTotal();
@@ -6377,12 +6377,13 @@ async function plansQuote(){
 
 /* ═══ الدفع (§٩-ب) ═══
    الصفحة ما تقرر شيئاً: هل يدفع، وكم، ولأي ترم — كله من السيرفر
-   (payGate · meQuote). هنا العرض والتوجيه لصفحة Paylink والرجوع منها.
-   والرجوع **جرس لا إثبات**: الصفحة تسأل السيرفر، والسيرفر يسأل Paylink. */
+   (payGate · meQuote). هنا العرض والتوجيه لصفحة الدفع عند EdfaPay والرجوع منها.
+   والرجوع **جرس لا إثبات**: الصفحة تسأل السيرفر، والسيرفر يسأل EdfaPay.
+   والنص للطالب ما يسمّي البوابة (ملف التسليم §٨-٧): «بوابة دفع إلكتروني». */
 let PS_Q=null, PAY_BUSY=false;
 /* رقم الطلب من ‎?pay=‎ يُقرأ **عند تحميل السكربت**: initAuth تمسح الرابط
    كله أول ما تلقى جلسة — قبل ما يوصل دور payReturn — فكان الطالب يرجع من
-   Paylink وما يشوف أي نتيجة */
+   صفحة الدفع وما يشوف أي نتيجة */
 let PAY_BACK=(()=>{ const m=/[?&]pay=(\d{1,12})(?:&|$)/.exec(location.search); return m?m[1]:null })();
 /* ‎?plans=1‎ يفتح ورقة الباقات مباشرة — وقت الفترة المجانية ما فيه زر «الباقات»،
    فهذا مدخل صاحب الموقع لتجربة الدفع (والزر نفسه يقرّره السيرفر كما هو) */
@@ -6430,7 +6431,8 @@ function payUi(q){
   if(box)box.hidden=false; if(by)by.hidden=false;
   if(inp&&!inp.value&&q.phone)inp.value=q.phone;
 }
-const payUrlOk=u=>/^https:\/\/([a-z0-9-]+\.)*paylink\.sa\//i.test(String(u||''));
+/* صفحة الدفع عند EdfaPay وحدها — نفس فحص السيرفر (epUrlOk) */
+const payUrlOk=u=>/^https:\/\/([a-z0-9-]+\.)*edfapay\.com\//i.test(String(u||''));
 async function payStart(){
   const q=PS_Q, ar=LANG==='ar';
   if(PAY_BUSY||!q||!(q.pay&&q.pay.open))return;
@@ -6507,7 +6509,7 @@ function payRefresh(){
   loadAccount(true).catch(()=>{});
   pullCloud().then(()=>{ try{ enforceSlotAndRedraw(); if(CUR_TAB==='set')renderSettings() }catch(e){} }).catch(()=>{});
 }
-/* رجع من Paylink على ‎?pay=رقم‎ — نسأل السيرفر (وهو يسأل Paylink) مرتين
+/* رجع من صفحة الدفع على ‎?pay=رقم‎ — نسأل السيرفر (وهو يسأل EdfaPay) مرتين
    ثلاث قبل ما نقول «ننتظر التأكيد»: الإشعار عادة يسبق الطالب بثوانٍ */
 async function payReturn(given){
   if(!given&&PLANS_OPEN&&USER&&!PAY_BACK){ PLANS_OPEN=false; openPlans('compare'); return }
