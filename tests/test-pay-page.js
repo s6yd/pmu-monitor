@@ -124,6 +124,14 @@ const agree = page => page.evaluate(() => {
            links: [...el.querySelectorAll('a')].map(a => [a.getAttribute('href'), a.target]),
            text: el.textContent.replace(/\s+/g, ' ').trim() };
 });
+/* سطر الاسترجاع فوق زر الدفع (الجولة الثانية من الشروط) */
+const refundLine = page => page.evaluate(() => {
+  const el = document.getElementById('psRefund'), b = document.getElementById('psPay');
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  return { vis: !el.hidden && r.height > 0, above: !!b && r.bottom <= b.getBoundingClientRect().top + 1,
+           text: el.textContent.replace(/\s+/g, ' ').trim() };
+});
 const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: path.join(SHOTS, name + '.png') }) };
 
 (async () => {
@@ -139,6 +147,7 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: pa
     ok(b && b.dis && re.test(b.txt), `مقفل (${why}): الزر مقفل ويقول ليش — ${JSON.stringify(b)}`);
     eq(await phoneShown(page), false, `مقفل (${why}): ولا حقل جوال`);
     eq((await agree(page) || {}).vis, false, `مقفل (${why}): ولا سطر موافقة على شراء ما يصير`);
+    eq((await refundLine(page) || {}).vis, false, `مقفل (${why}): ولا سطر استرجاع`);
     ST.posts = [];
     await page.evaluate(() => payStart());
     eq(ST.posts.length, 0, `مقفل (${why}): ولا طلب دفع ولو نودي بنفسه`);
@@ -161,6 +170,11 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: pa
     eq(ag && ag.text, 'بالضغط على الدفع توافق على الشروط والأحكام وسياسة الاسترجاع.', 'نصّه كما كُتب');
     eq(ag && ag.links, [['/terms#payment', '_blank'], ['/terms#refund', '_blank']],
        'روابطه لقسمي الدفع والاسترجاع — في صفحة جديدة فالورقة ما تضيع');
+    /* الجولة الثانية من الشروط: الاسترجاع بشرط وبخصم رسوم — يُقال قبل الزر */
+    const rf = await refundLine(page);
+    ok(rf && rf.vis && rf.above, `**سطر الاسترجاع ظاهر فوق زر الدفع** (${scheme}) — ` + JSON.stringify(rf));
+    eq(rf && rf.text, 'الاسترجاع خلال 7 أيام إذا ما استخدمت أي ميزة مدفوعة، بعد خصم رسوم الدفع (بحد أقصى 3 ريال).',
+       'نصّه كما كُتب — بأرقام لاتينية مثل باقي الموقع');
     const fs16 = await page.evaluate(() => getComputedStyle(document.getElementById('psPhone')).fontSize);
     eq(fs16, '16px', '**حقل الجوال ١٦px** — أصغر منه يزوّم سفاري الآيفون ولا يرجع');
     await shot(page, 'pay-sheet-' + scheme);
@@ -428,6 +442,8 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: pa
     eq(ag && ag.text, 'By continuing to payment, you agree to the Terms and the Refund policy.', 'نصّه الإنجليزي كما كُتب');
     eq(ag && ag.links, [['/terms#en-payment', '_blank'], ['/terms#en-refund', '_blank']],
        '**وروابطه للنسخة الإنجليزية** (‎#en-‎ يفتحها على القسم)');
+    eq((await refundLine(page) || {}).text, "Refunds within 7 days if you haven't used any paid feature, less payment fees (up to SAR 3).",
+       'وسطر الاسترجاع بالإنجليزي');
     await shot(page, 'plans-agree-en');
     eq(errs, [], 'بلا أخطاء');
     await ctx.close();
@@ -437,6 +453,7 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: pa
     const { page, ctx } = await open(browser);
     await sheet(page);
     eq((await agree(page) || {}).vis, false, 'اشتراكه فعّال وما فيه شي يشتريه: ولا سطر موافقة');
+    eq((await refundLine(page) || {}).vis, false, 'ولا سطر استرجاع');
     await ctx.close();
   }
 

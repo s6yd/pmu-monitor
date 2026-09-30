@@ -563,6 +563,7 @@ display:flex;align-items:center;justify-content:center}
 .ps-line.good{color:var(--open)}
 .ps-note{font-size:12px;color:var(--text3);line-height:1.6}
 .ps-terms{font-size:12px;color:var(--text3);line-height:1.7;text-align:center;margin-top:8px}
+.ps-refund{font-size:12px;color:var(--text2);line-height:1.7;text-align:center;margin:0 4px 8px}
 .ps-terms a{color:var(--accent2);text-decoration:underline;text-underline-offset:2px}
 /* ═══ الدفع (§٩-ب) — بادئة pay- عمداً: ps- مستعملة في ورقة الطباعة كذلك ═══ */
 .pay-phone{margin:0 0 12px}
@@ -6307,6 +6308,9 @@ function openPlans(reason){
       <input id="psPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="05XXXXXXXX">
     </div>
     <div class="pay-msg" id="psMsg" hidden></div>
+    <div class="ps-refund" id="psRefund" hidden>${ar
+      ?'الاسترجاع خلال 7 أيام إذا ما استخدمت أي ميزة مدفوعة، بعد خصم رسوم الدفع (بحد أقصى 3 ريال).'
+      :'Refunds within 7 days if you haven\'t used any paid feature, less payment fees (up to SAR 3).'}</div>
     <button class="ps-pay" id="psPay" disabled onclick="payStart()">${ar?'الدفع يفتح قريباً':'Checkout opens soon'}</button>
     <div class="ps-terms" id="psTerms" hidden>${ar
       ?'بالضغط على الدفع توافق على <a href="/terms#payment" target="_blank" rel="noopener">الشروط والأحكام</a> و<a href="/terms#refund" target="_blank" rel="noopener">سياسة الاسترجاع</a>.'
@@ -6405,15 +6409,17 @@ function payUi(q){
   const by=document.getElementById('psBy');
   /* سطر الموافقة (اللائحة التنفيذية لنظام التجارة الإلكترونية: الضغط على زر الدفع
      يُبرم العقد) — يظهر مع زر يشتري فعلاً، والتفعيل بالرصيد شراء كذلك */
-  const terms=document.getElementById('psTerms');
+  const terms=document.getElementById('psTerms'), refund=document.getElementById('psRefund');
   if(!btn)return;
   const pay=(q&&q.pay)||{};
-  const off=txt=>{ btn.disabled=true; btn.textContent=txt; if(box)box.hidden=true; if(by)by.hidden=true; if(terms)terms.hidden=true };
+  const off=txt=>{ btn.disabled=true; btn.textContent=txt; if(box)box.hidden=true; if(by)by.hidden=true;
+    if(terms)terms.hidden=true; if(refund)refund.hidden=true };
   if(!q||!pay.open)return off(payClosedText(pay.why));
   if(!q.base&&!q.po)return off(ar?'اشتراكك فعّال':'Your plan is active');
   if(q.belowMin)return off(ar?'أقل مبلغ للدفع ٥ ريال':'The minimum payment is 5 SAR');
   btn.disabled=PAY_BUSY;
   if(terms)terms.hidden=false;
+  if(refund)refund.hidden=false;                /* سياسة الاسترجاع قبل الزر — الجولة الثانية من الشروط */
   if(q.amount===0){
     btn.textContent=ar?'فعّل برصيدك':'Activate with your credit';
     if(box)box.hidden=true; if(by)by.hidden=true;
