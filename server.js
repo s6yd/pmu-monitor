@@ -670,6 +670,13 @@ async function epInitiate(o) {
      فنقرأه من data أولاً. ورابط من نطاق ثاني ما نودّي له طالباً: نكتب نطاقه بس
      (الرابط نفسه ما ينكتب في سجل) */
   const url = String(d.redirectUrl || j.redirectUrl || '');
+  /* ردّ ناجح بلا redirectUrl: الاسم الحقيقي غير اللي في Postman — نكتب **أسماء**
+     الحقول اللي رجعت (لا قيمها: فيها رابط الجلسة) فيتصلّح من سجل Render بدفعة وحدة */
+  if (r.status === 200 && !url && r.j) {
+    const names = o => Object.keys(o || {}).filter(k => /^[A-Za-z_][A-Za-z0-9_]{0,40}$/.test(k)).slice(0, 20).join(', ');
+    return { ok: false, error: `EdfaPay initiate: 200 بلا redirectUrl — الحقول: ${names(j) || '—'}` +
+      (j.data && typeof j.data === 'object' ? ` · data: ${names(j.data) || '—'}` : '') };
+  }
   if (r.status !== 200 || !url) return { ok: false, error: epErr(r, 'initiate') };
   if (!epUrlOk(url)) {
     let h = ''; try { h = new URL(url).host } catch (e) {}

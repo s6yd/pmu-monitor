@@ -202,6 +202,9 @@ function edfapay(method, p, body, headers, host) {
     const n = ++EP.n;
     EP.ord[b.orderId] = { number: b.orderId, amount: b.amount, currency: b.currency, status: 'ACTIVE', tx: uuid(n) };
     const url = EP.url || 'https://checkout.edfapay.com/pay/s-' + n + '?token=sess-secret-' + n;
+    /* 'other': الرابط باسم ثاني (افتراض — نثبت إن السجل يقول الأسماء لا القيم) */
+    if (EP.shape === 'other') return [200, { code: 200, message: 'Success', errorCode: null,
+      data: { sessionId: 'b08e4f9d-35cc-4230-8a2e-06ca74a09a2e', checkoutLink: url } }];
     return [200, EP.shape === 'flat' ? { redirectUrl: url }
       : { code: 200, message: 'Success', errorCode: null, data: { redirectUrl: url } }];
   }
@@ -701,6 +704,15 @@ async function prodSuite() {
     ok(LOGS.some(l => /نطاق غير متوقع \(evil\.example\.com\)/.test(l)), 'والسجل يقول النطاق');
     ok(!LOGS.some(l => /sess-secret-evil/.test(l)), '**بلا الرابط نفسه** (فيه رمز الجلسة)');
     EP.url = null;
+
+    EP.shape = 'other';
+    const t4 = mk('u-other', '0500000017');
+    rr = (await call('POST', '/api/me/checkout', { tok: t4, body: {} })).j;
+    ok(rr.ok === false && /بوابة الدفع ما ردّت/.test(rr.error || ''), 'الرابط باسم ما نعرفه: ما نودّيه لشي — «جرّب بعد شوي»');
+    ok(LOGS.some(l => /200 بلا redirectUrl — الحقول: code, message, errorCode, data · data: sessionId, checkoutLink/.test(l)),
+       '**والسجل يقول أسماء الحقول اللي رجعت** — يتصلّح بدفعة وحدة — ' + (LOGS.find(l => /بلا redirectUrl/.test(l)) || 'ولا سطر'));
+    ok(!LOGS.some(l => /sess-secret|b08e4f9d/.test(l)), '**بلا قيمها** (فيها رابط الجلسة)');
+    EP.shape = 'data';
 
     EP.initFail = 400;
     const t3 = mk('u-down', '0500000015');
