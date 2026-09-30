@@ -89,6 +89,51 @@ for (const [k, html] of Object.entries(Object.assign({ guide: GUIDE }, PAGES))) 
   ok(!m, `${k}: ما يوصف الموقع بـ«${m ? m[0] : ''}»`);
 }
 
+/* ═══ ٦) الأسعار في الصفحات = أسعار الكود الافتراضية ═══
+   الأسعار نص ثابت في ‎/about#pricing‎ و‎/terms#payment‎، والسعر الفعلي من اللوحة.
+   الافتراضي في الكود لازم يطابق الصفحات — وتعديل اللوحة يلزمه تعديل الصفحتين (CLAUDE.md §٣). */
+const vm = require('vm');
+const SRV = read('server.js');
+const PA = SRV.indexOf('/* ═══ الاشتراك: الأسعار والرصيد ═══'), PB = SRV.indexOf('/* ═══ نهاية كتلة الاشتراك ═══ */');
+let D = null;
+try {
+  const c = vm.createContext({ termEndISO: () => null });
+  vm.runInContext(SRV.slice(PA, PB) + '\n;this.D=PRICING_DEFAULT;', c);
+  D = c.D;
+} catch (e) { }
+ok(!!D, 'الأسعار الافتراضية تُقرأ من كتلة الاشتراك');
+const arNum = s => +latin(s);
+const sar = h => h / 100;
+function pagePrices(html) {
+  const t = /اشتراك الترم<\/b><\/td><td>([٠-٩]+) ريال للترم/.exec(html);
+  const p = /التنبيه الطارئ<\/b><br>إضافة اختيارية<\/td><td>\+([٠-٩]+) ريال للترم/.exec(html);
+  const te = /Term subscription<\/b><\/td><td>SAR (\d+) per term/.exec(html);
+  const pe = /Emergency alert<\/b><br>optional add-on<\/td><td>\+ SAR (\d+) per term/.exec(html);
+  return { term: t && arNum(t[1]), po: p && arNum(p[1]), termEn: te && +te[1], poEn: pe && +pe[1] };
+}
+for (const k of ['about', 'terms']) {
+  const pp = pagePrices(PAGES[k]);
+  eq(pp, D && { term: sar(D.termHalalas), po: sar(D.pushoverHalalas), termEn: sar(D.termHalalas), poEn: sar(D.pushoverHalalas) },
+     `**${k}: أسعار الجدول (عربي وإنجليزي) = أسعار الكود**`);
+}
+/* قرار محمد (٣٠ سبتمبر ٢٠٢٦): التنبيه الطارئ ١٥ ريال بدل ١٠ */
+eq(D && D.pushoverHalalas, 1500, '**التنبيه الطارئ ١٥ ريال** (قرار محمد)');
+
+/* ═══ ٧) رخصة Pushover علينا — قرار محمد ═══
+   الجولة الثانية من النصوص كانت تقول «شراء على حسابك · غير مشمول في السعر»، ومحمد قرّر:
+   نشتري الرخصة للطالب (وعد الإيصال: «راسلنا هنا ونتكفّل فيه»). فما تقول صفحة غير كذا. */
+const PO_PAYS = /تدفعه لـ ?Pushover|لمرة واحدة على حسابك|غير مشمول في سعر الإضافة|شراء تطبيق Pushover|pay to Pushover|purchase that you pay|not included in the add-on price|buying the Pushover app/i;
+for (const [k, html] of Object.entries(Object.assign({ guide: GUIDE, home: HOME }, PAGES))) {
+  const m = PO_PAYS.exec(html);
+  ok(!m, `${k}: ما يقول إن الطالب يشتري Pushover بنفسه — «${m ? m[0] : ''}»`);
+}
+
+/* ═══ ٨) الجولة الثانية من الشروط موجودة ═══ */
+ok(/<h3>الاعتراض عند البنك<\/h3>/.test(PAGES.terms) && /<h3>Bank disputes<\/h3>/.test(PAGES.terms),
+   'الشروط: قسم «الاعتراض عند البنك» باللغتين');
+ok(/بشرط ما تكون استخدمت أي ميزة مدفوعة/.test(PAGES.terms) && /provided you have not used any paid feature/.test(PAGES.terms),
+   'الشروط: الاسترجاع خلال ٧ أيام بشرط ما استخدم ميزة مدفوعة');
+
 /* الدليل: الجزء ٨ (المساعد) */
 ok(/<span class="num">24<\/span><span class="step-t">اسأل Jadwalik AI<\/span>/.test(GUIDE), 'الدليل فيه الخطوة ٢٤: اسأل Jadwalik AI');
 

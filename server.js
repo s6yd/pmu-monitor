@@ -63,7 +63,7 @@ function hasAccess(p) { return FREE_BETA || isActive(p) }
    الأسعار من اللوحة وتُحفظ في app_state؛ هذي القيم الافتراضية فقط. */
 const PRICING_DEFAULT = Object.freeze({
   termHalalas: 1900,            /* اشتراك الترم */
-  pushoverHalalas: 1000,        /* إضافة التنبيه الطارئ */
+  pushoverHalalas: 1500,        /* إضافة التنبيه الطارئ — ١٥ ريال (قرار محمد ٣٠ سبتمبر ٢٠٢٦) */
   friendDiscountHalalas: 300,   /* خصم الصديق على أول شراء */
   referrerCreditHalalas: 500,   /* رصيد الداعي لما يدفع صديقه */
   reviewsCreditHalalas: 500,    /* رصيد طلب التقييم المقبول */

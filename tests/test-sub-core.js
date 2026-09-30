@@ -178,7 +178,7 @@ function call(p, method, payload) {
     ok(r.code === 400 && /الوهمية/.test(r.j.error || ''), 'رصيد داعٍ مربح للتحايل: مرفوض بالسبب');
     r = await call('pricing', 'POST', { pricing: { termHalalas: 2500 } });
     ok(r.code === 200 && r.j.pricing.termHalalas === 2500, 'تعديل السعر لـ٢٥ نجح');
-    ok(r.j.pricing.pushoverHalalas === 1000, 'والباقي كما هو');
+    ok(r.j.pricing.pushoverHalalas === 1500, 'والباقي كما هو'); /* السعر ١٥ ريال (قرار محمد ٣٠ سبتمبر ٢٠٢٦ — كان ١٠) */
     /* هذا الاختبار يشغّل السيرفر بـ SITE_ENV=dev — فحالته في صف dev لا الإنتاج */
     const saved = DB.app_state.find(x => x.key === 'runtime-dev');
     ok(saved && saved.value.toggles.pricing && saved.value.toggles.pricing.termHalalas === 2500,

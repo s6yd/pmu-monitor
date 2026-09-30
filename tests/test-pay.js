@@ -649,12 +649,13 @@ async function prodSuite() {
   r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-po'), body: { pushover: true } })).j;
   ok(r.ok, 'اشترى الترم مع التنبيه الطارئ — ' + JSON.stringify(r));
   const s13 = sub(r.id) || {};
-  eq([s13.pushover, s13.amount_halalas], [true, 2900], 'الصف: مع الإضافة · ٢٩ ريال');
+  /* السعر ١٥ ريال (قرار محمد ٣٠ سبتمبر ٢٠٢٦ — كان ١٠) */ 
+  eq([s13.pushover, s13.amount_halalas], [true, 3400], 'الصف: مع الإضافة · ٣٤ ريال');
   PL.inv[s13.gateway_ref].orderStatus = 'Paid';
   await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-po') });
   eq(sub(r.id).status, 'paid', 'ودفع');
   const rp = String((tgTo('6010', /إيصال/).pop() || {}).text || '');
-  ok(rp.includes('• التنبيه الطارئ: 10 ريال') && rp.includes('<b>المدفوع: 29 ريال</b>'),
+  ok(rp.includes('• التنبيه الطارئ: 15 ريال') && rp.includes('<b>المدفوع: 34 ريال</b>'),
      'الإيصال فيه الإضافة والمجموع — ' + rp.slice(0, 160));
   ok(/فعّل التنبيه الطارئ/.test(rp) && /تطبيق <b>Pushover<\/b>/.test(rp) &&
      rp.includes('https://jadwalik.com/?pushover=1'), '**ومعه خطوات تفعيل التنبيه الطارئ ورابطها**');
