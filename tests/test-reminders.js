@@ -43,25 +43,42 @@ const NOW = Date.now();
 const U1 = '11111111-1111-4111-8111-111111111111';
 const U2 = '22222222-2222-4222-8222-222222222222';
 const U3 = '33333333-3333-4333-8333-333333333333';
-let DB, SENT, PATCHES, CLAIM_FAIL;
+const U4 = '44444444-4444-4444-8444-444444444444';
+let DB, SENT, PATCHES, CLAIM_FAIL, PO, USED;
+/* أعمدة reminders في القاعدة — و urgent بعد ALTER وحده (قبله: عمود ناقص) */
+const R_COLS = ['id', 'user_id', 'env', 'at', 'body', 'crn', 'sent_at', 'created_at'];
+let URGENT_COL = true;
 
 function reset(rows, profs) {
   DB = { reminders: rows.map(r => Object.assign({}, r)), profiles: profs };
-  SENT = []; PATCHES = []; CLAIM_FAIL = false;
+  SENT = []; PATCHES = []; CLAIM_FAIL = false; PO = []; USED = [];
 }
 
-function makeCtx(env) {
+/* pushoverAllowed وhasPushoverAddon الحقيقيتان — قرار من يستلم التنبيه الطارئ (§١٠) */
+const pi = L.findIndex(x => x.startsWith('function hasPushoverAddon('));
+const pj = L.findIndex((x, n) => n > pi && x.startsWith('const pushoverOn'));
+ok(pi >= 0 && pj > pi, 'pushoverAllowed الحقيقية موجودة');
+
+function makeCtx(env, { poOn = true } = {}) {
   const ctx = {
     console: { log() {} }, Promise, JSON, Object, Array, String, Number, Math, Date,
     RegExp, Error, encodeURIComponent, Set, setTimeout,
     SB_URL: 'https://x', SITE_ENV: env, NOTIF_DEF,
     OPS: {},
+    PUSHOVER_ON: poOn, PUSHOVER_MODE: 'addon',
+    pushover: (title, msg, o) => { PO.push({ title, msg, o }); return Promise.resolve(true) },
+    usageLog: (p, f) => { USED.push([p && p.id, f]) },
     esc: v => String(v == null ? '' : v),
     notifPrefsOf: p => Object.assign({}, NOTIF_DEF, (p && p.notif_prefs) || {}),
     sendMsg: (chat, text) => { SENT.push({ chat, text }); return Promise.resolve({ ok: true }) },
     sb: (method, table, opt) => {
       const q = (opt && opt.query) || '';
       if (method === 'GET' && table === 'reminders') {
+        /* PostgREST يرفض القراءة كلها لو قائمة select فيها عمود ناقص */
+        const sel = decodeURIComponent((/[?&]select=([^&]*)/.exec(q) || [])[1] || '*');
+        const cols = R_COLS.concat(URGENT_COL ? ['urgent'] : []);
+        const bad = sel !== '*' && sel.split(',').find(c => !cols.includes(c.trim()));
+        if (bad) return Promise.resolve({ code: '42703', message: `column reminders.${bad} does not exist` });
         const e = /env=eq\.([^&]+)/.exec(q);
         const lte = /at=lte\.([^&]+)/.exec(q);
         const until = lte ? Date.parse(decodeURIComponent(lte[1])) : Infinity;
@@ -95,6 +112,7 @@ function makeCtx(env) {
   };
   vm.createContext(ctx);
   vm.runInContext(L.slice(wi, wj).join('\n'), ctx);
+  vm.runInContext(L.slice(pi, pj).join('\n'), ctx);
   vm.runInContext(REGION + '\nthis.remindersTick=remindersTick;', ctx);
   return ctx;
 }
@@ -171,6 +189,40 @@ const at = ms => new Date(NOW + ms).toISOString();
   let threw = false;
   try { await c.remindersTick() } catch (e) { threw = true }
   ok(!threw, 'وخطأ شبكة ما يرمي — الدورة تكمّل');
+
+  /* ── ٦ب) التنبيه الطارئ (قرار محمد — «ذكّرني بالبوش أوفر») ──
+     الحارس وقت الإرسال: الطالب يكتب صفّه بنفسه، فـurgent منه ما يكفي */
+  const later = new Date(NOW + 30 * 864e5).toISOString();
+  const P_PO = { id: U4, telegram_chat_id: '444', notif_prefs: null, is_pro: false,
+                 pushover_key: ' po-key-4 ', pushover_until: later };
+  reset([
+    { id: 1, user_id: U4, env: 'prod', at: at(-1000), body: 'سجّل المواد', sent_at: null, urgent: true },
+    { id: 2, user_id: U1, env: 'prod', at: at(-1000), body: 'بلا إضافة', sent_at: null, urgent: true },
+    { id: 3, user_id: U4, env: 'prod', at: at(-1000), body: 'عادي', sent_at: null, urgent: false },
+    { id: 4, user_id: U2, env: 'prod', at: at(-1000), body: 'أطفأ', sent_at: null, urgent: true },
+  ], [P_PO, Object.assign({}, P_OK, { pushover_key: 'po-key-1' }),
+      Object.assign({}, P_OFF, { pushover_key: 'po-key-2', pushover_until: later })]);
+  c = makeCtx('prod');
+  await c.remindersTick();
+  await new Promise(r => setTimeout(r, 30));
+  eq(SENT.map(s => s.chat).sort(), ['111', '444', '444'], 'تلقرام للكل كالعادة (إلا من أطفأ تنبيهاته)');
+  eq(PO.map(x => [x.o.user, x.o.priority]), [['po-key-4', 2]],
+     '**التذكير الطارئ: التنبيه الطارئ لمفتاحه** — يرن ولو صامت (أولوية ٢)');
+  ok(PO[0] && /سجّل المواد/.test(PO[0].msg) && /تذكير/.test(PO[0].title), 'وبنص التذكير');
+  ok(PO[0] && PO[0].o.retry > 0 && PO[0].o.expire > 0 && PO[0].o.expire <= 1800, 'ويعيد بحد (أولوية ٢ تشترطه)');
+  eq(USED, [[U4, 'pushover']], '**ووصوله ينسجّل في سجل الاستخدام** (الشروط §٤)');
+  /* صاحب الطلب بلا الإضافة: urgent منه ما يكفي — والعادي ومن أطفأ: ولا تنبيه */
+  reset([{ id: 1, user_id: U4, env: 'prod', at: at(-1000), body: 'x', sent_at: null, urgent: true }], [P_PO]);
+  c = makeCtx('prod', { poOn: false });
+  await c.remindersTick();
+  eq([SENT.length, PO.length], [1, 0], 'Pushover مطفأ في السيرفر: تلقرام وحده');
+  /* قبل الـSQL (العمود ناقص): القراءة ما تنكسر — كل التذكيرات كانت بتوقف */
+  URGENT_COL = false;
+  reset([{ id: 1, user_id: U1, env: 'prod', at: at(-1000), body: 'قبل التحديث', sent_at: null }], [P_OK]);
+  c = makeCtx('prod');
+  await c.remindersTick();
+  eq(SENT.length, 1, '**قبل ALTER (عمود urgent ناقص): التذكيرات العادية توصل** — select=* لا قائمة');
+  URGENT_COL = true;
 
   /* ── ٧) فحص ثابت ── */
   ok(/env=eq\./.test(REGION), 'الدورة تفلتر بالبيئة');

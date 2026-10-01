@@ -6076,16 +6076,19 @@ async function aiSend(){
 /* التذكير: صف في reminders، والسيرفر يرسله على تلقرام في وقته.
    `env` في الصف لأن البيئتين تتشاركان القاعدة — كل بيئة ترسل صفوفها،
    وإلا وصلت الرسالة مرتين أو وصلت من نسخة التجربة. */
-async function addReminderDirect(at,body,crn,env){
+async function addReminderDirect(at,body,crn,env,urgent){
   if(!USER)return false;
   if(!at||!body){ showToast(t('errSave'),'err'); return false }
   /* بلا تلقرام ما يوصله شي — نقولها قبل ما نكتب صفاً ميتاً */
   if(!tgLinked()){ showToast(t('aiRemNoTg'),'warn'); return false }
   const row={user_id:USER.id,env:env||'prod',at,body:String(body).slice(0,200),
              crn:crn?String(crn):null};
+  /* التنبيه الطارئ (قرار محمد): لو طلبه وحده — قبل الـSQL العمود ناقص والعادي يكمل.
+     والسيرفر يتأكد وقت الإرسال إنه يستحقه (الإضافة ومفتاحه)، لا من هنا */
+  if(urgent===true)row.urgent=true;
   const {error}=await sb.from('reminders').insert(row);
   if(error){ showToast(t('errSave'),'err'); return false }
-  showToast(t('aiRemOk'),'ok');
+  showToast(t(row.urgent?'aiRemOkU':'aiRemOk'),'ok');
   return true;
 }
 
@@ -6110,8 +6113,9 @@ const AI_ACTS={
     run:p=>addSessionsDirect(p.sessions)===true,
   },
   reminder:{
-    label:p=>t('aiActRem').replace('%d',p.atLocal||'').replace('%b',p.body||''),
-    run:p=>addReminderDirect(p.at,p.body,p.crn,p.env),
+    label:p=>t('aiActRem').replace('%d',p.atLocal||'').replace('%b',p.body||'')+
+      (p.urgent===true?' '+t('aiRemUrgent'):''),
+    run:p=>addReminderDirect(p.at,p.body,p.crn,p.env,p.urgent===true),
   },
   support:{
     /* نصّها في البطاقة لا في الجواب فوقها: الطالب يراجع **ما يُرسل
@@ -8124,6 +8128,8 @@ aiG4:'متى يبدأ التسجيل؟',
 aiG5:'متى نهائي الفيزياء؟',
 aiG6:'كيف أراقب شعبة مقفلة؟',
 aiActRem:'أذكّرك يوم %d بـ«%b»؟',
+aiRemUrgent:'🚨 ومعه التنبيه الطارئ',
+aiRemOkU:'ضبطت التذكير — بيوصلك على تلقرام ومعه التنبيه الطارئ 🚨',
 aiRemOk:'ضبطت التذكير — بيوصلك على تلقرام',
 aiRemNoTg:'اربط تلقرام أول عشان يوصلك التذكير',
 aiActAdd:'أضيف %c شعبة %s (%n) لجدولك؟',
@@ -8291,6 +8297,8 @@ aiG4:'متى يبدأ التسجيل؟',
 aiG5:'متى نهائي الفيزياء؟',
 aiG6:'كيف أراقب شعبة مقفلة؟',
 aiActRem:'Remind you on %d about "%b"?',
+aiRemUrgent:'🚨 plus the urgent alert',
+aiRemOkU:'Reminder set — on Telegram plus the urgent alert 🚨',
 aiRemOk:'Reminder set — it will reach you on Telegram',
 aiRemNoTg:'Link Telegram first so the reminder can reach you',
 aiActAdd:'Add %c section %s (%n) to your schedule?',

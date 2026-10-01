@@ -42,7 +42,9 @@ const DB = {
         '6112', '6113', '6114', '6115', '6116']
       .map(c => prof('u-' + c, c)),
   ],
-  tickets: [], ticket_messages: [], app_state: [], app_events: [],
+  tickets: [], ticket_messages: [], app_events: [],
+  /* التنبيه الطارئ للمشترين (وضع الإطلاق) — للتذكير الطارئ من البوت */
+  app_state: [{ key: 'runtime', value: { toggles: { pushoverMode: 'addon' } } }],
   ai_usage: [], ai_threads: [], completed_courses: [], user_schedule: [],
 };
 const NEXT = { tickets: 80, ticket_messages: 900 };
@@ -163,6 +165,8 @@ https.request = function (opts, cb) {
         o = fakeModel(b);
       } else if (host.includes('pmu.edu.sa')) {
         o = [];
+      } else if (host === 'api.pushover.net') {
+        o = { status: 1, request: 'r' };
       } else {
         [code, o] = supabase(opts.method, opts.path, body,
           (opts.headers && (opts.headers.Prefer || opts.headers.prefer)) || '');
@@ -183,6 +187,7 @@ Object.assign(process.env, {
   ACTIVE_TERM: '203010', FREE_BETA: 'true', MONITOR_ENABLED: 'false',
   SB_URL: 'https://fake.supabase.co', SUPABASE_URL: 'https://fake.supabase.co',
   SB_SERVICE_KEY: 'k', SUPABASE_SERVICE_KEY: 'k',
+  PUSHOVER_TOKEN: 'po-token', PUSHOVER_USER: 'po-admin',
 });
 const realLog = console.log;
 console.log = () => {};
@@ -559,6 +564,37 @@ async function main() {
   await press('6114', pr.id, botMsgOf(pr.c, null));
   eq(DB.reminders.length, base, '**فكّ الربط قبل الضغط: ما ينكتب شي**');
   P14.telegram_chat_id = '6114';
+
+  /* ── ١٠هـ٢) «ذكّرني بالبوش أوفر» (قرار محمد): كان المساعد يقول «تلقرام بس» ──
+     عنده الإضافة ومفعّلها: الزر يقولها والصف يحملها. والمحادثة كانت في الموقع —
+     البوت نفس aiChat ونفس الأداة */
+  const urgentProp = async body => {
+    const k = TG.length;
+    await say('6114', `ذكّرني بالتنبيه الطارئ أداة:propose_reminder {"date":"${D}","time":"${T}","body":"${body}","urgent":true}`);
+    const c = sentTo(since(k), '6114').find(x => btns(x).some(y => /^act:ok:/.test(y.callback_data)))
+      || { b: {} };
+    return { c, id: (btns(c).find(y => /^act:ok:/.test(y.callback_data)) || {}).callback_data };
+  };
+  Object.assign(P14, { pushover_key: 'po-6114', pushover_until: new Date(Date.now() + 30 * 864e5).toISOString() });
+  pr = await urgentProp('سجّل المواد');
+  ok(btns(pr.c).some(x => /^act:ok:/.test(x.callback_data) && /🚨/.test(x.text)),
+     '**تذكير طارئ وعنده الإضافة: زر «✅ ثبّت التذكير 🚨»** — ' + btns(pr.c).map(x => x.text).join(' | '));
+  n = TG.length;
+  await press('6114', pr.id, botMsgOf(pr.c, null));
+  const ru = DB.reminders[DB.reminders.length - 1] || {};
+  eq([ru.body, ru.urgent], ['سجّل المواد', true], '**والضغط يثبّته طارئاً** — الصف يحمل urgent');
+  ok(sentTo(since(n), '6114').some(c => /ثبّتنا التذكير/.test(c.b.text || '') && /التنبيه الطارئ/.test(c.b.text || '')),
+     'ويقول له يوصله معه التنبيه الطارئ');
+  /* بلا الإضافة: يكمل تلقرام وحده — لا زر 🚨 ولا urgent في الصف */
+  P14.pushover_until = null;
+  pr = await urgentProp('بلا إضافة');
+  ok(btns(pr.c).some(x => /^act:ok:/.test(x.callback_data)) &&
+     !btns(pr.c).some(x => /🚨/.test(x.text)), '**بلا الإضافة: الزر عادي** — ما نعد بشي ما يوصل');
+  await press('6114', pr.id, botMsgOf(pr.c, null));
+  const rn = DB.reminders[DB.reminders.length - 1] || {};
+  eq([rn.body, rn.urgent === undefined], ['بلا إضافة', true], 'والصف بلا urgent');
+  Object.assign(P14, { pushover_key: null });
+  DB.reminders.splice(base);
 
   /* ── ١٠و) تذكرة الدعم من المساعد: زر يرسلها للفريق بسياقها ── */
   n = TG.length;

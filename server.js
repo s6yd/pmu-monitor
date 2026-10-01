@@ -224,6 +224,14 @@ function pushoverAllowed(p) {
   return true;                                    /* link · all */
 }
 const pushoverOn = () => !!PUSHOVER_SUBSCRIBE_URL && PUSHOVER_MODE !== 'off';
+/* يقدر يستلم التنبيه الطارئ الحين؟ وإلا ليش — للمساعد يقولها للطالب بدل ما يعد
+   بشي ما يوصل: ok · off (مطفأ أو بلا Pushover في السيرفر) · nokey (ما فعّله على
+   جواله) · addon (ما عنده الإضافة). القرار نفسه pushoverAllowed — لا فحص ثانٍ */
+function pushoverReady(p) {
+  if (!PUSHOVER_ON || PUSHOVER_MODE === 'off') return 'off';
+  if (!p || !String(p.pushover_key || '').trim()) return 'nokey';
+  return pushoverAllowed(p) ? 'ok' : 'addon';
+}
 
 let TERM_OVERRIDE = null;
 const activeTerm = () => TERM_OVERRIDE || ACTIVE_TERM_ENV;
@@ -7049,6 +7057,12 @@ function aiMatchNames(q, names) {
   return out.sort((a, b) => b.score - a.score);
 }
 
+/* تذكير بالتنبيه الطارئ وصاحبه ما يقدر يستلمه (pushoverReady): نقولها، والتذكير يكمل على تلقرام */
+const AI_URGENT_WHY = {
+  off: 'التنبيه الطارئ مو متاح الحين — التذكير يوصله على تلقرام.',
+  nokey: 'التنبيه الطارئ مو مفعّل على جواله — يفعّله من ⚙️ الإعدادات، والحين يوصله على تلقرام.',
+  addon: 'التنبيه الطارئ إضافة على الاشتراك (من «الباقات») — الحين يوصله على تلقرام.',
+};
 /* حدود التذكير */
 const AI_REMIND_MAX = 20;    /* معلّق لكل طالب */
 const AI_REMIND_DAYS = 200;  /* أبعد وقت */
@@ -7922,14 +7936,17 @@ const AI_TOOLS = {
 
   propose_reminder: {
     tier: 'pro',
-    description: 'يقترح تذكيراً بوقت — توصل الطالب رسالة تلقرام في وقته. '
+    description: 'يقترح تذكيراً بوقت — توصل الطالب رسالة تلقرام في وقته، ومعها التنبيه '
+      + 'الطارئ (Pushover — يرن ولو الجوال صامت) لو طلبه. '
       + '**ما يجدول شيئاً** — الطالب يضغط «تأكيد». لما يقول «ذكّرني بكذا '
       + 'بكرة الساعة ٧» — حوّل كلامه لتاريخ ووقت بتوقيت الرياض.',
     input_schema: { type: 'object', properties: {
       date: { type: 'string', description: 'التاريخ YYYY-MM-DD' },
       time: { type: 'string', description: 'الوقت HH:MM بتوقيت الرياض، ٢٤ ساعة' },
       body: { type: 'string', description: 'نص التذكير — قصير وواضح' },
-      code: { type: 'string', description: 'كود مادة يخصّها التذكير — اختياري' } },
+      code: { type: 'string', description: 'كود مادة يخصّها التذكير — اختياري' },
+      urgent: { type: 'boolean', description: 'true لو طلب يوصله بالتنبيه الطارئ — «ذكّرني '
+        + 'بالبوش أوفر» · «بالتنبيه الطارئ». لا تفعّله من نفسك' } },
       required: ['date', 'time', 'body'] },
     run: async (ctx, a) => {
       const d = String(a.date || '').trim(), tm = String(a.time || '').trim();
@@ -7954,12 +7971,21 @@ const AI_TOOLS = {
           String(r.course_code || '').toUpperCase().replace(/\s+/g, ' ').trim() === want);
         if (hit) { crn = String(hit.crn); code = hit.course_code }
       }
+      /* التنبيه الطارئ لو طلبه (قرار محمد) — جاهز عنده؟ وإلا تلقرام وحده ونقول
+         ليش، بدل وعد ما يوصل. والحارس الحقيقي وقت الإرسال (remindersTick): الطالب
+         يكتب صفّه بنفسه */
+      let urgent = false, why = '';
+      if (a.urgent === true || a.urgent === 'true') {
+        const ready = pushoverReady(ctx.profile);
+        if (ready === 'ok') urgent = true; else why = AI_URGENT_WHY[ready] || AI_URGENT_WHY.off;
+      }
       /* البيئة من السيرفر لا من المتصفح: هو اللي يعرفها بيقين، وهو
          اللي بيرسل. القاعدة مشتركة فالصف لازم يعرف من يخدمه. */
       return { proposal: { action: 'reminder', at: new Date(at).toISOString(),
           atLocal: `${d} ${String(hh).padStart(2, '0')}:${String(mi).padStart(2, '0')}`,
-          body, crn, code, env: SITE_ENV },
-        note: 'اقتراح — ما انجدول شي. ويحتاج تلقرام مربوطاً ليوصله.' };
+          body, crn, code, env: SITE_ENV, urgent },
+        note: 'اقتراح — ما انجدول شي. ويحتاج تلقرام مربوطاً ليوصله.'
+          + (urgent ? ' ويوصله معه التنبيه الطارئ.' : '') + (why ? ' ' + why : '') };
     },
   },
 
@@ -9113,7 +9139,8 @@ async function aiTgAnswer(chatId, q) {
       if (AI_TG_PROP.size > 3000) AI_TG_PROP.clear();   /* قبل الإضافة لا بعدها */
       const id = String(++AI_TG_PROP_SEQ);
       AI_TG_PROP.set(id, { chat: key, uid: String(uid), p, made: Date.now() });
-      act = kb([[btn(p.action === 'reminder' ? '✅ ثبّت التذكير' : '📩 أرسلها لفريق جدولك',
+      act = kb([[btn(p.action !== 'reminder' ? '📩 أرسلها لفريق جدولك'
+                       : p.urgent ? '✅ ثبّت التذكير 🚨' : '✅ ثبّت التذكير',
                      `act:ok:${id}`), btn('✖️ لا', `act:no:${id}`)]]);
     } else {
       /* غياب · موعد · شعبة · مراقبة: حراساتها في دوال الصفحة. والموقع ما
@@ -9182,8 +9209,9 @@ async function aiTgAct(cq, ack, yes, id) {
     await ack(); await drop();
     return sendMsg(chatId, '⚠️ ' + esc(chk.error));
   }
-  const w = await sb('POST', 'reminders', { body: { user_id: String(uid), env: SITE_ENV,
-      at: new Date(chk.at).toISOString(), body: chk.body, crn: P.p.crn || null },
+  /* urgent يُكتب لو طلبه وحده: قبل الـSQL العمود ناقص، والتذكير العادي يكمل */
+  const w = await sb('POST', 'reminders', { body: Object.assign({ user_id: String(uid), env: SITE_ENV,
+      at: new Date(chk.at).toISOString(), body: chk.body, crn: P.p.crn || null }, P.p.urgent ? { urgent: true } : {}),
     prefer: 'return=representation' }).catch(() => null);
   /* كتابة ما رجع صفّها ما انكتبت (§٦) — فما نقول «ثبّتناه» */
   if (!Array.isArray(w) || !w.length) {
@@ -9194,6 +9222,7 @@ async function aiTgAct(cq, ack, yes, id) {
   await drop();
   const inMode = (AI_TG_MODE.get(key) || 0) > Date.now();
   return sendMsg(chatId, `⏰ <b>ثبّتنا التذكير</b> — يوصلك هنا ${esc(P.p.atLocal || '')}`
+    + (P.p.urgent ? '، ومعه التنبيه الطارئ 🚨' : '')
     + `\n«${esc(chk.body)}»`, inMode ? AI_TG_KB : undefined);
 }
 
@@ -9394,17 +9423,20 @@ async function remindersTick() {
   REMIND_BUSY = true;
   try {
     const now = new Date().toISOString();
+    /* select=* لا قائمة أعمدة: عمود ناقص في القائمة يُفشل القراءة كلها — نشر السيرفر
+       قبل ALTER (urgent) كان بيوقف كل التذكيرات */
     const due = await sb('GET', 'reminders', { query:
       `?sent_at=is.null&at=lte.${encodeURIComponent(now)}` +
       `&env=eq.${encodeURIComponent(SITE_ENV)}` +
-      `&select=id,user_id,body,crn,at&order=at.asc&limit=${REMIND_BATCH}` });
+      `&select=*&order=at.asc&limit=${REMIND_BATCH}` });
     if (!Array.isArray(due) || !due.length) return;
 
     /* ملفات أصحابها دفعة واحدة — لا قراءة لكل صف */
     const ids = [...new Set(due.map(r => r.user_id))]
       .filter(x => /^[0-9a-f-]{36}$/i.test(String(x)));
     const profs = ids.length ? await sb('GET', 'profiles', { query:
-      `?id=in.(${ids.join(',')})&select=id,telegram_chat_id,notif_prefs` }) : [];
+      `?id=in.(${ids.join(',')})&select=id,telegram_chat_id,notif_prefs,is_pro,` +
+      `subscription_expires_at,pushover_key,pushover_until` }) : [];
     const byId = {};
     if (Array.isArray(profs)) profs.forEach(p => { byId[p.id] = p });
 
@@ -9424,6 +9456,14 @@ async function remindersTick() {
       await sendMsg(p.telegram_chat_id,
         '⏰ <b>تذكير</b>\n\n' + esc(String(r.body || '').slice(0, 300))
         + '\n\n<i>طلبته من مساعد جدولك</i>').catch(() => {});
+      /* ومعه التنبيه الطارئ لو طلبه (قرار محمد) — الحارس هنا وقت الإرسال: الطالب
+         يكتب صفّه بنفسه، فـurgent منه ما يكفي. pushoverAllowed وحدها (الوضع ·
+         الإضافة · مفتاحه). يرن ولو صامت ويعيد لين يأكّده — ربع ساعة أقصى */
+      if (r.urgent === true && PUSHOVER_ON && pushoverAllowed(p)) {
+        pushover('⏰ تذكير', String(r.body || '').slice(0, 300),
+          { priority: 2, sound: 'siren', retry: 60, expire: 900, user: String(p.pushover_key).trim() })
+          .then(sent => { if (sent) usageLog(p, 'pushover') }).catch(() => {});
+      }
     }
   } catch (e) {
     console.log('remindersTick: ' + (e && e.message));
