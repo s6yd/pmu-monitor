@@ -185,6 +185,8 @@ const DB = {
   ],
 };
 let SB_CALLS = [];
+let USAGE = [];         /* سجل الاستخدام: جاسوس مكان usageLog (الشروط §٤) */
+let PO_READY = 'off';   /* pushoverReady الحقيقية خارج المنطقة — نتحكّم بجوابها */
 let PULLED = [];        /* كل نداء يسحب من الجامعة يُسجَّل هنا */
 
 const ctxObj = {
@@ -219,6 +221,10 @@ const ctxObj = {
     return { total: rooms.length, rooms: rooms.slice(0, o.limit || 5) };
   },
   hasAccess: p => !!(p && p.is_pro),
+  /* قرار «مشترك فعلاً؟» والسقف داخل usageLog نفسها — مختبَر في test-paid-usage.
+     هنا: مين تنادي aiRunTool وبأي شي */
+  usageLog: (p, f, d) => USAGE.push([p && p.id, f, d]),
+  pushoverReady: () => PO_READY,
   sb: (method, table, opt) => {
     SB_CALLS.push({ method, table, query: (opt && opt.query) || '' });
     const q = (opt && opt.query) || '';
@@ -538,6 +544,21 @@ function fakeModel(ctx) {
     const fr = await callFree('propose_reminder',
       JSON.stringify({ date: soon, time: '10:00', body: 'x' }));
     ok(!fr.proposal && /اشتراك/.test(fr.error || ''), 'والتذكير للمشتركين');
+    /* التنبيه الطارئ (قرار محمد): «ذكّرني بالبوش أوفر» — كان يقول «تلقرام بس» */
+    eq(r.proposal.urgent, false, 'تذكير عادي: بلا تنبيه طارئ');
+    PO_READY = 'ok';
+    let u = await call('propose_reminder', JSON.stringify({ date: soon, time: '07:00', body: 'سجّل', urgent: true }));
+    eq(u.proposal && u.proposal.urgent, true, '**طلبه بالتنبيه الطارئ وهو جاهز عنده: الاقتراح يحمله**');
+    ok(/التنبيه الطارئ/.test(u.note || ''), 'والملاحظة تقول يوصله معه — ' + u.note);
+    u = await call('propose_reminder', JSON.stringify({ date: soon, time: '07:00', body: 'سجّل' }));
+    eq(u.proposal.urgent, false, 'وما طلبه: ما نفعّله من نفسنا ولو جاهز');
+    for (const [st, re] of [['nokey', /الإعدادات/], ['addon', /الباقات/], ['off', /مو متاح/]]) {
+      PO_READY = st;
+      u = await call('propose_reminder', JSON.stringify({ date: soon, time: '07:00', body: 'سجّل', urgent: true }));
+      ok(u.proposal && u.proposal.urgent === false && re.test(u.note || ''),
+         `**طلبه وهو ${st}: التذكير يكمل على تلقرام ونقول ليش** — ` + (u.note || '').slice(0, 90));
+    }
+    PO_READY = 'off';
     /* ولا كتابة */
     ok(SB_CALLS.slice(n0).every(c => c.method === 'GET'),
        '**ولا كتابة واحدة — اقتراح فقط**');
@@ -1326,6 +1347,27 @@ function fakeModel(ctx) {
     }
     const g0 = await callE('gpa', '{}');
     ok(/خطتي/.test(g0.note || ''), 'والمعدل بلا درجات: يعلّمها في «خطتي»');
+  }
+
+  /* ── سجل الاستخدام (الشروط §٤ — الاسترجاع «بشرط ما تكون استخدمت أي ميزة مدفوعة») ──
+     أداة شخصية اشتغلت = ميزة مدفوعة استُعملت. كانت ما تنسجّل أبداً: نعرف إنه
+     سأل المساعد، وما نعرف هل سأل عن جدوله وخطته (المدفوع) ولا سؤالاً عاماً. */
+  {
+    USAGE.length = 0;
+    await call('my_schedule', '{}');
+    eq(USAGE, [['u-pro', 'ai', 'my_schedule']], '**أداة شخصية اشتغلت لمشترك: تنسجّل باسمها**');
+    USAGE.length = 0;
+    await call('course_info', '{"code":"MATH 1422"}');
+    eq(USAGE, [], 'والأداة العامة ما تنسجّل');
+    await callFree('my_schedule', '{}');
+    eq(USAGE, [], 'والمحجوبة عن المجاني ما تنسجّل');
+    const bad = await call('propose_absence', '{"code":"ZZZZ 9999"}');
+    ok(!!bad.error, 'أداة شخصية رجعت خطأ — ' + JSON.stringify(bad).slice(0, 60));
+    eq(USAGE, [], 'وما تنسجّل: ما اشتغلت له');
+    await call('plan_overview', '{"user_id":"u-other"}');
+    eq(USAGE, [], 'ووسيط هوية مرفوض ما ينسجّل');
+    await call('gpa', '{}');
+    eq(USAGE, [['u-pro', 'ai', 'gpa']], 'وأداة الخطة الشخصية تنسجّل كذلك');
   }
 
   console.log(`\n${pass} نجحت · ${fail} فشلت`);

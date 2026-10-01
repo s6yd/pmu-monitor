@@ -224,6 +224,14 @@ function pushoverAllowed(p) {
   return true;                                    /* link · all */
 }
 const pushoverOn = () => !!PUSHOVER_SUBSCRIBE_URL && PUSHOVER_MODE !== 'off';
+/* يقدر يستلم التنبيه الطارئ الحين؟ وإلا ليش — للمساعد يقولها للطالب بدل ما يعد
+   بشي ما يوصل: ok · off (مطفأ أو بلا Pushover في السيرفر) · nokey (ما فعّله على
+   جواله) · addon (ما عنده الإضافة). القرار نفسه pushoverAllowed — لا فحص ثانٍ */
+function pushoverReady(p) {
+  if (!PUSHOVER_ON || PUSHOVER_MODE === 'off') return 'off';
+  if (!p || !String(p.pushover_key || '').trim()) return 'nokey';
+  return pushoverAllowed(p) ? 'ok' : 'addon';
+}
 
 let TERM_OVERRIDE = null;
 const activeTerm = () => TERM_OVERRIDE || ACTIVE_TERM_ENV;
@@ -563,6 +571,25 @@ const PAY_ORIGIN_PROD = 'https://jadwalik.com';
    الطالب يكمّل من نفس الصفحة لو رجع. ضاع بنشر؟ يلغي ويبدأ من جديد */
 const EP_URLS = new Map();
 const epUrlOf = id => { const v = EP_URLS.get(id); return v && Date.now() - v.at < PAY_PENDING_MS ? v.url : null };
+/* رفض البنك (لقاها محمد): الصفحة كانت تقول «ننتظر تأكيد الدفع — لو دفعت يتفعّل»
+   بعد ما رفض البنك العملية، وترجع تقولها مع كل رجوع من صفحة الدفع. مصدرها: سؤال
+   الحالة (FAILED ومعه reason) أو إشعار موقَّع «Declined». **للرسالة وحدها** — الطلب
+   يبقى معلّقاً (FAILED في توثيقهم «يقدر يجرّب ثانية»، ودفعة بعده تتسوّى عادي).
+   السبب رمز لا نص البنك الإنجليزي — الصفحة تقوله بلغتها. في الذاكرة: نصف ساعة
+   تكفي رجوعه للموقع.
+   و`DO_NOT_PROCEED` (وصل محمد في `pgDetails.reason`) توصية البوابة بعد تحقق 3-D Secure:
+   «لا تكمل» — والحالة عندهم «Authentication for sale transaction failed». تحقق لا غيره */
+const PAY_DECLINE = new Map();
+const PAY_DECLINE_MS = 30 * 60 * 1000;
+function payDeclineSet(id, reason) {
+  const r = String(reason || '');
+  const why = /authenticat|3-?d|secure|otp|do_not_proceed/i.test(r) ? 'auth'
+    : /insufficient|balance|funds/i.test(r) ? 'funds' : /expir/i.test(r) ? 'expired' : 'other';
+  if (PAY_DECLINE.size > 5000) PAY_DECLINE.clear();
+  PAY_DECLINE.set(Number(id), { at: Date.now(), why });
+}
+const payDeclined = id => { const v = PAY_DECLINE.get(Number(id));
+  return v && Date.now() - v.at < PAY_DECLINE_MS ? v.why : null };
 
 /* ترم الشراء — **الاشتراك لتسجيل قدّامك** (قرار محمد):
    · داخل نافذة: ترمها. وفي **آخر lateDays منها** للترم الجاي — التسجيل
@@ -931,6 +958,7 @@ async function paySettle(sub, tx) {
     payAlert(s, 'الدفعة وصلت والتفعيل تعثّر (' + act.error + ') — نعيد المحاولة تلقائياً');
     return { ok: false, error: 'وصلت دفعتك ونكمل التفعيل — ثواني ويصير' };
   }
+  usageFresh(s.user_id);
   await payReferral(s).catch(() => {});
   if (act.chat) sendMsg(act.chat, payReceipt(s)).catch(() => {});
   if (ADMIN_CHAT_ID) sendMsg(ADMIN_CHAT_ID, `💳 <b>اشتراك جديد</b> · ${s.gateway}\n\n` +
@@ -959,6 +987,7 @@ async function payReconcile(sub) {
       return s.ok ? { status: 'paid', until: s.until } : { status: sub.status, error: s.error, mismatch: s.dup };
     }
     if (v.paid) { payAlert(sub, v.why); return { status: sub.status, mismatch: true } }
+    if (v.status === 'failed') payDeclineSet(sub.id, g.st.reason);
   } else if (!g.unknown) {
     /* ما قدرنا نسأل: ما نحكم على الطلب ولا نلغيه — وبعد ٢٤ ساعة ننبّهك */
     if (old) payAlert(sub, 'ما قدرنا نسأل EdfaPay عنها من ٢٤ ساعة — شيك المفتاح من اللوحة');
@@ -969,7 +998,8 @@ async function payReconcile(sub) {
     EP_URLS.delete(sub.id);
     return { status: 'failed' };
   }
-  return { status: sub.status, url: sub.status === 'pending' ? epUrlOf(sub.id) : null };
+  return { status: sub.status, url: sub.status === 'pending' ? epUrlOf(sub.id) : null,
+           declined: sub.status === 'pending' ? payDeclined(sub.id) : null };
 }
 
 /* بدء الدفع. الترتيب مهم: المعلّق أولاً (يمكن دفعه ونسي) ← السعر من
@@ -1087,11 +1117,12 @@ async function payStatus(uid, sid) {
   if (!s) return { ok: false, error: 'الطلب غير موجود' };
   if (s.status !== 'pending') return payView(s);
   const last = PAY_LOOK.get(s.id) || 0;
-  if (Date.now() - last < 4000) return payView(s);          /* ضغطات متتالية ما تضرب EdfaPay */
+  if (Date.now() - last < 4000) return payView(s, { declined: payDeclined(s.id) });  /* ضغطات متتالية ما تضرب EdfaPay */
   PAY_LOOK.set(s.id, Date.now());
   if (PAY_LOOK.size > 5000) PAY_LOOK.clear();
   const r = await payReconcile(s);
-  return payView(s, { status: r.status, until: r.until || s.valid_until, url: r.url || null });
+  return payView(s, { status: r.status, until: r.until || s.valid_until, url: r.url || null,
+                      declined: r.declined || null });
 }
 
 async function payCancel(uid, sid) {
@@ -1133,7 +1164,11 @@ async function epWebhook(raw) {
       `?id=eq.${m[2]}&gateway=eq.${EP_GATEWAY}&select=*&limit=1` });
     return Array.isArray(r) ? r[0] || null : null;
   };
-  let sub = await get(), out = sub ? await payReconcile(sub) : { status: 'missing' };
+  let sub = await get();
+  /* رفض البنك (موقَّع، لطلب معلّق موجود — لا لرقم ما انخلق بعد): للرسالة وحدها */
+  if (sub && sub.status === 'pending' && /^(declined|failed|rejected)$/i.test(String(b.status || '')))
+    payDeclineSet(sub.id, (b.pgDetails && b.pgDetails.reason) || b.reason);
+  let out = sub ? await payReconcile(sub) : { status: 'missing' };
   if (!says || out.status === 'paid' || out.mismatch) return out;
   await new Promise(r => setTimeout(r, EP_RECHECK_MS));
   sub = await get();
@@ -1160,6 +1195,7 @@ async function payTick(all) {
     }
     await referralTick().catch(e => console.log('referralTick: ' + e.message));
     for (const [k, v] of EP_URLS) if (Date.now() - v.at > PAY_PENDING_MS) EP_URLS.delete(k);
+    for (const [k, v] of PAY_DECLINE) if (Date.now() - v.at > PAY_DECLINE_MS) PAY_DECLINE.delete(k);
   } finally { PAY_BUSY = false }
 }
 
@@ -1167,10 +1203,13 @@ async function payTick(all) {
 async function adminPay() {
   const r = await sb('GET', 'subscriptions', { query:
     `?gateway=in.(${EP_GATEWAY},${PAY_CREDIT_GATEWAY})&select=id,user_id,term,status,amount_halalas,` +
-    `credit_halalas,gateway,gateway_ref,note,created_at,paid_at&order=created_at.desc&limit=200` })
+    `credit_halalas,gateway,gateway_ref,note,created_at,paid_at,includes_term,pushover` +
+    `&order=created_at.desc&limit=200` })
     .catch(() => null);
   const rows = Array.isArray(r) ? r : [];
   const n = st => rows.filter(x => x.status === st).length;
+  /* الاسترجاع (الشروط §٤): استخدم ميزة مدفوعة بعد الدفع؟ — سجل الاستخدام */
+  const usage = await usageOf(rows.slice(0, 10)).catch(() => null);
   return { ok: true, env: SITE_ENV, live: PAY_LIVE, host: EP_HOST, hostBad: EP_HOST_BAD,
     gateway: EP_GATEWAY, ready: EP_READY, keySet: !!EP_KEY,
     hookSet: !!EP_HOOK_SECRET, hookLen: EP_HOOK_SECRET.length, hookHidden: EP_HOOK_HIDDEN,
@@ -1179,9 +1218,11 @@ async function adminPay() {
     counts: { pending: n('pending'), paid: n('paid'), failed: n('failed') },
     paidHalalas: rows.filter(x => x.status === 'paid' && x.gateway === 'edfapay')
       .reduce((s, x) => s + (Number(x.amount_halalas) || 0), 0),
+    usageLog: usage ? 'ok' : 'missing',
     recent: rows.slice(0, 10).map(x => ({ id: x.id, term: x.term, status: x.status,
       amount: Number(x.amount_halalas) || 0, credit: Number(x.credit_halalas) || 0,
-      gateway: x.gateway, note: x.note || null, at: x.created_at })) };
+      gateway: x.gateway, note: x.note || null, at: x.created_at, paidAt: x.paid_at || null,
+      usage: (usage && usage[x.id]) || null })) };
 }
 /* «جرّب الاتصال»: سؤال حالة لطلب ما يوجد — بلا أثر عندهم. المفتاح المرفوض
    ٤٠١/٤٠٣، والمقبول يرجّع ردّهم المغلّف (حتى لو «الطلب ما يوجد») */
@@ -1275,6 +1316,89 @@ function epHookCheck(req, raw, big) {
   return ok;
 }
 /* ═══ نهاية بوابة الدفع ═══ */
+
+/* ═══ سجل استخدام الميزات المدفوعة (الشروط §٤ — الاسترجاع) ═══
+   «الاسترجاع خلال ٧ أيام من الدفع، بشرط ما تكون استخدمت أي ميزة مدفوعة»:
+   مراقبة فوق شعبتين أو كل شعب المادة · الجدول الثاني أو الثالث · أدوات المساعد
+   الشخصية · وصول أي تنبيه طارئ. قبله كنا نعرف الموجود الحين بس — طالب يستعمل
+   ثم يحذف ما يبقى له أثر.
+   · المتصفح يكتب المراقبة والجداول في القاعدة مباشرة، فتسجّلها **مشغّلات هناك**
+     (`log_paid_usage` — أوامرها في وصف PR السجل): ميزة · رقم (عدد المراقبات أو الجدول) · وقت.
+   · والباقي يمرّ من هنا (`usageLog`): أداة شخصية اشتغلت · تنبيه طارئ وصل · وإشعار
+     من مراقبة فوق حصة المجاني (مراقبات من الفترة المجانية اشتغلت بالدفع).
+   **شرط واحد للكل ونفسه في المشغّلات**: دفعة مدفوعة خلال ٨ أيام (مدة الاسترجاع +
+   يوم) — ما نسجّل لغير من يقدر يطلب استرجاعاً. وهنا قبله: الميزة مدفوعة لصاحبها
+   فعلاً (`isActive` — الفترة المجانية ما هي استخدام مدفوع · والتنبيه `hasPushoverAddon`).
+   مرة كل ١٠ دقائق لكل ميزة، وبلا انتظار: التسجيل ما يأخّر جواباً ولا إشعاراً ولا
+   يفشله. والتفسير بحدود المجاني وقت العرض (`usageOf`) — والحكم لمحمد. */
+const USAGE_DAYS = 8;
+const USAGE_EVERY_MS = 10 * 60 * 1000;
+const REFUND_DAYS = 7;                          /* الشروط §٤: «خلال ٧ أيام من تاريخ الدفع» */
+const USAGE_LAST = new Map();                   /* uid|ميزة ⇒ آخر فحص */
+function usageLog(p, feature, detail) {
+  const uid = String((p && p.id) || '');
+  if (!isUuid(uid)) return;
+  if (/^pushover/.test(feature) ? !hasPushoverAddon(p) : !isActive(p)) return;
+  const now = Date.now(), key = uid + '|' + feature;
+  if (now - (USAGE_LAST.get(key) || 0) < USAGE_EVERY_MS) return;
+  if (USAGE_LAST.size > 5000) USAGE_LAST.clear();
+  USAGE_LAST.set(key, now);
+  const d = /^[a-z0-9_]{1,40}$/.test(String(detail || '')) ? detail : null;
+  const since = new Date(now - USAGE_DAYS * 864e5).toISOString();
+  (async () => {
+    const r = await sb('GET', 'subscriptions', { query: `?user_id=eq.${uid}&status=eq.paid` +
+      `&paid_at=gt.${encodeURIComponent(since)}&select=id&limit=1` });
+    if (!Array.isArray(r) || !r.length) return;
+    await sb('POST', 'paid_usage', { body: { user_id: uid, feature, detail: d }, prefer: 'return=minimal' });
+  })().catch(() => {});
+}
+/* دفعة جديدة: الاستخدام بعدها يُسجَّل فوراً، لا بعد مهلة فحص قبلها */
+function usageFresh(uid) {
+  const pre = String(uid) + '|';
+  for (const k of [...USAGE_LAST.keys()]) if (k.startsWith(pre)) USAGE_LAST.delete(k);
+}
+/* الاستخدام بعد كل دفعة، للوحة: وش استُعمل ومتى، ومتى تنتهي مدة الاسترجاع.
+   مراقبة ٢ من ٢ ما هي استخدام مدفوع — حدود المجاني من اللوحة (PRICING).
+   وتنبيه التجربة من اللوحة (`pushover_test`) يُعرض وحده: أرسلته أنت، ما اختاره الطالب.
+   **null لو السجل ما يُقرأ** (الـSQL ما انشغّل): «ما انسجّل شي» كذبة هنا */
+async function usageOf(orders) {
+  const paid = orders.filter(o => o.status === 'paid' && Date.parse(o.paid_at) && isUuid(String(o.user_id || '')));
+  if (!paid.length) {             /* وبلا طلبات مدفوعة: اللوحة تنبّه لو الجدول ناقص */
+    const t = await sb('GET', 'paid_usage', { query: '?select=id&limit=1' }).catch(() => null);
+    return Array.isArray(t) ? {} : null;
+  }
+  const since = new Date(Math.min(...paid.map(o => Date.parse(o.paid_at)))).toISOString();
+  let rows;
+  try {
+    rows = await sbAll('paid_usage', { strict: true, query:
+      `?user_id=in.(${[...new Set(paid.map(o => `"${o.user_id}"`))].join(',')})` +
+      `&at=gte.${encodeURIComponent(since)}&select=user_id,feature,n,detail,at` });
+  } catch (e) { return null }
+  const out = {};
+  for (const o of paid) {
+    const from = Date.parse(o.paid_at), first = {};
+    const hit = (kind, x) => {
+      if (first[kind] && Date.parse(first[kind].at) <= Date.parse(x.at)) return;
+      first[kind] = { kind, at: x.at, n: x.n == null ? null : Number(x.n), detail: x.detail || null };
+    };
+    for (const x of rows) {
+      if (x.user_id !== o.user_id || !(Date.parse(x.at) >= from)) continue;
+      const n = Number(x.n);
+      if (o.includes_term !== false) {
+        if (x.feature === 'monitor' && n > PRICING.freeMonitors) hit('monitor', x);
+        if (x.feature === 'monitor_course') hit('monitor_course', x);
+        if (x.feature === 'alert') hit('alert', x);
+        if ((x.feature === 'schedule' || x.feature === 'slot') && n > PRICING.freeSchedules) hit('schedule', x);
+        if (x.feature === 'ai') hit('ai', x);
+      }
+      if (o.pushover && (x.feature === 'pushover' || x.feature === 'pushover_test')) hit(x.feature, x);
+    }
+    out[o.id] = { until: new Date(from + REFUND_DAYS * 864e5).toISOString(),
+      used: Object.values(first).sort((a, b) => Date.parse(a.at) - Date.parse(b.at)) };
+  }
+  return out;
+}
+/* ═══ نهاية سجل الاستخدام ═══ */
 
 /* ═══ رصيد تقييم الدكاترة ═══
    الطالب يقيّم N دكاترة ← يرسل طلباً ← تراجعه في اللوحة ← تقبل أو ترفض
@@ -2845,6 +2969,11 @@ async function runMonitorCycle() {
                              : '🔕 أوقف مراقبة هذي الشعبة', 'stop:' + m.id)]]));
       if (r && r.ok) { notified.push(m.id); followups.push(m.id); }
       else OPS.tgFails++;
+      /* إشعار من مراقبة فوق حصة المجاني وصل = ميزة مدفوعة استُعملت (الشروط §٤) —
+         يمسك مراقبات انضافت قبل الدفع (الفترة المجانية) واشتغلت به: مشغّل القاعدة
+         يسجّل الإضافة وحدها فما يشوفها */
+      if (r && r.ok && (m.scope === 'course' || !freeOk.has(m.id)))
+        usageLog(p, 'alert', m.scope === 'course' ? 'course' : 'section');
 
       /* Pushover: لك أنت دائماً، ولأي طالب سجّل مفتاحه في ملفه.
          تيليغرام يُكتم بسهولة، والأولوية 2 تعيد التنبيه حتى يضغط
@@ -2860,7 +2989,9 @@ async function runMonitorCycle() {
           /* الشعبة المغلقة الجديدة خبر لا طارئ */
           closedNew ? { priority: 0, sound: 'pushover', user: poKey || undefined }
                     : { priority: 2, sound: 'siren', retry: 30, expire: 1800,
-                        user: poKey || undefined }).catch(() => {});
+                        user: poKey || undefined })
+          /* وصل لمفتاح الطالب نفسه = «وصول تنبيه طارئ» (الشروط §٤) */
+          .then(sent => { if (sent && poKey) usageLog(p, 'pushover') }).catch(() => {});
       }
       await new Promise(r2 => setTimeout(r2, 700));   // تهدئة بين الدفعات
     });
@@ -4007,7 +4138,7 @@ async function adminPushTest(email) {
   const e = String(email || '').trim().toLowerCase();
   if (!e) return { ok: false, error: 'اكتب البريد' };
   const rows = await sbAll('profiles', {
-    query: `?email=eq.${encodeURIComponent(e)}&select=id,email,pushover_key,telegram_chat_id`
+    query: `?email=eq.${encodeURIComponent(e)}&select=id,email,pushover_key,telegram_chat_id,is_pro,pushover_until`
   }).catch(() => null);
   if (!Array.isArray(rows) || !rows.length)
     return { ok: false, error: 'ما لقيت حساباً بهذا البريد' };
@@ -4022,6 +4153,9 @@ async function adminPushTest(email) {
     'اضغط «تأكيد» في Pushover عشان توقف التكرار.\n\n' +
     'ما صفّر وجوالك صامت؟ فعّل Critical Alerts من إعدادات التطبيق.',
     { priority: 2, sound: 'siren', retry: 30, expire: 300, user: key });
+  /* يثبت إن التفعيل على جواله اشتغل (الشروط §٤ — «ما قدرت تفعّل التنبيه الطارئ»)،
+     ويُعرض وحده في اللوحة: أرسلته أنت، ما اختاره هو */
+  if (sent) usageLog(p, 'pushover_test');
   return {
     ok: !!sent, email: p.email,
     telegram: !!p.telegram_chat_id,
@@ -6925,6 +7059,12 @@ function aiMatchNames(q, names) {
   return out.sort((a, b) => b.score - a.score);
 }
 
+/* تذكير بالتنبيه الطارئ وصاحبه ما يقدر يستلمه (pushoverReady): نقولها، والتذكير يكمل على تلقرام */
+const AI_URGENT_WHY = {
+  off: 'التنبيه الطارئ مو متاح الحين — التذكير يوصله على تلقرام.',
+  nokey: 'التنبيه الطارئ مو مفعّل على جواله — يفعّله من ⚙️ الإعدادات، والحين يوصله على تلقرام.',
+  addon: 'التنبيه الطارئ إضافة على الاشتراك (من «الباقات») — الحين يوصله على تلقرام.',
+};
 /* حدود التذكير */
 const AI_REMIND_MAX = 20;    /* معلّق لكل طالب */
 const AI_REMIND_DAYS = 200;  /* أبعد وقت */
@@ -7798,14 +7938,17 @@ const AI_TOOLS = {
 
   propose_reminder: {
     tier: 'pro',
-    description: 'يقترح تذكيراً بوقت — توصل الطالب رسالة تلقرام في وقته. '
+    description: 'يقترح تذكيراً بوقت — توصل الطالب رسالة تلقرام في وقته، ومعها التنبيه '
+      + 'الطارئ (Pushover — يرن ولو الجوال صامت) لو طلبه. '
       + '**ما يجدول شيئاً** — الطالب يضغط «تأكيد». لما يقول «ذكّرني بكذا '
       + 'بكرة الساعة ٧» — حوّل كلامه لتاريخ ووقت بتوقيت الرياض.',
     input_schema: { type: 'object', properties: {
       date: { type: 'string', description: 'التاريخ YYYY-MM-DD' },
       time: { type: 'string', description: 'الوقت HH:MM بتوقيت الرياض، ٢٤ ساعة' },
       body: { type: 'string', description: 'نص التذكير — قصير وواضح' },
-      code: { type: 'string', description: 'كود مادة يخصّها التذكير — اختياري' } },
+      code: { type: 'string', description: 'كود مادة يخصّها التذكير — اختياري' },
+      urgent: { type: 'boolean', description: 'true لو طلب يوصله بالتنبيه الطارئ — «ذكّرني '
+        + 'بالبوش أوفر» · «بالتنبيه الطارئ». لا تفعّله من نفسك' } },
       required: ['date', 'time', 'body'] },
     run: async (ctx, a) => {
       const d = String(a.date || '').trim(), tm = String(a.time || '').trim();
@@ -7830,12 +7973,21 @@ const AI_TOOLS = {
           String(r.course_code || '').toUpperCase().replace(/\s+/g, ' ').trim() === want);
         if (hit) { crn = String(hit.crn); code = hit.course_code }
       }
+      /* التنبيه الطارئ لو طلبه (قرار محمد) — جاهز عنده؟ وإلا تلقرام وحده ونقول
+         ليش، بدل وعد ما يوصل. والحارس الحقيقي وقت الإرسال (remindersTick): الطالب
+         يكتب صفّه بنفسه */
+      let urgent = false, why = '';
+      if (a.urgent === true || a.urgent === 'true') {
+        const ready = pushoverReady(ctx.profile);
+        if (ready === 'ok') urgent = true; else why = AI_URGENT_WHY[ready] || AI_URGENT_WHY.off;
+      }
       /* البيئة من السيرفر لا من المتصفح: هو اللي يعرفها بيقين، وهو
          اللي بيرسل. القاعدة مشتركة فالصف لازم يعرف من يخدمه. */
       return { proposal: { action: 'reminder', at: new Date(at).toISOString(),
           atLocal: `${d} ${String(hh).padStart(2, '0')}:${String(mi).padStart(2, '0')}`,
-          body, crn, code, env: SITE_ENV },
-        note: 'اقتراح — ما انجدول شي. ويحتاج تلقرام مربوطاً ليوصله.' };
+          body, crn, code, env: SITE_ENV, urgent },
+        note: 'اقتراح — ما انجدول شي. ويحتاج تلقرام مربوطاً ليوصله.'
+          + (urgent ? ' ويوصله معه التنبيه الطارئ.' : '') + (why ? ' ' + why : '') };
     },
   },
 
@@ -8159,8 +8311,15 @@ async function aiRunTool(name, args, ctx) {
   /* الحصة — hasAccess وحدها، لا فحص ثانٍ */
   if (t.tier === 'pro' && !ctx.pro) return { error: AI_PRO_ONLY, tier: 'pro' };
 
-  try { return await t.run(ctx, a) }
+  let out;
+  try { out = await t.run(ctx, a) }
   catch (e) { return { error: 'تعذّر تنفيذ الأداة: ' + e.message } }
+  /* أداة شخصية اشتغلت = ميزة مدفوعة استُعملت (الشروط §٤ — الاسترجاع). للسجل وحده:
+     usageLog تقرر (مشترك فعلاً لا الفترة المجانية)، وما تنتظر ولا ترمي.
+     و typeof لأن الاختبارات تقتطع هالمنطقة وحدها وتمرّر usageLog جاسوساً */
+  if (t.tier === 'pro' && !ctx.guest && !(out && out.error) && typeof usageLog === 'function')
+    usageLog(ctx.profile, 'ai', name);
+  return out;
 }
 /* ═══ نهاية أدوات المساعد ═══
    الاختبارات تقتطع ما بين العلامتين وتشغّله — لا تغيّر العلامتين. */
@@ -8982,7 +9141,8 @@ async function aiTgAnswer(chatId, q) {
       if (AI_TG_PROP.size > 3000) AI_TG_PROP.clear();   /* قبل الإضافة لا بعدها */
       const id = String(++AI_TG_PROP_SEQ);
       AI_TG_PROP.set(id, { chat: key, uid: String(uid), p, made: Date.now() });
-      act = kb([[btn(p.action === 'reminder' ? '✅ ثبّت التذكير' : '📩 أرسلها لفريق جدولك',
+      act = kb([[btn(p.action !== 'reminder' ? '📩 أرسلها لفريق جدولك'
+                       : p.urgent ? '✅ ثبّت التذكير 🚨' : '✅ ثبّت التذكير',
                      `act:ok:${id}`), btn('✖️ لا', `act:no:${id}`)]]);
     } else {
       /* غياب · موعد · شعبة · مراقبة: حراساتها في دوال الصفحة. والموقع ما
@@ -9051,8 +9211,9 @@ async function aiTgAct(cq, ack, yes, id) {
     await ack(); await drop();
     return sendMsg(chatId, '⚠️ ' + esc(chk.error));
   }
-  const w = await sb('POST', 'reminders', { body: { user_id: String(uid), env: SITE_ENV,
-      at: new Date(chk.at).toISOString(), body: chk.body, crn: P.p.crn || null },
+  /* urgent يُكتب لو طلبه وحده: قبل الـSQL العمود ناقص، والتذكير العادي يكمل */
+  const w = await sb('POST', 'reminders', { body: Object.assign({ user_id: String(uid), env: SITE_ENV,
+      at: new Date(chk.at).toISOString(), body: chk.body, crn: P.p.crn || null }, P.p.urgent ? { urgent: true } : {}),
     prefer: 'return=representation' }).catch(() => null);
   /* كتابة ما رجع صفّها ما انكتبت (§٦) — فما نقول «ثبّتناه» */
   if (!Array.isArray(w) || !w.length) {
@@ -9063,6 +9224,7 @@ async function aiTgAct(cq, ack, yes, id) {
   await drop();
   const inMode = (AI_TG_MODE.get(key) || 0) > Date.now();
   return sendMsg(chatId, `⏰ <b>ثبّتنا التذكير</b> — يوصلك هنا ${esc(P.p.atLocal || '')}`
+    + (P.p.urgent ? '، ومعه التنبيه الطارئ 🚨' : '')
     + `\n«${esc(chk.body)}»`, inMode ? AI_TG_KB : undefined);
 }
 
@@ -9263,17 +9425,20 @@ async function remindersTick() {
   REMIND_BUSY = true;
   try {
     const now = new Date().toISOString();
+    /* select=* لا قائمة أعمدة: عمود ناقص في القائمة يُفشل القراءة كلها — نشر السيرفر
+       قبل ALTER (urgent) كان بيوقف كل التذكيرات */
     const due = await sb('GET', 'reminders', { query:
       `?sent_at=is.null&at=lte.${encodeURIComponent(now)}` +
       `&env=eq.${encodeURIComponent(SITE_ENV)}` +
-      `&select=id,user_id,body,crn,at&order=at.asc&limit=${REMIND_BATCH}` });
+      `&select=*&order=at.asc&limit=${REMIND_BATCH}` });
     if (!Array.isArray(due) || !due.length) return;
 
     /* ملفات أصحابها دفعة واحدة — لا قراءة لكل صف */
     const ids = [...new Set(due.map(r => r.user_id))]
       .filter(x => /^[0-9a-f-]{36}$/i.test(String(x)));
     const profs = ids.length ? await sb('GET', 'profiles', { query:
-      `?id=in.(${ids.join(',')})&select=id,telegram_chat_id,notif_prefs` }) : [];
+      `?id=in.(${ids.join(',')})&select=id,telegram_chat_id,notif_prefs,is_pro,` +
+      `subscription_expires_at,pushover_key,pushover_until` }) : [];
     const byId = {};
     if (Array.isArray(profs)) profs.forEach(p => { byId[p.id] = p });
 
@@ -9293,6 +9458,14 @@ async function remindersTick() {
       await sendMsg(p.telegram_chat_id,
         '⏰ <b>تذكير</b>\n\n' + esc(String(r.body || '').slice(0, 300))
         + '\n\n<i>طلبته من مساعد جدولك</i>').catch(() => {});
+      /* ومعه التنبيه الطارئ لو طلبه (قرار محمد) — الحارس هنا وقت الإرسال: الطالب
+         يكتب صفّه بنفسه، فـurgent منه ما يكفي. pushoverAllowed وحدها (الوضع ·
+         الإضافة · مفتاحه). يرن ولو صامت ويعيد لين يأكّده — ربع ساعة أقصى */
+      if (r.urgent === true && PUSHOVER_ON && pushoverAllowed(p)) {
+        pushover('⏰ تذكير', String(r.body || '').slice(0, 300),
+          { priority: 2, sound: 'siren', retry: 60, expire: 900, user: String(p.pushover_key).trim() })
+          .then(sent => { if (sent) usageLog(p, 'pushover') }).catch(() => {});
+      }
     }
   } catch (e) {
     console.log('remindersTick: ' + (e && e.message));

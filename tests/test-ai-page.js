@@ -507,6 +507,7 @@ const openSheet = async page => {
     await page.evaluate(() => {
       window.__tg = false;
       window.tgLinked = () => window.__tg;
+      window.__realAdd = window.addReminderDirect;       /* الحقيقية — نفحص صفّها تحت */
       window.addReminderDirect = (at, body, crn, env) => {
         if (!window.__tg) return Promise.resolve(false);
         window.__ran.push(['reminder', at, body, env]);
@@ -534,6 +535,37 @@ const openSheet = async page => {
     eq(await page.evaluate(() => window.__ran[window.__ran.length - 1]),
        ['reminder', '2099-03-01T16:00:00.000Z', 'ذاكر للكويز', 'dev'],
        'وبالربط ينجدول — **والبيئة من السيرفر لا من المتصفح**');
+    ok(!/التنبيه الطارئ/.test(await lastCard()), 'والتذكير العادي ما يقول «التنبيه الطارئ»');
+
+    /* التنبيه الطارئ (قرار محمد — «ذكّرني بالبوش أوفر»): البطاقة تقولها والصف يحملها */
+    await page.evaluate(() => {
+      window.addReminderDirect = (at, body, crn, env, urgent) => {
+        window.__ran.push(['reminder', body, urgent]);
+        return Promise.resolve(true);
+      };
+    });
+    ST.answer.proposal = { action: 'reminder', at: '2099-03-01T04:00:00.000Z',
+      atLocal: '2099-03-01 07:00', body: 'سجّل المواد', env: 'prod', urgent: true };
+    await page.fill('#aiQ', 'ذكّرني بالبوش أوفر');
+    await page.evaluate(() => aiSend());
+    await page.waitForTimeout(450);
+    ok(/التنبيه الطارئ/.test(await lastCard()), '**بطاقة التذكير الطارئ تقولها قبل التأكيد** — ' + (await lastCard()).slice(0, 80));
+    await page.click('#aiLog .ai-act-go');
+    await page.waitForTimeout(300);
+    eq(await page.evaluate(() => window.__ran[window.__ran.length - 1]), ['reminder', 'سجّل المواد', true],
+       'والتأكيد يمرّرها لدالة الموقع');
+    /* الدالة الحقيقية: urgent في الصف لو طلبه وحده — قبل الـSQL العمود ناقص والعادي يكمل */
+    const ins = await page.evaluate(async () => {
+      const got = [], orig = sb.from;
+      sb.from = t => ({ insert: async row => { got.push([t, row]); return { error: null } } });
+      try {
+        await window.__realAdd('2099-03-01T04:00:00.000Z', 'طارئ', null, 'prod', true);
+        await window.__realAdd('2099-03-01T04:00:00.000Z', 'عادي', null, 'prod', false);
+      } finally { sb.from = orig }
+      return got.map(([t, r]) => [t, r.body, 'urgent' in r ? r.urgent : 'none']);
+    });
+    eq(ins, [['reminders', 'طارئ', true], ['reminders', 'عادي', 'none']],
+       '**الصف يحمل urgent لو طلبه وحده** — والعادي بلا العمود');
 
     /* ── تذكرة الدعم بالسياق (§٩-أ-٥) ── */
     ST.fb = []; ST.fbHeads = [];

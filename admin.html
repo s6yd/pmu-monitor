@@ -150,6 +150,11 @@ color:var(--text);font-family:inherit;font-size:12.5px;padding:7px 9px;width:82p
 .cr-row{display:flex;justify-content:space-between;gap:10px;padding:7px 0;
   border-bottom:1px solid var(--border);font-size:12px}
 .cr-row:last-child{border-bottom:none}
+/* طلب في بطاقة الدفع: سطره وتحته سطر الاستخدام (الاسترجاع) — الفاصل بعد الاثنين */
+.pay-item{border-bottom:1px solid var(--border)}
+.pay-item:last-child{border-bottom:none}
+.pay-item .cr-row{border-bottom:none}
+.pay-use{font-size:11.5px;line-height:1.8;color:var(--text2);padding:0 0 8px;overflow-wrap:break-word}
 .cr-plus{color:var(--open);font-family:var(--mono);direction:ltr;unicode-bidi:isolate}
 .cr-minus{color:var(--close);font-family:var(--mono);direction:ltr;unicode-bidi:isolate}
 .mon-ehint{font-size:10.5px;color:var(--text3);line-height:1.6;margin-top:3px}
@@ -2024,10 +2029,10 @@ function payCardHTML(){
   const who={none:'ولا أحد',all:'كل الطلاب',
     owner:d.live?'أنت فقط — الفترة المجانية شغّالة':'أنت فقط — نسخة التجربة'}[d.openTo]||d.openTo;
   const c=d.counts||{};
-  const rec=(d.recent||[]).slice(0,5).map(x=>`<div class="cr-row">
+  const rec=(d.recent||[]).slice(0,5).map(x=>`<div class="pay-item"><div class="cr-row">
       <span>#${esc(x.id)} · ${esc(x.term)} · <b>${esc(PAY_ST_AR[x.status]||x.status)}</b>${
         x.note?`<span style="color:var(--text3)"> — ${esc(x.note)}</span>`:''}</span>
-      <span>${sar(x.amount)} ريال${x.credit?` + رصيد ${sar(x.credit)}`:''}</span></div>`).join('');
+      <span>${sar(x.amount)} ريال${x.credit?` + رصيد ${sar(x.credit)}`:''}</span></div>${payUsageHTML(x)}</div>`).join('');
   return `<div class="gauge" style="margin-bottom:12px">
     <div class="maint-t">💳 بوابة الدفع — EdfaPay</div>
     <div class="kv"><span>البيئة</span><b>${d.live?'الإنتاج':'التجربة'} · ${code(d.host)}</b></div>
@@ -2040,6 +2045,7 @@ function payCardHTML(){
     <div class="kv"><span>مين يقدر يدفع</span><b>${esc(who)}</b></div>
     <div class="kv"><span>الطلبات</span><b>معلّقة ${c.pending||0} · مدفوعة ${c.paid||0} · فاشلة ${c.failed||0}</b></div>
     ${d.live?`<div class="kv"><span>المحصّل عبر EdfaPay</span><b>${sar(d.paidHalalas||0)} ريال</b></div>`:''}
+    ${d.usageLog==='missing'?payTip('<b style="color:var(--warn)">⚠️ سجل الاستخدام ما يشتغل</b> — نفّذ أوامر SQL «سجل الاستخدام». بدونه ما نعرف هل الطالب استخدم ميزة مدفوعة قبل ما يطلب الاسترجاع.'):''}
     ${rec?`<div style="margin-top:8px">${rec}</div>`:''}
     <div class="row-meta" style="margin-top:10px">
       <button class="mini go" onclick="payPing(this)">🔌 جرّب الاتصال</button>
@@ -2047,6 +2053,29 @@ function payCardHTML(){
   </div>`;
 }
 const payTip=s=>`<div class="gauge-sub" style="margin:2px 0 8px;line-height:1.7;font-size:12px;color:var(--text2)">${s}</div>`;
+/* الاسترجاع (الشروط §٤ — «بشرط ما تكون استخدمت أي ميزة مدفوعة»): وقائع من سجل
+   الاستخدام بعد الدفع، والحكم لك. التفسير بحدود المجاني صار في السيرفر (usageOf) */
+const PAY_USE_AR={monitor:y=>`مراقبة ${Number(y.n)||'؟'} شعب`,monitor_course:()=>'مراقبة كل شعب مادة',
+  alert:()=>'إشعار من مراقبة فوق حصة المجاني',schedule:y=>`الجدول ${Number(y.n)||'؟'}`,
+  ai:y=>'Jadwalik AI'+(y.detail?` (<span class="ltr" style="font-family:var(--mono)">${esc(y.detail)}</span>)`:''),
+  pushover:()=>'وصله تنبيه طارئ'};
+function payUsageHTML(x){
+  const u=x&&x.status==='paid'&&x.usage;
+  if(!u)return '';
+  const all=Array.isArray(u.used)?u.used:[];
+  const used=all.filter(y=>y.kind!=='pushover_test'), test=all.find(y=>y.kind==='pushover_test');
+  const ago=y=>`<span style="color:var(--text3)">(${esc(payAgo(y.at))})</span>`;
+  const head=used.length
+    ?`<b style="color:var(--warn)">⚠️ استخدم ميزة مدفوعة:</b> `+
+      used.map(y=>`${PAY_USE_AR[y.kind]?PAY_USE_AR[y.kind](y):esc(y.kind)} ${ago(y)}`).join(' · ')
+    :'<b style="color:var(--open)">✅ ما انسجّل له استخدام لميزة مدفوعة</b>';
+  const until=Date.parse(u.until);
+  const tail=!Number.isFinite(until)?''
+    :until>Date.now()?`الاسترجاع متاح حتى ${esc(new Date(until).toLocaleDateString('ar-u-ca-gregory-nu-latn',{day:'numeric',month:'long'}))}`
+    :'انتهت مدة الاسترجاع (7 أيام من الدفع)';
+  return `<div class="pay-use">${head}${test?` · وصله تنبيه تجربة منك ${ago(test)}`:''}${
+    tail?`<br><span style="color:var(--text3)">${tail}</span>`:''}</div>`;
+}
 function payAgo(iso){
   const m=Math.round((Date.now()-Date.parse(iso))/60000);
   return !Number.isFinite(m)?'':m<1?'الآن':m<60?`قبل ${m} د`:m<1440?`قبل ${Math.round(m/60)} س`:`قبل ${Math.round(m/1440)} يوم`;
