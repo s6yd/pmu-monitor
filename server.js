@@ -563,6 +563,23 @@ const PAY_ORIGIN_PROD = 'https://jadwalik.com';
    الطالب يكمّل من نفس الصفحة لو رجع. ضاع بنشر؟ يلغي ويبدأ من جديد */
 const EP_URLS = new Map();
 const epUrlOf = id => { const v = EP_URLS.get(id); return v && Date.now() - v.at < PAY_PENDING_MS ? v.url : null };
+/* رفض البنك (لقاها محمد): الصفحة كانت تقول «ننتظر تأكيد الدفع — لو دفعت يتفعّل»
+   بعد ما رفض البنك العملية، وترجع تقولها مع كل رجوع من صفحة الدفع. مصدرها: سؤال
+   الحالة (FAILED ومعه reason) أو إشعار موقَّع «Declined». **للرسالة وحدها** — الطلب
+   يبقى معلّقاً (FAILED في توثيقهم «يقدر يجرّب ثانية»، ودفعة بعده تتسوّى عادي).
+   السبب رمز لا نص البنك الإنجليزي — الصفحة تقوله بلغتها. في الذاكرة: نصف ساعة
+   تكفي رجوعه للموقع */
+const PAY_DECLINE = new Map();
+const PAY_DECLINE_MS = 30 * 60 * 1000;
+function payDeclineSet(id, reason) {
+  const r = String(reason || '');
+  const why = /authenticat|3-?d|secure|otp/i.test(r) ? 'auth'
+    : /insufficient|balance|funds/i.test(r) ? 'funds' : /expir/i.test(r) ? 'expired' : 'other';
+  if (PAY_DECLINE.size > 5000) PAY_DECLINE.clear();
+  PAY_DECLINE.set(Number(id), { at: Date.now(), why });
+}
+const payDeclined = id => { const v = PAY_DECLINE.get(Number(id));
+  return v && Date.now() - v.at < PAY_DECLINE_MS ? v.why : null };
 
 /* ترم الشراء — **الاشتراك لتسجيل قدّامك** (قرار محمد):
    · داخل نافذة: ترمها. وفي **آخر lateDays منها** للترم الجاي — التسجيل
@@ -960,6 +977,7 @@ async function payReconcile(sub) {
       return s.ok ? { status: 'paid', until: s.until } : { status: sub.status, error: s.error, mismatch: s.dup };
     }
     if (v.paid) { payAlert(sub, v.why); return { status: sub.status, mismatch: true } }
+    if (v.status === 'failed') payDeclineSet(sub.id, g.st.reason);
   } else if (!g.unknown) {
     /* ما قدرنا نسأل: ما نحكم على الطلب ولا نلغيه — وبعد ٢٤ ساعة ننبّهك */
     if (old) payAlert(sub, 'ما قدرنا نسأل EdfaPay عنها من ٢٤ ساعة — شيك المفتاح من اللوحة');
@@ -970,7 +988,8 @@ async function payReconcile(sub) {
     EP_URLS.delete(sub.id);
     return { status: 'failed' };
   }
-  return { status: sub.status, url: sub.status === 'pending' ? epUrlOf(sub.id) : null };
+  return { status: sub.status, url: sub.status === 'pending' ? epUrlOf(sub.id) : null,
+           declined: sub.status === 'pending' ? payDeclined(sub.id) : null };
 }
 
 /* بدء الدفع. الترتيب مهم: المعلّق أولاً (يمكن دفعه ونسي) ← السعر من
@@ -1088,11 +1107,12 @@ async function payStatus(uid, sid) {
   if (!s) return { ok: false, error: 'الطلب غير موجود' };
   if (s.status !== 'pending') return payView(s);
   const last = PAY_LOOK.get(s.id) || 0;
-  if (Date.now() - last < 4000) return payView(s);          /* ضغطات متتالية ما تضرب EdfaPay */
+  if (Date.now() - last < 4000) return payView(s, { declined: payDeclined(s.id) });  /* ضغطات متتالية ما تضرب EdfaPay */
   PAY_LOOK.set(s.id, Date.now());
   if (PAY_LOOK.size > 5000) PAY_LOOK.clear();
   const r = await payReconcile(s);
-  return payView(s, { status: r.status, until: r.until || s.valid_until, url: r.url || null });
+  return payView(s, { status: r.status, until: r.until || s.valid_until, url: r.url || null,
+                      declined: r.declined || null });
 }
 
 async function payCancel(uid, sid) {
@@ -1134,7 +1154,11 @@ async function epWebhook(raw) {
       `?id=eq.${m[2]}&gateway=eq.${EP_GATEWAY}&select=*&limit=1` });
     return Array.isArray(r) ? r[0] || null : null;
   };
-  let sub = await get(), out = sub ? await payReconcile(sub) : { status: 'missing' };
+  let sub = await get();
+  /* رفض البنك (موقَّع، لطلب معلّق موجود — لا لرقم ما انخلق بعد): للرسالة وحدها */
+  if (sub && sub.status === 'pending' && /^(declined|failed|rejected)$/i.test(String(b.status || '')))
+    payDeclineSet(sub.id, (b.pgDetails && b.pgDetails.reason) || b.reason);
+  let out = sub ? await payReconcile(sub) : { status: 'missing' };
   if (!says || out.status === 'paid' || out.mismatch) return out;
   await new Promise(r => setTimeout(r, EP_RECHECK_MS));
   sub = await get();
@@ -1161,6 +1185,7 @@ async function payTick(all) {
     }
     await referralTick().catch(e => console.log('referralTick: ' + e.message));
     for (const [k, v] of EP_URLS) if (Date.now() - v.at > PAY_PENDING_MS) EP_URLS.delete(k);
+    for (const [k, v] of PAY_DECLINE) if (Date.now() - v.at > PAY_DECLINE_MS) PAY_DECLINE.delete(k);
   } finally { PAY_BUSY = false }
 }
 
