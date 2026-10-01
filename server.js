@@ -931,6 +931,7 @@ async function paySettle(sub, tx) {
     payAlert(s, 'الدفعة وصلت والتفعيل تعثّر (' + act.error + ') — نعيد المحاولة تلقائياً');
     return { ok: false, error: 'وصلت دفعتك ونكمل التفعيل — ثواني ويصير' };
   }
+  usageFresh(s.user_id);
   await payReferral(s).catch(() => {});
   if (act.chat) sendMsg(act.chat, payReceipt(s)).catch(() => {});
   if (ADMIN_CHAT_ID) sendMsg(ADMIN_CHAT_ID, `💳 <b>اشتراك جديد</b> · ${s.gateway}\n\n` +
@@ -1167,10 +1168,13 @@ async function payTick(all) {
 async function adminPay() {
   const r = await sb('GET', 'subscriptions', { query:
     `?gateway=in.(${EP_GATEWAY},${PAY_CREDIT_GATEWAY})&select=id,user_id,term,status,amount_halalas,` +
-    `credit_halalas,gateway,gateway_ref,note,created_at,paid_at&order=created_at.desc&limit=200` })
+    `credit_halalas,gateway,gateway_ref,note,created_at,paid_at,includes_term,pushover` +
+    `&order=created_at.desc&limit=200` })
     .catch(() => null);
   const rows = Array.isArray(r) ? r : [];
   const n = st => rows.filter(x => x.status === st).length;
+  /* الاسترجاع (الشروط §٤): استخدم ميزة مدفوعة بعد الدفع؟ — سجل الاستخدام */
+  const usage = await usageOf(rows.slice(0, 10)).catch(() => null);
   return { ok: true, env: SITE_ENV, live: PAY_LIVE, host: EP_HOST, hostBad: EP_HOST_BAD,
     gateway: EP_GATEWAY, ready: EP_READY, keySet: !!EP_KEY,
     hookSet: !!EP_HOOK_SECRET, hookLen: EP_HOOK_SECRET.length, hookHidden: EP_HOOK_HIDDEN,
@@ -1179,9 +1183,11 @@ async function adminPay() {
     counts: { pending: n('pending'), paid: n('paid'), failed: n('failed') },
     paidHalalas: rows.filter(x => x.status === 'paid' && x.gateway === 'edfapay')
       .reduce((s, x) => s + (Number(x.amount_halalas) || 0), 0),
+    usageLog: usage ? 'ok' : 'missing',
     recent: rows.slice(0, 10).map(x => ({ id: x.id, term: x.term, status: x.status,
       amount: Number(x.amount_halalas) || 0, credit: Number(x.credit_halalas) || 0,
-      gateway: x.gateway, note: x.note || null, at: x.created_at })) };
+      gateway: x.gateway, note: x.note || null, at: x.created_at, paidAt: x.paid_at || null,
+      usage: (usage && usage[x.id]) || null })) };
 }
 /* «جرّب الاتصال»: سؤال حالة لطلب ما يوجد — بلا أثر عندهم. المفتاح المرفوض
    ٤٠١/٤٠٣، والمقبول يرجّع ردّهم المغلّف (حتى لو «الطلب ما يوجد») */
@@ -1275,6 +1281,89 @@ function epHookCheck(req, raw, big) {
   return ok;
 }
 /* ═══ نهاية بوابة الدفع ═══ */
+
+/* ═══ سجل استخدام الميزات المدفوعة (الشروط §٤ — الاسترجاع) ═══
+   «الاسترجاع خلال ٧ أيام من الدفع، بشرط ما تكون استخدمت أي ميزة مدفوعة»:
+   مراقبة فوق شعبتين أو كل شعب المادة · الجدول الثاني أو الثالث · أدوات المساعد
+   الشخصية · وصول أي تنبيه طارئ. قبله كنا نعرف الموجود الحين بس — طالب يستعمل
+   ثم يحذف ما يبقى له أثر.
+   · المتصفح يكتب المراقبة والجداول في القاعدة مباشرة، فتسجّلها **مشغّلات هناك**
+     (`log_paid_usage` — أوامرها في وصف PR السجل): ميزة · رقم (عدد المراقبات أو الجدول) · وقت.
+   · والباقي يمرّ من هنا (`usageLog`): أداة شخصية اشتغلت · تنبيه طارئ وصل · وإشعار
+     من مراقبة فوق حصة المجاني (مراقبات من الفترة المجانية اشتغلت بالدفع).
+   **شرط واحد للكل ونفسه في المشغّلات**: دفعة مدفوعة خلال ٨ أيام (مدة الاسترجاع +
+   يوم) — ما نسجّل لغير من يقدر يطلب استرجاعاً. وهنا قبله: الميزة مدفوعة لصاحبها
+   فعلاً (`isActive` — الفترة المجانية ما هي استخدام مدفوع · والتنبيه `hasPushoverAddon`).
+   مرة كل ١٠ دقائق لكل ميزة، وبلا انتظار: التسجيل ما يأخّر جواباً ولا إشعاراً ولا
+   يفشله. والتفسير بحدود المجاني وقت العرض (`usageOf`) — والحكم لمحمد. */
+const USAGE_DAYS = 8;
+const USAGE_EVERY_MS = 10 * 60 * 1000;
+const REFUND_DAYS = 7;                          /* الشروط §٤: «خلال ٧ أيام من تاريخ الدفع» */
+const USAGE_LAST = new Map();                   /* uid|ميزة ⇒ آخر فحص */
+function usageLog(p, feature, detail) {
+  const uid = String((p && p.id) || '');
+  if (!isUuid(uid)) return;
+  if (/^pushover/.test(feature) ? !hasPushoverAddon(p) : !isActive(p)) return;
+  const now = Date.now(), key = uid + '|' + feature;
+  if (now - (USAGE_LAST.get(key) || 0) < USAGE_EVERY_MS) return;
+  if (USAGE_LAST.size > 5000) USAGE_LAST.clear();
+  USAGE_LAST.set(key, now);
+  const d = /^[a-z0-9_]{1,40}$/.test(String(detail || '')) ? detail : null;
+  const since = new Date(now - USAGE_DAYS * 864e5).toISOString();
+  (async () => {
+    const r = await sb('GET', 'subscriptions', { query: `?user_id=eq.${uid}&status=eq.paid` +
+      `&paid_at=gt.${encodeURIComponent(since)}&select=id&limit=1` });
+    if (!Array.isArray(r) || !r.length) return;
+    await sb('POST', 'paid_usage', { body: { user_id: uid, feature, detail: d }, prefer: 'return=minimal' });
+  })().catch(() => {});
+}
+/* دفعة جديدة: الاستخدام بعدها يُسجَّل فوراً، لا بعد مهلة فحص قبلها */
+function usageFresh(uid) {
+  const pre = String(uid) + '|';
+  for (const k of [...USAGE_LAST.keys()]) if (k.startsWith(pre)) USAGE_LAST.delete(k);
+}
+/* الاستخدام بعد كل دفعة، للوحة: وش استُعمل ومتى، ومتى تنتهي مدة الاسترجاع.
+   مراقبة ٢ من ٢ ما هي استخدام مدفوع — حدود المجاني من اللوحة (PRICING).
+   وتنبيه التجربة من اللوحة (`pushover_test`) يُعرض وحده: أرسلته أنت، ما اختاره الطالب.
+   **null لو السجل ما يُقرأ** (الـSQL ما انشغّل): «ما انسجّل شي» كذبة هنا */
+async function usageOf(orders) {
+  const paid = orders.filter(o => o.status === 'paid' && Date.parse(o.paid_at) && isUuid(String(o.user_id || '')));
+  if (!paid.length) {             /* وبلا طلبات مدفوعة: اللوحة تنبّه لو الجدول ناقص */
+    const t = await sb('GET', 'paid_usage', { query: '?select=id&limit=1' }).catch(() => null);
+    return Array.isArray(t) ? {} : null;
+  }
+  const since = new Date(Math.min(...paid.map(o => Date.parse(o.paid_at)))).toISOString();
+  let rows;
+  try {
+    rows = await sbAll('paid_usage', { strict: true, query:
+      `?user_id=in.(${[...new Set(paid.map(o => `"${o.user_id}"`))].join(',')})` +
+      `&at=gte.${encodeURIComponent(since)}&select=user_id,feature,n,detail,at` });
+  } catch (e) { return null }
+  const out = {};
+  for (const o of paid) {
+    const from = Date.parse(o.paid_at), first = {};
+    const hit = (kind, x) => {
+      if (first[kind] && Date.parse(first[kind].at) <= Date.parse(x.at)) return;
+      first[kind] = { kind, at: x.at, n: x.n == null ? null : Number(x.n), detail: x.detail || null };
+    };
+    for (const x of rows) {
+      if (x.user_id !== o.user_id || !(Date.parse(x.at) >= from)) continue;
+      const n = Number(x.n);
+      if (o.includes_term !== false) {
+        if (x.feature === 'monitor' && n > PRICING.freeMonitors) hit('monitor', x);
+        if (x.feature === 'monitor_course') hit('monitor_course', x);
+        if (x.feature === 'alert') hit('alert', x);
+        if ((x.feature === 'schedule' || x.feature === 'slot') && n > PRICING.freeSchedules) hit('schedule', x);
+        if (x.feature === 'ai') hit('ai', x);
+      }
+      if (o.pushover && (x.feature === 'pushover' || x.feature === 'pushover_test')) hit(x.feature, x);
+    }
+    out[o.id] = { until: new Date(from + REFUND_DAYS * 864e5).toISOString(),
+      used: Object.values(first).sort((a, b) => Date.parse(a.at) - Date.parse(b.at)) };
+  }
+  return out;
+}
+/* ═══ نهاية سجل الاستخدام ═══ */
 
 /* ═══ رصيد تقييم الدكاترة ═══
    الطالب يقيّم N دكاترة ← يرسل طلباً ← تراجعه في اللوحة ← تقبل أو ترفض
@@ -2845,6 +2934,11 @@ async function runMonitorCycle() {
                              : '🔕 أوقف مراقبة هذي الشعبة', 'stop:' + m.id)]]));
       if (r && r.ok) { notified.push(m.id); followups.push(m.id); }
       else OPS.tgFails++;
+      /* إشعار من مراقبة فوق حصة المجاني وصل = ميزة مدفوعة استُعملت (الشروط §٤) —
+         يمسك مراقبات انضافت قبل الدفع (الفترة المجانية) واشتغلت به: مشغّل القاعدة
+         يسجّل الإضافة وحدها فما يشوفها */
+      if (r && r.ok && (m.scope === 'course' || !freeOk.has(m.id)))
+        usageLog(p, 'alert', m.scope === 'course' ? 'course' : 'section');
 
       /* Pushover: لك أنت دائماً، ولأي طالب سجّل مفتاحه في ملفه.
          تيليغرام يُكتم بسهولة، والأولوية 2 تعيد التنبيه حتى يضغط
@@ -2860,7 +2954,9 @@ async function runMonitorCycle() {
           /* الشعبة المغلقة الجديدة خبر لا طارئ */
           closedNew ? { priority: 0, sound: 'pushover', user: poKey || undefined }
                     : { priority: 2, sound: 'siren', retry: 30, expire: 1800,
-                        user: poKey || undefined }).catch(() => {});
+                        user: poKey || undefined })
+          /* وصل لمفتاح الطالب نفسه = «وصول تنبيه طارئ» (الشروط §٤) */
+          .then(sent => { if (sent && poKey) usageLog(p, 'pushover') }).catch(() => {});
       }
       await new Promise(r2 => setTimeout(r2, 700));   // تهدئة بين الدفعات
     });
@@ -4007,7 +4103,7 @@ async function adminPushTest(email) {
   const e = String(email || '').trim().toLowerCase();
   if (!e) return { ok: false, error: 'اكتب البريد' };
   const rows = await sbAll('profiles', {
-    query: `?email=eq.${encodeURIComponent(e)}&select=id,email,pushover_key,telegram_chat_id`
+    query: `?email=eq.${encodeURIComponent(e)}&select=id,email,pushover_key,telegram_chat_id,is_pro,pushover_until`
   }).catch(() => null);
   if (!Array.isArray(rows) || !rows.length)
     return { ok: false, error: 'ما لقيت حساباً بهذا البريد' };
@@ -4022,6 +4118,9 @@ async function adminPushTest(email) {
     'اضغط «تأكيد» في Pushover عشان توقف التكرار.\n\n' +
     'ما صفّر وجوالك صامت؟ فعّل Critical Alerts من إعدادات التطبيق.',
     { priority: 2, sound: 'siren', retry: 30, expire: 300, user: key });
+  /* يثبت إن التفعيل على جواله اشتغل (الشروط §٤ — «ما قدرت تفعّل التنبيه الطارئ»)،
+     ويُعرض وحده في اللوحة: أرسلته أنت، ما اختاره هو */
+  if (sent) usageLog(p, 'pushover_test');
   return {
     ok: !!sent, email: p.email,
     telegram: !!p.telegram_chat_id,
@@ -8159,8 +8258,15 @@ async function aiRunTool(name, args, ctx) {
   /* الحصة — hasAccess وحدها، لا فحص ثانٍ */
   if (t.tier === 'pro' && !ctx.pro) return { error: AI_PRO_ONLY, tier: 'pro' };
 
-  try { return await t.run(ctx, a) }
+  let out;
+  try { out = await t.run(ctx, a) }
   catch (e) { return { error: 'تعذّر تنفيذ الأداة: ' + e.message } }
+  /* أداة شخصية اشتغلت = ميزة مدفوعة استُعملت (الشروط §٤ — الاسترجاع). للسجل وحده:
+     usageLog تقرر (مشترك فعلاً لا الفترة المجانية)، وما تنتظر ولا ترمي.
+     و typeof لأن الاختبارات تقتطع هالمنطقة وحدها وتمرّر usageLog جاسوساً */
+  if (t.tier === 'pro' && !ctx.guest && !(out && out.error) && typeof usageLog === 'function')
+    usageLog(ctx.profile, 'ai', name);
+  return out;
 }
 /* ═══ نهاية أدوات المساعد ═══
    الاختبارات تقتطع ما بين العلامتين وتشغّله — لا تغيّر العلامتين. */

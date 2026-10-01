@@ -15,6 +15,8 @@ const SHOT = process.env.PAY_SHOTS || '';
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) { pass++ } else { fail++; console.log('  ✗ ' + m) } };
+const eq = (a, b, m) => ok(JSON.stringify(a) === JSON.stringify(b),
+  `${m} — توقّعنا ${JSON.stringify(b)} وجانا ${JSON.stringify(a)}`);
 
 const ST = { pay: null, ping: null, pings: 0 };
 const server = http.createServer((req, res) => {
@@ -87,6 +89,71 @@ const server = http.createServer((req, res) => {
   ok(/رصيد 9/.test(t), 'والرصيد المصروف في الطلب');
   ok(await page.$('#payCard img') === null, '**ملاحظة فيها وسم تُهرَّب**');
   ok(/app-api\.edfapay\.com/.test(t), 'واسم الخادم');
+
+  /* ── ٣ب) الاسترجاع (الشروط §٤): استخدم ميزة مدفوعة بعد الدفع؟ — من سجل الاستخدام ──
+     كانت البطاقة ما تقول شي: محمد يقرر الاسترجاع وهو ما يدري هل الطالب استخدم */
+  const inDays = n => new Date(Date.now() + n * 864e5).toISOString();
+  const paidRow = (id, usage) => ({ id, term: '202720', status: 'paid', amount: 1900, credit: 0,
+    gateway: 'edfapay', note: null, at: ago(60), paidAt: ago(60), usage });
+  const useHTML = async id => page.evaluate(i => {
+    const items = [...document.querySelectorAll('#payCard .pay-item')];
+    const it = items.find(x => x.textContent.includes('#' + i + ' '));
+    const u = it && it.querySelector('.pay-use');
+    return u ? u.textContent.replace(/\s+/g, ' ').trim() : null;
+  }, id);
+  t = await card(D({ usageLog: 'ok', recent: [
+    paidRow(201, { until: inDays(6), used: [] }),
+    paidRow(202, { until: inDays(5), used: [
+      { kind: 'monitor', at: ago(50), n: 3, detail: null },
+      { kind: 'schedule', at: ago(40), n: 2, detail: null },
+      { kind: 'ai', at: ago(30), n: null, detail: 'my_day' },
+      { kind: 'pushover', at: ago(20), n: null, detail: null },
+      { kind: 'pushover_test', at: ago(10), n: null, detail: null }] }),
+    paidRow(203, { until: inDays(-1), used: [{ kind: 'monitor_course', at: ago(9000), n: null, detail: null }] }),
+    paidRow(204, { until: inDays(3), used: [{ kind: 'pushover_test', at: ago(5), n: null, detail: null }] }),
+    { id: 205, term: '202720', status: 'pending', amount: 1900, credit: 0, gateway: 'edfapay', note: null, at: ago(2), usage: null }] }));
+  let u = await useHTML(201);
+  ok(/✅ ما انسجّل له استخدام لميزة مدفوعة/.test(u || '') && /الاسترجاع متاح حتى/.test(u || ''),
+     '**مدفوع بلا استخدام: يقولها ومتى تنتهي مدة الاسترجاع** — ' + u);
+  u = await useHTML(202);
+  ok(/⚠️ استخدم ميزة مدفوعة/.test(u || '') && /مراقبة 3 شعب/.test(u || '') && /الجدول 2/.test(u || '') &&
+     /Jadwalik AI \(my_day\)/.test(u || '') && /وصله تنبيه طارئ/.test(u || ''),
+     '**استخدم: كل ميزة باسمها** — ' + u);
+  ok(/وصله تنبيه تجربة منك/.test(u || '') && !/تنبيه تجربة منك[^·]*استخدم/.test(u || ''),
+     'وتنبيه التجربة منك يُذكر وحده');
+  u = await useHTML(203);
+  ok(/مراقبة كل شعب مادة/.test(u || '') && /انتهت مدة الاسترجاع/.test(u || ''),
+     'مدة الاسترجاع خلصت: يقولها — ' + u);
+  u = await useHTML(204);
+  ok(/✅ ما انسجّل له استخدام/.test(u || '') && /وصله تنبيه تجربة منك/.test(u || ''),
+     '**تنبيه التجربة وحده ما يُعتبر استخدام الطالب** — ' + u);
+  eq(await useHTML(205), null, 'والمعلّق بلا سطر استخدام');
+  ok(!/سجل الاستخدام ما يشتغل/.test(t), 'والسجل شغّال: بلا تنبيه');
+  t = await card(D({ usageLog: 'ok', recent: [paidRow(206, { until: inDays(6), used: [
+    { kind: 'ai', at: ago(3), n: null, detail: '<img src=x onerror=alert(1)>' },
+    { kind: '<img src=y>', at: ago(2), n: null, detail: null }] })] }));
+  ok(await page.$('#payCard img') === null, '**اسم أداة أو ميزة فيه وسم يُهرَّب**');
+  t = await card(D({ usageLog: 'missing', recent: [Object.assign(paidRow(207, null))] }));
+  ok(/سجل الاستخدام ما يشتغل/.test(t) && /SQL/.test(t),
+     '**السجل ما يشتغل (الـSQL ما انشغّل): تنبيه — لا «ما استخدم»**');
+  eq(await useHTML(207), null, 'وما يطلع «ما انسجّل له استخدام» لطلب ما نقدر نحكم عليه');
+  if (SHOT) {
+    await card(D({ usageLog: 'ok', counts: { pending: 0, paid: 2, failed: 0 }, paidHalalas: 3800, recent: [
+      paidRow(202, { until: inDays(5), used: [
+        { kind: 'monitor', at: ago(50), n: 3, detail: null },
+        { kind: 'ai', at: ago(30), n: null, detail: 'my_day' },
+        { kind: 'pushover', at: ago(20), n: null, detail: null }] }),
+      paidRow(201, { until: inDays(6), used: [{ kind: 'pushover_test', at: ago(10), n: null, detail: null }] })] }));
+    await page.evaluate(() => {
+      const el = document.getElementById('payCard');
+      document.body.innerHTML = ''; el.style.padding = '16px'; el.style.background = 'var(--bg)';
+      document.body.appendChild(el); document.body.style.display = 'block';
+    });
+    await page.screenshot({ path: path.join(SHOT, 'admin-pay-usage.png'), fullPage: true });
+    await page.reload({ waitUntil: 'load' });
+    await page.waitForFunction(() => typeof window.loadPay === 'function', null, { timeout: 15000 }).catch(() => {});
+    await card(D({}));                    /* الأقسام التالية تضغط أزرار البطاقة */
+  }
 
   /* ── ٤) زر جرّب الاتصال ── */
   ST.ping = { ok: true, ms: 312, host: 'app-api.edfapay.com' };
