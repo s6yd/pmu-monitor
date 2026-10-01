@@ -323,6 +323,47 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: pa
     await shot(page, 'pay-return-failed');
     await ctx.close();
   }
+  /* ── ٧ب) البنك رفض (لقاها محمد): كانت «ننتظر تأكيد الدفع — لو دفعت يتفعّل» بعد ثماني
+     ثوانٍ، وترجع مع كل رجوع من صفحة الدفع. الطلب معلّق والسيرفر يقول «انرفض» وسببه ── */
+  for (const scheme of ['dark', 'light']) {
+    ST.pay = [{ ok: true, id: 81, status: 'pending', declined: 'auth', amount: 1000,
+                url: 'https://checkout.edfapay.com/pay/s-81' }]; ST.pays = 0; ST.posts = [];
+    ST.cancel = { ok: true, id: 81, status: 'failed' };
+    ST.quote = baseQuote();
+    const { page, ctx, errs } = await open(browser, scheme, '?pay=81');
+    await page.waitForTimeout(500);
+    const t = String(await page.textContent('#planSheet').catch(() => '')).replace(/\s+/g, ' ');
+    ok(/البنك رفض الدفع/.test(t) && /رمز التحقق/.test(t) && /ما انخصم منك شي/.test(t),
+       `**البنك رفض: يقولها فوراً وبسببها** (${scheme}) — ` + t.slice(0, 120));
+    ok(!/ننتظر تأكيد الدفع/.test(t) && !/لو دفعت/.test(t), '**لا «ننتظر التأكيد — لو دفعت يتفعّل»** بعد الرفض');
+    eq(ST.pays, 1, 'وما نعيد السؤال ثماني ثوانٍ — الرفض ما فيه شي ننتظره');
+    await page.waitForTimeout(700);
+    eq(await page.evaluate(() => { const g = document.getElementById('guideOverlay'); return !!g && g.classList.contains('open') }),
+       false, '**دليل أول زيارة ما يفتح فوق نتيجة الدفع** (كانا الاثنين فوق بعض)');
+    await shot(page, 'pay-return-declined-' + scheme);
+    if (scheme === 'dark') {
+      await page.click('#planSheet .ps-pay');
+      await page.waitForTimeout(700);
+      eq(ST.posts, [{ id: 81 }], '**«جرّب مرة ثانية»: يلغي الطلب المرفوض** (يرجع رصيده)');
+      const b = await btn(page);
+      ok(b && !b.dis && /ادفع/.test(b.txt), '**ويفتح ورقة الباقات بزر دفع جديد** — ' + JSON.stringify(b));
+    }
+    eq(errs, [], 'بلا أخطاء');
+    await ctx.close();
+  }
+  {
+    /* سبب ما نعرفه: الجملة العامة — ولو الإلغاء لقاها مدفوعة (دفع من الصفحة القديمة): «تم الدفع» */
+    ST.pay = [{ ok: true, id: 82, status: 'pending', declined: 'other' }]; ST.pays = 0;
+    ST.cancel = { ok: true, id: 82, status: 'paid', until: '2027-06-15T20:59:59.000Z' };
+    const { page, ctx } = await open(browser, 'dark', '?pay=82');
+    await page.waitForTimeout(500);
+    const t = String(await page.textContent('#planSheet').catch(() => '')).replace(/\s+/g, ' ');
+    ok(/البنك رفض الدفع/.test(t) && /ببطاقة ثانية/.test(t) && !/رمز التحقق/.test(t), 'سبب غير معروف: الجملة العامة — ' + t.slice(0, 100));
+    await page.click('#planSheet .ps-pay');
+    await page.waitForTimeout(700);
+    ok(/تم الدفع/.test(await page.textContent('#planSheet')), '**والإلغاء لقاها مدفوعة: «تم الدفع» لا ورقة دفع جديدة**');
+    await ctx.close();
+  }
 
   /* ── ٨) ‎?plans=1‎ يفتح الورقة مباشرة ── وقت الفترة المجانية ما فيه زر «الباقات» */
   {

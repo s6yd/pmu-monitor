@@ -6076,16 +6076,19 @@ async function aiSend(){
 /* التذكير: صف في reminders، والسيرفر يرسله على تلقرام في وقته.
    `env` في الصف لأن البيئتين تتشاركان القاعدة — كل بيئة ترسل صفوفها،
    وإلا وصلت الرسالة مرتين أو وصلت من نسخة التجربة. */
-async function addReminderDirect(at,body,crn,env){
+async function addReminderDirect(at,body,crn,env,urgent){
   if(!USER)return false;
   if(!at||!body){ showToast(t('errSave'),'err'); return false }
   /* بلا تلقرام ما يوصله شي — نقولها قبل ما نكتب صفاً ميتاً */
   if(!tgLinked()){ showToast(t('aiRemNoTg'),'warn'); return false }
   const row={user_id:USER.id,env:env||'prod',at,body:String(body).slice(0,200),
              crn:crn?String(crn):null};
+  /* التنبيه الطارئ (قرار محمد): لو طلبه وحده — قبل الـSQL العمود ناقص والعادي يكمل.
+     والسيرفر يتأكد وقت الإرسال إنه يستحقه (الإضافة ومفتاحه)، لا من هنا */
+  if(urgent===true)row.urgent=true;
   const {error}=await sb.from('reminders').insert(row);
   if(error){ showToast(t('errSave'),'err'); return false }
-  showToast(t('aiRemOk'),'ok');
+  showToast(t(row.urgent?'aiRemOkU':'aiRemOk'),'ok');
   return true;
 }
 
@@ -6110,8 +6113,9 @@ const AI_ACTS={
     run:p=>addSessionsDirect(p.sessions)===true,
   },
   reminder:{
-    label:p=>t('aiActRem').replace('%d',p.atLocal||'').replace('%b',p.body||''),
-    run:p=>addReminderDirect(p.at,p.body,p.crn,p.env),
+    label:p=>t('aiActRem').replace('%d',p.atLocal||'').replace('%b',p.body||'')+
+      (p.urgent===true?' '+t('aiRemUrgent'):''),
+    run:p=>addReminderDirect(p.at,p.body,p.crn,p.env,p.urgent===true),
   },
   support:{
     /* نصّها في البطاقة لا في الجواب فوقها: الطالب يراجع **ما يُرسل
@@ -6392,7 +6396,7 @@ let PLANS_OPEN=/[?&]plans=1(?:&|$)/.test(location.search);
    يُقرأ عند تحميل السكربت — poCheckUnlock وinitAuth يمسحان الرابط */
 let PO_GO=/[?&]pushover=1(?:&|$)/.test(location.search);
 /* جا بغرض (رابط الإيصال · زر التفعيل): دليل أول زيارة ما يقتحم فوق البطاقة */
-let GUIDE_HOLD=false;
+let GUIDE_HOLD=!!PAY_BACK;      /* وراجع من صفحة الدفع: النتيجة أهم من الدليل (صورة اختبار الصفحة: الاثنين فوق بعض) */
 function payClosedText(why){
   const ar=LANG==='ar';
   return ({beta:ar?'الدفع يفتح مع نهاية الفترة المجانية':'Checkout opens when the free period ends',
@@ -6492,6 +6496,13 @@ function payShow(status,r){
           (PROFILE&&PROFILE.telegram_chat_id?(ar?' وإيصالك وصلك على تلقرام.':' Your receipt is on Telegram.'):'')],
     pending:['⏳',ar?'ننتظر تأكيد الدفع':'Waiting for payment confirmation',
           ar?'لو دفعت، يتفعّل تلقائياً خلال دقائق ويوصلك خبر على تلقرام.':'If you paid, it activates automatically within minutes.'],
+    /* البنك رفض (لقاها محمد): كانت «ننتظر التأكيد — لو دفعت يتفعّل» بعد الرفض.
+       السبب رمز من السيرفر (r.declined) لا نص البنك */
+    declined:['❌',ar?'البنك رفض الدفع':'The bank declined the payment',
+          (({auth:ar?'ما اكتمل التحقق من البطاقة (رمز التحقق اللي يوصلك من البنك).':'Card verification (the code from your bank) did not complete.',
+            funds:ar?'رصيد البطاقة ما يكفي.':'Insufficient card balance.',
+            expired:ar?'البطاقة منتهية.':'The card has expired.'})[r&&r.declined]||'')+
+          (ar?' ما انخصم منك شي — جرّب مرة ثانية، أو ببطاقة ثانية.':' Nothing was charged — try again, or with another card.')],
     failed:['↩️',ar?'ما تم الدفع':'The payment did not go through',
           ar?'ما انخصم شي، ورصيدك رجع لك لو استعملته.':'Nothing was charged, and any credit you used is back.']
   };
@@ -6501,6 +6512,7 @@ function payShow(status,r){
     ${status==='paid'&&r&&r.pushover?`<button class="ps-pay" onclick="poGo()">🚨 ${ar?'فعّل التنبيه الطارئ الحين':'Set up the urgent alert now'}</button>`:''}
     ${status==='pending'?`<button class="ps-pay" onclick="payReturn(${Number(r&&r.id)||0})">${ar?'حدّث الحالة':'Check again'}</button>`:''}
     ${status==='failed'?`<button class="ps-pay" onclick="openPlans()">${ar?'جرّب مرة ثانية':'Try again'}</button>`:''}
+    ${status==='declined'?`<button class="ps-pay" onclick="payRetry(${Number(r&&r.id)||0})">${ar?'جرّب مرة ثانية':'Try again'}</button>`:''}
     <button class="ps-close" onclick="closePlans()">${status==='paid'?(ar?'تمام':'Done'):(ar?'إغلاق':'Close')}</button></div>`;
   el.hidden=false;
   requestAnimationFrame(()=>el.classList.add('open'));
@@ -6520,15 +6532,24 @@ async function payReturn(given){
   let r=null;
   for(let i=0;i<3;i++){
     r=await meFetch('/api/me/pay?id='+encodeURIComponent(id)).catch(()=>null);
-    if(r&&r.ok&&r.status!=='pending')break;
+    /* البنك رفض: ما فيه شي ننتظره — نقولها فوراً بدل ثماني ثوانٍ ثم «ننتظر» */
+    if(r&&r.ok&&(r.status!=='pending'||r.declined))break;
     await new Promise(z=>setTimeout(z,2500));
   }
   if(!r||!r.ok)return;
   /* الإضافة سارية من الحين — زر التفعيل ما ينتظر تحديث الملف (البطاقة كانت
      بتطلع «أضفه» لمن دفع للتو) */
   if(r.status==='paid'&&r.pushover&&PROFILE)PROFILE=Object.assign({},PROFILE,{pushover_until:r.until});
-  payShow(r.status==='paid'?'paid':r.status==='pending'?'pending':'failed',r);
+  payShow(r.status==='paid'?'paid':r.status!=='pending'?'failed':r.declined?'declined':'pending',r);
   if(r.status==='paid')payRefresh();
+}
+/* «جرّب مرة ثانية» بعد رفض البنك: نلغي الطلب المرفوض (يرجع رصيده) ونفتح ورقة
+   الباقات بطلب جديد — جلسة الدفع القديمة ما نعرف هل تقبل محاولة ثانية. والإلغاء
+   يسأل EdfaPay أول: لو طلعت مدفوعة (دفع من الصفحة القديمة) نقول «تم الدفع» */
+async function payRetry(id){
+  const r=await meFetch('/api/me/pay-cancel','POST',{id}).catch(()=>null);
+  if(r&&r.status==='paid'){ payShow('paid',r); payRefresh(); return }
+  openPlans();
 }
 function closePlans(){
   const el=document.getElementById('planSheet');
@@ -8107,6 +8128,8 @@ aiG4:'متى يبدأ التسجيل؟',
 aiG5:'متى نهائي الفيزياء؟',
 aiG6:'كيف أراقب شعبة مقفلة؟',
 aiActRem:'أذكّرك يوم %d بـ«%b»؟',
+aiRemUrgent:'🚨 ومعه التنبيه الطارئ',
+aiRemOkU:'ضبطت التذكير — بيوصلك على تلقرام ومعه التنبيه الطارئ 🚨',
 aiRemOk:'ضبطت التذكير — بيوصلك على تلقرام',
 aiRemNoTg:'اربط تلقرام أول عشان يوصلك التذكير',
 aiActAdd:'أضيف %c شعبة %s (%n) لجدولك؟',
@@ -8274,6 +8297,8 @@ aiG4:'متى يبدأ التسجيل؟',
 aiG5:'متى نهائي الفيزياء؟',
 aiG6:'كيف أراقب شعبة مقفلة؟',
 aiActRem:'Remind you on %d about "%b"?',
+aiRemUrgent:'🚨 plus the urgent alert',
+aiRemOkU:'Reminder set — on Telegram plus the urgent alert 🚨',
 aiRemOk:'Reminder set — it will reach you on Telegram',
 aiRemNoTg:'Link Telegram first so the reminder can reach you',
 aiActAdd:'Add %c section %s (%n) to your schedule?',

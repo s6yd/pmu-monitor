@@ -505,10 +505,43 @@ async function prodSuite() {
   ord(r.id).status = 'FAILED';
   await hook('JDW-' + r.id, { status: 'Declined' });
   eq(sub(r.id).status, 'pending', '**FAILED: ما نفعّل — والطلب باقٍ يقدر يجرّب ببطاقة ثانية**');
+  /* لقاها محمد: البنك رفض والصفحة تقول «ننتظر تأكيد الدفع — لو دفعت يتفعّل». الرد يقول
+     «انرفض» وسببه رمزاً (لا نص البنك الإنجليزي) — والطلب يبقى معلّقاً */
+  await wait(4100);
+  st = (await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-cr') })).j;
+  eq([st.status, st.declined], ['pending', 'funds'],
+     '**FAILED ومعه «Insufficient balance»: الرد يقول انرفض (الرصيد) — والطلب معلّق**');
+  st = (await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-cr') })).j;
+  eq(st.declined, 'funds', 'وضغطة ثانية خلال ٤ ثوانٍ (ما نسأل EdfaPay) تقولها كذلك');
   sub(r.id).created_at = new Date(Date.now() - 25 * 3600e3).toISOString();
   await wait(4100);
   st = (await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-cr') })).j;
   eq(st.status, 'failed', 'وبعد ٢٤ ساعة: فشل ويرجع الرصيد');
+  ok(!st.declined, 'والفاشل ما يقول «انرفض» — حالته تكفي');
+
+  /* ── ٥د) الحالة عندهم ACTIVE (الصفحة مفتوحة) والإشعار الموقَّع قال Declined: يكفي للرسالة ──
+     رفض التحقق (3-D Secure) — اللي صار مع محمد: «Authentication for sale transaction failed» */
+  /* «Declined» لرقم طلب ما انخلق بعد (تجربة من لوحتهم): ما يعلّم الطلب اللي ياخذ رقمه بعدين */
+  const nextNo = NEXT.subscriptions + 1;
+  await hook('JDW-' + nextNo, { status: 'Declined' });
+  r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-cr'), body: {} })).j;
+  eq(r.id, nextNo, 'الطلب الجديد أخذ نفس الرقم');
+  st = (await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-cr') })).j;
+  eq([st.status, st.declined || null], ['pending', null],
+     '**«Declined» لرقم ما كان موجود ما يعلّم الطلب اللي أخذ رقمه** — وقبل أي رفض: معلّق بلا «انرفض»');
+  /* الإشعار الحقيقي اللي وصل محمد (أول أكتوبر ٢٠٢٦) بحقوله — ورقم البطاقة مقنّع مزيّف:
+     السبب `DO_NOT_PROCEED` = توصية البوابة بعد تحقق 3-D Secure «لا تكمل». كان يطلع «سبب
+     غير معروف» فالجملة العامة، والصحيح رسالة التحقق */
+  await hook('JDW-' + r.id, { amount: 10, cardScheme: 'Mada', cardNumber: '4000 00** **** 0000',
+    cardChannel: 'PHYSICAL_CARD', status: 'Declined', pgDetails: { reason: 'DO_NOT_PROCEED' } });
+  await wait(4100);
+  st = (await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-cr') })).j;
+  eq([st.status, st.declined], ['pending', 'auth'],
+     '**إشعار «Declined» بسبب DO_NOT_PROCEED (التحقق — شكله الحقيقي): الرد يقول انرفض التحقق**');
+  ord(r.id).status = 'PAID';
+  await wait(4100);
+  st = (await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-cr') })).j;
+  eq([st.status, st.declined || null], ['paid', null], '**والرفض ما يمنع دفعة بعده: جرّب ثانية ودفع ⇒ يتفعّل**');
 
   /* ── ٦) رصيد أكبر من السعر: يدفع ١٠ نقداً والرصيد يغطي الباقي ── */
   q = (await call('GET', '/api/me/quote', { tok: tokOf('u-full') })).j;
