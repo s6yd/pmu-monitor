@@ -529,10 +529,15 @@ async function prodSuite() {
   st = (await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-cr') })).j;
   eq([st.status, st.declined || null], ['pending', null],
      '**«Declined» لرقم ما كان موجود ما يعلّم الطلب اللي أخذ رقمه** — وقبل أي رفض: معلّق بلا «انرفض»');
-  await hook('JDW-' + r.id, { status: 'Declined', pgDetails: { reason: 'Authentication for sale transaction failed' } });
+  /* الإشعار الحقيقي اللي وصل محمد (أول أكتوبر ٢٠٢٦) بحقوله — ورقم البطاقة مقنّع مزيّف:
+     السبب `DO_NOT_PROCEED` = توصية البوابة بعد تحقق 3-D Secure «لا تكمل». كان يطلع «سبب
+     غير معروف» فالجملة العامة، والصحيح رسالة التحقق */
+  await hook('JDW-' + r.id, { amount: 10, cardScheme: 'Mada', cardNumber: '4000 00** **** 0000',
+    cardChannel: 'PHYSICAL_CARD', status: 'Declined', pgDetails: { reason: 'DO_NOT_PROCEED' } });
   await wait(4100);
   st = (await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-cr') })).j;
-  eq([st.status, st.declined], ['pending', 'auth'], '**إشعار موقَّع «Declined» (التحقق): الرد يقول انرفض — رمز التحقق**');
+  eq([st.status, st.declined], ['pending', 'auth'],
+     '**إشعار «Declined» بسبب DO_NOT_PROCEED (التحقق — شكله الحقيقي): الرد يقول انرفض التحقق**');
   ord(r.id).status = 'PAID';
   await wait(4100);
   st = (await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-cr') })).j;

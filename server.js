@@ -576,12 +576,14 @@ const epUrlOf = id => { const v = EP_URLS.get(id); return v && Date.now() - v.at
    الحالة (FAILED ومعه reason) أو إشعار موقَّع «Declined». **للرسالة وحدها** — الطلب
    يبقى معلّقاً (FAILED في توثيقهم «يقدر يجرّب ثانية»، ودفعة بعده تتسوّى عادي).
    السبب رمز لا نص البنك الإنجليزي — الصفحة تقوله بلغتها. في الذاكرة: نصف ساعة
-   تكفي رجوعه للموقع */
+   تكفي رجوعه للموقع.
+   و`DO_NOT_PROCEED` (وصل محمد في `pgDetails.reason`) توصية البوابة بعد تحقق 3-D Secure:
+   «لا تكمل» — والحالة عندهم «Authentication for sale transaction failed». تحقق لا غيره */
 const PAY_DECLINE = new Map();
 const PAY_DECLINE_MS = 30 * 60 * 1000;
 function payDeclineSet(id, reason) {
   const r = String(reason || '');
-  const why = /authenticat|3-?d|secure|otp/i.test(r) ? 'auth'
+  const why = /authenticat|3-?d|secure|otp|do_not_proceed/i.test(r) ? 'auth'
     : /insufficient|balance|funds/i.test(r) ? 'funds' : /expir/i.test(r) ? 'expired' : 'other';
   if (PAY_DECLINE.size > 5000) PAY_DECLINE.clear();
   PAY_DECLINE.set(Number(id), { at: Date.now(), why });
