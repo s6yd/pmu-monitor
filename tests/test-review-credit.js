@@ -305,6 +305,12 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
       window.showToast = realToast;
       res.fetchedAfterPost = fetched; res.toastAfterPost = toasts.join(' | ');
       backToDocs(); res.docsAfterPost = txt('docCredit');
+      /* السيرفر ما رد (عطل): المربّع يُرسم مع كل حرف في بحث الدكاترة — ما نعيد الطلب مع كل حرف */
+      let tries = 0;
+      window.meFetch = async (path) => { if (/reviews-credit/.test(path)) tries++; return { ok: false } };
+      REVCREDIT = null; REVCREDIT_AT = 0;
+      for (let i = 0; i < 5; i++) { renderDocs(); await new Promise(z => setTimeout(z, 20)) }
+      res.triesAfterFail = tries;
       MON_STATE.freeBeta = true; renderMyReviews(); res.beta = document.getElementById('myRevList').innerText;
       renderDocs(); res.docsBeta = txt('docCredit');
       res.psBeta = ps().hidden; closePlans();
@@ -343,6 +349,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     ok(/قيد المراجعة/.test(v.psPending.t) && /ينخصم/.test(v.psPending.t), 'ومعلّق: «قيد المراجعة — لو انقبل قبل ما تدفع ينخصم»');
     ok(v.psApproved.hidden, 'وانقبل هذا الترم: ما نكرّر — رصيده محسوب في المجموع');
     ok(!/قيّم 5/.test(v.docsBeta) && v.psBeta, 'وفي الفترة المجانية: لا في الدكاترة ولا في الورقة');
+    eq(v.triesAfterFail, 1, '**العدّاد فشل: خمسة أحرف في البحث = طلب واحد** — لا طلب مع كل حرف');
     ok(errs.length === 0, 'الصفحة بلا أخطاء: ' + errs.slice(0, 2).join(' | '));
     await browser.close(); srv.close();
   }

@@ -4852,6 +4852,8 @@ async function loadMonitorState(){
      احتياطاً. فجدول صار مقفولاً يرجع للأول **الحين** لا بعد أول ضغطة،
      والحساب ينصحّح معه (وإلا البوت يقرأ جدولاً الصفحة ما تعرضه). */
   try{ enforceSlotAndRedraw() }catch(e){}
+  /* مربّع خصم التقييم يبان بعد الفترة المجانية — والطالب ممكن يكون في الدكاترة الحين */
+  try{ if(CUR_TAB==='docs')paintDocCredit() }catch(e){}
   const eb=document.getElementById('envBar');
   if(eb && MON_STATE && MON_STATE.env && MON_STATE.env!=='prod'){
     eb.className='env-bar on';
@@ -6196,15 +6198,17 @@ async function aiNew(){
 /* ═══ رصيد تقييم الدكاترة ═══
    الحالة من السيرفر وحده — هو يعرف الدكاترة المحتسبين من قبل والطلب
    المعلّق، فما نعيد حسابها هنا بطريقة قد تختلف. */
-let REVCREDIT=null, REVCREDIT_AT=0, REVCREDIT_LOADING=null;
+let REVCREDIT=null, REVCREDIT_AT=0, REVCREDIT_LOADING=null, REVCREDIT_FAIL=0;
 function loadRevCredit(force){
   if(!USER)return Promise.resolve(null);
   if(!force&&REVCREDIT&&Date.now()-REVCREDIT_AT<2*60*1000)return Promise.resolve(REVCREDIT);
+  /* فشل قبل شوي: ما نعيد مع كل حرف في بحث الدكاترة (المربّع يُرسم معه) */
+  if(!force&&!REVCREDIT&&Date.now()-REVCREDIT_FAIL<60*1000)return Promise.resolve(null);
   if(REVCREDIT_LOADING)return REVCREDIT_LOADING;
   REVCREDIT_LOADING=meFetch('/api/me/reviews-credit').then(j=>{
-    if(j&&j.ok){ REVCREDIT=j; REVCREDIT_AT=Date.now() }
+    if(j&&j.ok){ REVCREDIT=j; REVCREDIT_AT=Date.now() } else REVCREDIT_FAIL=Date.now();
     return REVCREDIT;
-  }).catch(()=>REVCREDIT).finally(()=>{ REVCREDIT_LOADING=null });
+  }).catch(()=>{ REVCREDIT_FAIL=Date.now(); return REVCREDIT }).finally(()=>{ REVCREDIT_LOADING=null });
   return REVCREDIT_LOADING;
 }
 async function submitRevCredit(btn){
