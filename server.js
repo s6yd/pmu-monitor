@@ -296,6 +296,7 @@ function pushover(title, message, opts) {
                    'Content-Length': Buffer.byteLength(body) }
       }, res => {
         let out = '';
+        res.setEncoding('utf8');
         res.on('data', c => { if (out.length < 400) out += c; });
         res.on('end', () => {
           if (res.statusCode === 200) console.log(`pushover: تم الإرسال ✓ (أولوية ${pr})`);
@@ -345,6 +346,9 @@ function sb(method, table, { query = '', body = null, prefer = '' } = {}) {
       hostname: u.hostname, path: u.pathname + u.search, method, headers
     }, res => {
       let out = '';
+      /* نص لا بايتات: الحرف العربي بايتان، والقطعة ممكن تنقطع في نصّه — فيطلع
+         «م��» لو حوّلنا كل قطعة لوحدها (§٦). StringDecoder يحفظ نصف الحرف للقطعة الجاية */
+      res.setEncoding('utf8');
       res.on('data', c => out += c);
       res.on('end', () => {
         try { resolve(out ? JSON.parse(out) : []); }
@@ -373,6 +377,7 @@ function sbAuthUser(token) {
     const req = https.request({ hostname: u.hostname, path: u.pathname, method: 'GET',
       headers: { apikey: SB_SERVICE_KEY, Authorization: `Bearer ${token}` } }, res => {
       let out = '';
+      res.setEncoding('utf8');
       res.on('data', c => out += c);
       res.on('end', () => {
         let j = null; try { j = JSON.parse(out) } catch (e) {}
@@ -672,6 +677,7 @@ function epReq(method, path, body, host) {
     }
     const req = https.request({ hostname: host || EP_HOST, path, method, headers }, res => {
       let out = '';
+      res.setEncoding('utf8');
       res.on('data', c => { if (out.length < 200000) out += c });
       res.on('end', () => {
         let j = null; try { j = JSON.parse(out) } catch (e) {}
@@ -2108,7 +2114,7 @@ function tg(method, payload) {
         path: `/bot${TELEGRAM_TOKEN}/${method}`,
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) }
-      }, res => { let o=''; res.on('data',c=>o+=c); res.on('end',()=>{ try{resolve(JSON.parse(o))}catch(e){resolve(null)} }); });
+      }, res => { let o=''; res.setEncoding('utf8'); res.on('data',c=>o+=c); res.on('end',()=>{ try{resolve(JSON.parse(o))}catch(e){resolve(null)} }); });
       req.on('error', e => resolve({ ok: false, description: e.message }));
       req.write(data);
       req.end();
@@ -2482,6 +2488,7 @@ function fetchPMUData(termList, collegeList, genderList) {
     }, res => {
       let data = '';
       const cookieStr = (res.headers['set-cookie'] || []).map(c => c.split(';')[0]).join('; ');
+      res.setEncoding('utf8');
       res.on('data', c => data += c);
       res.on('end', () => {
         const m = data.match(/__RequestVerificationToken[^>]+value="([^"]+)"/);
@@ -2502,7 +2509,7 @@ function fetchPMUData(termList, collegeList, genderList) {
             'Referer': 'https://masterschedule.pmu.edu.sa/',
             'Origin': 'https://masterschedule.pmu.edu.sa'
           }
-        }, pr => { let h=''; pr.on('data',c=>h+=c); pr.on('end',()=>resolve(h)); });
+        }, pr => { let h=''; pr.setEncoding('utf8'); pr.on('data',c=>h+=c); pr.on('end',()=>resolve(h)); });
         p.on('error', reject);
         p.setTimeout(20000, () => { p.destroy(); reject(new Error('PMU data timeout')); });
         p.write(postData); p.end();
@@ -3805,6 +3812,7 @@ function isAdmin(req) {
 function readBody(req) {
   return new Promise(resolve => {
     let b = '';
+    req.setEncoding('utf8');   /* سؤال الطالب ورسالته عربي — نص لا بايتات (§٦) */
     req.on('data', c => { b += c; if (b.length > 1e6) b = b.slice(0, 1e6); });
     req.on('end', () => { try { resolve(JSON.parse(b || '{}')); } catch (e) { resolve({}); } });
   });
@@ -4120,6 +4128,7 @@ function sbStorage(method, path, body) {
       { hostname: u.hostname, path: u.pathname + u.search, method, headers },
       r => {
         let d = '';
+        r.setEncoding('utf8');
         r.on('data', c => d += c);
         r.on('end', () => { try { resolve(JSON.parse(d)) } catch (e) { resolve(null) } });
       });
@@ -5306,6 +5315,7 @@ function fetchPage(pathname) {
       }
     }, res => {
       let d = '';
+      res.setEncoding('utf8');
       res.on('data', c => d += c);
       res.on('end', () => resolve(d));
     });
@@ -8684,6 +8694,8 @@ function aiCall(payload) {
                  'content-length': Buffer.byteLength(data) }
     }, res => {
       let out = '';
+      /* جواب النموذج عربي: نص لا بايتات، وإلا انكسر الحرف بين قطعتين (§٦) */
+      res.setEncoding('utf8');
       res.on('data', c => { if (out.length < 2e6) out += c });
       res.on('end', () => {
         let j = null; try { j = JSON.parse(out) } catch (e) {}
@@ -9531,6 +9543,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     let body = '';
+    req.setEncoding('utf8');
     req.on('data', c => body += c);
     req.on('end', async () => {
       try { await handleTelegramUpdate(JSON.parse(body)); } catch (e) {}
