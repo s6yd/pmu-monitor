@@ -606,6 +606,14 @@ display:flex;align-items:center;justify-content:center}
 .rc-state{font-size:12.5px;line-height:1.7;color:var(--text2);margin-top:4px}
 .rc-state.good{color:var(--open)}
 .rc-state.bad{color:var(--close)}
+/* خصم التقييم وين يقيّم ووين يدفع — لا في الإعدادات وحدها */
+.rc-line{font-size:12.5px;color:var(--text2);line-height:1.6;text-align:center;margin:8px 0 12px}
+.rc-line:empty{display:none}
+.ps-rc{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12.5px;
+  line-height:1.6;color:var(--text2);border:1px dashed var(--accent);border-radius:11px;
+  padding:8px 10px;margin:0 0 12px;background:rgba(77,124,254,.05)}
+.ps-rc[hidden]{display:none}
+.ps-rc .btn-sm{flex:none;white-space:nowrap}
 .mon-paused{opacity:.6}
 .btn-bell.all{font-size:13px}
 .btn-bell.all.on{border-color:var(--accent);color:var(--accent);
@@ -1878,6 +1886,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
         <span id="docBtnText" data-i18n="docRefresh">🔄 حدّث القائمة</span>
       </button>
     </div>
+    <div id="docCredit"></div>
     <div class="pick-hint" id="docPickHint"></div>
     <div id="docRows"></div>
   </div>
@@ -6208,15 +6217,14 @@ async function submitRevCredit(btn){
     showToast((r&&r.error)||(ar?'ما انرسل — جرّب مرة ثانية':'Not sent — try again'),'warn');
   }
   await loadRevCredit(true);
-  renderMyReviews();
-  try{ renderAcct(ar) }catch(e){}
+  revCreditPaint();
 }
 /* المربّع أعلى «تقييماتي» — يظهر بعد الفترة المجانية فقط */
 function revCreditHTML(){
   const ar=LANG==='ar';
   if(!USER||freeBeta())return '';
   const C=REVCREDIT;
-  if(!C){ loadRevCredit().then(x=>{ if(x)renderMyReviews() }); return '' }
+  if(!C){ loadRevCredit().then(x=>{ if(x)revCreditPaint() }); return '' }
   const n=C.needed||5, have=Math.min(C.eligibleCount||0,n), money=sarTxt(C.creditHalalas||0);
   const bar=`<div class="rc-bar"><div style="width:${Math.round(have/n*100)}%"></div></div>`;
   let body='';
@@ -6236,6 +6244,73 @@ function revCreditHTML(){
       <span dir="ltr">${have}/${n}</span></div>
     ${bar}${body}</div>`;
 }
+/* وين يبان خصم التقييم — قرار محمد (٣ أكتوبر ٢٠٢٦): كان في ⚙️ ← «تقييماتي» وحده
+   تحت، فما يدري عنه أحد. صار وين يقيّم (أعلى قائمة الدكاترة · تحت «قيّم هذا الدكتور»
+   · رسالة بعد ما ينشر) ووين يدفع (ورقة الباقات). الحالة من السيرفر وحده (REVCREDIT)،
+   والرسم من مكان واحد: أي تحديث للحالة يمرّ على الأماكن كلها */
+function revCreditPaint(){
+  try{ renderMyReviews() }catch(e){}
+  try{ paintDocCredit() }catch(e){}
+  try{ paintDocLine() }catch(e){}
+  try{ psRcPaint() }catch(e){}
+  try{ if(document.getElementById('proAcct'))renderAcct(LANG==='ar') }catch(e){}
+}
+function paintDocCredit(){
+  const el=document.getElementById('docCredit');
+  if(el)el.innerHTML=revCreditHTML();
+}
+/* المرحلة اللي فيها التقييم يقرّبه فعلاً — وإلا ما نقول شي */
+function revCreditGoing(C){
+  if(!USER||freeBeta()||!C||C.pending||C.approvedThisTerm)return null;
+  const n=C.needed||5;
+  return { n, have:Math.min(C.eligibleCount||0,n), money:sarTxt(C.creditHalalas||0) };
+}
+/* سطر تحت «⭐ قيّم هذا الدكتور» — دكتور قيّمه قبل ما يزيد العدّاد فما نقوله له */
+function paintDocLine(){
+  const el=document.getElementById('docRcLine');
+  if(!el||!currentDoc)return;
+  const mine=USER&&reviews.some(r=>r.instructor_name===currentDoc&&r.user_id===USER.id);
+  const g=revCreditGoing(REVCREDIT), ar=LANG==='ar';
+  el.innerHTML=(mine||!g||g.have>=g.n)?'':`🎁 ${ar
+    ?`كل دكتور تقيّمه يقرّبك من ${g.money} ريال رصيد`
+    :`Each instructor you review gets you closer to ${g.money} SAR credit`} · <span dir="ltr">${g.have}/${g.n}</span>`;
+}
+/* بعد ما ينشر: وين وصل — والعدّاد من السيرفر من جديد (التقييم الجديد يُحسب له) */
+function revCreditToast(C){
+  const g=revCreditGoing(C), ar=LANG==='ar';
+  if(!g)return '';
+  return g.have>=g.n
+    ?(ar?`✅ نُشر تقييمك — كمّلت ${g.n} 🎁 أرسلها للمراجعة وتاخذ ${g.money} ريال`
+        :`✅ Posted — that's ${g.n}! Send them for review to get ${g.money} SAR`)
+    :(ar?`✅ نُشر تقييمك — باقي ${g.n-g.have} وتاخذ ${g.money} ريال رصيد`
+        :`✅ Posted — ${g.n-g.have} more for ${g.money} SAR credit`);
+}
+/* في ورقة الباقات قبل ما يدفع — بصدق: الرصيد بعد مراجعتنا لا فوري */
+function psRcPaint(){
+  const el=document.getElementById('psRc');
+  if(!el)return;
+  const ar=LANG==='ar', C=REVCREDIT;
+  if(!USER||freeBeta()){ el.hidden=true; return }
+  if(!C){ el.hidden=true; loadRevCredit().then(x=>{ if(x)psRcPaint() }); return }
+  /* انقبل هذا الترم: رصيده محسوب في المجموع فوق أصلاً */
+  if(C.approvedThisTerm){ el.hidden=true; el.innerHTML=''; return }
+  const n=C.needed||5, have=Math.min(C.eligibleCount||0,n), money=sarTxt(C.creditHalalas||0);
+  let t, b='';
+  if(C.pending) t=ar?`⏳ رصيد تقييماتك (${money} ريال) قيد المراجعة — لو انقبل قبل ما تدفع ينخصم`
+                    :`⏳ Your ${money} SAR review credit is under review — if approved before you pay, it's deducted`;
+  else if(have>=n){
+    t=ar?`🎁 عندك ${n} تقييمات — أرسلها للمراجعة وينزل لك ${money} ريال رصيد`
+        :`🎁 You have ${n} reviews — send them for review to get ${money} SAR credit`;
+    b=`<button class="btn-sm" onclick="event.stopPropagation();submitRevCredit(this)">${ar?'أرسلها':'Send'}</button>`;
+  }else{
+    t=ar?`🎁 خصم ${money} ريال: قيّم ${n} دكاترة (عندك <span dir="ltr">${have}/${n}</span>) — ينزل رصيداً بعد مراجعتنا`
+        :`🎁 ${money} SAR off: review ${n} instructors (you have <span dir="ltr">${have}/${n}</span>) — credited after we check`;
+    b=`<button class="btn-sm" onclick="event.stopPropagation();plansToDocs()">${ar?'قيّم الحين':'Review now'}</button>`;
+  }
+  el.innerHTML=`<span>${t}</span>${b}`;
+  el.hidden=false;
+}
+function plansToDocs(){ closePlans(); switchTab('docs'); if(currentDoc)backToDocs() }
 function loadAccount(force){
   if(!USER)return Promise.resolve(null);
   if(!force&&ACCOUNT&&Date.now()-ACCOUNT_AT<5*60*1000)return Promise.resolve(ACCOUNT);
@@ -6304,6 +6379,7 @@ function openPlans(reason){
       <span dir="ltr">+${sarTxt(P.po)}</span></label>`:''}
     <div class="ps-lines" id="psLines"></div>
     <div class="ps-total"><span>${ar?'الإجمالي':'Total'}</span><b id="psTotal"></b></div>
+    <div class="ps-rc" id="psRc" hidden></div>
     <div class="pay-phone" id="psPhoneBox" hidden>
       <label for="psPhone">${ar?'رقم جوالك — تطلبه بوابة الدفع':'Your mobile — the payment gateway needs it'}</label>
       <input id="psPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="05XXXXXXXX">
@@ -6320,6 +6396,7 @@ function openPlans(reason){
     <button class="ps-close" onclick="closePlans()">${ar?'مو الحين':'Not now'}</button>
   </div>`;
   plansTotal();
+  psRcPaint();
   el.hidden=false;
   requestAnimationFrame(()=>el.classList.add('open'));
 }
@@ -7676,6 +7753,7 @@ function renderPickHints(){
 
 function renderDocs(){
   const ar=LANG==='ar';
+  paintDocCredit();
   const q=norm(document.getElementById('docFilter').value);
   let list=instructors.filter(n=>!q||norm(n).includes(q));
 
@@ -7834,6 +7912,8 @@ function renderDocDetail(){
              :(ar?'⭐ قيّم هذا الدكتور — بشكل مجهول':'⭐ Rate this instructor — anonymously')}
     </button>
 
+    <div class="rc-line" id="docRcLine"></div>
+
     <button class="btn-doc-courses" onclick="showDocCourses()">
       ${ar?'🔍 شوف مواده هذا الترم':'🔍 See their courses this term'}
     </button>
@@ -7866,6 +7946,9 @@ function renderDocDetail(){
         </div>`).join(''))
       : `<div style="font-size:12.5px;color:var(--text3);padding:8px 0">${
           ar?'ما كتب أحد رأيه بعد.':'No written reviews yet.'}</div>`}</div>`;
+  /* سطر خصم التقييم: في عنصره وحده — إعادة رسم الصفحة كلها تقفل نموذج التقييم لو مفتوح */
+  paintDocLine();
+  if(!REVCREDIT&&USER&&!freeBeta())loadRevCredit().then(x=>{ if(x)revCreditPaint() });
 }
 
 /* بيانات الجامعة تجي وفيها كيانات HTML مرمَّزة أصلاً («Think&#x27;g»)،
@@ -7964,7 +8047,10 @@ async function submitReview(){
   await loadReviews();
   document.getElementById('rateForm').style.display='none';
   renderDocDetail();renderMyReviews();
-  showToast(ar?'✅ نُشر تقييمك':'✅ Review posted');
+  /* العدّاد من السيرفر من جديد — التقييم الجديد يُحسب له، والرسالة تقول وين وصل */
+  const C=await loadRevCredit(true).catch(()=>null);
+  revCreditPaint();
+  showToast(revCreditToast(C)||(ar?'✅ نُشر تقييمك':'✅ Review posted'));
 }
 
 async function deleteReview(){
@@ -7976,6 +8062,8 @@ async function deleteReview(){
   document.getElementById('rateForm').style.display='none';
   renderDocDetail();renderMyReviews();
   showToast(ar?'حذفت تقييمك':'Review deleted');
+  await loadRevCredit(true).catch(()=>null);
+  revCreditPaint();
 }
 
 /* شارة تقييم الدكتور في نتائج البحث */
