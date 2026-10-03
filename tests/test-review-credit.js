@@ -12,6 +12,8 @@ const ADMIN = path.resolve(process.argv[4] || path.join(__dirname, '..', 'admin.
 let pass = 0, fail = 0;
 const out = [];
 const ok = (c, m) => { if (c) { pass++ } else { fail++; out.push('  ✗ ' + m) } };
+const eq = (a, b, m) => ok(JSON.stringify(a) === JSON.stringify(b),
+  `${m} — توقّعنا ${JSON.stringify(b)} وجانا ${JSON.stringify(a)}`);
 
 const TOK = { 'tok-u1-aaaaaaaaaaaaaaaaaaaa': 'u1', 'tok-u2-bbbbbbbbbbbbbbbbbbbb': 'u2' };
 const U1 = 'tok-u1-aaaaaaaaaaaaaaaaaaaa';
@@ -235,7 +237,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     p.on('pageerror', e => errs.push(String(e)));
     await p.route('**/fonts.googleapis.com/**', z => z.fulfill({ status: 200, contentType: 'text/css', body: '' }));
     await p.route('**/cdn.jsdelivr.net/**', z => z.fulfill({ status: 200, contentType: 'application/javascript',
-      body: 'window.supabase={createClient:()=>({auth:{getSession:async()=>({data:{session:null}}),onAuthStateChange:()=>({data:{subscription:{unsubscribe(){}}}})},from:()=>({select(){return this},eq(){return this},order(){return this},limit(){return this},then:(f)=>f({data:[],error:null})}),channel:()=>({on(){return this},subscribe(){return this}}),storage:{from:()=>({list:async()=>({data:[],error:null})})}})};' }));
+      body: 'window.supabase={createClient:()=>({auth:{getSession:async()=>({data:{session:null}}),onAuthStateChange:()=>({data:{subscription:{unsubscribe(){}}}})},from:()=>({select(){return this},eq(){return this},order(){return this},limit(){return this},upsert:async()=>({error:null}),delete(){return this},then:(f)=>f({data:[],error:null})}),channel:()=>({on(){return this},subscribe(){return this}}),storage:{from:()=>({list:async()=>({data:[],error:null})})}})};' }));
     await p.goto(`http://127.0.0.1:${srv.address().port}/`, { waitUntil: 'load' });
     await p.waitForFunction(() => typeof revCreditHTML === 'function', null, { timeout: 15000 });
     const v = await p.evaluate(async () => {
@@ -263,7 +265,55 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
       ACCOUNT = { ok: true, credit: { available: 0 }, invite: { code: 'MHD7K2', paidFriends: 0 } }; ACCOUNT_AT = Date.now();
       REVCREDIT = Object.assign({}, base, { eligibleCount: 3 }); REVCREDIT_AT = Date.now();
       renderSettings(); res.card = document.getElementById('proAcct').innerText;
+      /* ── قرار محمد (٣ أكتوبر): خصم التقييم كان في ⚙️ ← «تقييماتي» وحده — صار وين
+         يقيّم ووين يدفع ── */
+      /* قراءات آمنة: على الصفحة القديمة يطلع ✗ لكل فحص بدل ما ينهار الاختبار */
+      const txt = id => { const e = document.getElementById(id); return e ? e.innerText : '' };
+      const toastOf = C => typeof revCreditToast === 'function' ? revCreditToast(C) : '';
+      window.meFetch = async (path) => /reviews-credit/.test(path) ? REVCREDIT : { ok: false };
+      REVCREDIT = Object.assign({}, base, { eligibleCount: 2 }); REVCREDIT_AT = Date.now();
+      instructors = ['Dr A', 'Dr B'];
+      switchTab('docs'); renderDocs();
+      res.docs = txt('docCredit');
+      openDoc('Dr B'); res.lineB = txt('docRcLine');
+      openDoc('Dr A'); res.lineA = txt('docRcLine');   /* قيّمه قبل */
+      backToDocs();
+      const ps = () => { openPlans('compare'); const e = document.getElementById('psRc');
+                         return e ? { t: e.innerText, hidden: e.hidden } : { t: '', hidden: true } };
+      switchTab('search');                  /* من تبويب ثاني: الزر لازم يودّيه للدكاترة فعلاً */
+      res.ps = ps();
+      const go = document.querySelector('#psRc button'); if (go) go.click();
+      res.tabAfter = CUR_TAB;
+      REVCREDIT = Object.assign({}, base, { eligibleCount: 5 }); res.ps5 = ps();
+      REVCREDIT = Object.assign({}, base, { eligibleCount: 0, pending: true }); res.psPending = ps();
+      REVCREDIT = Object.assign({}, base, { eligibleCount: 0, approvedThisTerm: true }); res.psApproved = ps();
+      closePlans();
+      res.toast3 = toastOf(Object.assign({}, base, { eligibleCount: 3 }));
+      res.toast5 = toastOf(Object.assign({}, base, { eligibleCount: 5 }));
+      res.toastPending = toastOf(Object.assign({}, base, { eligibleCount: 3, pending: true }));
+      /* العدّاد من السيرفر بعد ما ينشر — ما يبقى على الرقم القديم */
+      REVCREDIT = Object.assign({}, base, { eligibleCount: 2 }); REVCREDIT_AT = Date.now();
+      let fetched = 0;
+      window.meFetch = async (path) => { if (/reviews-credit/.test(path)) { fetched++;
+        return Object.assign({}, base, { eligibleCount: 3 }) } return { ok: false } };
+      window.loadReviews = async () => { reviews.push({ user_id: 'u1', instructor_name: 'Dr B', rating: 5,
+        created_at: '2026-10-03' }) };
+      const toasts = []; const realToast = window.showToast;
+      window.showToast = (m) => toasts.push(m);
+      openDoc('Dr B'); openRatingForm(); formStars = 5;
+      await submitReview();
+      window.showToast = realToast;
+      res.fetchedAfterPost = fetched; res.toastAfterPost = toasts.join(' | ');
+      backToDocs(); res.docsAfterPost = txt('docCredit');
+      /* السيرفر ما رد (عطل): المربّع يُرسم مع كل حرف في بحث الدكاترة — ما نعيد الطلب مع كل حرف */
+      let tries = 0;
+      window.meFetch = async (path) => { if (/reviews-credit/.test(path)) tries++; return { ok: false } };
+      REVCREDIT = null; REVCREDIT_AT = 0;
+      for (let i = 0; i < 5; i++) { renderDocs(); await new Promise(z => setTimeout(z, 20)) }
+      res.triesAfterFail = tries;
       MON_STATE.freeBeta = true; renderMyReviews(); res.beta = document.getElementById('myRevList').innerText;
+      renderDocs(); res.docsBeta = txt('docCredit');
+      res.psBeta = ps().hidden; closePlans();
       return res;
     });
     ok(/قيّم 5 دكاترة واكسب 5 ريال/.test(v.three) && /3\/5/.test(v.three) && /باقي 2/.test(v.three),
@@ -277,6 +327,29 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
        /قيد المراجعة/.test(v.after), 'الإرسال: POST ثم تحديث الحالة من السيرفر — ' + JSON.stringify(v.asked));
     ok(/تقييم الدكاترة/.test(v.card) && /3\/5/.test(v.card), 'وبطاقة «اشتراكي» فيها سطر التقييم');
     ok(!/قيّم 5/.test(v.beta), 'في الفترة المجانية: لا مربّع رصيد');
+    /* وين يقيّم */
+    ok(/قيّم 5 دكاترة واكسب 5 ريال/.test(v.docs) && /2\/5/.test(v.docs),
+       '**تبويب الدكاترة: مربّع «قيّم ٥ واكسب ٥ ريال · 2/5» فوق القائمة** — ' + v.docs.slice(0, 80));
+    ok(/يقرّبك من 5 ريال/.test(v.lineB) && /2\/5/.test(v.lineB),
+       '**صفحة دكتور ما قيّمه: سطر «كل دكتور تقيّمه يقرّبك» تحت زر التقييم** — ' + v.lineB);
+    ok(v.lineA === '', 'ودكتور قيّمه قبل: بلا سطر — تعديله ما يزيد العدّاد');
+    ok(v.fetchedAfterPost >= 1, '**بعد ما ينشر: العدّاد من السيرفر من جديد**');
+    ok(/باقي 2 وتاخذ 5 ريال/.test(v.toastAfterPost),
+       '**ورسالة النشر تقول وين وصل: «باقي 2 وتاخذ 5 ريال»** — ' + v.toastAfterPost);
+    ok(/3\/5/.test(v.docsAfterPost), 'والمربّع فوق القائمة صار 3/5 — ' + v.docsAfterPost.slice(0, 60));
+    ok(/باقي 2/.test(v.toast3) && /كمّلت 5/.test(v.toast5) && /أرسلها/.test(v.toast5),
+       'الرسالة: باقي كم · وعند الخامس «كمّلت — أرسلها»');
+    eq(v.toastPending, '', 'وطلب معلّق: رسالة النشر العادية — ما نعد بشي');
+    /* ووين يدفع */
+    ok(!v.ps.hidden && /خصم 5 ريال/.test(v.ps.t) && /قيّم 5 دكاترة/.test(v.ps.t) && /2\/5/.test(v.ps.t),
+       '**ورقة الباقات: «خصم ٥ ريال: قيّم ٥ دكاترة (عندك 2/5)»** — ' + v.ps.t);
+    ok(/بعد مراجعتنا/.test(v.ps.t), '**وبصدق: الرصيد بعد مراجعتنا لا فوري**');
+    eq(v.tabAfter, 'docs', '**وزر «قيّم الحين» يقفل الورقة ويفتح تبويب الدكاترة**');
+    ok(/أرسلها للمراجعة/.test(v.ps5.t) && /أرسلها/.test(v.ps5.t), 'وعنده الخمسة: «أرسلها للمراجعة» من الورقة');
+    ok(/قيد المراجعة/.test(v.psPending.t) && /ينخصم/.test(v.psPending.t), 'ومعلّق: «قيد المراجعة — لو انقبل قبل ما تدفع ينخصم»');
+    ok(v.psApproved.hidden, 'وانقبل هذا الترم: ما نكرّر — رصيده محسوب في المجموع');
+    ok(!/قيّم 5/.test(v.docsBeta) && v.psBeta, 'وفي الفترة المجانية: لا في الدكاترة ولا في الورقة');
+    eq(v.triesAfterFail, 1, '**العدّاد فشل: خمسة أحرف في البحث = طلب واحد** — لا طلب مع كل حرف');
     ok(errs.length === 0, 'الصفحة بلا أخطاء: ' + errs.slice(0, 2).join(' | '));
     await browser.close(); srv.close();
   }

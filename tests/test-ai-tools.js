@@ -186,6 +186,7 @@ const DB = {
 };
 let SB_CALLS = [];
 let USAGE = [];         /* سجل الاستخدام: جاسوس مكان usageLog (الشروط §٤) */
+let PO_ON = true;        /* pushoverOn: الإضافة معروضة للبيع؟ */
 let PO_READY = 'off';   /* pushoverReady الحقيقية خارج المنطقة — نتحكّم بجوابها */
 let PULLED = [];        /* كل نداء يسحب من الجامعة يُسجَّل هنا */
 
@@ -221,6 +222,12 @@ const ctxObj = {
     return { total: rooms.length, rooms: rooms.slice(0, o.limit || 5) };
   },
   hasAccess: p => !!(p && p.is_pro),
+  /* أسعار غير الافتراضية عمداً: الرفض وأداة الباقات تقرأ من PRICING (اللوحة) لا من نص */
+  PRICING: { termHalalas: 2400, pushoverHalalas: 1600, friendDiscountHalalas: 400,
+    referrerCreditHalalas: 600, referralHoldDays: 7, reviewsCreditHalalas: 700, reviewsNeeded: 4,
+    creditTerms: 2, lateDays: 3, freeMonitors: 2, freeSchedules: 1, minCashHalalas: 1100 },
+  FREE_BETA: false,
+  pushoverOn: () => PO_ON,
   /* قرار «مشترك فعلاً؟» والسقف داخل usageLog نفسها — مختبَر في test-paid-usage.
      هنا: مين تنادي aiRunTool وبأي شي */
   usageLog: (p, f, d) => USAGE.push([p && p.id, f, d]),
@@ -559,9 +566,77 @@ function fakeModel(ctx) {
          `**طلبه وهو ${st}: التذكير يكمل على تلقرام ونقول ليش** — ` + (u.note || '').slice(0, 90));
     }
     PO_READY = 'off';
+    /* وين يأكّده ووين يوصله — من مكانه الفعلي (لقاها محمد في البوت: قال المساعد «روح
+       أكّده بالموقع، وتأكد إن تيليغرام مربوط» والزر تحت ردّه، وهو مربوط أصلاً) */
+    const rem = { date: soon, time: '20:00', body: 'أسايمنت الأسسمنت لاب' };
+    const linkedP = Object.assign({}, PRO.profile, { telegram_chat_id: '7001' });
+    const viaTg = await aiRunTool('propose_reminder', rem,
+      Object.assign({}, PRO, { profile: linkedP, tg: true }));
+    ok(/✅ ثبّت التذكير/.test(viaTg.note || '') && /هنا في تلقرام/.test(viaTg.note || ''),
+       '**من البوت: يضغط «✅ ثبّت التذكير» تحت الرد، ويوصله هنا** — ' + (viaTg.note || ''));
+    ok(!/مربوط/.test(viaTg.note || ''), '**ومن البوت ما نقول «يحتاج تلقرام مربوط» — هو يكلّمنا منه**');
+    const siteLinked = await aiRunTool('propose_reminder', rem,
+      Object.assign({}, PRO, { profile: linkedP }));
+    ok(/«تأكيد»/.test(siteLinked.note || '') && !/مربوط/.test(siteLinked.note || ''),
+       'من الموقع وهو مربوط: «تأكيد» ويوصله — بلا شرط ربط ما يخصّه — ' + (siteLinked.note || ''));
+    const siteFree = await call('propose_reminder', JSON.stringify(rem));
+    ok(/مو مربوط/.test(siteFree.note || '') && /إشعارات تيليغرام/.test(siteFree.note || ''),
+       '**ومن الموقع بلا ربط: نقول له إنه ما بيوصله ووين يربطه** — ' + (siteFree.note || ''));
     /* ولا كتابة */
     ok(SB_CALLS.slice(n0).every(c => c.method === 'GET'),
        '**ولا كتابة واحدة — اقتراح فقط**');
+  }
+
+  /* ══════ المجاني يطلب ميزة مشتركين — قرار محمد (٣ أكتوبر ٢٠٢٦: «حسّن ردود البوت في
+     المجاني واذكر خصم تقييم الدكاترة»). كانت «تحتاج اشتراك» وبس: طالب سأل «كم باقي
+     واخلص؟» جاه «فعّل الاشتراك من الموقع» ووقف — وخطته مجانية في «خطتي» ══════ */
+  {
+    const gf = await callFree('graduation_forecast', '{}');
+    ok(/اشتراك/.test(gf.error || '') && gf.tier === 'pro', 'الرفض باقٍ — التوقّع للمشتركين');
+    ok(/«📋 خطتي»/.test(gf.freeAt || ''), '**ويقول وين يلقى الباقي مجاناً: «📋 خطتي»** — ' + gf.freeAt);
+    ok(/24 ريال/.test(gf.sub || '') && /الباقات/.test(gf.sub || ''),
+       '**وسعر الاشتراك من اللوحة (24 هنا لا 19 مكتوبة) ومن وين** — ' + gf.sub);
+    ok(/قيّم 4 دكاترة/.test(gf.discount || '') && /7 ريال رصيد/.test(gf.discount || '')
+       && /مرة كل ترم/.test(gf.discount || ''),
+       '**وخصم تقييم الدكاترة بأرقام اللوحة وقاعدته** — ' + gf.discount);
+    ok(/«☀️ اليوم»/.test((await callFree('my_day', '{"day":"M"}')).freeAt || ''),
+       'ومحاضرات يومه: «☀️ اليوم»');
+    const rem = await callFree('propose_reminder', '{"date":"2030-01-01","time":"10:00","body":"x"}');
+    eq(rem.freeAt, null, 'والتذكير ما له مكان مجاني — ما نخترع واحداً');
+    /* من البوت: رابط يفتح الباقات مباشرة */
+    const gtg = await aiRunTool('graduation_forecast', {}, Object.assign({}, FREE, { tg: true }));
+    ok(/jadwalik\.com\/\?plans=1/.test(gtg.sub || ''), '**من البوت: رابط الباقات مباشرة** — ' + gtg.sub);
+    /* حالة المادة له: مجاناً في «خطتي» */
+    const ci = await callFree('course_info', '{"code":"MATH 1422"}');
+    ok(ci.known && /«📋 خطتي»/.test(ci.note || ''), 'وحالة المادة له: مجاناً في «📋 خطتي» — ' + ci.note);
+  }
+
+  /* ══════ أداة الباقات — «كم الاشتراك؟ فيه خصم؟» كانت بلا أداة فيقول «ما أعرف» ══════ */
+  {
+    const pi = await callFree('plans_info', '{}');
+    ok(/24 ريال/.test(pi.term || '') && /Jadwalik AI/.test(pi.term || ''),
+       '**سعر الترم ووش فيه — من اللوحة** — ' + pi.term);
+    ok(/مراقبتا شعبة/.test(pi.free || '') && /جدول واحد/.test(pi.free || ''), 'والمجاني بحدوده');
+    ok(/قيّم 4 دكاترة/.test(pi.reviewsDiscount || '') && /7 ريال/.test(pi.reviewsDiscount || ''),
+       '**وخصم تقييم الدكاترة**');
+    ok(/4 ريال/.test(pi.friendDiscount || '') && /6 ريال/.test(pi.friendDiscount || ''),
+       'وخصم الصديق ورصيد الداعي');
+    ok(/11 ريال/.test(pi.minCash || ''), 'وأقل دفع نقدي');
+    ok(/16 ريال/.test(pi.urgent || ''), 'والتنبيه الطارئ وهو معروض');
+    eq(pi.where, '⚙️ الإعدادات ← «الباقات»', 'ومن وين يشترك');
+    eq(pi.freePeriod, null, 'وبلا فترة مجانية ما نقول إنها شغّالة');
+    PO_ON = false;
+    eq((await callFree('plans_info', '{}')).urgent, null,
+       '**الإضافة مطفأة: ما نذكرها** — ما نبيع إضافة ما تنفعّل (§٣)');
+    PO_ON = true;
+    ctxObj.FREE_BETA = true;
+    ok(/الفترة المجانية/.test((await callFree('plans_info', '{}')).freePeriod || ''),
+       'والفترة المجانية شغّالة: يقولها — الدفع ما فتح بعد');
+    ctxObj.FREE_BETA = false;
+    /* للزائر كذلك — الأسعار عامة (صفحة «عن جدولك») */
+    const pg = await aiRunTool('plans_info', {},
+      { userId: null, profile: null, pro: false, guest: true, plan: null });
+    ok(!pg.error && /24 ريال/.test(pg.term || ''), '**والزائر يسألها بلا دخول** — الأسعار عامة');
   }
 
   /* ══════ إضافة شعبة ومراقبة — من الكاش ══════ */
@@ -634,6 +709,12 @@ function fakeModel(ctx) {
       eq(cx.env, 'prod', 'والبيئة — dev وprod يتشاركان القاعدة');
       ok(/تخصصك/.test(SP.note || ''),
          'ويقول للطالب وش يروح معها قبل ما يضغط');
+      /* والزر باسمه في مكانه: الموقع «تأكيد» · البوت «📩 أرسلها لفريق جدولك» */
+      ok(/«تأكيد»/.test(sup.note || ''), 'من الموقع: يضغط «تأكيد»');
+      const supTg = await aiRunTool('propose_support_ticket', { text: 'تبويب خطتي ما يفتح من الجوال' },
+        Object.assign({}, PRO, { tg: true }));
+      ok(/أرسلها لفريق جدولك/.test(supTg.note || '') && !/«تأكيد»/.test(supTg.note || ''),
+         '**من البوت: الزر باسمه «📩 أرسلها لفريق جدولك»** — ' + (supTg.note || ''));
       /* **ولا كتابة**: الصفحة ترسلها بعد التأكيد */
       ok(SB_CALLS.slice(n1).every(c => c.method === 'GET'),
          '**ولا كتابة — اقتراح فقط**');
