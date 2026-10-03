@@ -15,6 +15,7 @@
 
    node tests/test-ai-chat.js [server.js] */
 const fs = require('fs');
+const { Readable } = require('stream');
 const path = require('path');
 const vm = require('vm');
 
@@ -113,8 +114,11 @@ const fakeHttps = {
         SENT.push({ opts, payload });
         const r = SCRIPT(payload, SENT.length - 1) || { status: 200, body: reply('تمام') };
         const text = JSON.stringify(r.body == null ? {} : r.body);
-        cb({ statusCode: r.status == null ? 200 : r.status,
-             on(ev, fn) { if (ev === 'data') fn(text); if (ev === 'end') fn() } });
+        /* تيار حقيقي لا كائن مصنوع: الرد الحقيقي فيه setEncoding وقطع وأحداث
+           غير متزامنة — والمصنوع كان أسهل من الحقيقة (§٥) */
+        const res = new Readable({ read() { this.push(text); this.push(null) } });
+        res.statusCode = r.status == null ? 200 : r.status;
+        cb(res);
       },
       on() {}, setTimeout() {}, destroy() {},
     };
@@ -236,6 +240,10 @@ const ctxObj = {
   ANTHROPIC_KEY: 'sk-test', AI_MODEL_ENV: 'claude-haiku-4-5',
   OPS: {},
   FREE_BETA: false,
+  /* أسعار غير الافتراضية عمداً: الرسائل تقرأ من PRICING (اللوحة) لا من نص مكتوب */
+  PRICING: { termHalalas: 2400, pushoverHalalas: 1500, friendDiscountHalalas: 300,
+    referrerCreditHalalas: 500, referralHoldDays: 7, reviewsCreditHalalas: 700, reviewsNeeded: 4,
+    creditTerms: 2, lateDays: 3, freeMonitors: 2, freeSchedules: 1, minCashHalalas: 1000 },
   hasAccess: p => !!(p && p.is_pro),
   regTerm: () => '202710', activeTerm: () => '202710',
   riyadhNow: () => new Date(NOW + 'T09:00:00Z'),
@@ -371,6 +379,7 @@ const usageRow = (over) => Object.assign({
     ok(!r.ok, 'السؤال الرابع ما مرّ');
     eq(r.why, 'day', 'السبب: السقف اليومي');
     ok(/اليوم/.test(r.answer), 'والرسالة تشرح — ' + r.answer);
+    ok(!/اشتراك الترم/.test(r.answer), 'والمشترك ما نعرض عليه الاشتراك');
     eq(SENT.length, 0, '**ولا نداء واحد للنموذج** — السقف يوقف قبل الصرف');
     eq(DB.ai_usage.length, 3, 'وما انكتب سطر جديد');
     eq(r.used.day, 3, 'الحصة المستهلكة تظهر للطالب');
@@ -394,6 +403,11 @@ const usageRow = (over) => Object.assign({
     const rf = await A.aiChat('u-free', 'سؤالي الثاني');
     eq(rf.why, 'day', 'المجاني يوقف عند سقفه الأصغر');
     eq(SENT.length, 0, 'بلا أي نداء');
+    /* قرار محمد: «حسّن ردود المجاني واذكر خصم التقييم» — كانت «ترجع لي بكرة» وبس */
+    ok(/اشتراك الترم \(24 ريال/.test(rf.answer) && /25 سؤال/.test(rf.answer),
+       '**رسالة المجاني تقول الحل: الاشتراك وسعره وكم سؤال يعطيه** — ' + rf.answer);
+    ok(/قيّم 4 دكاترة/.test(rf.answer) && /7 ريال رصيد/.test(rf.answer),
+       '**وخصم تقييم الدكاترة — بأرقام اللوحة**');
     const rp = await A.aiChat('u-pro', 'أنا مشترك');
     ok(rp.ok, 'والمشترك يكمّل — ' + rp.why);
   }
@@ -564,6 +578,11 @@ const usageRow = (over) => Object.assign({
     ok(/ما تقول «سجّلت»|لا تقول «سجّلت»/.test(A.AI_SYSTEM),
        'وتمنعه يدّعي إنه سجّل');
     ok(/واجبات/.test(A.AI_SYSTEM), 'وتمنع حل الواجبات');
+    /* المجاني (قرار محمد): «تحتاج اشتراك» وبس كانت توقّفه — وخطته مجانية في «خطتي» */
+    ok(/من مزايا الاشتراك/.test(A.AI_SYSTEM) && /لا توقف عند «تحتاج اشتراك»/.test(A.AI_SYSTEM)
+       && /freeAt/.test(A.AI_SYSTEM) && /تقييم الدكاترة/.test(A.AI_SYSTEM),
+       '**التعليمات: الرفض يقول وين مجاناً والسعر وخصم تقييم الدكاترة**');
+    ok(/أداة الباقات/.test(A.AI_SYSTEM), 'وسؤال السعر والخصم من أداة الباقات لا من تخمينه');
     /* الصيغة واللهجة — شكاوى حقيقية من التجربة على dev */
     ok(/Markdown/.test(A.AI_SYSTEM) && /نص(اً)? خام/.test(A.AI_SYSTEM),
        'التعليمات تمنع Markdown صراحة — الصفحة تعرض النص خاماً فالنجوم تبين');
@@ -619,6 +638,15 @@ const usageRow = (over) => Object.assign({
     ok(/الرياض/.test(first), 'وبتوقيت الرياض صريحاً');
     ok(/\d{4}-\d{2}-\d{2}/.test(first), 'ومعها التاريخ');
     ok(!/COSC/.test(JSON.stringify(p.system)), 'ولا يدخل التعليمات');
+    /* مكانه في رسالته: من الموقع بلا سطر البوت، ومن البوت معه — والتعليمات واحدة */
+    ok(!/بوت تلقرام/.test(first), 'من الموقع: بلا سطر «يكلّمك من بوت تلقرام»');
+    SENT = [];
+    await A.aiChat('u-pro', 'ذكّرني بكرة', { tg: true });
+    const pt = SENT[0].payload, tgFirst = pt.messages[pt.messages.length - 1].content;
+    ok(/يكلّمك من بوت تلقرام/.test(tgFirst) && /لا «روح الموقع»/.test(tgFirst),
+       '**من البوت: رسالته تقول إنه في البوت وإن الزر تحت ردّه** — لا «روح الموقع»');
+    eq(JSON.stringify(pt.system), JSON.stringify(p.system),
+       '**والتعليمات نفسها حرفاً بحرف** — التخزين المؤقت مشترك بين الموقع والبوت');
     /* اللوحة تغيّر النموذج بلا نشر */
     A.setModel('claude-sonnet-5');
     SENT = [];

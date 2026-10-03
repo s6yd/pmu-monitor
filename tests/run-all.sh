@@ -65,6 +65,7 @@ run test-paid-usage     "$S"
 run test-tg-ai          "$S" "$F"
 run test-tg-ask         "$S"
 run test-tg-hook        "$S"
+run test-utf8-chunks    "$S"
 run test-prep-sync      "$F"
 run test-ai-page        "$F"
 

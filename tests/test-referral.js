@@ -258,11 +258,16 @@ const U1 = 'tok-u1-aaaaaaaaaaaaaaaaaaaa', U2 = 'tok-u2-bbbbbbbbbbbbbbbbbbbb', U3
     const sheet = await p.evaluate(async () => {
       MON_STATE.freeBeta = false;
       localStorage.setItem('pmu_ref', JSON.stringify({ code: 'KWT234', at: Date.now() }));
-      let asked = '';
-      window.meFetch = async path => { asked = path;
+      /* الورقة تسأل عن السعر **وعن عدّاد التقييم** (سطر الخصم فيها) — فنلقى طلب السعر
+         باسمه لا «آخر طلب» */
+      const all = [];
+      window.meFetch = async path => { all.push(path);
+        if (/reviews-credit/.test(path)) return { ok: true, needed: 5, creditHalalas: 500,
+          eligibleCount: 0, pending: false, approvedThisTerm: false };
         return { ok: true, base: 1900, po: 0, discount: 300, credit: 500, amount: 1100, ref: 'ok' } };
       openPlans('compare');
       await new Promise(z => setTimeout(z, 200));
+      const asked = all.find(x => /\/api\/me\/quote/.test(x)) || all.join(' | ');
       return { asked, lines: document.getElementById('psLines').innerText,
                total: document.getElementById('psTotal').textContent };
     });
