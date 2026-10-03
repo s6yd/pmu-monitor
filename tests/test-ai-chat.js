@@ -623,6 +623,15 @@ const usageRow = (over) => Object.assign({
     ok(/الرياض/.test(first), 'وبتوقيت الرياض صريحاً');
     ok(/\d{4}-\d{2}-\d{2}/.test(first), 'ومعها التاريخ');
     ok(!/COSC/.test(JSON.stringify(p.system)), 'ولا يدخل التعليمات');
+    /* مكانه في رسالته: من الموقع بلا سطر البوت، ومن البوت معه — والتعليمات واحدة */
+    ok(!/بوت تلقرام/.test(first), 'من الموقع: بلا سطر «يكلّمك من بوت تلقرام»');
+    SENT = [];
+    await A.aiChat('u-pro', 'ذكّرني بكرة', { tg: true });
+    const pt = SENT[0].payload, tgFirst = pt.messages[pt.messages.length - 1].content;
+    ok(/يكلّمك من بوت تلقرام/.test(tgFirst) && /لا «روح الموقع»/.test(tgFirst),
+       '**من البوت: رسالته تقول إنه في البوت وإن الزر تحت ردّه** — لا «روح الموقع»');
+    eq(JSON.stringify(pt.system), JSON.stringify(p.system),
+       '**والتعليمات نفسها حرفاً بحرف** — التخزين المؤقت مشترك بين الموقع والبوت');
     /* اللوحة تغيّر النموذج بلا نشر */
     A.setModel('claude-sonnet-5');
     SENT = [];

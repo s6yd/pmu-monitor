@@ -7101,6 +7101,18 @@ async function aiRemindCheck(userId, at, body) {
   return { ok: true, at, body: b };
 }
 
+/* وين يأكّد الاقتراح ووين يوصله — **من مكانه الفعلي** لا من افتراض. كانت «ويحتاج
+   تلقرام مربوطاً ليوصله» للكل، فالنموذج في البوت قال «روح أكّده بالموقع، وتأكد إن
+   تيليغرام مربوط» — والزر تحت ردّه، وهو مربوط أصلاً (لقاها محمد). */
+function aiRemindNote(ctx) {
+  if (ctx && ctx.tg) return 'اقتراح — ما انجدول شي. قل له يضغط «✅ ثبّت التذكير» تحت ردّك، '
+    + 'ويوصله هنا في تلقرام في وقته. لا تقول له يروح الموقع.';
+  const linked = !!(ctx && ctx.profile && ctx.profile.telegram_chat_id);
+  return 'اقتراح — ما انجدول شي حتى يضغط «تأكيد».' + (linked
+    ? ' ويوصله على تلقرام في وقته.'
+    : ' وتلقرامه **مو مربوط**: ما يوصله التذكير لين يربطه من ⚙️ الإعدادات ← «إشعارات تيليغرام».');
+}
+
 /* تاريخ اليوم بتوقيت الرياض — تستعمله أدوات الاقتراح وكتلة المحادثة */
 const aiToday = () => riyadhNow().toISOString().slice(0, 10);
 
@@ -7996,8 +8008,8 @@ const AI_TOOLS = {
       return { proposal: { action: 'reminder', at: new Date(at).toISOString(),
           atLocal: `${d} ${String(hh).padStart(2, '0')}:${String(mi).padStart(2, '0')}`,
           body, crn, code, env: SITE_ENV, urgent },
-        note: 'اقتراح — ما انجدول شي. ويحتاج تلقرام مربوطاً ليوصله.'
-          + (urgent ? ' ويوصله معه التنبيه الطارئ.' : '') + (why ? ' ' + why : '') };
+        note: aiRemindNote(ctx) + (urgent ? ' ويوصله معه التنبيه الطارئ.' : '')
+          + (why ? ' ' + why : '') };
     },
   },
 
@@ -8085,7 +8097,8 @@ const AI_TOOLS = {
           /* الصفحة تعرضه تحت الزر: الطالب يشوف وش يروح معها قبل ما يضغط */
           note: 'ومعها: تخصصك ونسخة خطتك وترمك' },
         note: 'اقتراح — ما انرسل شي. قل للطالب إن معها تخصصه ونسخة خطته وترمه، '
-          + 'وإنه يضغط «تأكيد» عشان توصل.' };
+          + (ctx.tg ? 'وإنه يضغط «📩 أرسلها لفريق جدولك» تحت ردّك عشان توصل.'
+                    : 'وإنه يضغط «تأكيد» عشان توصل.') };
     },
   },
 
@@ -8796,6 +8809,12 @@ function aiHeader(ctx, th) {
   /* زائر تلقرام (قرار محمد): نطاقه في رسالته لا في التعليمات — البادئة
      تبقى واحدة للجميع والتخزين المؤقت مشترك. والأدوات ترفض غير الدليل
      أصلاً، فهذا السطر يخلّيه يقولها بلطف بدل ما يحاول ويتعثّر. */
+  /* مربوط من البوت (لقاها محمد): بلا هالسطر يظن نفسه في الموقع، فقال «روح أكّده
+     بالموقع، وتأكد إن تيليغرام مربوط» — والزر تحت ردّه وهو مربوط أصلاً */
+  if (ctx.tg) h += '[يكلّمك من بوت تلقرام وحسابه مربوط — التذكير يوصله هنا. التذكير وتذكرة '
+    + 'الدعم يطلع لهما زر تحت ردّك («✅ ثبّت التذكير» · «📩 أرسلها لفريق جدولك») فقل له يضغطه، '
+    + 'لا «روح الموقع» ولا «تأكد إن تلقرام مربوط». الغياب والموعد والشعبة والمراقبة تأكيدها '
+    + 'من المساعد في الموقع.]\n';
   if (ctx.tgGuest) h += '[زائر من تلقرام حسابه مو مربوط: ساعده في استعمال الموقع بس '
     + '(أداة الدليل). أي سؤال غيره — جدوله، خطته، الشعب، التقويم، القاعات — قل له '
     + 'يربط حسابه أول، ولا تجاوبه من عندك.]\n';
@@ -8831,6 +8850,8 @@ async function aiChat(userId, question, opt) {
   const o = opt || {};
   const guest = !userId;
   const ctx = guest ? aiGuestCtx(o) : await aiStudentCtx(userId);
+  /* مربوط يكلّمنا من البوت: أزرار التأكيد هناك تحت ردّه، والتذكير يوصله هناك */
+  if (!guest && o.tg) ctx.tg = true;
 
   const gate = aiGate(ctx.profile);
   if (!gate.ok) return { ok: false, why: gate.why, answer: gate.msg, tools: [] };
@@ -9130,7 +9151,7 @@ async function aiTgAnswer(chatId, q) {
     r = guest
       ? await aiChat(null, String(q || ''),
           { ip: 'tg:' + key, tools: AI_TG_GUEST_TOOLS, tgGuest: true })
-      : await aiChat(uid, String(q || ''));
+      : await aiChat(uid, String(q || ''), { tg: true });
   }
   catch (e) {
     console.log('aiTgAnswer: ' + (e && e.message));
@@ -9174,17 +9195,24 @@ async function aiTgAnswer(chatId, q) {
      الطبيعي («استثني المواد المسجّلة») يروح للدعم **كتذكرة** —
      شفناها تصير على dev: تذكرة #74 كانت جواباً للمساعد لا شكوى.
      من كلّم المساعد قبل دقيقة يقصده، والخروج زر ظاهر أمامه. */
+  let hint = '';
   if (r.ok) {
     if (AI_TG_MODE.size > 3000) AI_TG_MODE.clear();   /* قبل الإضافة لا بعدها */
     AI_TG_MODE.set(key, Date.now() + AI_TG_TTL);
-    if (!was) out += guest ? AI_TG_HINT_GUEST : AI_TG_HINT;
+    if (!was) hint = guest ? AI_TG_HINT_GUEST : AI_TG_HINT;
   }
   /* داخل الوضع: اللوحة هي التذكير بالخروج، فما نكرّر سطراً في كل رد.
      ونعيد إرسالها مع كل جواب حتى ما تختفي لو أخفاها بنفسه — إلا رسالة
      فيها أزرار فعل: الرسالة تحمل لوحة وحدة، ولوحة الوضع باقية تحت. */
   const inMode = (AI_TG_MODE.get(key) || 0) > Date.now();
-  return sendMsg(chatId, out,
-    act || (inMode ? (guest ? AI_TG_KB_GUEST : AI_TG_KB) : undefined));
+  const kbMode = inMode ? (guest ? AI_TG_KB_GUEST : AI_TG_KB) : undefined;
+  if (!act) return sendMsg(chatId, out + hint, kbMode);
+  /* رسالة فيها زر فعل: سطر «الأزرار تحت أمثلة بس» فوق «✅ ثبّت التذكير»
+     يناقضه (لقاها محمد)، ولوحة الوضع ما تنرسل معها. فالسطر في رسالة بعدها
+     ومعه لوحة الوضع — «تحت» تعني الأمثلة فعلاً، والوضع يبان من أول دخول */
+  const sent = await sendMsg(chatId, out, act);
+  if (hint) await sendMsg(chatId, hint.replace(/^\n+/, ''), kbMode);
+  return sent;
 }
 
 /* زر فعل من البوت (act:ok / act:no) — من handleCallback */

@@ -559,6 +559,22 @@ function fakeModel(ctx) {
          `**طلبه وهو ${st}: التذكير يكمل على تلقرام ونقول ليش** — ` + (u.note || '').slice(0, 90));
     }
     PO_READY = 'off';
+    /* وين يأكّده ووين يوصله — من مكانه الفعلي (لقاها محمد في البوت: قال المساعد «روح
+       أكّده بالموقع، وتأكد إن تيليغرام مربوط» والزر تحت ردّه، وهو مربوط أصلاً) */
+    const rem = { date: soon, time: '20:00', body: 'أسايمنت الأسسمنت لاب' };
+    const linkedP = Object.assign({}, PRO.profile, { telegram_chat_id: '7001' });
+    const viaTg = await aiRunTool('propose_reminder', rem,
+      Object.assign({}, PRO, { profile: linkedP, tg: true }));
+    ok(/✅ ثبّت التذكير/.test(viaTg.note || '') && /هنا في تلقرام/.test(viaTg.note || ''),
+       '**من البوت: يضغط «✅ ثبّت التذكير» تحت الرد، ويوصله هنا** — ' + (viaTg.note || ''));
+    ok(!/مربوط/.test(viaTg.note || ''), '**ومن البوت ما نقول «يحتاج تلقرام مربوط» — هو يكلّمنا منه**');
+    const siteLinked = await aiRunTool('propose_reminder', rem,
+      Object.assign({}, PRO, { profile: linkedP }));
+    ok(/«تأكيد»/.test(siteLinked.note || '') && !/مربوط/.test(siteLinked.note || ''),
+       'من الموقع وهو مربوط: «تأكيد» ويوصله — بلا شرط ربط ما يخصّه — ' + (siteLinked.note || ''));
+    const siteFree = await call('propose_reminder', JSON.stringify(rem));
+    ok(/مو مربوط/.test(siteFree.note || '') && /إشعارات تيليغرام/.test(siteFree.note || ''),
+       '**ومن الموقع بلا ربط: نقول له إنه ما بيوصله ووين يربطه** — ' + (siteFree.note || ''));
     /* ولا كتابة */
     ok(SB_CALLS.slice(n0).every(c => c.method === 'GET'),
        '**ولا كتابة واحدة — اقتراح فقط**');
@@ -634,6 +650,12 @@ function fakeModel(ctx) {
       eq(cx.env, 'prod', 'والبيئة — dev وprod يتشاركان القاعدة');
       ok(/تخصصك/.test(SP.note || ''),
          'ويقول للطالب وش يروح معها قبل ما يضغط');
+      /* والزر باسمه في مكانه: الموقع «تأكيد» · البوت «📩 أرسلها لفريق جدولك» */
+      ok(/«تأكيد»/.test(sup.note || ''), 'من الموقع: يضغط «تأكيد»');
+      const supTg = await aiRunTool('propose_support_ticket', { text: 'تبويب خطتي ما يفتح من الجوال' },
+        Object.assign({}, PRO, { tg: true }));
+      ok(/أرسلها لفريق جدولك/.test(supTg.note || '') && !/«تأكيد»/.test(supTg.note || ''),
+         '**من البوت: الزر باسمه «📩 أرسلها لفريق جدولك»** — ' + (supTg.note || ''));
       /* **ولا كتابة**: الصفحة ترسلها بعد التأكيد */
       ok(SB_CALLS.slice(n1).every(c => c.method === 'GET'),
          '**ولا كتابة — اقتراح فقط**');

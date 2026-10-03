@@ -520,6 +520,20 @@ async function main() {
     || { b: {} };
   ok(btns(pa).some(x => /ثبّت/.test(x.text)), '**التذكير: زر «✅ ثبّت» في البوت**');
   ok(!/افتح المساعد في jadwalik/.test(pa.b.text || ''), 'وما يحيله للموقع');
+  /* لقاها محمد: المساعد قال «روح أكّده بالموقع، وتأكد إن تيليغرام مربوط» — ما كان
+     يدري إنه في البوت، والزر تحت ردّه، وهو مربوط أصلاً */
+  const qTg = AI[AI.length - 1] || '';
+  ok(/يكلّمك من بوت تلقرام/.test(qTg) && /✅ ثبّت التذكير/.test(qTg),
+     '**النموذج يعرف إنه في البوت والزر تحت ردّه** — سطر في رسالته لا في التعليمات');
+  const resTg = AI_RES[AI_RES.length - 1] || '';
+  ok(/✅ ثبّت التذكير/.test(resTg) && !/مربوط/.test(resTg),
+     '**ونتيجة الأداة تقول «يضغط ✅ ثبّت التذكير» لا «يحتاج تلقرام مربوط»** — ' + resTg.slice(-140));
+  /* و«الأزرار تحت أمثلة بس» فوق زر التأكيد يناقضه — والرسالة ما تحمل لوحة الوضع */
+  ok(!/أمثلة/.test(pa.b.text || ''), '**رسالة زر التأكيد بلا «الأزرار تحت أمثلة بس»**');
+  const hintMsg = sentTo(since(n), '6114').find(c => /أمثلة/.test(c.b.text || ''));
+  ok(!!hintMsg && !!hintMsg.b.reply_markup && Array.isArray(hintMsg.b.reply_markup.keyboard),
+     '**والسطر في رسالة بعدها ومعه لوحة الأمثلة** — «تحت» تعني الأمثلة، والوضع يبان من أول دخول');
+  ok(!!hintMsg && TG.indexOf(hintMsg) > TG.indexOf(pa), 'وبعد رسالة الزر لا قبلها');
   eq((DB.reminders || []).length, 0, 'وما انكتب شي قبل الضغط');
   const okId = (btns(pa).find(x => /^act:ok:/.test(x.callback_data)) || {}).callback_data;
   n = TG.length;
