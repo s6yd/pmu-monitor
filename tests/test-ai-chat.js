@@ -15,6 +15,7 @@
 
    node tests/test-ai-chat.js [server.js] */
 const fs = require('fs');
+const { Readable } = require('stream');
 const path = require('path');
 const vm = require('vm');
 
@@ -113,8 +114,11 @@ const fakeHttps = {
         SENT.push({ opts, payload });
         const r = SCRIPT(payload, SENT.length - 1) || { status: 200, body: reply('تمام') };
         const text = JSON.stringify(r.body == null ? {} : r.body);
-        cb({ statusCode: r.status == null ? 200 : r.status,
-             on(ev, fn) { if (ev === 'data') fn(text); if (ev === 'end') fn() } });
+        /* تيار حقيقي لا كائن مصنوع: الرد الحقيقي فيه setEncoding وقطع وأحداث
+           غير متزامنة — والمصنوع كان أسهل من الحقيقة (§٥) */
+        const res = new Readable({ read() { this.push(text); this.push(null) } });
+        res.statusCode = r.status == null ? 200 : r.status;
+        cb(res);
       },
       on() {}, setTimeout() {}, destroy() {},
     };
