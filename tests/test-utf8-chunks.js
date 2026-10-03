@@ -266,6 +266,6 @@ async function main() {
 main().catch(e => { fail++; out.push('  ✗ انهار: ' + (e && e.stack || e)) }).finally(() => {
   console.log = realLog;
   console.log(out.join('\n'));
-  console.log(`\nالحروف بين القطع: ${pass} ✓ · ${fail} ✗`);
+  console.log(`\n${pass} نجحت · ${fail} فشلت`);
   process.exit(fail ? 1 : 0);
 });
