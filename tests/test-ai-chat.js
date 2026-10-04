@@ -89,6 +89,7 @@ let SB = [];            /* كل نداء قاعدة */
 let SENT = [];          /* كل جسم طلع للمزوّد */
 let TG = [];            /* كل رسالة تيليغرام */
 let FAIL_SPEND = false;   /* لمحاكاة سقوط القراءة */
+let NO_CHANNEL_COL = false;  /* قبل الـSQL: لا عمود القناة ولا عرضها */
 let SCRIPT = () => ({ status: 200, body: reply('تمام') });
 
 const reply = (text, usage) => ({
@@ -129,7 +130,7 @@ const fakeHttps = {
 const COLS = {
   ai_usage: ['id', 'user_id', 'env', 'term', 'model', 'on_date', 'calls',
              'in_tokens', 'out_tokens', 'cache_w_tokens', 'cache_r_tokens',
-             'cost_micro', 'created_at'],
+             'cost_micro', 'created_at', 'channel'],
   ai_threads: ['user_id', 'env', 'summary', 'messages', 'turns', 'updated_at'],
   ai_spend_day: ['env', 'on_date', 'questions', 'calls', 'cost_micro',
                  'in_tokens', 'out_tokens'],
@@ -194,6 +195,22 @@ function sbStub(method, table, opt) {
       const env = one(/env=eq\.([^&]+)/);
       return finish(DB.ai_threads.filter(r => r.user_id === id && r.env === env));
     }
+    if (table === 'ai_spend_channel') {
+      /* العرض ما انخلق بعد ⇒ رد PostgREST الحقيقي لجدول ما يعرفه */
+      if (NO_CHANNEL_COL) return Promise.resolve({ code: 'PGRST205',
+        message: "Could not find the table 'public.ai_spend_channel' in the schema cache" });
+      const ym = one(/ym=eq\.([^&]+)/);
+      const g = new Map();
+      DB.ai_usage.forEach(r => {
+        /* الصف القديم بلا قناة = الافتراضي في القاعدة بعد ALTER */
+        const k = [r.env, String(r.on_date).slice(0, 7), r.channel || 'web'];
+        const o = g.get(k.join('|')) || { env: k[0], ym: k[1], channel: k[2],
+                                          questions: 0, cost_micro: 0 };
+        o.questions++; o.cost_micro += r.cost_micro || 0;
+        g.set(k.join('|'), o);
+      });
+      return finish([...g.values()].filter(r => !ym || r.ym === ym));
+    }
     if (table === 'ai_spend_day') {
       /* sb الحقيقية ترمي عند خطأ شبكة (req.on('error', reject)) */
       if (FAIL_SPEND) return Promise.reject(new Error('Supabase timeout'));
@@ -206,6 +223,11 @@ function sbStub(method, table, opt) {
     const b = opt.body;
     const rep = /return=representation/.test((opt && opt.prefer) || '');
     if (table === 'ai_usage') {
+      /* PostgREST يرفض عموداً ما يعرفه — والقناة ما تنعرف قبل الـSQL */
+      const cols = COLS.ai_usage.filter(c => !(NO_CHANNEL_COL && c === 'channel'));
+      const bad = Object.keys(b).find(k => !cols.includes(k));
+      if (bad) return Promise.resolve({ code: 'PGRST204',
+        message: `Could not find the '${bad}' column of 'ai_usage' in the schema cache` });
       const row = Object.assign({ id: DB.ai_usage.length + 1,
                                   created_at: new Date().toISOString() }, b);
       DB.ai_usage.push(row);
@@ -281,8 +303,14 @@ this.resetRuntime = () => { AI_ALERTED = ''; AI_MONTH = { ym: '', micro: 0 } };
 try{
 this.aiGuestState = aiGuestState;
 this.resetGuests = () => { AI_GUEST = { ymd: '', ips: new Map(), ym: '',
-                                        micro: 0, questions: 0 } };
+                                        micro: 0, questions: 0, dayMicro: 0,
+                                        ch: { web: { questions: 0, micro: 0 },
+                                              tg: { questions: 0, micro: 0 } } } };
 }catch(e){ this.aiGuestState = () => ({}); this.resetGuests = () => {} }
+/* حسب القناة — على كود قديم بلاها نبلّغ فشلاً مرتّباً */
+this.aiSpendMonth = aiSpendMonth;
+try{ this.aiSpendChannels = aiSpendChannels }
+catch(e){ this.aiSpendChannels = () => Promise.resolve('ما فيه aiSpendChannels') }
 `, ctxObj);
 
 const A = ctxObj;
@@ -293,7 +321,7 @@ if (typeof A.aiChat !== 'function') done();
 function resetAll(o) {
   DB.ai_usage = []; DB.ai_threads = [];
   SB = []; SENT = []; TG = [];
-  FAIL_SPEND = false;
+  FAIL_SPEND = false; NO_CHANNEL_COL = false;
   ctxObj.SITE_ENV = 'prod';
   ctxObj.ANTHROPIC_KEY = 'sk-test';
   ctxObj.AI_MODEL_ENV = 'claude-haiku-4-5';
@@ -966,6 +994,90 @@ const usageRow = (over) => Object.assign({
     /* الاشتراك بـhasAccess وحدها */
     ok(!/is_pro\s*===|\.is_pro\b/.test(CHAT),
        'ولا فحص اشتراك ثانٍ — hasAccess وحدها (§١٠)');
+  }
+
+  /* ══════════ حسب القناة — لقاها محمد: صفحة المساعد ما تعرض تلقرام ══════════
+     الموقع والبوت ينادون aiChat نفسها، فالسطر والمحادثة ما كانا يعرفان من وين
+     السؤال. والزائر (موقع أو تلقرام ما ربط) ما له سطر أصلاً، وإنفاقه كان يُمسح
+     من الشهري مع كل قراءة من القاعدة — فاللوحة ما تشوفه ولا السقف العام. */
+  resetAll(); A.resetGuests();
+  {
+    await A.aiChat('u-pro', 'وش عندي بكرة؟');
+    await A.aiChat('u-pro', 'وش عندي بكرة؟', { tg: true });
+    eq(DB.ai_usage.map(r => r.channel), ['web', 'tg'],
+       '**كل سؤال ينكتب بقناته: الموقع ثم تلقرام**');
+    const th = DB.ai_threads.find(t => t.user_id === 'u-pro');
+    eq((th ? th.messages : []).map(m => m.role + ':' + m.ch),
+       ['user:web', 'assistant:web', 'user:tg', 'assistant:tg'],
+       '**رسائل المحادثة معلّمة بقناتها** — المحادثة وحدة للموقع والبوت');
+    SENT = [];
+    await A.aiChat('u-pro', 'وبعده؟', { tg: true });
+    const hist = (SENT[0] && SENT[0].payload.messages) || [];
+    ok(hist.length === 5 && hist.slice(0, -1).every(m =>
+         Object.keys(m).sort().join() === 'content,role'),
+       'والنموذج يستلم الدور والنص بس — القناة للوحة لا له');
+  }
+
+  /* قبل الـSQL: العمود ناقص ⇒ الاستهلاك ينكتب بلاه — ما يضيع ولا يوقف */
+  resetAll(); A.resetGuests();
+  {
+    NO_CHANNEL_COL = true;
+    const r = await A.aiChat('u-pro', 'سؤال', { tg: true });
+    ok(r.ok, 'السؤال نجح قبل الـSQL');
+    eq(DB.ai_usage.length, 1, '**قبل الـSQL: سطر الاستهلاك انكتب** — ما ضاع');
+    ok(DB.ai_usage[0] && !('channel' in DB.ai_usage[0]), 'وبلا العمود اللي ترفضه القاعدة');
+    eq(await A.aiSpendChannels(), null,
+       'وعرض القنوات ناقص ⇒ null (اللوحة تقول «شغّل الـSQL») لا أصفار كاذبة');
+  }
+
+  /* عرض القنوات: الشهر الحالي، والبيئتان معاً (فاتورة وحدة) */
+  resetAll(); A.resetGuests();
+  {
+    DB.ai_usage = [usageRow({ channel: 'web', cost_micro: 1000 }),
+                   usageRow({ channel: 'tg', cost_micro: 3000 }),
+                   usageRow({ channel: 'tg', env: 'dev', cost_micro: 500 }),
+                   usageRow({ cost_micro: 200 }),                       /* قبل العمود */
+                   usageRow({ channel: 'tg', on_date: '2026-08-30', cost_micro: 9000 })];
+    const c = await A.aiSpendChannels();
+    eq(c && c.web ? [c.web.questions, c.web.micro, c.tg.questions, c.tg.micro] : c, [2, 1200, 2, 3500],
+       '**القنوات لهالشهر: الموقع ٢ · تلقرام ٢ (البيئتان)** — والشهر الماضي برا');
+  }
+
+  /* الزوار حسب القناة: زائر تلقرام مفتاحه tg:<محادثته> */
+  resetAll(); A.resetGuests();
+  {
+    const tgGuest = { ip: 'tg:777', tools: new Set(['guide']), tgGuest: true };
+    await A.aiChat(null, 'كيف أراقب شعبة؟', tgGuest);
+    await A.aiChat(null, 'وش القاعات الفاضية؟', { ip: '9.9.9.9' });
+    await A.aiChat(null, 'وكيف أضيف جدولي؟', tgGuest);
+    const g = A.aiGuestState();
+    eq(g.ch && [g.ch.web.questions, g.ch.tg.questions], [1, 2],
+       '**الزوار حسب القناة: الموقع ١ · تلقرام ٢**');
+    ok(g.ch && g.ch.web.micro > 0 && g.ch.tg.micro > 0, 'ومبلغ كل قناة محسوب');
+    eq(g.ch && g.ch.web.micro + g.ch.tg.micro, g.micro, 'ومجموع القناتين = مجموع الزوار');
+    eq(DB.ai_usage.length, 0, 'وما انكتب للزائر سطر — user_id مربوط بـauth.users');
+
+    /* مبلغ الزوار داخل الشهري — كان aiMonthAdd يضيفه ثم تمسحه القراءة */
+    DB.ai_usage = [usageRow({ cost_micro: 1000 })];
+    const sp = await A.aiSpendMonth();
+    eq(sp && sp.micro, 1000 + g.micro, '**مجموع الشهر = المسجّلين + الزوار**');
+    eq(sp && sp.questions, 1 + 3, 'والأسئلة كذلك');
+    eq(sp && [sp.guestQuestions, sp.guestMicro], [3, g.micro], 'والزوار مفصولين للوحة');
+    eq(sp && sp.today, 1000 + g.micro, 'واليوم فيه زوار اليوم');
+  }
+
+  /* السقف الشهري العام فوق الزوار — كما يقول التوثيق (§٣) */
+  resetAll({ monthSar: 1, guestDay: 50 }); A.resetGuests();
+  {
+    /* هايكو: 400 ألف رمز × 1 دولار للمليون × 3.75 = 1.5 ريال > سقف ١ */
+    SCRIPT = () => ({ status: 200, body: reply('تمام', { input_tokens: 400000, output_tokens: 0 }) });
+    const g1 = await A.aiChat(null, 'س', { ip: '8.8.8.8' });
+    ok(g1.ok, 'الزائر سأل وصرف ١٫٥ ريال');
+    SENT = [];
+    const s1 = await A.aiChat('u-pro', 'سؤال');
+    ok(!s1.ok && s1.why === 'month',
+       '**إنفاق الزوار يعبّي السقف الشهري العام — يوقف المسجّل كذلك** — ' + s1.why);
+    eq(SENT.length, 0, 'وبلا نداء للنموذج');
   }
 
   done();

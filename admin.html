@@ -228,6 +228,7 @@ height:2px;background:var(--accent);border-radius:2px}
 .kpi-num.good{color:var(--open)}.kpi-num.warn{color:var(--warn)}.kpi-num.bad{color:var(--close)}
 .kpi-label{font-size:11px;color:var(--text3);margin-top:6px}
 .kpi-sub{font-size:10px;color:var(--text3);margin-top:3px;font-family:var(--mono)}
+.ai-ch{font-size:10px;line-height:1.4;opacity:.8;margin-bottom:3px}
 
 .sec-title{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;
 letter-spacing:1px;margin:20px 0 10px}
@@ -675,7 +676,8 @@ function renderAi(){
         <div class="kpi-label">ريال هذا الشهر</div>
         <div class="kpi-sub"><span class="ltr">${pct}% / ${cap.monthSar}</span></div></div>
       <div class="kpi"><div class="kpi-num">${sp.questions||0}</div>
-        <div class="kpi-label">سؤال هذا الشهر</div></div>
+        <div class="kpi-label">سؤال هذا الشهر</div>
+        ${sp.guestQuestions?`<div class="kpi-sub" style="font-family:inherit">منها زوار <span class="ltr">${sp.guestQuestions}</span></div>`:''}</div>
       <div class="kpi"><div class="kpi-num ${AI.fails?'warn':''}">${AI.fails||0}</div>
         <div class="kpi-label">نداء فشل</div></div>
     </div>
@@ -727,9 +729,34 @@ function renderAi(){
       </div>
     </div>
 
+    ${aiChannelCard()}
     ${aiTopCard()}
     ${aiChatCard()}`;
   renderAiChat();
+}
+
+/* حسب القناة — لقاها محمد: الصفحة ما تعرض تلقرام. المسجّلون من القاعدة
+   (للبيئتين معاً)، والزوار من عدّاد هالبيئة: ما لهم حساب فرسائلهم ما تنحفظ */
+function aiChannelCard(){
+  const C=AI.channels, G=AI.guestChannels||{};
+  const line=(label,c)=>`<div class="kv"><span>${label}</span>
+    <b><span class="ltr">${(c&&c.questions)||0}</span> سؤال · <span class="ltr">${(c&&c.sar)||0}</span> ريال</b></div>`;
+  return `<div class="sec-title">حسب القناة — هذا الشهر</div>
+    <div class="gauge" style="margin-bottom:12px">
+      ${C?line('🌐 الموقع',C.web)+line('✈️ تلقرام',C.tg)
+        :`<div class="gauge-sub" style="color:var(--warn);margin:0 0 9px">
+          ⚠️ عمود القناة ناقص في القاعدة — شغّل الـSQL، وبعدها يتفرّق الموقع عن تلقرام.</div>`}
+      ${line('👤 زوار الموقع',G.web)}
+      ${line('👤 زوار تلقرام — ما ربطوا',G.tg)}
+      ${G.before?`<div class="kv"><span>زوار قبل فصل القنوات</span>
+        <b><span class="ltr">${G.before}</span> سؤال</b></div>`:''}
+      <div class="gauge-sub">
+        المسجّلون للبيئتين معاً، والزوار لهالبيئة وحدها — وكلهم داخلين في مجموع الشهر فوق.
+        الزوار ما لهم حساب، فرسائلهم ما تنحفظ: أعدادهم ومبالغهم بس.
+        ورسائل تلقرام للمسجّل تطلع في «💬 محادثته» بعلامة ✈️.
+        والأسئلة قبل هالتحديث محسوبة على الموقع.
+      </div>
+    </div>`;
 }
 
 /* أكثر ١٠ طلاب استهلاكاً — رقمه الحقيقي بالريال لا عدد أسئلته وحده */
@@ -800,7 +827,7 @@ function aiThreadCard(){
         color:${m.role==='user'?'#fff':'var(--text)'};
         border:1px solid var(--border2);border-radius:13px;padding:9px 12px;
         font-size:13px;line-height:1.75;white-space:pre-wrap;
-        overflow-wrap:break-word">${esc(m.text||'')}</div>`).join('')}
+        overflow-wrap:break-word">${m.ch==='tg'?'<div class="ai-ch">✈️ تلقرام</div>':''}${esc(m.text||'')}</div>`).join('')}
     </div></div>`;
 }
 

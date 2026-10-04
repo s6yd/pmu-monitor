@@ -2268,6 +2268,7 @@ async function saveState() {
                  /* عدّاد الزوار: بلا حفظه يرجع لصفر مع كل نشر فيضيع سدّه */
                  aiGuest: { ymd: AI_GUEST.ymd, ym: AI_GUEST.ym,
                             micro: AI_GUEST.micro, questions: AI_GUEST.questions,
+                            dayMicro: AI_GUEST.dayMicro, ch: AI_GUEST.ch,
                             ips: [...AI_GUEST.ips.entries()].slice(0, 5000) },
                  aiCaps: AI_CAPS, aiAlerted: AI_ALERTED },
       ops: { searches: OPS.searches, feedback: OPS.feedback,
@@ -2316,9 +2317,14 @@ async function restoreState() {
   if ('aiMode' in g && AI_MODES.includes(g.aiMode)) AI_MODE = g.aiMode;
   if ('aiWarmOn' in g) AI_WARM_ON = !!g.aiWarmOn;
   if (g.aiGuest && typeof g.aiGuest === 'object') {
+    const gc = g.aiGuest.ch || {}, n = x => Number(x) || 0;
     AI_GUEST = { ymd: String(g.aiGuest.ymd || ''), ym: String(g.aiGuest.ym || ''),
       micro: Number(g.aiGuest.micro) || 0,
       questions: Number(g.aiGuest.questions) || 0,
+      dayMicro: n(g.aiGuest.dayMicro),
+      /* حالة قبل فصل القنوات: بلا ch — المجموع يبقى، والقناة تبدأ من صفر */
+      ch: { web: { questions: n(gc.web && gc.web.questions), micro: n(gc.web && gc.web.micro) },
+            tg: { questions: n(gc.tg && gc.tg.questions), micro: n(gc.tg && gc.tg.micro) } },
       ips: new Map(Array.isArray(g.aiGuest.ips) ? g.aiGuest.ips : []) };
   }
   if ('aiModel' in g) AI_MODEL_OVERRIDE = String(g.aiModel || '').trim() || null;
@@ -8561,7 +8567,8 @@ async function aiSpendMonth() {
   const rows = await aiSpendDays(aiMonthStart());
   if (!rows) return null;
   const today = aiToday();
-  const out = { micro: 0, today: 0, questions: 0, byEnv: {}, days: rows };
+  const out = { micro: 0, today: 0, questions: 0, byEnv: {}, days: rows,
+                guestMicro: 0, guestQuestions: 0 };
   rows.forEach(r => {
     const c = Number(r.cost_micro) || 0;
     out.micro += c;
@@ -8569,7 +8576,34 @@ async function aiSpendMonth() {
     out.byEnv[r.env] = (out.byEnv[r.env] || 0) + c;
     if (r.on_date === today) out.today += c;
   });
+  /* الزوار: ما لهم صف في ai_usage (مفتاح أجنبي لـauth.users) فإنفاقهم في
+     AI_GUEST — ويُضمّ هنا للشهري كما يقول التوثيق. كان aiMonthAdd يضيفه ثم
+     تمسحه هالقراءة نفسها، فالسقف العام واللوحة ما يشوفون الزوار أبداً (لقاها
+     محمد: صفحة المساعد ما تحسب زوار تلقرام). زوار هالبيئة وحدها — عدّاد
+     البيئة الثانية في ذاكرتها. */
+  aiGuestRoll();
+  out.guestMicro = AI_GUEST.micro; out.guestQuestions = AI_GUEST.questions;
+  out.micro += AI_GUEST.micro; out.questions += AI_GUEST.questions;
+  out.today += AI_GUEST.dayMicro;
+  if (AI_GUEST.micro) out.byEnv[SITE_ENV] = (out.byEnv[SITE_ENV] || 0) + AI_GUEST.micro;
   AI_MONTH = { ym: aiYM(), micro: out.micro };
+  return out;
+}
+
+/* أسئلة المسجّلين حسب القناة هذا الشهر (الموقع · تلقرام) — من عرض
+   ai_spend_channel، للبيئتين معاً مثل بقية الشهري. null = العرض ما انخلق
+   (الـSQL ما انشغّل) ⇒ اللوحة تقول «شغّل الـSQL» لا «صفر» */
+async function aiSpendChannels(ym) {
+  const rows = await sb('GET', 'ai_spend_channel', { query:
+    `?ym=eq.${encodeURIComponent(ym || aiYM())}` +
+    `&select=env,channel,questions,cost_micro&limit=100` }).catch(() => null);
+  if (!Array.isArray(rows)) return null;
+  const out = { web: { questions: 0, micro: 0 }, tg: { questions: 0, micro: 0 } };
+  rows.forEach(r => {
+    const c = out[r.channel === 'tg' ? 'tg' : 'web'];
+    c.questions += Number(r.questions) || 0;
+    c.micro += Number(r.cost_micro) || 0;
+  });
   return out;
 }
 
@@ -8591,13 +8625,19 @@ async function aiSpendMonth() {
    بمفتاح أجنبي، فأي معرّف مخترع يُرفض. فنعدّ إنفاقه هنا ونضمّه
    للشهري عند الفحص — واللوحة تعرضه مفصولاً. */
 const AI_GUEST_SAVE_MS = 60 * 1000;      /* أقصى تكرار للحفظ */
-let AI_GUEST = { ymd: '', ips: new Map(), ym: '', micro: 0, questions: 0 };
+/* الزوار حسب القناة (لقاها محمد: صفحة المساعد ما تعرض تلقرام) — زائر
+   الموقع مفتاحه عنوانه، وزائر تلقرام `tg:<محادثته>`. والشهري واليومي
+   يُضمّان لإنفاق الشهر في aiSpendMonth */
+const aiGuestCh0 = () => ({ web: { questions: 0, micro: 0 }, tg: { questions: 0, micro: 0 } });
+let AI_GUEST = { ymd: '', ips: new Map(), ym: '', micro: 0, questions: 0,
+                 dayMicro: 0, ch: aiGuestCh0() };
 let AI_GUEST_SAVED = 0;
 
 function aiGuestRoll() {
   const d = aiToday(), m = aiYM();
-  if (AI_GUEST.ymd !== d) { AI_GUEST.ymd = d; AI_GUEST.ips = new Map() }
-  if (AI_GUEST.ym !== m) { AI_GUEST.ym = m; AI_GUEST.micro = 0; AI_GUEST.questions = 0 }
+  if (AI_GUEST.ymd !== d) { AI_GUEST.ymd = d; AI_GUEST.ips = new Map(); AI_GUEST.dayMicro = 0 }
+  if (AI_GUEST.ym !== m) { AI_GUEST.ym = m; AI_GUEST.micro = 0; AI_GUEST.questions = 0;
+                           AI_GUEST.ch = aiGuestCh0() }
   /* خريطة العناوين تكبر بيوم مزدحم — نقصّها بدل ما تكبر بلا حد */
   if (AI_GUEST.ips.size > 20000) AI_GUEST.ips.clear();
 }
@@ -8606,7 +8646,8 @@ function aiGuestState() {
   aiGuestRoll();
   return { ymd: AI_GUEST.ymd, ym: AI_GUEST.ym,
     micro: AI_GUEST.micro, questions: AI_GUEST.questions,
-    ips: AI_GUEST.ips.size,
+    ips: AI_GUEST.ips.size, dayMicro: AI_GUEST.dayMicro,
+    ch: { web: Object.assign({}, AI_GUEST.ch.web), tg: Object.assign({}, AI_GUEST.ch.tg) },
     capSar: AI_CAPS.guestMonthSar, capDay: AI_CAPS.guestDay };
 }
 
@@ -8648,9 +8689,12 @@ async function aiGuestQuota(ip, opt) {
 function aiGuestSpend(ip, micro) {
   aiGuestRoll();
   const key = String(ip || 'unknown');
+  const c = Math.max(0, Number(micro) || 0);
+  const ch = AI_GUEST.ch[/^tg:/.test(key) ? 'tg' : 'web'];
   AI_GUEST.ips.set(key, (AI_GUEST.ips.get(key) || 0) + 1);
-  AI_GUEST.micro += Math.max(0, Number(micro) || 0);
+  AI_GUEST.micro += c; AI_GUEST.dayMicro += c;
   AI_GUEST.questions++;
+  ch.micro += c; ch.questions++;
   if (Date.now() - AI_GUEST_SAVED > AI_GUEST_SAVE_MS) {
     AI_GUEST_SAVED = Date.now();
     saveState().catch(() => {});
@@ -8874,9 +8918,12 @@ async function aiThreadGet(userId) {
   };
 }
 
-async function aiThreadSave(userId, th, q, answer) {
+/* ch: من وين سأل (web · tg) — المحادثة وحدة للموقع والبوت، واللوحة تعلّم
+   رسائل تلقرام. والنموذج ما يشوفه: aiChat يمرّر له الدور والنص وبس */
+async function aiThreadSave(userId, th, q, answer, ch) {
+  const c = ch === 'tg' ? 'tg' : 'web';
   const msgs = th.messages.concat(
-    [{ role: 'user', text: q }, { role: 'assistant', text: String(answer || '') }]);
+    [{ role: 'user', text: q, ch: c }, { role: 'assistant', text: String(answer || ''), ch: c }]);
   /* ملخّص متجدد بلا نداء ثانٍ للنموذج: سطر لكل سؤال خرج من النافذة.
      يكفي للاستمرارية («قبل شوي سألت عن MATH 1422») وما يكلّف رمزاً. */
   let sum = th.summary;
@@ -9043,14 +9090,19 @@ async function aiChat(userId, question, opt) {
     await aiSpendAlert();
   }
   if (spent && !guest) {
-    const w = await sb('POST', 'ai_usage', {
-      body: { user_id: String(userId), env: SITE_ENV, term: quota.term, model,
+    const row = { user_id: String(userId), env: SITE_ENV, term: quota.term, model,
               on_date: aiToday(), calls,
               in_tokens: usage.input_tokens, out_tokens: usage.output_tokens,
               cache_w_tokens: usage.cache_creation_input_tokens,
               cache_r_tokens: usage.cache_read_input_tokens,
-              cost_micro: cost },
-      prefer: 'return=representation' });
+              cost_micro: cost, channel: o.tg ? 'tg' : 'web' };
+    let w = await sb('POST', 'ai_usage', { body: row, prefer: 'return=representation' });
+    /* عمود القناة جديد: نشر السيرفر قبل الـSQL ما يوقف عدّ الاستهلاك —
+       PostgREST يرفض عموداً ما يعرفه (PGRST204)، فنعيد الكتابة بلاه */
+    if (!Array.isArray(w) && /channel/.test(String((w && w.message) || ''))) {
+      delete row.channel;
+      w = await sb('POST', 'ai_usage', { body: row, prefer: 'return=representation' });
+    }
     /* كتابة ما رجعت صفاً = ما انكتبت، بلا أي خطأ (§٦). هذي فلوس
        انصرفت وما انحسبت — نعدّها حتى تبان في اللوحة. */
     if (!Array.isArray(w) || !w.length) {
@@ -9069,7 +9121,7 @@ async function aiChat(userId, question, opt) {
       : 'ما قدرت أطلع لك جواب. جرّب تسأل بطريقة ثانية.';
     if (!why) why = 'noanswer';
   } else if (!guest) {
-    await aiThreadSave(userId, th, q, answer);
+    await aiThreadSave(userId, th, q, answer, o.tg ? 'tg' : 'web');
   }
 
   return { ok: !why, why, answer, tools: tools_used, calls, proposal, signIn,
@@ -10095,8 +10147,16 @@ const server = http.createServer(async (req, res) => {
           }
           await saveState().catch(() => {});
         }
-        const sp = await aiSpendMonth();
+        const [sp, chn] = await Promise.all([aiSpendMonth(), aiSpendChannels()]);
+        const gs = aiGuestState();
+        const chOut = c => ({ questions: c.questions, sar: Number(aiSar(c.micro)) });
         return send(200, {
+          /* حسب القناة (لقاها محمد: الصفحة ما تعرض تلقرام): المسجّلون من القاعدة،
+             والزوار من عدّاد هالبيئة. null = عرض القنوات ما انخلق بعد (الـSQL) */
+          channels: chn ? { web: chOut(chn.web), tg: chOut(chn.tg) } : null,
+          guestChannels: { web: chOut(gs.ch.web), tg: chOut(gs.ch.tg),
+            /* أسئلة قبل فصل القنوات (هالشهر): محسوبة في المجموع بلا قناة */
+            before: Math.max(0, gs.questions - gs.ch.web.questions - gs.ch.tg.questions) },
           mode: AI_MODE, modes: AI_MODES, ready: !!ANTHROPIC_KEY, env: SITE_ENV,
           model: aiModel(), modelEnv: AI_MODEL_ENV,
           modelCustom: !!AI_MODEL_OVERRIDE, modelKnown: aiKnownModel(aiModel()),
@@ -10106,6 +10166,7 @@ const server = http.createServer(async (req, res) => {
           spend: sp ? {
             monthSar: Number(aiSar(sp.micro)), todaySar: Number(aiSar(sp.today)),
             questions: sp.questions,
+            guestQuestions: sp.guestQuestions, guestSar: Number(aiSar(sp.guestMicro)),
             pct: AI_CAPS.monthSar > 0
               ? Math.round(sp.micro / (AI_CAPS.monthSar * 1e6) * 100) : 0,
             byEnv: Object.keys(sp.byEnv).reduce((o, k) => {
@@ -10171,7 +10232,8 @@ const server = http.createServer(async (req, res) => {
           name: (p0 && p0.name) || '', email: (p0 && p0.email) || '',
           major: (p0 && p0.major) || '',
           summary: th.summary, turns: th.turns,
-          messages: th.messages.map(m => ({ role: m.role, text: m.text })) });
+          messages: th.messages.map(m => ({ role: m.role, text: m.text,
+                                             ch: m.ch === 'tg' ? 'tg' : m.ch === 'web' ? 'web' : null })) });
       }
 
       /* زر «جرّب»: نداء واحد صغير يثبت المفتاح واسم النموذج */
