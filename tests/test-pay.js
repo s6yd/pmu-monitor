@@ -576,7 +576,11 @@ async function prodSuite() {
     ok(tgTo('5555', /رقم العملية مستعمل لطلب ثاني/).length === 1, 'وننبّهك');
   }
 
-  /* ── ٧) الدعوة تنسجّل لحظة التسوية — مرة للأبد، والرصيد بعد ٧ أيام (§١٠ تحت) ── */
+  /* ── ٧) الدعوة تنسجّل لحظة التسوية — مرة للأبد، والرصيد بعد ٧ أيام (§١٠ تحت) ──
+     الانتظار ما زال يشتغل لو انضبط من اللوحة (رقم فوق ٠) — نختبره بـ٧ هنا. والافتراضي صار
+     «لحظة دفعه» (قرار محمد ٤ أكتوبر ٢٠٢٦) ويختبره ٧ج */
+  eq((await call('POST', '/api/admin/pricing', { admin: true, body: { pricing: { referralHoldDays: 7 } } })).code,
+     200, 'اللوحة: رصيد الداعي بعد ٧ أيام');
   q = (await call('GET', '/api/me/quote?ref=FRD234', { tok: tokOf('u-ref') })).j;
   eq([q.discount, q.amount], [300, 1600], 'كود صديق: −٣');
   r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-ref'), body: { ref: 'frd234' } })).j;
@@ -608,6 +612,34 @@ async function prodSuite() {
   eq(sub(r.id).status, 'paid', 'السباق: مدفوع');
   eq(tgTo('6006', /اشتراكك فعّال/).length, 1, '**ثلاثة أجراس بنفس اللحظة: تفعيل واحد ورسالة وحدة**');
   eq(DB.referrals.filter(x => x.invited_id === 'u-race').length, 1, 'ودعوة وحدة');
+
+  /* ── ٧ج) الافتراضي: رصيد الداعي لحظة دفع صديقه — قرار محمد (٤ أكتوبر ٢٠٢٦) ──
+     «اللي خوييه يدفع يجيه الخصم على طول». الرصيد مكتوب ومربوط بالدعوة قبل ما يرجع الصديق
+     من صفحة الدفع، ورسالة وحدة «نزل لك» — والدورة بعدها ما تمنحه ثانياً (§١٠) */
+  eq((await call('POST', '/api/admin/pricing', { admin: true, body: { pricing: { referralHoldDays: 0 } } })).code,
+     200, 'اللوحة: رصيد الداعي لحظة دفعه (٠)');
+  DB.profiles.push(prof('u-ref4', { phone: '0500000014', telegram_chat_id: '6014' }),
+                   prof('u-friend4', { invite_code: 'FRG234', telegram_chat_id: '7780' }));
+  TOK['tok-ref4-mmmmmmmmmmmmmmmmmmmmmm'] = 'u-ref4';
+  r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-ref4'), body: { ref: 'FRG234' } })).j;
+  ok(r.ok, 'صديق رابع بدأ الدفع بكود صديقه — ' + JSON.stringify(r));
+  eq(ledger('u-friend4').length, 0, 'وما نزل للداعي شي قبل الدفع');
+  ord(r.id).status = 'PAID';
+  st = (await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-ref4') })).j;
+  eq(st.status, 'paid', 'ودفع');
+  const rf4 = DB.referrals.find(x => x.invited_id === 'u-ref4');
+  eq(ledger('u-friend4').map(x => [x.amount_halalas, x.reason, x.ref]), [[500, 'referral', 'referral:' + (rf4 && rf4.id)]],
+     '**الداعي نزل له ٥ لحظة دفع صديقه** — بلا انتظار ٧ أيام');
+  eq(rf4 && rf4.credit_id, ledger('u-friend4')[0] && ledger('u-friend4')[0].id, 'والدعوة مربوطة برصيدها — ما تنمنح ثانية');
+  await wait(300);                                  /* رسالة تلقرام ما تُنتظر */
+  const m4 = tgTo('7780', /./);
+  eq(m4.length, 1, 'ووصله خبر واحد — ' + JSON.stringify(m4.map(m => m.text.slice(0, 50))));
+  ok(m4.length === 1 && /<b>نزل لك 5 ريال رصيد<\/b>/.test(m4[0].text) && /صديقك اشترك بكودك/.test(m4[0].text)
+     && !/مدة استرجاعه|بعد \d+ أيام|خلال دقائق/.test(m4[0].text),
+     '**«نزل لك 5 ريال رصيد — صديقك اشترك بكودك»** — لا «بعد ٧ أيام» ولا «خلصت مدة استرجاعه»');
+  await hook('JDW-' + r.id);
+  eq([ledger('u-friend4').length, DB.referrals.filter(x => x.invited_id === 'u-ref4').length], [1, 1],
+     'إشعار بعد التسوية: ولا رصيد ثاني ولا دعوة ثانية');
 
   /* ── ٨) آخر أيام النافذة ⇒ الترم الجاي ── */
   await setWindow(riyadh(-5), riyadh(0));
@@ -738,6 +770,7 @@ async function prodSuite() {
   eq(rfA.credit_id, ledger('u-friend')[0] && ledger('u-friend')[0].id, 'والدعوة مربوطة برصيدها — ما تنمنح ثانية');
   await wait(300);                                  /* رسالة تلقرام ما تُنتظر */
   ok(tgTo('7777', /<b>نزل لك 5 ريال رصيد<\/b>/).length === 1, 'ووصله «نزل لك ٥» مرة وحدة');
+  eq(ledger('u-friend4').length, 1, 'ودعوة انمنحت لحظة الدفع (٧ج): الدورة ما تمنحها ثانية');
   eq([ledger('u-friend2').length, rfB.credit_id || null], [0, null],
      '**صديقه استرجع اشتراكه: ما ينزل للداعي شي**');
   eq([ledger('u-friend3').length, (DB.referrals.find(x => x.id === 93) || {}).credit_id], [1, 991],
