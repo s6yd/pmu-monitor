@@ -649,6 +649,49 @@ async function prodSuite() {
   ok(Date.parse(q.termEnd) > Date.now(), 'وما نبيع اشتراكاً منتهياً — ' + q.termEnd);
   await setWindow(riyadh(-5), riyadh(+5));
 
+  /* ── ٨ج) الهدية من اللوحة = ترم الشراء نفسه (لقاها محمد وهو يهدي طالبة ترماً) ──
+     كانت حتى نهاية ترم الدراسة: هدية بعد ما ينقفل التسجيل تنتهي قبل التسجيل
+     الجاي، والدافع في نفس اليوم ياخذ الترم الجاي كاملاً. */
+  {
+    const gift = (act, body) => call('POST', '/api/admin/' + act, { admin: true, body }).then(x => x.j);
+    const LONG = '2031-01-01T00:00:00+00:00';                     /* بصيغة القاعدة لا Z */
+    DB.profiles.push(prof('u-gift'), prof('u-gift2'),
+                     prof('u-gift3', { subscription_expires_at: LONG, pushover_until: LONG }));
+    const comps = u => DB.subscriptions.filter(x => x.user_id === u && x.status === 'comp');
+
+    await setWindow('2000-01-01', '2000-01-02');                 /* انقفل التسجيل من زمان */
+    let g = await gift('grant', { userId: 'u-gift', note: 'ساعدتنا بأفكار للموقع' });
+    q = (await call('GET', '/api/me/quote', { tok: tokOf('u-late') })).j;
+    eq([g.ok, g.term, g.expires], [true, '203020', END_NEXT],
+       '**هدية بعد ما انقفل التسجيل: ترم الشراء الجاي كاملاً** — لا نهاية ترم الدراسة');
+    eq(g.expires, q.termEnd, 'ونفس تاريخ الشراء في نفس اللحظة — قاعدة وحدة');
+    eq(P('u-gift').subscription_expires_at, END_NEXT, 'والحساب انحدّث');
+    eq(comps('u-gift').map(x => [x.term, x.valid_until, x.note, !!x.paid_at]),
+       [['203020', END_NEXT, 'ساعدتنا بأفكار للموقع', false]], 'وصف «هدية» واحد بترمها وسببها — بلا paid_at');
+    g = await gift('grant-pushover', { userId: 'u-gift', note: 'معها' });
+    eq([g.ok, g.until], [true, END_NEXT], '**والتنبيه الطارئ هدية لنفس المدة**');
+    eq(P('u-gift').pushover_until, END_NEXT, 'وانكتب في الحساب');
+
+    await setWindow(riyadh(-5), riyadh(+5));                     /* وسط النافذة */
+    g = await gift('grant', { userId: 'u-gift2' });
+    eq([g.ok, g.term, g.expires], [true, '203010', END_NOW], 'وسط النافذة: ترمها مثل الشراء');
+    await setWindow(riyadh(-5), riyadh(0));                      /* آخر يوم فيها */
+    g = await gift('grant', { userId: 'u-gift2' });
+    eq([g.ok, g.term, g.expires], [true, '203020', END_NEXT], 'آخر أيام النافذة: الترم الجاي مثل الشراء');
+    eq(comps('u-gift2').map(x => x.term), ['203010', '203020'], 'صف هدية لكل ترم');
+
+    /* ما تقصّر اشتراكاً أطول منها: كانت تكتب فوقه */
+    g = await gift('grant', { userId: 'u-gift3' });
+    eq([g.ok, g.kept, g.expires], [true, true, LONG], '**عنده أطول من الهدية: ما تقصّره**');
+    ok(/أطول/.test(g.warning || ''), 'واللوحة تقول ليش ما تغيّر شي — ' + g.warning);
+    eq([P('u-gift3').subscription_expires_at, comps('u-gift3').length], [LONG, 0], 'وتاريخه باقٍ وما انكتب صف هدية');
+    g = await gift('grant-pushover', { userId: 'u-gift3' });
+    eq([g.ok, g.kept, P('u-gift3').pushover_until], [true, true, LONG], 'ولا تقصّر التنبيه الطارئ');
+    g = await gift('grant', { userId: 'u-nobody' });
+    eq(g.ok, false, 'حساب ما يوجد: رفض صريح — ' + g.error);
+  }
+  await setWindow(riyadh(-5), riyadh(+5));
+
   /* ── ٩) ألغاها ثم دفعها من تبويب قديم: فلوسه وصلت ⇒ نفعّل ── */
   r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-late'), body: {} })).j;
   let c = (await call('POST', '/api/me/pay-cancel', { tok: tokOf('u-late'), body: { id: r.id } })).j;

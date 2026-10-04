@@ -318,6 +318,60 @@ const openAi = async page => {
     await page.close(); close();
   }
 
+  /* ── ٧) حسب القناة — لقاها محمد: الصفحة ما تعرض تلقرام ولا رسائله ── */
+  {
+    const st = { ai: aiState({
+        spend: { monthSar: 12.5, todaySar: 1.25, questions: 431, guestQuestions: 12,
+                 guestSar: 0.35, pct: 6, byEnv: { prod: 12.1 } },
+        channels: { web: { questions: 300, sar: 8.4 }, tg: { questions: 119, sar: 3.75 } },
+        guestChannels: { web: { questions: 7, sar: 0.2 }, tg: { questions: 5, sar: 0.15 }, before: 0 } }),
+      top: topState(), posts: [], asks: [], warms: [], threads: [], ping: {}, ask: {},
+      thread: { id: 'u1', env: 'prod', name: 'نورة', email: 'n@x.com', major: 'COSC',
+        turns: 3, summary: '',
+        messages: [{ role: 'user', text: 'سؤال من الموقع', ch: 'web' },
+                   { role: 'assistant', text: 'جواب الموقع', ch: 'web' },
+                   { role: 'user', text: 'سؤال من البوت', ch: 'tg' },
+                   { role: 'assistant', text: 'جواب البوت', ch: 'tg' },
+                   { role: 'user', text: 'رسالة قديمة بلا قناة', ch: null }] } };
+    const { page, errs, close } = await open(browser, st);
+    await openAi(page);
+    const t = (await page.textContent('#aiBody')).replace(/\s+/g, ' ');
+    ok(/حسب القناة/.test(t), '**بطاقة «حسب القناة» موجودة**');
+    const rows = await page.$$eval('#aiBody .kv', els =>
+      els.map(e => e.textContent.replace(/\s+/g, ' ').trim()));
+    const line = re => rows.find(x => re.test(x)) || '';
+    ok(/300 سؤال · 8\.4 ريال/.test(line(/🌐 الموقع/)), 'الموقع كما رجّعه السيرفر — ' + line(/🌐 الموقع/));
+    ok(/119 سؤال · 3\.75 ريال/.test(line(/✈️ تلقرام/)),
+       '**تلقرام بعدده ومبلغه** — ' + line(/✈️ تلقرام/));
+    ok(/7 سؤال · 0\.2 ريال/.test(line(/زوار الموقع/)), 'زوار الموقع — ' + line(/زوار الموقع/));
+    ok(/5 سؤال · 0\.15 ريال/.test(line(/زوار تلقرام/)),
+       '**وزوار تلقرام اللي ما ربطوا** — ' + line(/زوار تلقرام/));
+    ok(/منها زوار 12/.test(t), 'وعدد الأسئلة يقول كم منها زوار');
+    ok(!/شغّل الـSQL/.test(t), 'وبلا تنبيه SQL والعرض موجود');
+    ok(/ما تنحفظ/.test(t), 'وتقول بصراحة إن رسائل الزوار ما تنحفظ');
+
+    await page.click('button:has-text("محادثته")');
+    await page.waitForTimeout(400);
+    const marked = await page.$$eval('#aiBody .ai-ch', els => els.map(e => e.parentElement.textContent));
+    eq(marked.length, 2, '**رسائل تلقرام في المحادثة معلّمة ✈️ — اثنتان بالضبط**');
+    ok(marked.every(x => /البوت/.test(x)), 'والعلامة على رسائل البوت وحدها — لا الموقع ولا القديمة');
+    eq(errs, [], 'بلا أخطاء');
+    await page.close(); close();
+  }
+  /* العرض ناقص (الـSQL ما انشغّل) ⇒ تنبيه صريح لا أصفار */
+  {
+    const st = { ai: aiState({ channels: null,
+        guestChannels: { web: { questions: 2, sar: 0.05 }, tg: { questions: 0, sar: 0 }, before: 3 } }),
+      top: topState(), posts: [], asks: [], warms: [], threads: [], ping: {}, ask: {} };
+    const { page, errs, close } = await open(browser, st);
+    await openAi(page);
+    const t = (await page.textContent('#aiBody')).replace(/\s+/g, ' ');
+    ok(/شغّل الـSQL/.test(t), '**عرض القنوات ناقص ⇒ «شغّل الـSQL»** لا «صفر» كاذب');
+    ok(/زوار قبل فصل القنوات 3 سؤال/.test(t), 'وأسئلة الزوار قبل الفصل تبين بعددها');
+    eq(errs, [], 'بلا أخطاء');
+    await page.close(); close();
+  }
+
   /* ── ٦) فحص ثابت ── */
   {
     ok(/id="pageAi"/.test(SRC), 'صفحة المساعد في الـHTML');
