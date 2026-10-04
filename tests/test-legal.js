@@ -137,6 +137,18 @@ for (const k of ['about', 'terms']) {
 }
 /* قرار محمد (٣٠ سبتمبر ٢٠٢٦): التنبيه الطارئ ١٥ ريال بدل ١٠ */
 eq(D && D.pushoverHalalas, 1500, '**التنبيه الطارئ ١٥ ريال** (قرار محمد)');
+/* رصيد الداعي في الشروط (الدعوات) = الافتراضي في الكود — قرار محمد (٤ أكتوبر ٢٠٢٦): «لحظة
+   دفعه» بدل «بعد ٧ أيام من اشتراكه». والمبلغان (خصم الصديق ورصيد الداعي) من الكود كذلك */
+{
+  const a = /اللي يسجّل بكودك ياخذ خصم ([٠-٩]+) ريال على أول اشتراك له، وأنت تاخذ ([٠-٩]+) ريال رصيد <b>([^<]+)<\/b>/.exec(PAGES.terms);
+  const e = /gets SAR (\d+) off their first subscription, and you get SAR (\d+) credit <b>([^<]+)<\/b>/.exec(PAGES.terms);
+  eq([a && arNum(a[1]), a && arNum(a[2]), e && +e[1], e && +e[2]],
+     D && [sar(D.friendDiscountHalalas), sar(D.referrerCreditHalalas), sar(D.friendDiscountHalalas), sar(D.referrerCreditHalalas)],
+     '**الشروط: خصم الصديق ورصيد الداعي (عربي وإنجليزي) = الكود**');
+  eq([a && a[3], e && e[3], D && D.referralHoldDays], ['أول ما يدفع', 'as soon as they pay', 0],
+     '**الشروط: رصيد الداعي «أول ما يدفع» باللغتين = لحظة دفعه في الكود**');
+  ok(!/بعد ٧ أيام من اشتراكه|7 days after they subscribe/.test(PAGES.terms), 'وما بقى «بعد ٧ أيام من اشتراكه» في الشروط');
+}
 
 /* ═══ ٧) رخصة Pushover علينا — قرار محمد ═══
    الجولة الثانية من النصوص كانت تقول «شراء على حسابك · غير مشمول في السعر»، ومحمد قرّر:

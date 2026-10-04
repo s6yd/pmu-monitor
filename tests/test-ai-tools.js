@@ -654,6 +654,13 @@ function fakeModel(ctx) {
        '**وخصم تقييم الدكاترة**');
     ok(/4 ريال/.test(pi.friendDiscount || '') && /6 ريال/.test(pi.friendDiscount || ''),
        'وخصم الصديق ورصيد الداعي');
+    ok(/بعد 7 أيام من دفعه/.test(pi.friendDiscount || ''), 'ومدة الانتظار لو انضبطت من اللوحة (٧)');
+    /* قرار محمد (٤ أكتوبر ٢٠٢٦): رصيد الداعي لحظة دفع صديقه — كان «بعد 0 أيام» */
+    ctxObj.PRICING.referralHoldDays = 0;
+    const pi0 = (await callFree('plans_info', '{}')).friendDiscount || '';
+    ctxObj.PRICING.referralHoldDays = 7;
+    ok(/6 ريال رصيد أول ما يدفع/.test(pi0) && !/بعد 0 أيام|بعد \d+ أيام/.test(pi0),
+       '**لحظة دفعه (٠): «ينزل لك 6 ريال رصيد أول ما يدفع»** لا «بعد 0 أيام» — ' + pi0);
     ok(/11 ريال/.test(pi.minCash || ''), 'وأقل دفع نقدي');
     ok(/16 ريال/.test(pi.urgent || ''), 'والتنبيه الطارئ وهو معروض');
     eq(pi.where, '⚙️ الإعدادات ← «الباقات»', 'ومن وين يشترك');
