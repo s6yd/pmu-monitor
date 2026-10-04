@@ -18,7 +18,7 @@ const ok = (c, m) => { if (c) { pass++ } else { fail++; console.log('  ✗ ' + m
 const eq = (a, b, m) => ok(JSON.stringify(a) === JSON.stringify(b),
   `${m} — توقّعنا ${JSON.stringify(b)} وجانا ${JSON.stringify(a)}`);
 
-const ST = { pay: null, ping: null, pings: 0 };
+const ST = { pay: null, ping: null, pings: 0, lic: null, licNext: null, licCalls: [] };
 const server = http.createServer((req, res) => {
   const u = req.url.split('?')[0];
   if (u === '/' || u === '/admin.html') {
@@ -28,6 +28,17 @@ const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'application/json' });
   if (u.endsWith('/pay')) return res.end(JSON.stringify(ST.pay));
   if (u.endsWith('/pay-ping')) { ST.pings++; return res.end(JSON.stringify(ST.ping)) }
+  if (u.endsWith('/po-lic')) return res.end(JSON.stringify(ST.lic));
+  if (u.endsWith('/po-lic-retry') || u.endsWith('/po-lic-done')) {
+    let raw = '';
+    req.setEncoding('utf8');
+    req.on('data', c => raw += c);
+    req.on('end', () => {
+      ST.licCalls.push({ act: u.split('/').pop(), body: JSON.parse(raw || '{}') });
+      res.end(JSON.stringify(ST.licNext));
+    });
+    return;
+  }
   res.end(JSON.stringify({ ok: true }));
 });
 
@@ -201,8 +212,107 @@ const server = http.createServer((req, res) => {
   const tc = await page.evaluate(() => (document.querySelector('.toast') || {}).textContent || '');
   ok(/انسخ الرابط|\/api\/edfapay\/webhook/.test(tc), 'زر «انسخ» ينسخ رابط الإشعار — ' + tc);
 
+  /* ── ٧) رخص Pushover — تنضاف تلقائياً (طلب محمد «بدون تدخل مني») ──
+     البطاقة تعرض ما يقوله السيرفر: الوضع · الرصيد · المستحقون · آخر الطلاب. ولما توقف
+     (رفضوها · ما ندري) زرّان على الطالب نفسه — ولا شي يُحسب هنا */
+  const U1 = '00000000-0000-4000-8000-000000000001', U2 = '00000000-0000-4000-8000-000000000002';
+  const LB = { ok: true, live: true, on: true, table: 'ok', credits: 8, creditsError: null, state: 'on',
+    waiting: 1, refundDays: 7, low: 2, rows: [
+      { user: U2, email: 's2@example.com', status: 'assigned', source: 'comp', kind: null, credits: 8,
+        error: null, at: ago(30), doneAt: ago(29) },
+      { user: U1, email: 's1@example.com', status: 'assigned', source: 'paid', kind: null, credits: 9,
+        error: null, at: ago(90), doneAt: ago(89) }] };
+  const L = o => Object.assign({}, LB, o);
+  const lic = async d => {
+    ST.lic = d;
+    return page.evaluate(async () => {
+      let el = document.getElementById('poLicCard');
+      if (!el) { el = document.createElement('div'); el.id = 'poLicCard'; document.body.prepend(el) }
+      await loadPoLic(true);
+      return el.textContent.replace(/\s+/g, ' ');
+    });
+  };
+  ok(await page.evaluate(() => typeof loadPoLic === 'function' && typeof poLicCardHTML === 'function'),
+     'دوال بطاقة الرخص موجودة');
+  const SRC = fs.readFileSync(FILE, 'utf8');
+  ok(/<div id="poLicCard">\$\{poLicCardHTML\(\)\}<\/div>/.test(SRC) && /\n  loadPay\(\);\n  loadPoLic\(\);/.test(SRC),
+     '**البطاقة في تبويب «النظام» تحت بطاقة الدفع**، وتُحمَّل معها');
+  t = await lic(L());
+  ok(/رخص Pushover/.test(t) && /شغّالة/.test(t) && /8 رخصة/.test(t), 'شغّالة والرصيد من Pushover — ' + t.slice(0, 120));
+  ok(/مستحقون ينتظرون الحين ?1/.test(t), 'وكم واحد ينتظر — ' + t.slice(0, 200));
+  ok(/بعد 7 أيام من الدفع/.test(t) && /والهدية فوراً/.test(t) && /Purchase License Credits/.test(t),
+     'وتقول متى تنضاف ومن وين تشتري الرصيد');
+  ok(/s2@example\.com · هدية/.test(t) && /✅ انضافت/.test(t), 'والطلاب: إيميله · هدية · انضافت');
+  ok(await page.$$eval('#poLicCard button[onclick*="\'retry\'"], #poLicCard button[onclick*="\'done\'"]', b => b.length) === 0,
+     'شغّالة: بلا «أعد» ولا «تمّت»');
+
+  /* موقوفة: الطالب المتوقف وسببه وزرّاه */
+  const STOP = L({ state: 'stopped', waiting: 2, rows: [
+    { user: U1, email: 's1@example.com', status: 'failed', source: 'paid', kind: 'rejected', credits: null,
+      error: 'user: is invalid <img src=x onerror=alert(1)>', at: ago(5), doneAt: ago(5) }].concat(LB.rows.slice(0, 1)) });
+  t = await lic(STOP);
+  ok(/موقوفة — تحتاج نظرك/.test(t) && /Pushover رفضها/.test(t) && /user: is invalid/.test(t),
+     '**موقوفة: مين وليش — بنصّهم**');
+  ok(await page.$('#poLicCard img') === null, '**نص خطأ فيه وسم يُهرَّب**');
+  ok(/Pushover ينصح ما نعيد لحالنا/.test(t), 'وتقول ليش وقّفنا ووش يسوي كل زر');
+  ST.licNext = L(); ST.licCalls.length = 0;
+  await page.evaluate(() => document.querySelector('#poLicCard button[onclick*="\'retry\'"]').click());
+  await page.waitForTimeout(300);
+  eq(ST.licCalls, [{ act: 'po-lic-retry', body: { userId: U1 } }], '«🔁 أعد»: يطلبها لهالطالب بالذات');
+  t = await page.evaluate(() => document.getElementById('poLicCard').textContent.replace(/\s+/g, ' '));
+  ok(/شغّالة/.test(t), 'والبطاقة ترسم رد السيرفر');
+  await lic(STOP);
+  ST.licCalls.length = 0;
+  page.once('dialog', dg => dg.dismiss());
+  await page.evaluate(() => document.querySelector('#poLicCard button[onclick*="\'done\'"]').click());
+  await page.waitForTimeout(250);
+  eq(ST.licCalls.length, 0, '«✔️ تمّت» يسأل قبل — ورفضت: ما صار شي');
+  page.once('dialog', dg => dg.accept());
+  await page.evaluate(() => document.querySelector('#poLicCard button[onclick*="\'done\'"]').click());
+  await page.waitForTimeout(300);
+  eq(ST.licCalls, [{ act: 'po-lic-done', body: { userId: U1 } }], 'ووافقت: «تمّت» لهالطالب');
+
+  /* رخصة ثانية لطالب أخذها (غيّر حسابه أو جواله): بتأكيد — تنصرف رخصة */
+  await lic(L());
+  ST.licCalls.length = 0;
+  page.once('dialog', dg => dg.dismiss());
+  await page.evaluate(() => document.querySelector('#poLicCard button[onclick*="\'again\'"]').click());
+  await page.waitForTimeout(250);
+  eq(ST.licCalls.length, 0, '«رخصة ثانية» بتأكيد — ورفضت: ما انصرف شي');
+  page.once('dialog', dg => dg.accept());
+  await page.evaluate(() => document.querySelector('#poLicCard button[onclick*="\'again\'"]').click());
+  await page.waitForTimeout(300);
+  eq(ST.licCalls, [{ act: 'po-lic-retry', body: { userId: U2 } }], 'ووافقت: تنطلب له من جديد');
+  ST.licCalls.length = 0;
+  await page.evaluate(() => document.querySelector('#poLicCard button[onclick*="\'go\'"]').click());
+  await page.waitForTimeout(300);
+  eq(ST.licCalls, [{ act: 'po-lic-retry', body: {} }], '«▶️ كمّل الحين» بلا طالب — بعد ما تشتري');
+
+  /* خلص الرصيد · الجدول ناقص · ما قرينا الرصيد · dev */
+  t = await lic(L({ state: 'credits', credits: 0, rows: [] }));
+  ok(/خلص الرصيد — تكمل لحالها بعد ما تشتري/.test(t) && /0 رخصة/.test(t), 'خلص الرصيد: تكمل لحالها بعد الشراء');
+  t = await lic(L({ state: 'missing', table: 'missing', waiting: null, rows: [] }));
+  ok(/الجدول ناقص — نفّذ أمر SQL «رخص Pushover»/.test(t) && !/ينتظرون/.test(t), 'الجدول ناقص: «نفّذ الـSQL»');
+  t = await lic(L({ credits: null, creditsError: 'token: application token is invalid' }));
+  ok(/ما قدرنا نقرأه — token: application token is invalid/.test(t), 'الرصيد ما انقرأ: يقول ليش');
+  t = await lic(L({ live: false, state: 'dev', rows: STOP.rows }));
+  ok(/من الإنتاج وحده/.test(t) && await page.$$eval('#poLicCard button[data-u]', b => b.length) === 0,
+     'dev: «من الإنتاج وحده» وبلا أزرار');
+
   ok(errs.length === 0, 'بلا أخطاء JS — ' + errs.slice(0, 2).join(' | '));
   if (SHOT) {
+    await lic(STOP);
+    await page.evaluate(() => {
+      const el = document.getElementById('poLicCard');
+      document.body.innerHTML = ''; el.style.padding = '16px'; el.style.background = 'var(--bg)';
+      document.body.appendChild(el); document.body.style.display = 'block';
+    });
+    await page.screenshot({ path: path.join(SHOT, 'admin-polic-stopped.png'), fullPage: true });
+    await lic(L());
+    await page.screenshot({ path: path.join(SHOT, 'admin-polic-on.png'), fullPage: true });
+    await page.goto(`http://127.0.0.1:${server.address().port}/`, { waitUntil: 'load' });
+    await page.waitForFunction(() => typeof window.loadPay === 'function', null, { timeout: 15000 }).catch(() => {});
+
     /* صورة البطاقة وحدها على مقاس الجوال — واللوحة ثيم واحد (داكن) */
     await card(last({ why: 'nosig', sigLen: 0, okAt: ago(90) }));
     await page.evaluate(() => {
