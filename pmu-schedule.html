@@ -4854,6 +4854,9 @@ async function loadMonitorState(){
   try{ enforceSlotAndRedraw() }catch(e){}
   /* مربّع خصم التقييم يبان بعد الفترة المجانية — والطالب ممكن يكون في الدكاترة الحين */
   try{ if(CUR_TAB==='docs')paintDocCredit() }catch(e){}
+  /* ورقة مفتوحة لزائر قبل ما توصل حالة الموقع (‎?plans=1‎): ترمها وتاريخها من
+     الاحتياط — نعيد رسمها بالحقيقي. المسجّل يجيه ترمه وتاريخه من سؤال السعر */
+  try{ const ps=document.getElementById('planSheet'); if(!USER&&ps&&!ps.hidden)openPlans(PS_REASON) }catch(e){}
   const eb=document.getElementById('envBar');
   if(eb && MON_STATE && MON_STATE.env && MON_STATE.env!=='prod'){
     eb.className='env-bar on';
@@ -6340,7 +6343,9 @@ async function copyInvite(){
 }
 
 /* ═══ ورقة الباقات ═══ */
+let PS_REASON='compare';
 function openPlans(reason){
+  PS_REASON=reason||'compare';
   const ar=LANG==='ar', P=planInfo();
   let el=document.getElementById('planSheet');
   if(!el){
@@ -6431,7 +6436,7 @@ function plansTotal(){
   plansQuote();
 }
 async function plansQuote(){
-  if(!USER)return;
+  if(!USER){ payGuestUi(); return }
   const seq=++PS_QUOTE_SEQ, ar=LANG==='ar';
   const po=document.getElementById('psPo');
   const q=await meFetch(`/api/me/quote?pushover=${po&&po.checked?1:0}&ref=${encodeURIComponent(storedRef())}`)
@@ -6472,12 +6477,22 @@ let PS_Q=null, PAY_BUSY=false;
 let PAY_BACK=(()=>{ const m=/[?&]pay=(\d{1,12})(?:&|$)/.exec(location.search); return m?m[1]:null })();
 /* ‎?plans=1‎ يفتح ورقة الباقات مباشرة — وقت الفترة المجانية ما فيه زر «الباقات»،
    فهذا مدخل صاحب الموقع لتجربة الدفع (والزر نفسه يقرّره السيرفر كما هو) */
-let PLANS_OPEN=/[?&]plans=1(?:&|$)/.test(location.search);
+/* وزائر ضغط «سجّل دخولك واشترك» في الورقة: بعد الدخول نرجّعه لها. علامة في التخزين
+   لا ‎?plans=1‎ في رابط الرجوع (رابط الرجوع من قوقل لازم يطابق قائمة Supabase).
+   تنشال أول ما تنقرأ، وبعد ربع ساعة ما لها أثر — دخول تركه قبل ما يكمّله */
+const PLANS_AFTER_LOGIN='pmu_plans_after_login';
+let PLANS_OPEN=/[?&]plans=1(?:&|$)/.test(location.search)||(()=>{
+  try{
+    const at=Number(localStorage.getItem(PLANS_AFTER_LOGIN)||0);
+    localStorage.removeItem(PLANS_AFTER_LOGIN);
+    return at>0&&Date.now()-at<15*60*1000;
+  }catch(e){ return false }
+})();
 /* ‎?pushover=1‎ من رابط الإيصال: بعد الدخول نفتح الإعدادات على بطاقة التفعيل.
    يُقرأ عند تحميل السكربت — poCheckUnlock وinitAuth يمسحان الرابط */
 let PO_GO=/[?&]pushover=1(?:&|$)/.test(location.search);
 /* جا بغرض (رابط الإيصال · زر التفعيل): دليل أول زيارة ما يقتحم فوق البطاقة */
-let GUIDE_HOLD=!!PAY_BACK;      /* وراجع من صفحة الدفع: النتيجة أهم من الدليل (صورة اختبار الصفحة: الاثنين فوق بعض) */
+let GUIDE_HOLD=!!PAY_BACK||PLANS_OPEN;      /* وراجع من صفحة الدفع: النتيجة أهم من الدليل (صورة اختبار الصفحة: الاثنين فوق بعض) */
 function payClosedText(why){
   const ar=LANG==='ar';
   return ({beta:ar?'الدفع يفتح مع نهاية الفترة المجانية':'Checkout opens when the free period ends',
@@ -6488,6 +6503,23 @@ function payMsg(html,cls){
   const el=document.getElementById('psMsg');
   if(!el)return;
   el.hidden=!html; el.className='pay-msg'+(cls?' '+cls:''); el.innerHTML=html||'';
+}
+/* زائر بلا دخول (لقاها محمد بعد الإطلاق): سؤال السعر يحتاج حسابه، فكان الزر يبقى على
+   «الدفع يفتح قريباً» — والدفع مفتوح فعلاً. صار «سجّل دخولك واشترك»: الدخول بقوقل ثم
+   ترجع الورقة نفسها، وبعدها السعر والزر من السيرفر كالعادة (q.pay) */
+/* دخل والورقة مفتوحة (الجلسة وصلت بعد ما رسمناها له كزائر): السعر والزر من السيرفر الحين */
+function plansRefresh(){
+  const el=document.getElementById('planSheet');
+  if(el&&!el.hidden){ try{ plansTotal(); psRcPaint() }catch(e){} }
+}
+function payGuestUi(){
+  PS_Q=null;
+  for(const id of ['psPhoneBox','psBy','psTerms','psRefund']){
+    const e=document.getElementById(id); if(e)e.hidden=true }
+  const btn=document.getElementById('psPay');
+  if(!btn)return;
+  btn.disabled=false;
+  btn.textContent=LANG==='ar'?'سجّل دخولك واشترك':'Sign in to subscribe';
 }
 function payUi(q){
   PS_Q=q;
@@ -6519,6 +6551,10 @@ function payUi(q){
 /* صفحة الدفع عند EdfaPay وحدها — نفس فحص السيرفر (epUrlOk) */
 const payUrlOk=u=>/^https:\/\/([a-z0-9-]+\.)*edfapay\.com\//i.test(String(u||''));
 async function payStart(){
+  if(!USER){
+    try{ localStorage.setItem(PLANS_AFTER_LOGIN,String(Date.now())) }catch(e){}
+    return googleSignIn();
+  }
   const q=PS_Q, ar=LANG==='ar';
   if(PAY_BUSY||!q||!(q.pay&&q.pay.open))return;
   const inp=document.getElementById('psPhone'), po=document.getElementById('psPo');
@@ -9224,6 +9260,9 @@ function redrawTodayAfterAuth(){
   setAuthUI();
   redrawTodayAfterAuth();
   aiProbe().catch(()=>{});
+  /* زائر جا على ‎?plans=1‎ (رابط من المساعد · «عن جدولك»): كانت ما تفتح شي —
+     تفتح الورقة وفيها «سجّل دخولك واشترك» */
+  if(!USER&&PLANS_OPEN){ PLANS_OPEN=false; try{ openPlans('compare') }catch(e){} }
   if(USER){await pullCloud();setAuthUI();renderPlan();enforceSlotAndRedraw();redrawTodayAfterAuth();
     loadAccount(true).then(()=>{ try{ if(CUR_TAB==='set')renderSettings() }catch(e){} });
     payReturn().catch(()=>{});          /* رجع من صفحة الدفع؟ */
@@ -9232,6 +9271,7 @@ function redrawTodayAfterAuth(){
   sb.auth.onAuthStateChange(async(ev,sess)=>{
     const was=!!USER;USER=sess?sess.user:null;
     if(USER&&!was){await pullCloud();setAuthUI();renderPlan();redrawTodayAfterAuth();
+      plansRefresh();
       payReturn().catch(()=>{}); if(PO_GO)poGo();}
     aiProbe().catch(()=>{});
   });
