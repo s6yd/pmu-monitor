@@ -66,7 +66,7 @@ const PRICING_DEFAULT = Object.freeze({
   pushoverHalalas: 1500,        /* إضافة التنبيه الطارئ — ١٥ ريال (قرار محمد ٣٠ سبتمبر ٢٠٢٦) */
   friendDiscountHalalas: 300,   /* خصم الصديق على أول شراء */
   referrerCreditHalalas: 500,   /* رصيد الداعي لما يدفع صديقه */
-  referralHoldDays: 7,          /* …بعد كم يوم من دفعه — مدة الاسترجاع (الشروط §٣) */
+  referralHoldDays: 0,          /* …بعد كم يوم من دفعه — ٠ = لحظة دفعه (قرار محمد ٤ أكتوبر ٢٠٢٦) */
   reviewsCreditHalalas: 500,    /* رصيد طلب التقييم المقبول */
   reviewsNeeded: 5,             /* تقييمات لطلب الرصيد */
   creditTerms: 2,               /* صلاحية الرصيد: ترمان بعد ترم المنح */
@@ -835,9 +835,11 @@ async function payActivate(s) {
 
 /* الدعوة تنسجّل لحظة التسوية — أول شراء للصديق، وreferrals.invited_id فريد
    فتنحسب مرة للأبد. ودفعة التجربة ما تمنح رصيداً حقيقياً.
-   **والرصيد بعد مدة الاسترجاع** (الشروط §٣ — الجولة الثانية): كان ينزل لحظة الدفع،
-   فصديق يسترجع اشتراكه يخلّي رصيد داعيه عندنا بلا مقابل. صار ينزل بعد
-   `referralHoldDays` (٧) لو اشتراك الصديق باقٍ مدفوعاً — referralTick */
+   **والرصيد لحظة دفعه — قرار محمد (٤ أكتوبر ٢٠٢٦)**: «اللي خوييه يدفع يجيه الخصم على
+   طول». كان ينزل بعد مدة الاسترجاع (`referralHoldDays` ٧ — الجولة الثانية من الشروط)
+   عشان صديق يسترجع ما يخلّي رصيداً بلا مقابل؛ والاسترجاع يدوي وقليل، والتحايل ممنوع في
+   الشروط. صار ٠: نمنحه هنا بـ`referralGrant` نفسها (الحجز مرة وحدة فيها)، والدورة شبكة
+   أمان لو تعثّر. ورقم فوق ٠ من اللوحة يرجّع الانتظار كما كان — referralTick */
 async function payReferral(s) {
   if (!s.referral_code || !(Number(s.discount_halalas) > 0) || s.gateway !== 'edfapay') return;
   const own = await sb('GET', 'profiles', { query:
@@ -849,13 +851,19 @@ async function payReferral(s) {
     prefer: 'return=representation' }).catch(e => ({ message: e.message }));
   if (!Array.isArray(rf) || !rf.length) return;          /* 23505: انحسب له من قبل */
   const amt = PRICING.referrerCreditHalalas, days = PRICING.referralHoldDays;
-  if (amt > 0 && o.telegram_chat_id)
+  if (!(amt > 0)) return;
+  if (!(days > 0)) {                                      /* لحظة دفعه — رسالة وحدة «نزل لك» */
+    await referralGrant(rf[0], amt).catch(e => console.log('referral ' + rf[0].id + ': ' + e.message));
+    return;
+  }
+  if (o.telegram_chat_id)
     sendMsg(o.telegram_chat_id, `🎁 <b>صديقك اشترك بكودك</b>\n\nينزل لك ${amt / 100} ريال رصيد ` +
-      (days > 0 ? `بعد ${days} أيام، لما تخلص مدة الاسترجاع.` : 'خلال دقائق.')).catch(() => {});
+      `بعد ${days} أيام، لما تخلص مدة الاسترجاع.`).catch(() => {});
 }
 
-/* رصيد الداعي لما تخلص مدة الاسترجاع — من الدورة، **والإنتاج وحده**: القاعدة
-   مشتركة ودفعات dev تجريبية. نافذة ٦٠ يوم: دعوة اشتراكها انسترجع ما تنفحص للأبد.
+/* رصيد الداعي لما تخلص المدة (لو انضبطت فوق ٠ من اللوحة)، وشبكة أمان للحظي لو تعثّر —
+   من الدورة، **والإنتاج وحده**: القاعدة مشتركة ودفعات dev تجريبية. نافذة ٦٠ يوم: دعوة
+   اشتراكها انسترجع ما تنفحص للأبد.
    **مرة وحدة**: نكتب الرصيد ثم نحجز الدعوة بتحديث مشروط (credit_id فاضي)، والخاسر
    في سباق (نسختان وقت النشر) يشيل صفّه — ما ينكتب رصيدان */
 const REF_WINDOW_MS = 60 * 864e5;
@@ -902,8 +910,9 @@ async function referralGrant(rf, amt) {
   const pr = await sb('GET', 'profiles', { query:
     `?id=eq.${encodeURIComponent(rf.referrer_id)}&select=telegram_chat_id&limit=1` }).catch(() => []);
   const chat = Array.isArray(pr) && pr[0] && pr[0].telegram_chat_id;
-  if (chat) sendMsg(chat, `🎁 <b>نزل لك ${amt / 100} ريال رصيد</b>\n\nصديقك اشترك بكودك وخلصت مدة ` +
-    'استرجاعه — الرصيد ينخصم تلقائياً من اشتراكك الجاي.').catch(() => {});
+  if (chat) sendMsg(chat, `🎁 <b>نزل لك ${amt / 100} ريال رصيد</b>\n\nصديقك اشترك بكودك` +
+    (PRICING.referralHoldDays > 0 ? ' وخلصت مدة استرجاعه' : '') +
+    ' — الرصيد ينخصم تلقائياً من اشتراكك الجاي.').catch(() => {});
 }
 
 /* اسم الترم كما تعرضه الصفحة (termLabel): 202720 ⇒ «ربيع 2026/2027» */
@@ -930,18 +939,18 @@ function payReceipt(s) {
   if (n('credit_halalas')) L.push(`• من رصيدك: −${paySar(n('credit_halalas'))} ريال`);
   L.push(`<b>المدفوع: ${paySar(n('amount_halalas'))} ريال</b>` +
     (n('amount_halalas') ? ' · عبر EdfaPay' : ' — غطّاه رصيدك'));
-  if (s.gateway_ref) L.push(`رقم العملية: <code>${esc(s.gateway_ref)}</code>`);
+  /* بلا رقم العملية ولا سطر السجل التجاري — قرار محمد (٤ أكتوبر ٢٠٢٦، على أول إيصال حقيقي):
+     «ما يحتاج». رقم الطلب (JDW-…) يكفي الطالب للمراجعة، ورقم العملية محفوظ عندنا في gateway_ref.
+     والسجل كان سطراً للائحة التجارة الإلكترونية (الجولة الثانية من النصوص) — باقٍ في «عن جدولك» */
   L.push(`التاريخ: ${d(s.paid_at || Date.now())}`, `ساري حتى: ${d(s.valid_until)}`);
-  /* اللائحة التنفيذية لنظام التجارة الإلكترونية: وصف الخدمة ورقم السجل في الفاتورة — بلا اسم
-     المؤسسة (قرار محمد). آخر الإيصال نفسه، قبل خطوات التفعيل (مو جزء من الفاتورة) */
-  L.push('', 'اشتراك ترم في جدولك · سجل تجاري 7055288521');
   if (s.pushover) L.push('', '🚨 <b>فعّل التنبيه الطارئ</b> — مرة وحدة من جوالك:',
     '1️⃣ نزّل تطبيق <b>Pushover</b> من App Store أو Google Play وسوّ حساباً فيه',
     `2️⃣ افتح ${PAY_ORIGIN_PROD}/?pushover=1 واضغط «تفعيل»`,
     '3️⃣ وافق في صفحة Pushover — ترجع للموقع ويطلع لك «🔔 التنبيه الطارئ شغّال»',
     '4️⃣ في إعدادات تطبيق Pushover فعّل <b>Critical Alerts</b> عشان يرن حتى لو الجوال صامت',
-    `رخصة التطبيق علينا: تنضاف لحسابك تلقائياً بعد ${REFUND_DAYS} أيام من الدفع، وتجربته ` +
-    'المجانية تغطيك لين ذاك. لو طلب منك دفعاً، راسلنا هنا ونتكفّل فيه.');
+    /* الرخصة تنضاف تلقائياً (رخص Pushover)، والإيصال ما يشرحها — قرار محمد (٤ أكتوبر ٢٠٢٦):
+       «مو لازم كل هذا الشرح». الوعد وحده (§٧) */
+    'إضافتك تغطي التطبيق: لو طلب منك دفعاً، راسلنا هنا ونتكفّل فيه.');
   return L.join('\n');
 }
 
@@ -2533,6 +2542,10 @@ async function restoreEvents() {
    يضيع ما هو محفوظ، وغيره يأخذ اسمه. */
 const STATE_KEY = SITE_ENV === 'prod' ? 'runtime' : `runtime-${SITE_ENV}`;
 
+/* نسخة الأسعار المحفوظة — كل تغيير لافتراضي ينحفظ أصلاً (saveState يحفظ PRICING كاملة كل
+   ٥ دقائق) يرفعها، و`restoreState` تنقل المحفوظ قبلها مرة وحدة. ٢: رصيد الداعي لحظة دفعه */
+const PRICING_REV = 2;
+
 /* عدّادات وذروة التغذية — الذروة أهمها:
    بدونها يبدأ قاطع الدائرة أعمى بعد كل نشر ولا يحميه إلا الحد المطلق. */
 async function saveState() {
@@ -2552,7 +2565,7 @@ async function saveState() {
                  prewarmOn: PREWARM_ON, finalsOn: FINALS_ON,
                  termOverride: TERM_OVERRIDE, windowOverride: WINDOW_OVERRIDE,
                  hoursOverride: HOURS_OVERRIDE, pushoverMode: PUSHOVER_MODE,
-                 freeBeta: FREE_BETA, pricing: PRICING,
+                 freeBeta: FREE_BETA, pricing: PRICING, pricingRev: PRICING_REV,
                  aiMode: AI_MODE, aiModel: AI_MODEL_OVERRIDE, aiWarmOn: AI_WARM_ON,
                  /* عدّاد الزوار: بلا حفظه يرجع لصفر مع كل نشر فيضيع سدّه */
                  aiGuest: { ymd: AI_GUEST.ymd, ym: AI_GUEST.ym,
@@ -2594,6 +2607,10 @@ async function restoreState() {
      لو صار مخالفاً لقيد أُضيف بعد حفظه */
   if (g.pricing && typeof g.pricing === 'object') {
     const merged = Object.assign({}, PRICING_DEFAULT, g.pricing);
+    /* رصيد الداعي لحظة دفعه — قرار محمد (٤ أكتوبر ٢٠٢٦): المحفوظ قبله فيه ٧ (الافتراضي
+       القديم ينحفظ مع كل حفظ)، فبلا هذا يبقى الانتظار في الإنتاج والشروط تقول «أول ما يدفع».
+       مرة وحدة: بعدها pricingRev ٢ ينحفظ، ورقم تختاره من اللوحة يبقى */
+    if (!(Number(g.pricingRev) >= 2) && merged.referralHoldDays === 7) merged.referralHoldDays = 0;
     if (!validatePricing(merged)) PRICING = merged;
   }
   /* المحفوظ قبل التغيير اسمه pro — نقرأه addon */
@@ -7786,8 +7803,9 @@ const AI_TOOLS = {
           + 'الجوال صامت (عبر تطبيق Pushover)' : null,
         reviewsDiscount: aiReviewsDiscount(P),
         friendDiscount: `دعوة صديق: صديقك ياخذ خصم ${P.friendDiscountHalalas / 100} ريال على أول `
-          + `اشتراك برابطك، وأنت ينزل لك ${P.referrerCreditHalalas / 100} ريال رصيد بعد `
-          + `${P.referralHoldDays} أيام من دفعه — رابطك في ⚙️ الإعدادات`,
+          + `اشتراك برابطك، وأنت ينزل لك ${P.referrerCreditHalalas / 100} ريال رصيد `
+          + (P.referralHoldDays > 0 ? `بعد ${P.referralHoldDays} أيام من دفعه` : 'أول ما يدفع')
+          + ' — رابطك في ⚙️ الإعدادات',
         minCash: `أقل مبلغ تدفعه ${P.minCashHalalas / 100} ريال للطلب، والرصيد يغطي الباقي`,
         where: aiPlansWhere(ctx),
         freePeriod: (typeof FREE_BETA !== 'undefined' && FREE_BETA)

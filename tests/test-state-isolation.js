@@ -55,7 +55,9 @@ if (process.argv[2] === '--child') {
     const before = await call('/api/admin/beta-toggle', 'GET');
     await call('/api/admin/beta-toggle', 'POST', { on: !before.on });
     const h = await call('/api/admin/health', 'GET');
-    log(JSON.stringify({ restored: before.on, state: DB.app_state, key: h.stateKey, env: h.env }));
+    const pr = await call('/api/admin/pricing', 'GET');
+    log(JSON.stringify({ restored: before.on, state: DB.app_state, key: h.stateKey, env: h.env,
+                         pricing: pr.pricing }));
     process.exit(0);
   }, 700);
   return;
@@ -68,10 +70,13 @@ const run = (env, seed) => {
                       { encoding: 'utf8', timeout: 20000 });
   try { return JSON.parse((r.stdout || '').trim().split('\n').pop()) } catch (e) { return null }
 };
-const row = (key, freeBeta) => ({ key, value: { toggles: { freeBeta } } });
+const row = (key, freeBeta, extra) => ({ key, value: { toggles: Object.assign({ freeBeta }, extra || {}) } });
 
-/* الإنتاج محفوظ «منتهية»، و dev محفوظ «شغّالة» */
-const seed = [row('runtime', false), row('runtime-dev', true)];
+/* الإنتاج محفوظ «منتهية»، و dev محفوظ «شغّالة».
+   والأسعار محفوظة قبل «رصيد الداعي لحظة دفعه» (قرار محمد ٤ أكتوبر ٢٠٢٦) — بلا pricingRev:
+   الإنتاج بالافتراضي القديم ٧ (saveState يحفظ PRICING كاملة كل ٥ دقائق)، وdev برقم اختاره ٣ */
+const seed = [row('runtime', false, { pricing: { referralHoldDays: 7 } }),
+              row('runtime-dev', true, { pricing: { referralHoldDays: 3 } })];
 
 const dev = run('dev', seed);
 ok(!!dev, 'dev اشتغل');
@@ -82,6 +87,8 @@ if (dev) {
   ok(prod && prod.value.toggles.freeBeta === false, 'مفتاح في لوحة dev ما لمس صف الإنتاج');
   const mine = dev.state.find(x => x.key === 'runtime-dev');
   ok(mine && mine.value.toggles.freeBeta === false, 'وانحفظ في صف dev');
+  ok(dev.pricing && dev.pricing.referralHoldDays === 3,
+     'رصيد الداعي: رقم غير الافتراضي القديم (٣) يبقى — ما ننقل إلا ٧ — ' + JSON.stringify(dev.pricing && dev.pricing.referralHoldDays));
 }
 
 const prod = run('prod', seed);
@@ -91,7 +98,19 @@ if (prod) {
   ok(prod.restored === false, 'الإنتاج استعاد حالته هو (منتهية)');
   const d = prod.state.find(x => x.key === 'runtime-dev');
   ok(d && d.value.toggles.freeBeta === true, 'ومفتاحه ما لمس صف dev');
+  ok(prod.pricing && prod.pricing.referralHoldDays === 0,
+     '**رصيد الداعي: المحفوظ قبل القرار (٧) صار لحظة دفعه (٠) بلا ما تلمس اللوحة** — ' +
+     JSON.stringify(prod.pricing && prod.pricing.referralHoldDays));
+  const pv = prod.state.find(x => x.key === 'runtime');
+  ok(pv && pv.value.toggles.pricingRev === 2 && pv.value.toggles.pricing.referralHoldDays === 0,
+     'وانحفظ معه pricingRev ٢ — النقل مرة وحدة');
 }
+
+/* بعد النقل: ٧ تختارها من اللوحة (pricingRev ٢ محفوظ) تبقى ٧ — ما نرجع ننقلها */
+const again = run('dev', [row('runtime-dev', true, { pricing: { referralHoldDays: 7 }, pricingRev: 2 })]);
+ok(!!again, 'dev اشتغل ثاني');
+if (again) ok(again.pricing && again.pricing.referralHoldDays === 7,
+  '**٧ اخترتها بعد النقل تبقى ٧** — ' + JSON.stringify(again.pricing && again.pricing.referralHoldDays));
 
 console.log(`\n${pass} نجحت · ${fail} فشلت`);
 process.exit(fail ? 1 : 0);

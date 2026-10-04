@@ -43,8 +43,10 @@ vm.runInContext(src.slice(a, b) + ';this.PRICING_DEFAULT=PRICING_DEFAULT;', ctx)
   ok(ctx.validatePricing(Object.assign({}, D, { minCashHalalas: 400 })) !== null, 'أقل دفع ٤ ريال مرفوض — تحت أقل فاتورة');
   ok(ctx.validatePricing(Object.assign({}, D, { minCashHalalas: 2000 })) !== null, 'أقل دفع فوق سعر الترم مرفوض');
   ok(ctx.validatePricing(Object.assign({}, D, { minCashHalalas: 500 })) === null, 'وخمسة ريال مقبولة');
-  /* رصيد الداعي بعد مدة الاسترجاع (الشروط §٣) */
-  ok(D.referralHoldDays === 7, 'رصيد الداعي بعد ٧ أيام افتراضياً — ' + D.referralHoldDays);
+  /* رصيد الداعي لحظة دفع صديقه — قرار محمد (٤ أكتوبر ٢٠٢٦): «اللي خوييه يدفع يجيه الخصم
+     على طول». كان ٧ (بعد مدة الاسترجاع — الجولة الثانية من الشروط)، والانتظار باقٍ من اللوحة */
+  ok(D.referralHoldDays === 0, 'رصيد الداعي لحظة دفع صديقه افتراضياً — ' + D.referralHoldDays);
+  ok(ctx.validatePricing(Object.assign({}, D, { referralHoldDays: 7 })) === null, 'و٧ من اللوحة مقبولة');
   ok(ctx.validatePricing(Object.assign({}, D, { referralHoldDays: 31 })) !== null, 'أكثر من ٣٠ يوم مرفوض');
   ok(ctx.validatePricing(Object.assign({}, D, { termHalalas: 19.5 })) !== null, 'الكسور مرفوضة — هللات صحيحة فقط');
 
