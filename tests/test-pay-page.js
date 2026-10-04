@@ -89,15 +89,22 @@ const sbStub = 'window.supabase={createClient:()=>({' +
   'channel:()=>({on(){return this},subscribe(){return this}}),' +
   'storage:{from:()=>({list:async()=>({data:[],error:null})})}})};';
 
-async function open(browser, scheme, query, prof) {
+/* زائر بلا دخول: بلا جلسة، ويسجّل نداء الدخول بقوقل — ونداء تغيّر الجلسة نمسكه لنحاكي «دخل الحين» */
+const sbGuest = sbStub
+  /* بلا جلسة حتى يدخل — وبعدها getSession ترجّع جلسته مثل Supabase الحقيقي */
+  .replace(/getSession:async\(\)=>\(\{data:\{session:\{[^]*?\}\}\}\}\}\),/, 'getSession:async()=>({data:{session:window.__SESS||null}}),')
+  .replace('onAuthStateChange:()=>(', 'onAuthStateChange:(cb)=>(window.__AUTHCB=cb,')
+  .replace('signInWithOAuth:async()=>({})', 'signInWithOAuth:async(o)=>{window.__SIGNIN=o;return {}}');
+async function open(browser, scheme, query, prof, stub, init) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: scheme || 'dark' });
   if (prof) await ctx.addInitScript(p => { window.__P = p }, prof);
+  if (init) await ctx.addInitScript(init.fn, init.arg);
   const page = await ctx.newPage();
   const errs = [];
   page.on('pageerror', e => errs.push(String(e)));
   page.on('dialog', d => { errs.push('DIALOG:' + d.message()); d.dismiss().catch(() => {}) });
   await page.route('**/fonts.googleapis.com/**', r => r.fulfill({ status: 200, contentType: 'text/css', body: '' }));
-  await page.route('**/cdn.jsdelivr.net/**', r => r.fulfill({ status: 200, contentType: 'application/javascript', body: sbStub }));
+  await page.route('**/cdn.jsdelivr.net/**', r => r.fulfill({ status: 200, contentType: 'application/javascript', body: stub || sbStub }));
   /* صفحة الدفع المزيّفة عند EdfaPay: نثبت إن الطالب انودّى لها فعلاً */
   await page.route('https://checkout.edfapay.com/**', r => r.fulfill({ status: 200, contentType: 'text/html', body: '<h1>EdfaPay</h1>' }));
   await page.route('https://payment.paylink.sa/**', r => r.fulfill({ status: 200, contentType: 'text/html', body: '<h1>Paylink</h1>' }));
@@ -544,6 +551,76 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: pa
     await sheet(page);
     eq((await agree(page) || {}).vis, false, 'اشتراكه فعّال وما فيه شي يشتريه: ولا سطر موافقة');
     eq((await refundLine(page) || {}).vis, false, 'ولا سطر استرجاع');
+    await ctx.close();
+  }
+
+  /* ── ١٤) زائر بلا دخول يبي يشترك (لقاها محمد بعد الإطلاق): الزر كان «الدفع يفتح
+     قريباً» — سؤال السعر يحتاج حساباً فما يتحدّث أبداً، والدفع مفتوح فعلاً ── */
+  ok(/session:window\.__SESS\|\|null/.test(sbGuest) && /__AUTHCB/.test(sbGuest) && /__SIGNIN/.test(sbGuest),
+     'محاكي الزائر انبنى صح');
+  {
+    ST.quote = baseQuote(); ST.ms = null;
+    const { page, ctx, errs } = await open(browser, 'dark', '', null, sbGuest);
+    await sheet(page);
+    eq(await btn(page), { dis: false, txt: 'سجّل دخولك واشترك' },
+       '**الزائر: الزر «سجّل دخولك واشترك» ويشتغل** — لا «الدفع يفتح قريباً»');
+    eq(await phoneShown(page), false, 'وبلا خانة جوال قبل الدخول');
+    eq((await agree(page) || {}).vis, false, 'ولا سطر موافقة — الزر ما يشتري');
+    await shot(page, 'plans-guest');
+    /* ضغطة من السكربت لا page.click: الزر المقفل (الصفحة القديمة) ما يعلّق الاختبار — يفشل بسطره */
+    await page.evaluate(() => document.getElementById('psPay').click());
+    await page.waitForTimeout(200);
+    const g = await page.evaluate(k => ({ s: window.__SIGNIN || null, at: Number(localStorage.getItem(k) || 0) }),
+                                  'pmu_plans_after_login');
+    eq(g.s && g.s.provider, 'google', '**الضغط يدخّله بقوقل**');
+    ok(g.at > 0 && Date.now() - g.at < 60e3, '**ويتذكّر يرجّعه للورقة بعد الدخول**');
+    /* الجلسة وصلت والورقة مفتوحة له كزائر: الزر يصير زر الدفع */
+    await page.evaluate(() => {
+      window.__SESS = { access_token: 'tok-pay-123456789012345678901234567890', user: { id: 'u-me', email: 'me@x.com' } };
+      window.__AUTHCB('SIGNED_IN', window.__SESS);
+    });
+    await page.waitForTimeout(600);
+    eq(await btn(page), { dis: false, txt: 'ادفع 19 ريال' }, '**دخل والورقة مفتوحة: الزر صار «ادفع 19 ريال»**');
+    eq(errs, [], 'بلا أخطاء');
+    await ctx.close();
+  }
+  {
+    /* رجع من قوقل: الورقة تفتح له بنفسها، وبسعره من السيرفر — والعلامة تنشال */
+    ST.quote = baseQuote();
+    const { page, ctx, errs } = await open(browser, 'dark', '', null, null,
+      { fn: k => { try { localStorage.setItem(k, String(Date.now() - 60e3)) } catch (e) {} }, arg: 'pmu_plans_after_login' });
+    await page.waitForTimeout(500);
+    const st = await page.evaluate(k => ({ open: !!document.getElementById('planSheet') &&
+      !document.getElementById('planSheet').hidden, flag: localStorage.getItem(k) }), 'pmu_plans_after_login');
+    ok(st.open, '**بعد الدخول: الورقة تفتح له بنفسها**');
+    eq(await btn(page), { dis: false, txt: 'ادفع 19 ريال' }, 'وفيها زر الدفع بسعره');
+    eq(st.flag, null, 'والعلامة تنشال — ما تفتح الورقة كل مرة يدخل الموقع');
+    eq(errs, [], 'بلا أخطاء');
+    await ctx.close();
+  }
+  {
+    /* علامة قديمة (دخول تركه قبل ٢٠ دقيقة): ما نفتح ورقة فجأة */
+    const { page, ctx } = await open(browser, 'dark', '', null, null,
+      { fn: k => { try { localStorage.setItem(k, String(Date.now() - 20 * 60e3)) } catch (e) {} }, arg: 'pmu_plans_after_login' });
+    await page.waitForTimeout(500);
+    const st = await page.evaluate(k => ({ open: !!document.getElementById('planSheet') &&
+      !document.getElementById('planSheet').hidden, flag: localStorage.getItem(k) }), 'pmu_plans_after_login');
+    eq([st.open, st.flag], [false, null], 'علامة أقدم من ربع ساعة: ما تفتح شي، وتنشال');
+    await ctx.close();
+  }
+  {
+    /* زائر على ‎?plans=1‎ (رابط المساعد في البوت · «عن جدولك»): كانت ما تفتح شي */
+    const { page, ctx, errs } = await open(browser, 'light', '?plans=1', null, sbGuest);
+    await page.waitForTimeout(300);
+    const opened = await page.evaluate(() => !!document.getElementById('planSheet') &&
+      !document.getElementById('planSheet').hidden);
+    ok(opened, '**زائر على ?plans=1: الورقة تفتح**');
+    eq(await btn(page), { dis: false, txt: 'سجّل دخولك واشترك' }, 'وفيها «سجّل دخولك واشترك»');
+    /* انفتحت قبل ما توصل حالة الموقع: لما توصل تنرسم بتاريخ الترم الحقيقي لا الاحتياط */
+    const end = await page.evaluate(() => (document.getElementById('psEnd') || {}).textContent || '');
+    ok(/يونيو/.test(end) && /2027/.test(end), 'وتاريخ الترم الحقيقي («حتى 15 يونيو 2027») لا «حتى نهاية الترم» — ' + end);
+    await shot(page, 'plans-guest-light');
+    eq(errs, [], 'بلا أخطاء');
     await ctx.close();
   }
 
