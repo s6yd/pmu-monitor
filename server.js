@@ -4476,15 +4476,28 @@ async function adminMonitors() {
   return Object.values(g).sort((a, b) => b.watchers - a.watchers);
 }
 
-/* --- تفعيل من اللوحة: حتى نهاية الترم الحالي ---
+/* --- تفعيل من اللوحة: نفس الترم اللي يشتريه الطالب اليوم ---
    هدية أو تجربة أو إصلاح دفعة ما انفعّلت — لا طريقة دفع. لذلك ما يكتب
    paid_at: كان يكتبه مع كل تفعيل فيُحسب الطالب «دافعاً» في الإحصاء.
-   وبدل «+سنة +شهر +أسبوع» تاريخ واحد: نهاية نهائيات الترم. */
+   وبدل «+سنة +شهر +أسبوع» تاريخ واحد: نهاية نهائيات الترم.
+   **الترم من payTermNow — قاعدة الشراء نفسها** (لقاها محمد وهو يهدي طالبة
+   ترماً): كان ترم الدراسة، فهدية في أكتوبر تنتهي ٣٠ ديسمبر قبل تسجيل
+   الربيع، والدافع في نفس اليوم ياخذ حتى يونيو.
+   وما تقصّر اشتراكاً أطول منها: تاريخه يبقى وما ينكتب صف هدية. */
 async function adminGrant(userId, note) {
-  const term = activeTerm();
-  const until = termEndISO(term);
+  const { term, until } = payTermNow();
   if (!until) return { ok: false, error: `ما لقيت نهاية الترم ${term} في التقويم` };
   const uid = encodeURIComponent(userId);
+
+  const cur = await sb('GET', 'profiles', {
+    query: `?id=eq.${uid}&select=id,subscription_expires_at&limit=1`
+  }).catch(e => ({ message: e.message }));
+  if (!Array.isArray(cur)) return { ok: false, error: (cur && cur.message) || 'تعذّر قراءة الحساب' };
+  if (!cur.length) return { ok: false, error: 'المستخدم غير موجود' };
+  const had = cur[0].subscription_expires_at;
+  if (had && Date.parse(had) > Date.parse(until))
+    return { ok: true, expires: had, term, kept: true,
+             warning: `عنده اشتراك أطول من الهدية (حتى ${String(had).slice(0, 10)}) — ما تغيّر شي` };
 
   /* الملف أولاً — هو اللي يفتح الميزات */
   const r = await sb('PATCH', 'profiles', {
@@ -4518,12 +4531,24 @@ async function adminGrant(userId, note) {
 }
 
 /* ═══ الإضافة من اللوحة: هدية أو تجربة ═══
-   حتى نهاية الترم، وصف «هدية» في السجل مثل تفعيل الترم. */
+   لنفس ترم الشراء اليوم (payTermNow) مثل تفعيل الترم، وصف «هدية» في السجل.
+   وما تقصّر إضافة أطول منها. */
 async function adminGrantPushover(userId, on, note) {
   const uid = encodeURIComponent(userId);
-  const term = activeTerm();
-  const until = on ? termEndISO(term) : new Date(Date.now() - 864e5).toISOString();
+  const pt = payTermNow(), term = pt.term;
+  const until = on ? pt.until : new Date(Date.now() - 864e5).toISOString();
   if (!until) return { ok: false, error: `ما لقيت نهاية الترم ${term} في التقويم` };
+  if (on) {
+    const cur = await sb('GET', 'profiles', {
+      query: `?id=eq.${uid}&select=id,pushover_until&limit=1`
+    }).catch(e => ({ message: e.message }));
+    if (!Array.isArray(cur)) return { ok: false, error: (cur && cur.message) || 'تعذّر قراءة الحساب' };
+    if (!cur.length) return { ok: false, error: 'المستخدم غير موجود' };
+    const had = cur[0].pushover_until;
+    if (had && Date.parse(had) > Date.parse(until))
+      return { ok: true, until: had, kept: true,
+               warning: `عنده التنبيه الطارئ لمدة أطول (حتى ${String(had).slice(0, 10)}) — ما تغيّر شي` };
+  }
   const r = await sb('PATCH', 'profiles', {
     query: `?id=eq.${uid}`, body: { pushover_until: until }, prefer: 'return=representation'
   }).catch(e => ({ message: e.message }));

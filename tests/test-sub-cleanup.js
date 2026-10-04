@@ -126,6 +126,9 @@ function supabase(method, urlPath, body, prefer) {
   let r = list.slice();
   const key = /key=eq\.([^&]+)/.exec(qs);
   if (key) r = r.filter(x => x.key === key[1]);
+  /* id=eq. يفلتر مثل PostgREST — كان يرجّع كل الصفوف فيقرأ السيرفر حساب غيره */
+  const idq = /(?:^|&)id=eq\.([^&]+)/.exec(qs);
+  if (idq) r = r.filter(x => String(x.id) === idq[1]);
   const m = /id=in\.\(([^)]*)\)/.exec(qs);
   if (m) { const ids = new Set(m[1].split(',').map(x => x.replace(/"/g, ''))); r = r.filter(x => ids.has(String(x.id))) }
   const off = /offset=(\d+)/.exec(qs), lim = /limit=(\d+)/.exec(qs);
@@ -207,14 +210,29 @@ const got = chat => TG.filter(m => String(m.chat_id) === chat && /فتحت|ال�
     PATCHES.length = 0;
     const r = await call('/api/admin/grant', 'POST', { userId: 'u-free' });
     ok(r.ok === true, 'التفعيل نجح');
-    ok(r.expires === '2026-12-30T20:59:59.000Z', 'حتى آخر يوم نهائيات ٢٣:٥٩ الرياض — ' + r.expires);
+    /* الهدية = ترم الشراء اليوم (payTermNow) — كانت ترم الدراسة: اليوم ٣٠ ديسمبر
+       والشراء حتى يونيو. والتواريخ الدقيقة لكل حالة في test-pay (٨ج) */
+    const st = await call('/api/monitor-status', 'GET');
+    ok(st.plans && r.expires === st.plans.termEnd,
+       'نفس تاريخ الشراء في ورقة الباقات — ' + r.expires + ' / ' + (st.plans && st.plans.termEnd));
+    ok(/T20:59:59\.000Z$/.test(r.expires) && Date.parse(r.expires) > Date.now(),
+       'آخر يوم نهائيات ٢٣:٥٩ الرياض، وفي المستقبل — ' + r.expires);
     const pb = PATCHES[0] && PATCHES[0].body;
     ok(pb && !('paid_at' in pb), 'وما انكتب paid_at — هدية لا دفع');
     const u = DB.profiles.find(p => p.id === 'u-free');
-    ok(u.subscription_expires_at === '2026-12-30T20:59:59.000Z', 'والحساب انحدّث فعلاً');
+    ok(u.subscription_expires_at === r.expires, 'والحساب انحدّث فعلاً');
 
     const bad = await call('/api/admin/grant', 'POST', { userId: 'nobody' });
     ok(bad.ok === false, 'مستخدم غير موجود: رفض صريح لا «تمّ» كاذبة');
+
+    /* ما تقصّر اشتراكاً أطول منها — كانت تكتب فوقه تاريخها */
+    const LONG = '2031-01-01T00:00:00+00:00';
+    DB.profiles.push({ id: 'u-long', telegram_chat_id: null, is_pro: false, notif_prefs: null,
+                       pushover_key: null, subscription_expires_at: LONG });
+    const k = await call('/api/admin/grant', 'POST', { userId: 'u-long' });
+    ok(k.ok === true && k.kept === true && k.expires === LONG,
+       'عنده اشتراك أطول من الهدية: ما تقصّره — ' + JSON.stringify(k));
+    ok(DB.profiles.find(p => p.id === 'u-long').subscription_expires_at === LONG, 'وتاريخه باقٍ كما هو');
   }
 
   /* الإلغاء */

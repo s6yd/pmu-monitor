@@ -1373,9 +1373,10 @@ const CR_REASON={referral:'دعوة صديق',reviews:'تقييمات',admin:'ي
 const SUB_STATUS={comp:'هدية',paid:'مدفوع',pending:'معلّق',failed:'فشل',refunded:'مسترجع'};
 
 /* التفعيل من هنا هدية أو تجربة أو إصلاح دفعة — لا طريقة دفع، ولا يُحسب
-   في الإيرادات. ينتهي مع نهاية نهائيات الترم الحالي. */
+   في الإيرادات. مدته نفس الترم اللي يشتريه الطالب اليوم (payTermNow في
+   السيرفر) — والتاريخ يطلع في الرسالة بعد التفعيل. */
 async function grant(id,name){
-  const note=prompt(`تفعيل ${name} حتى نهاية الترم الحالي — هدية، ما تنحسب دفعاً.\n\nالسبب (يظهر في سجله):`,'');
+  const note=prompt(`تفعيل ${name} ترماً كاملاً — نفس اللي يشتريه الطالب اليوم. هدية، ما تنحسب دفعاً.\n\nالسبب (يظهر في سجله):`,'');
   if(note===null) return;
   try{
     const r=await api('grant',{body:{userId:id,note}});
@@ -1453,7 +1454,7 @@ function closeUser(){ document.getElementById('drawer').classList.remove('open')
 async function grantPo(id,name,on){
   let note='';
   if(on){
-    note=prompt(`تفعيل التنبيه الطارئ لـ ${name} حتى نهاية الترم — هدية.\n\nالسبب:`,'');
+    note=prompt(`تفعيل التنبيه الطارئ لـ ${name} لنفس مدة اشتراك الترم اليوم — هدية.\n\nالسبب:`,'');
     if(note===null)return;
   }else if(!confirm(`إيقاف التنبيه الطارئ لـ ${name}؟`))return;
   try{
