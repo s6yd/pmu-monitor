@@ -244,6 +244,19 @@ function regTerm() {
   return (w && w.term) || activeTerm();
 }
 
+/* الترم اللي يسجّله الطالب **الجاي** — للمساعد لما يتكلم عن «الترم الجاي»
+   (الطرح · المقترح · توقّع التخرج): وقت التسجيل ترم النافذة مثل regTerm،
+   وخارجها ترم النافذة الجاية من التقويم، وإلا الترم بعد ترم الدراسة — نفس
+   قاعدة الشراء خارج النوافذ (payTermNow). regTerm() خارج النوافذ = ترم الدراسة،
+   فكان «الترم الجاي» عند المساعد هو الحالي (لقاها محمد: طالب سأل عن ثيرمو
+   الترم الجاي فجاوبه عن هالترم)، وتوقّع التخرج يبدأ من ترم شغّال فيطلع أبكر بترم. */
+function nextRegTerm() {
+  const w = (typeof currentWindow === 'function') ? currentWindow() : null;
+  if (w) return w.term || activeTerm();
+  const nw = (typeof nextWindow === 'function') ? nextWindow() : null;
+  return (nw && nw.term) || nextTerm(activeTerm());
+}
+
 /* معرّف محادثتك في تيليغرام — يوصلك عليه كل رأي جديد فوراً.
    تجيبه بإرسال /whoami للبوت، ثم تحطه في Render باسم ADMIN_CHAT_ID */
 const ADMIN_CHAT_ID = (process.env.ADMIN_CHAT_ID || '').trim();
@@ -6900,7 +6913,7 @@ async function aiStudentCtx(userId) {
     prepInferred,               /* true لما تكون مستنتَجة لا محفوظة */
     plan: PLANS_DATA.ctxOf({
       major, planVer, prep, completed, grades,
-      term: regTerm(),
+      term: nextRegTerm(),      /* «الترم الجاي» — لا ترم الدراسة خارج التسجيل */
     }),
   };
 }
@@ -7551,8 +7564,8 @@ const AI_TOOLS = {
 
   course_offering: {
     tier: 'free',
-    description: 'هل تُطرح المادة هذا الترم أو الترم الجاي، ومتى ترجع. '
-      + 'جدول الطرح معلن للهندسة الميكانيكية فقط.',
+    description: 'هل تُطرح المادة في ترم التسجيل الجاي (term · termName في الرد — '
+      + 'سمّه للطالب باسمه)، ومتى ترجع. جدول الطرح معلن للهندسة الميكانيكية فقط.',
     input_schema: { type: 'object', properties: {
       code: { type: 'string', description: 'كود المادة' } },
       required: ['code'] },
@@ -7560,11 +7573,13 @@ const AI_TOOLS = {
       if (!PLANS_DATA.findPlanCourse(ctx.plan, a.code))
         return { known: false, error: AI_UNKNOWN, code: a.code };
       const w = PLANS_DATA.offerWarn(ctx.plan, a.code);
-      if (!w) return { known: true, code: a.code, term: ctx.plan.term,
+      const term = ctx.plan.term, termName = payTermName(term);
+      if (!w) return { known: true, code: a.code, term, termName,
         status: 'ok', note: 'ما فيه تحذير طرح لهذي المادة' };
-      return { known: true, code: a.code, term: ctx.plan.term,
+      return { known: true, code: a.code, term, termName,
         status: w.kind === 'none' ? 'not_offered_now' : 'last_chance',
-        skipsTerms: w.n || 0, returnsTerm: w.next || null };
+        skipsTerms: w.n || 0, returnsTerm: w.next || null,
+        returnsTermName: w.next ? payTermName(w.next) : null };
     },
   },
 
@@ -7613,7 +7628,8 @@ const AI_TOOLS = {
       const crit = s.crit.filter(c => !taking(c)).map(map);
       const opt = s.opt.filter(c => !taking(c)).map(map);
       const hrs = l => l.reduce((n, c) => n + (Number(c.credits) || 0), 0);
-      const out = { critical: crit, optional: opt,
+      const out = { term: ctx.plan.term, termName: payTermName(ctx.plan.term),
+        critical: crit, optional: opt,
         hours: hrs(crit) + hrs(opt),
         alreadyTaking: s.crit.concat(s.opt).filter(taking).map(c => c.c),
         planHours: s.hours,
@@ -7649,14 +7665,15 @@ const AI_TOOLS = {
       return {
         termsLeft: g.count,
         graduatesIn: g.lastTerm
-          ? { term: g.lastTerm, year: Number(String(g.lastTerm).slice(0, 4)),
+          ? { term: g.lastTerm, name: payTermName(g.lastTerm),
+              year: Number(String(g.lastTerm).slice(0, 4)),
               season: season(g.lastTerm) } : null,
         hoursLeft: g.hoursLeft,
         countingNow: taking,
         /* خانات اختيارية يملؤها بنفسه — داخل نفس الترمات لا زيادة عليها */
         electivesLeft: g.electivesLeft,
-        plan: g.terms.map(x => ({ term: x.term, season: season(x.term),
-          hours: x.hours, courses: x.courses })),
+        plan: g.terms.map(x => ({ term: x.term, name: payTermName(x.term),
+          season: season(x.term), hours: x.hours, courses: x.courses })),
         blocked: g.stuck ? g.remaining : [],
         note: (aiPlanEmpty(ctx) ? AI_PLAN_EMPTY + ' ' : '') + (g.stuck
           ? 'وقف الحساب: فيه مواد متطلبها ما ينفتح من الخطة — راجع مرشدك'
@@ -8957,7 +8974,11 @@ function aiHeader(ctx, th) {
   let h = `[سياق صاحب السؤال — للاستعمال لا للعرض: التخصص ${p.major || '—'}`
     + ` · نسخة الخطة ${p.planVer || '—'} · تحضيري ${ctx.prep ? 'نعم' : 'لا'}`
     + `${ctx.prepInferred ? ' (مستنتجة)' : ''} · مشترك ${ctx.pro ? 'نعم' : 'لا'}`
-    + ` · ترم التسجيل ${regTerm()} · اليوم ${aiToday()} `
+    /* بالاسم لا الرمز: كان «ترم التسجيل 202710» وحده، فسمّى النموذج ترم الدراسة
+       «الترم الجاي» وقاله للطالب برمزه (لقاها محمد) */
+    + ` · ترم الدراسة الحالي ${payTermName(activeTerm())} (${activeTerm()})`
+    + ` · ترم التسجيل الجاي ${payTermName(nextRegTerm())} (${nextRegTerm()})`
+    + ` · اليوم ${aiToday()} `
     + `${AI_DAYS_AR[riyadhNow().getUTCDay()]} `
     /* الساعة لازمة: بدونها ما يقدر يحسب «ذكّرني بعد ٣ دقايق» فيسأل
        الطالب عن ساعته — وهي عندنا أصلاً. */

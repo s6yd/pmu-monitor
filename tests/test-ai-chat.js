@@ -90,6 +90,7 @@ let SENT = [];          /* كل جسم طلع للمزوّد */
 let TG = [];            /* كل رسالة تيليغرام */
 let FAIL_SPEND = false;   /* لمحاكاة سقوط القراءة */
 let NO_CHANNEL_COL = false;  /* قبل الـSQL: لا عمود القناة ولا عرضها */
+let NEXT_REG = '202710';     /* ترم التسجيل الجاي (nextRegTerm) — خارج النافذة غير ترم الدراسة */
 let SCRIPT = () => ({ status: 200, body: reply('تمام') });
 
 const reply = (text, usage) => ({
@@ -267,7 +268,7 @@ const ctxObj = {
     referrerCreditHalalas: 500, referralHoldDays: 7, reviewsCreditHalalas: 700, reviewsNeeded: 4,
     creditTerms: 2, lateDays: 3, freeMonitors: 2, freeSchedules: 1, minCashHalalas: 1000 },
   hasAccess: p => !!(p && p.is_pro),
-  regTerm: () => '202710', activeTerm: () => '202710',
+  regTerm: () => '202710', activeTerm: () => '202710', nextRegTerm: () => NEXT_REG,
   riyadhNow: () => new Date(NOW + 'T09:00:00Z'),
   schedDays: v => String(v || '').toUpperCase().split('').filter(c => 'UMTWRFS'.includes(c)),
   schedTime: v => { const m = String(v || '').match(/(\d+):(\d+)\s*-\s*(\d+):(\d+)/);
@@ -284,6 +285,13 @@ const ctxObj = {
   saveState: () => Promise.resolve(),
 };
 vm.createContext(ctxObj);
+/* payTermName الحقيقية تُقتطع لا تُنسخ — صيغة الصفحة («ربيع 2026/2027») */
+{
+  const L = src.split('\n');
+  const i = L.findIndex(x => x.startsWith('function payTermName('));
+  const j = L.findIndex((x, n) => n > i && x === '}');
+  if (i >= 0 && j > i) vm.runInContext(L.slice(i, j + 1).join('\n'), ctxObj);
+}
 vm.runInContext(TOOLS + '\n' + CHAT + `
 this.aiChat = aiChat; this.aiStatus = aiStatus; this.aiCostMicro = aiCostMicro;
 this.aiPriceOf = aiPriceOf; this.validateAiCaps = validateAiCaps;
@@ -665,6 +673,17 @@ const usageRow = (over) => Object.assign({
        (/الساعة [^\]]*/.exec(first) || [''])[0]);
     ok(/الرياض/.test(first), 'وبتوقيت الرياض صريحاً');
     ok(/\d{4}-\d{2}-\d{2}/.test(first), 'ومعها التاريخ');
+    /* «الترم الجاي» (لقاها محمد): كان «ترم التسجيل 202710» وحده — وخارج النوافذ هذا
+       ترم الدراسة، فسمّاه النموذج «الترم الجاي» وقاله للطالب برمزه */
+    NEXT_REG = '202720';
+    SENT = [];
+    await A.aiChat('u-pro', 'سؤال');
+    const nx = SENT[0].payload.messages[SENT[0].payload.messages.length - 1].content;
+    ok(/ترم الدراسة الحالي خريف 2026\/2027 \(202710\)/.test(nx),
+       '**السياق يسمّي ترم الدراسة باسمه** — ' + (/ترم[^·\]]*/.exec(nx) || [''])[0]);
+    ok(/ترم التسجيل الجاي ربيع 2026\/2027 \(202720\)/.test(nx),
+       '**وترم التسجيل الجاي باسمه — لا ترم الدراسة**');
+    NEXT_REG = '202710';
     ok(!/COSC/.test(JSON.stringify(p.system)), 'ولا يدخل التعليمات');
     /* مكانه في رسالته: من الموقع بلا سطر البوت، ومن البوت معه — والتعليمات واحدة */
     ok(!/بوت تلقرام/.test(first), 'من الموقع: بلا سطر «يكلّمك من بوت تلقرام»');
