@@ -19,7 +19,12 @@ const ok = (c, m) => { if (c) { pass++ } else { fail++; out.push('  ✗ ' + m) }
 const eq = (a, b, m) => ok(JSON.stringify(a) === JSON.stringify(b),
   `${m} — توقّعنا ${JSON.stringify(b)} وجانا ${JSON.stringify(a)}`);
 
-const DB = { app_state: [], app_events: [], ai_usage: [], ai_threads: [] };
+/* حالة محفوظة من قبل فصل القنوات (هالشهر): مجموع الزوار بلا ch —
+   الاسترجاع لازم يبقيه في المجموع ويبدأ القنوات من صفر */
+const RIYADH = new Date(Date.now() + 3 * 3600e3).toISOString();
+const DB = { app_state: [{ key: 'runtime', value: { toggles: { aiGuest: {
+               ym: RIYADH.slice(0, 7), ymd: RIYADH.slice(0, 10), micro: 5000, questions: 2, ips: [] } } } }],
+             app_events: [], ai_usage: [], ai_threads: [] };
 function supabase(method, urlPath, body) {
   const [p] = urlPath.split('?');
   const table = p.replace('/rest/v1/', '');
@@ -30,6 +35,10 @@ function supabase(method, urlPath, body) {
     if (i >= 0) L[i] = b; else L.push(b);
     return [201, []];
   }
+  /* عرض القنوات ما انخلق (الـSQL ما انشغّل) ⇒ رد PostgREST الحقيقي */
+  if (method === 'GET' && table === 'ai_spend_channel')
+    return [404, { code: 'PGRST205',
+                   message: "Could not find the table 'public.ai_spend_channel' in the schema cache" }];
   if (method === 'GET') return [200, L.slice(0, 1000)];
   return [201, []];
 }
@@ -122,6 +131,18 @@ async function main() {
   const c2 = (r.j && r.j.caps) || {};
   eq([r.code, c2.guestDay, c2.guestMonthSar, c2.day], [200, 5, 30, 30],
      'تعديل واحد منها ما يلمس الباقي');
+
+  /* ── حسب القناة: اللوحة تشوف الزوار (لقاها محمد: الصفحة ما تعرض تلقرام) ── */
+  r = await call('GET', '/api/admin/ai', { admin: true });
+  const gc = (r.j && r.j.guestChannels) || {};
+  eq([gc.web && gc.web.questions, gc.tg && gc.tg.questions, gc.before], [3, 0, 2],
+     '**الزوار في اللوحة حسب القناة: الموقع ٣ · تلقرام ٠** — و٢ قبل الفصل (من الحالة المحفوظة)');
+  const sp = (r.j && r.j.spend) || {};
+  eq([sp.guestQuestions, sp.questions], [5, 5], '**وأسئلة الزوار داخل مجموع الشهر** — كانت صفراً');
+  eq(r.j && r.j.channels, null, 'وعرض القنوات ناقص في القاعدة ⇒ null لا أصفار');
+  const sg = ((DB.app_state.find(x => x.key === 'runtime') || {}).value || {}).toggles || {};
+  eq(sg.aiGuest && sg.aiGuest.ch && sg.aiGuest.ch.web && sg.aiGuest.ch.web.questions, 3,
+     '**والعدّاد حسب القناة محفوظ في app_state** — يصمد بعد النشر');
 }
 
 main().then(() => {

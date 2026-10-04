@@ -189,6 +189,8 @@ let USAGE = [];         /* سجل الاستخدام: جاسوس مكان usageL
 let PO_ON = true;        /* pushoverOn: الإضافة معروضة للبيع؟ */
 let PO_READY = 'off';   /* pushoverReady الحقيقية خارج المنطقة — نتحكّم بجوابها */
 let PULLED = [];        /* كل نداء يسحب من الجامعة يُسجَّل هنا */
+/* ترم التسجيل الجاي (nextRegTerm): داخل النافذة = regTerm، وخارجها الترم الجاي */
+let NEXT_REG = '202710';
 
 const ctxObj = {
   console: { log() {} }, Promise, JSON, Object, Array, String, Number, Math, Date,
@@ -198,6 +200,7 @@ const ctxObj = {
   FREE_BETA: false,
   SITE_ENV: 'prod',   /* أداة التذكير تختم البيئة في الاقتراح */
   regTerm: () => '202710',
+  nextRegTerm: () => NEXT_REG,
   riyadhNow: () => new Date('2099-01-01T09:00:00Z'),
   /* schedDays و schedTime تُقتطعان من السيرفر لا تُنسخان هنا: النسخة
      المزيّفة القديمة كانت تطلب HH:MM بنقطتين مثل الأصل المكسور، فما
@@ -284,7 +287,37 @@ vm.createContext(ctxObj);
   if (i < 0 || j <= i) ok(false, 'ما لقيت tagGender في السيرفر');
   else vm.runInContext(L.slice(i, j + 1).join('\n'), ctxObj);
 }
+/* payTermName كذلك: اسم الترم بصيغة الصفحة («ربيع 2026/2027») — نسخة هنا
+   تعني صيغتين تفترقان */
+{
+  const L = src.split('\n');
+  const i = L.findIndex(x => x.startsWith('function payTermName('));
+  const j = L.findIndex((x, n) => n > i && x === '}');
+  if (i < 0 || j <= i) ok(false, 'ما لقيت payTermName في السيرفر');
+  else vm.runInContext(L.slice(i, j + 1).join('\n'), ctxObj);
+}
 ok(typeof ctxObj.tagGender === 'function', 'tagGender الحقيقية محمّلة');
+/* nextRegTerm الحقيقية (مع nextTerm) في سياق منفصل — منطقها بنوافذ مزيّفة:
+   داخل النافذة ترمها · خارجها ترم النافذة الجاية · نافذة يدوية بلا ترم = ترم الدراسة
+   · بلا نافذة جاية = الترم بعد ترم الدراسة. كانت regTerm خارج النوافذ = ترم الدراسة */
+{
+  const L = src.split('\n');
+  const grab = name => {
+    const i = L.findIndex(x => x.startsWith('function ' + name + '('));
+    const j = L.findIndex((x, n) => n > i && x === '}');
+    return i >= 0 && j > i ? L.slice(i, j + 1).join('\n') : '';
+  };
+  const code = grab('nextTerm') + '\n' + grab('nextRegTerm');
+  const W = { cur: null, next: null };
+  const box = { activeTerm: () => '202710', currentWindow: () => W.cur, nextWindow: () => W.next };
+  vm.createContext(box);
+  try { vm.runInContext(code, box) } catch (e) {}
+  const nr = () => (typeof box.nextRegTerm === 'function' ? box.nextRegTerm() : 'ما فيه nextRegTerm');
+  W.cur = { term: '202710' };                 eq(nr(), '202710', 'داخل نافذة الخريف: ترمها');
+  W.cur = null; W.next = { term: '202720' };  eq(nr(), '202720', '**خارج النوافذ: ترم النافذة الجاية (الربيع)** — لا ترم الدراسة');
+  W.cur = { from: 'x', to: 'y' };             eq(nr(), '202710', 'نافذة يدوية بلا ترم: ترم الدراسة');
+  W.cur = null; W.next = null;                eq(nr(), '202720', 'بلا نافذة جاية: الترم بعد ترم الدراسة');
+}
 ok(typeof ctxObj.buildSchedules === 'function', 'buildSchedules الحقيقية محمّلة');
 ok(typeof ctxObj.schedTime === 'function', 'schedTime الحقيقية محمّلة');
 {
@@ -983,6 +1016,30 @@ function fakeModel(ctx) {
     ok(co.known === true, 'مادة ميكانيكال معروفة لطالب ميكانيكال');
     const mine = await call('course_offering', '{"code":"ALIS 1211"}');
     ok(mine.known === true && mine.status === 'ok', 'تخصص بلا جدول طرح: بلا تحذير');
+  }
+
+  /* ══════ «الترم الجاي» خارج التسجيل = ترم التسجيل الجاي (لقاها محمد) ══════
+     طالب سأل عن ثيرمو الترم الجاي فجاوبه المساعد «مطروحة الترم الجاي 202710» —
+     وهذا الخريف الشغّال. سياق الخطة كان regTerm()، وخارج النوافذ = ترم الدراسة.
+     MEEN 3311 تُطرح الخريف وما تُطرح الربيع: القديم قال «آخر فرصة» عن الخريف،
+     والطالب يسأل عن الربيع وهي ما تنطرح فيه أصلاً. */
+  {
+    NEXT_REG = '202720';                 /* أكتوبر: الخريف شغّال، والتسجيل الجاي ربيع */
+    const OTHER = await aiStudentCtx('u-other'), ME = await aiStudentCtx('u-pro');
+    const co = await fakeModel(OTHER)('course_offering', '{"code":"MEEN 3311"}');
+    eq([co.term, co.status], ['202720', 'not_offered_now'],
+       '**الطرح للترم الجاي فعلاً: MEEN 3311 ما تنطرح الربيع** — لا «آخر فرصة» عن الخريف الشغّال');
+    eq([co.termName, co.returnsTerm, co.returnsTermName], ['ربيع 2026/2027', '202810', 'خريف 2027/2028'],
+       'وبالاسم لا الرمز: ترجع خريف 2027/2028');
+    const sug = await fakeModel(ME)('next_term_suggestion', '{}');
+    eq([sug.term, sug.termName], ['202720', 'ربيع 2026/2027'],
+       '**المقترح يقول لأي ترم** — الربيع الجاي لا الخريف الشغّال');
+    const g = await fakeModel(ME)('graduation_forecast', '{}');
+    eq(g.plan && g.plan[0] && g.plan[0].term, '202720',
+       '**توقّع التخرج يبدأ من الترم الجاي** — كان يبدأ من الخريف الشغّال فيطلع أبكر بترم');
+    ok(g.graduatesIn && /^(خريف|ربيع|صيف) \d{4}\/\d{4}$/.test(g.graduatesIn.name || ''),
+       'وترم التخرج باسمه — ' + (g.graduatesIn && g.graduatesIn.name));
+    NEXT_REG = '202710';
   }
 
   /* ── ولا أداة تكتب في القاعدة ── */

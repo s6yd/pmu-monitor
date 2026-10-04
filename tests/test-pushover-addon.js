@@ -166,7 +166,9 @@ async function cycleWith(mode) {
 
   /* التفعيل من اللوحة */
   let r = await call('/api/admin/grant-pushover', 'POST', { userId: 's2', note: 'تجربة' });
-  ok(r.ok === true && r.until === '2026-12-30T20:59:59.000Z', 'فعّلت الإضافة لـ s2 حتى نهاية الترم');
+  const st = await call('/api/monitor-status', 'GET');
+  ok(r.ok === true && st.plans && r.until === st.plans.termEnd,
+     'فعّلت الإضافة لـ s2 لمدة ترم الشراء اليوم — ' + r.until);
   const comp = DB.subscriptions.filter(x => x.user_id === 's2' && x.pushover);
   ok(comp.length === 1 && comp[0].status === 'comp' && comp[0].includes_term === false,
      'صف «هدية» للإضافة وحدها — ما يلمس اشتراك الترم');

@@ -244,6 +244,19 @@ function regTerm() {
   return (w && w.term) || activeTerm();
 }
 
+/* الترم اللي يسجّله الطالب **الجاي** — للمساعد لما يتكلم عن «الترم الجاي»
+   (الطرح · المقترح · توقّع التخرج): وقت التسجيل ترم النافذة مثل regTerm،
+   وخارجها ترم النافذة الجاية من التقويم، وإلا الترم بعد ترم الدراسة — نفس
+   قاعدة الشراء خارج النوافذ (payTermNow). regTerm() خارج النوافذ = ترم الدراسة،
+   فكان «الترم الجاي» عند المساعد هو الحالي (لقاها محمد: طالب سأل عن ثيرمو
+   الترم الجاي فجاوبه عن هالترم)، وتوقّع التخرج يبدأ من ترم شغّال فيطلع أبكر بترم. */
+function nextRegTerm() {
+  const w = (typeof currentWindow === 'function') ? currentWindow() : null;
+  if (w) return w.term || activeTerm();
+  const nw = (typeof nextWindow === 'function') ? nextWindow() : null;
+  return (nw && nw.term) || nextTerm(activeTerm());
+}
+
 /* معرّف محادثتك في تيليغرام — يوصلك عليه كل رأي جديد فوراً.
    تجيبه بإرسال /whoami للبوت، ثم تحطه في Render باسم ADMIN_CHAT_ID */
 const ADMIN_CHAT_ID = (process.env.ADMIN_CHAT_ID || '').trim();
@@ -2268,6 +2281,7 @@ async function saveState() {
                  /* عدّاد الزوار: بلا حفظه يرجع لصفر مع كل نشر فيضيع سدّه */
                  aiGuest: { ymd: AI_GUEST.ymd, ym: AI_GUEST.ym,
                             micro: AI_GUEST.micro, questions: AI_GUEST.questions,
+                            dayMicro: AI_GUEST.dayMicro, ch: AI_GUEST.ch,
                             ips: [...AI_GUEST.ips.entries()].slice(0, 5000) },
                  aiCaps: AI_CAPS, aiAlerted: AI_ALERTED },
       ops: { searches: OPS.searches, feedback: OPS.feedback,
@@ -2316,9 +2330,14 @@ async function restoreState() {
   if ('aiMode' in g && AI_MODES.includes(g.aiMode)) AI_MODE = g.aiMode;
   if ('aiWarmOn' in g) AI_WARM_ON = !!g.aiWarmOn;
   if (g.aiGuest && typeof g.aiGuest === 'object') {
+    const gc = g.aiGuest.ch || {}, n = x => Number(x) || 0;
     AI_GUEST = { ymd: String(g.aiGuest.ymd || ''), ym: String(g.aiGuest.ym || ''),
       micro: Number(g.aiGuest.micro) || 0,
       questions: Number(g.aiGuest.questions) || 0,
+      dayMicro: n(g.aiGuest.dayMicro),
+      /* حالة قبل فصل القنوات: بلا ch — المجموع يبقى، والقناة تبدأ من صفر */
+      ch: { web: { questions: n(gc.web && gc.web.questions), micro: n(gc.web && gc.web.micro) },
+            tg: { questions: n(gc.tg && gc.tg.questions), micro: n(gc.tg && gc.tg.micro) } },
       ips: new Map(Array.isArray(g.aiGuest.ips) ? g.aiGuest.ips : []) };
   }
   if ('aiModel' in g) AI_MODEL_OVERRIDE = String(g.aiModel || '').trim() || null;
@@ -4476,15 +4495,28 @@ async function adminMonitors() {
   return Object.values(g).sort((a, b) => b.watchers - a.watchers);
 }
 
-/* --- تفعيل من اللوحة: حتى نهاية الترم الحالي ---
+/* --- تفعيل من اللوحة: نفس الترم اللي يشتريه الطالب اليوم ---
    هدية أو تجربة أو إصلاح دفعة ما انفعّلت — لا طريقة دفع. لذلك ما يكتب
    paid_at: كان يكتبه مع كل تفعيل فيُحسب الطالب «دافعاً» في الإحصاء.
-   وبدل «+سنة +شهر +أسبوع» تاريخ واحد: نهاية نهائيات الترم. */
+   وبدل «+سنة +شهر +أسبوع» تاريخ واحد: نهاية نهائيات الترم.
+   **الترم من payTermNow — قاعدة الشراء نفسها** (لقاها محمد وهو يهدي طالبة
+   ترماً): كان ترم الدراسة، فهدية في أكتوبر تنتهي ٣٠ ديسمبر قبل تسجيل
+   الربيع، والدافع في نفس اليوم ياخذ حتى يونيو.
+   وما تقصّر اشتراكاً أطول منها: تاريخه يبقى وما ينكتب صف هدية. */
 async function adminGrant(userId, note) {
-  const term = activeTerm();
-  const until = termEndISO(term);
+  const { term, until } = payTermNow();
   if (!until) return { ok: false, error: `ما لقيت نهاية الترم ${term} في التقويم` };
   const uid = encodeURIComponent(userId);
+
+  const cur = await sb('GET', 'profiles', {
+    query: `?id=eq.${uid}&select=id,subscription_expires_at&limit=1`
+  }).catch(e => ({ message: e.message }));
+  if (!Array.isArray(cur)) return { ok: false, error: (cur && cur.message) || 'تعذّر قراءة الحساب' };
+  if (!cur.length) return { ok: false, error: 'المستخدم غير موجود' };
+  const had = cur[0].subscription_expires_at;
+  if (had && Date.parse(had) > Date.parse(until))
+    return { ok: true, expires: had, term, kept: true,
+             warning: `عنده اشتراك أطول من الهدية (حتى ${String(had).slice(0, 10)}) — ما تغيّر شي` };
 
   /* الملف أولاً — هو اللي يفتح الميزات */
   const r = await sb('PATCH', 'profiles', {
@@ -4518,12 +4550,24 @@ async function adminGrant(userId, note) {
 }
 
 /* ═══ الإضافة من اللوحة: هدية أو تجربة ═══
-   حتى نهاية الترم، وصف «هدية» في السجل مثل تفعيل الترم. */
+   لنفس ترم الشراء اليوم (payTermNow) مثل تفعيل الترم، وصف «هدية» في السجل.
+   وما تقصّر إضافة أطول منها. */
 async function adminGrantPushover(userId, on, note) {
   const uid = encodeURIComponent(userId);
-  const term = activeTerm();
-  const until = on ? termEndISO(term) : new Date(Date.now() - 864e5).toISOString();
+  const pt = payTermNow(), term = pt.term;
+  const until = on ? pt.until : new Date(Date.now() - 864e5).toISOString();
   if (!until) return { ok: false, error: `ما لقيت نهاية الترم ${term} في التقويم` };
+  if (on) {
+    const cur = await sb('GET', 'profiles', {
+      query: `?id=eq.${uid}&select=id,pushover_until&limit=1`
+    }).catch(e => ({ message: e.message }));
+    if (!Array.isArray(cur)) return { ok: false, error: (cur && cur.message) || 'تعذّر قراءة الحساب' };
+    if (!cur.length) return { ok: false, error: 'المستخدم غير موجود' };
+    const had = cur[0].pushover_until;
+    if (had && Date.parse(had) > Date.parse(until))
+      return { ok: true, until: had, kept: true,
+               warning: `عنده التنبيه الطارئ لمدة أطول (حتى ${String(had).slice(0, 10)}) — ما تغيّر شي` };
+  }
   const r = await sb('PATCH', 'profiles', {
     query: `?id=eq.${uid}`, body: { pushover_until: until }, prefer: 'return=representation'
   }).catch(e => ({ message: e.message }));
@@ -6869,7 +6913,7 @@ async function aiStudentCtx(userId) {
     prepInferred,               /* true لما تكون مستنتَجة لا محفوظة */
     plan: PLANS_DATA.ctxOf({
       major, planVer, prep, completed, grades,
-      term: regTerm(),
+      term: nextRegTerm(),      /* «الترم الجاي» — لا ترم الدراسة خارج التسجيل */
     }),
   };
 }
@@ -7520,8 +7564,8 @@ const AI_TOOLS = {
 
   course_offering: {
     tier: 'free',
-    description: 'هل تُطرح المادة هذا الترم أو الترم الجاي، ومتى ترجع. '
-      + 'جدول الطرح معلن للهندسة الميكانيكية فقط.',
+    description: 'هل تُطرح المادة في ترم التسجيل الجاي (term · termName في الرد — '
+      + 'سمّه للطالب باسمه)، ومتى ترجع. جدول الطرح معلن للهندسة الميكانيكية فقط.',
     input_schema: { type: 'object', properties: {
       code: { type: 'string', description: 'كود المادة' } },
       required: ['code'] },
@@ -7529,11 +7573,13 @@ const AI_TOOLS = {
       if (!PLANS_DATA.findPlanCourse(ctx.plan, a.code))
         return { known: false, error: AI_UNKNOWN, code: a.code };
       const w = PLANS_DATA.offerWarn(ctx.plan, a.code);
-      if (!w) return { known: true, code: a.code, term: ctx.plan.term,
+      const term = ctx.plan.term, termName = payTermName(term);
+      if (!w) return { known: true, code: a.code, term, termName,
         status: 'ok', note: 'ما فيه تحذير طرح لهذي المادة' };
-      return { known: true, code: a.code, term: ctx.plan.term,
+      return { known: true, code: a.code, term, termName,
         status: w.kind === 'none' ? 'not_offered_now' : 'last_chance',
-        skipsTerms: w.n || 0, returnsTerm: w.next || null };
+        skipsTerms: w.n || 0, returnsTerm: w.next || null,
+        returnsTermName: w.next ? payTermName(w.next) : null };
     },
   },
 
@@ -7582,7 +7628,8 @@ const AI_TOOLS = {
       const crit = s.crit.filter(c => !taking(c)).map(map);
       const opt = s.opt.filter(c => !taking(c)).map(map);
       const hrs = l => l.reduce((n, c) => n + (Number(c.credits) || 0), 0);
-      const out = { critical: crit, optional: opt,
+      const out = { term: ctx.plan.term, termName: payTermName(ctx.plan.term),
+        critical: crit, optional: opt,
         hours: hrs(crit) + hrs(opt),
         alreadyTaking: s.crit.concat(s.opt).filter(taking).map(c => c.c),
         planHours: s.hours,
@@ -7618,14 +7665,15 @@ const AI_TOOLS = {
       return {
         termsLeft: g.count,
         graduatesIn: g.lastTerm
-          ? { term: g.lastTerm, year: Number(String(g.lastTerm).slice(0, 4)),
+          ? { term: g.lastTerm, name: payTermName(g.lastTerm),
+              year: Number(String(g.lastTerm).slice(0, 4)),
               season: season(g.lastTerm) } : null,
         hoursLeft: g.hoursLeft,
         countingNow: taking,
         /* خانات اختيارية يملؤها بنفسه — داخل نفس الترمات لا زيادة عليها */
         electivesLeft: g.electivesLeft,
-        plan: g.terms.map(x => ({ term: x.term, season: season(x.term),
-          hours: x.hours, courses: x.courses })),
+        plan: g.terms.map(x => ({ term: x.term, name: payTermName(x.term),
+          season: season(x.term), hours: x.hours, courses: x.courses })),
         blocked: g.stuck ? g.remaining : [],
         note: (aiPlanEmpty(ctx) ? AI_PLAN_EMPTY + ' ' : '') + (g.stuck
           ? 'وقف الحساب: فيه مواد متطلبها ما ينفتح من الخطة — راجع مرشدك'
@@ -8536,7 +8584,8 @@ async function aiSpendMonth() {
   const rows = await aiSpendDays(aiMonthStart());
   if (!rows) return null;
   const today = aiToday();
-  const out = { micro: 0, today: 0, questions: 0, byEnv: {}, days: rows };
+  const out = { micro: 0, today: 0, questions: 0, byEnv: {}, days: rows,
+                guestMicro: 0, guestQuestions: 0 };
   rows.forEach(r => {
     const c = Number(r.cost_micro) || 0;
     out.micro += c;
@@ -8544,7 +8593,34 @@ async function aiSpendMonth() {
     out.byEnv[r.env] = (out.byEnv[r.env] || 0) + c;
     if (r.on_date === today) out.today += c;
   });
+  /* الزوار: ما لهم صف في ai_usage (مفتاح أجنبي لـauth.users) فإنفاقهم في
+     AI_GUEST — ويُضمّ هنا للشهري كما يقول التوثيق. كان aiMonthAdd يضيفه ثم
+     تمسحه هالقراءة نفسها، فالسقف العام واللوحة ما يشوفون الزوار أبداً (لقاها
+     محمد: صفحة المساعد ما تحسب زوار تلقرام). زوار هالبيئة وحدها — عدّاد
+     البيئة الثانية في ذاكرتها. */
+  aiGuestRoll();
+  out.guestMicro = AI_GUEST.micro; out.guestQuestions = AI_GUEST.questions;
+  out.micro += AI_GUEST.micro; out.questions += AI_GUEST.questions;
+  out.today += AI_GUEST.dayMicro;
+  if (AI_GUEST.micro) out.byEnv[SITE_ENV] = (out.byEnv[SITE_ENV] || 0) + AI_GUEST.micro;
   AI_MONTH = { ym: aiYM(), micro: out.micro };
+  return out;
+}
+
+/* أسئلة المسجّلين حسب القناة هذا الشهر (الموقع · تلقرام) — من عرض
+   ai_spend_channel، للبيئتين معاً مثل بقية الشهري. null = العرض ما انخلق
+   (الـSQL ما انشغّل) ⇒ اللوحة تقول «شغّل الـSQL» لا «صفر» */
+async function aiSpendChannels(ym) {
+  const rows = await sb('GET', 'ai_spend_channel', { query:
+    `?ym=eq.${encodeURIComponent(ym || aiYM())}` +
+    `&select=env,channel,questions,cost_micro&limit=100` }).catch(() => null);
+  if (!Array.isArray(rows)) return null;
+  const out = { web: { questions: 0, micro: 0 }, tg: { questions: 0, micro: 0 } };
+  rows.forEach(r => {
+    const c = out[r.channel === 'tg' ? 'tg' : 'web'];
+    c.questions += Number(r.questions) || 0;
+    c.micro += Number(r.cost_micro) || 0;
+  });
   return out;
 }
 
@@ -8566,13 +8642,19 @@ async function aiSpendMonth() {
    بمفتاح أجنبي، فأي معرّف مخترع يُرفض. فنعدّ إنفاقه هنا ونضمّه
    للشهري عند الفحص — واللوحة تعرضه مفصولاً. */
 const AI_GUEST_SAVE_MS = 60 * 1000;      /* أقصى تكرار للحفظ */
-let AI_GUEST = { ymd: '', ips: new Map(), ym: '', micro: 0, questions: 0 };
+/* الزوار حسب القناة (لقاها محمد: صفحة المساعد ما تعرض تلقرام) — زائر
+   الموقع مفتاحه عنوانه، وزائر تلقرام `tg:<محادثته>`. والشهري واليومي
+   يُضمّان لإنفاق الشهر في aiSpendMonth */
+const aiGuestCh0 = () => ({ web: { questions: 0, micro: 0 }, tg: { questions: 0, micro: 0 } });
+let AI_GUEST = { ymd: '', ips: new Map(), ym: '', micro: 0, questions: 0,
+                 dayMicro: 0, ch: aiGuestCh0() };
 let AI_GUEST_SAVED = 0;
 
 function aiGuestRoll() {
   const d = aiToday(), m = aiYM();
-  if (AI_GUEST.ymd !== d) { AI_GUEST.ymd = d; AI_GUEST.ips = new Map() }
-  if (AI_GUEST.ym !== m) { AI_GUEST.ym = m; AI_GUEST.micro = 0; AI_GUEST.questions = 0 }
+  if (AI_GUEST.ymd !== d) { AI_GUEST.ymd = d; AI_GUEST.ips = new Map(); AI_GUEST.dayMicro = 0 }
+  if (AI_GUEST.ym !== m) { AI_GUEST.ym = m; AI_GUEST.micro = 0; AI_GUEST.questions = 0;
+                           AI_GUEST.ch = aiGuestCh0() }
   /* خريطة العناوين تكبر بيوم مزدحم — نقصّها بدل ما تكبر بلا حد */
   if (AI_GUEST.ips.size > 20000) AI_GUEST.ips.clear();
 }
@@ -8581,7 +8663,8 @@ function aiGuestState() {
   aiGuestRoll();
   return { ymd: AI_GUEST.ymd, ym: AI_GUEST.ym,
     micro: AI_GUEST.micro, questions: AI_GUEST.questions,
-    ips: AI_GUEST.ips.size,
+    ips: AI_GUEST.ips.size, dayMicro: AI_GUEST.dayMicro,
+    ch: { web: Object.assign({}, AI_GUEST.ch.web), tg: Object.assign({}, AI_GUEST.ch.tg) },
     capSar: AI_CAPS.guestMonthSar, capDay: AI_CAPS.guestDay };
 }
 
@@ -8623,9 +8706,12 @@ async function aiGuestQuota(ip, opt) {
 function aiGuestSpend(ip, micro) {
   aiGuestRoll();
   const key = String(ip || 'unknown');
+  const c = Math.max(0, Number(micro) || 0);
+  const ch = AI_GUEST.ch[/^tg:/.test(key) ? 'tg' : 'web'];
   AI_GUEST.ips.set(key, (AI_GUEST.ips.get(key) || 0) + 1);
-  AI_GUEST.micro += Math.max(0, Number(micro) || 0);
+  AI_GUEST.micro += c; AI_GUEST.dayMicro += c;
   AI_GUEST.questions++;
+  ch.micro += c; ch.questions++;
   if (Date.now() - AI_GUEST_SAVED > AI_GUEST_SAVE_MS) {
     AI_GUEST_SAVED = Date.now();
     saveState().catch(() => {});
@@ -8849,9 +8935,12 @@ async function aiThreadGet(userId) {
   };
 }
 
-async function aiThreadSave(userId, th, q, answer) {
+/* ch: من وين سأل (web · tg) — المحادثة وحدة للموقع والبوت، واللوحة تعلّم
+   رسائل تلقرام. والنموذج ما يشوفه: aiChat يمرّر له الدور والنص وبس */
+async function aiThreadSave(userId, th, q, answer, ch) {
+  const c = ch === 'tg' ? 'tg' : 'web';
   const msgs = th.messages.concat(
-    [{ role: 'user', text: q }, { role: 'assistant', text: String(answer || '') }]);
+    [{ role: 'user', text: q, ch: c }, { role: 'assistant', text: String(answer || ''), ch: c }]);
   /* ملخّص متجدد بلا نداء ثانٍ للنموذج: سطر لكل سؤال خرج من النافذة.
      يكفي للاستمرارية («قبل شوي سألت عن MATH 1422») وما يكلّف رمزاً. */
   let sum = th.summary;
@@ -8885,7 +8974,11 @@ function aiHeader(ctx, th) {
   let h = `[سياق صاحب السؤال — للاستعمال لا للعرض: التخصص ${p.major || '—'}`
     + ` · نسخة الخطة ${p.planVer || '—'} · تحضيري ${ctx.prep ? 'نعم' : 'لا'}`
     + `${ctx.prepInferred ? ' (مستنتجة)' : ''} · مشترك ${ctx.pro ? 'نعم' : 'لا'}`
-    + ` · ترم التسجيل ${regTerm()} · اليوم ${aiToday()} `
+    /* بالاسم لا الرمز: كان «ترم التسجيل 202710» وحده، فسمّى النموذج ترم الدراسة
+       «الترم الجاي» وقاله للطالب برمزه (لقاها محمد) */
+    + ` · ترم الدراسة الحالي ${payTermName(activeTerm())} (${activeTerm()})`
+    + ` · ترم التسجيل الجاي ${payTermName(nextRegTerm())} (${nextRegTerm()})`
+    + ` · اليوم ${aiToday()} `
     + `${AI_DAYS_AR[riyadhNow().getUTCDay()]} `
     /* الساعة لازمة: بدونها ما يقدر يحسب «ذكّرني بعد ٣ دقايق» فيسأل
        الطالب عن ساعته — وهي عندنا أصلاً. */
@@ -9018,14 +9111,19 @@ async function aiChat(userId, question, opt) {
     await aiSpendAlert();
   }
   if (spent && !guest) {
-    const w = await sb('POST', 'ai_usage', {
-      body: { user_id: String(userId), env: SITE_ENV, term: quota.term, model,
+    const row = { user_id: String(userId), env: SITE_ENV, term: quota.term, model,
               on_date: aiToday(), calls,
               in_tokens: usage.input_tokens, out_tokens: usage.output_tokens,
               cache_w_tokens: usage.cache_creation_input_tokens,
               cache_r_tokens: usage.cache_read_input_tokens,
-              cost_micro: cost },
-      prefer: 'return=representation' });
+              cost_micro: cost, channel: o.tg ? 'tg' : 'web' };
+    let w = await sb('POST', 'ai_usage', { body: row, prefer: 'return=representation' });
+    /* عمود القناة جديد: نشر السيرفر قبل الـSQL ما يوقف عدّ الاستهلاك —
+       PostgREST يرفض عموداً ما يعرفه (PGRST204)، فنعيد الكتابة بلاه */
+    if (!Array.isArray(w) && /channel/.test(String((w && w.message) || ''))) {
+      delete row.channel;
+      w = await sb('POST', 'ai_usage', { body: row, prefer: 'return=representation' });
+    }
     /* كتابة ما رجعت صفاً = ما انكتبت، بلا أي خطأ (§٦). هذي فلوس
        انصرفت وما انحسبت — نعدّها حتى تبان في اللوحة. */
     if (!Array.isArray(w) || !w.length) {
@@ -9044,7 +9142,7 @@ async function aiChat(userId, question, opt) {
       : 'ما قدرت أطلع لك جواب. جرّب تسأل بطريقة ثانية.';
     if (!why) why = 'noanswer';
   } else if (!guest) {
-    await aiThreadSave(userId, th, q, answer);
+    await aiThreadSave(userId, th, q, answer, o.tg ? 'tg' : 'web');
   }
 
   return { ok: !why, why, answer, tools: tools_used, calls, proposal, signIn,
@@ -10070,8 +10168,16 @@ const server = http.createServer(async (req, res) => {
           }
           await saveState().catch(() => {});
         }
-        const sp = await aiSpendMonth();
+        const [sp, chn] = await Promise.all([aiSpendMonth(), aiSpendChannels()]);
+        const gs = aiGuestState();
+        const chOut = c => ({ questions: c.questions, sar: Number(aiSar(c.micro)) });
         return send(200, {
+          /* حسب القناة (لقاها محمد: الصفحة ما تعرض تلقرام): المسجّلون من القاعدة،
+             والزوار من عدّاد هالبيئة. null = عرض القنوات ما انخلق بعد (الـSQL) */
+          channels: chn ? { web: chOut(chn.web), tg: chOut(chn.tg) } : null,
+          guestChannels: { web: chOut(gs.ch.web), tg: chOut(gs.ch.tg),
+            /* أسئلة قبل فصل القنوات (هالشهر): محسوبة في المجموع بلا قناة */
+            before: Math.max(0, gs.questions - gs.ch.web.questions - gs.ch.tg.questions) },
           mode: AI_MODE, modes: AI_MODES, ready: !!ANTHROPIC_KEY, env: SITE_ENV,
           model: aiModel(), modelEnv: AI_MODEL_ENV,
           modelCustom: !!AI_MODEL_OVERRIDE, modelKnown: aiKnownModel(aiModel()),
@@ -10081,6 +10187,7 @@ const server = http.createServer(async (req, res) => {
           spend: sp ? {
             monthSar: Number(aiSar(sp.micro)), todaySar: Number(aiSar(sp.today)),
             questions: sp.questions,
+            guestQuestions: sp.guestQuestions, guestSar: Number(aiSar(sp.guestMicro)),
             pct: AI_CAPS.monthSar > 0
               ? Math.round(sp.micro / (AI_CAPS.monthSar * 1e6) * 100) : 0,
             byEnv: Object.keys(sp.byEnv).reduce((o, k) => {
@@ -10146,7 +10253,8 @@ const server = http.createServer(async (req, res) => {
           name: (p0 && p0.name) || '', email: (p0 && p0.email) || '',
           major: (p0 && p0.major) || '',
           summary: th.summary, turns: th.turns,
-          messages: th.messages.map(m => ({ role: m.role, text: m.text })) });
+          messages: th.messages.map(m => ({ role: m.role, text: m.text,
+                                             ch: m.ch === 'tg' ? 'tg' : m.ch === 'web' ? 'web' : null })) });
       }
 
       /* زر «جرّب»: نداء واحد صغير يثبت المفتاح واسم النموذج */

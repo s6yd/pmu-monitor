@@ -162,6 +162,16 @@ const realLog = console.log;
 console.log = () => {};
 require(SRV);
 
+/* نقطة عامة بلا رمز اللوحة — ورقة الباقات */
+function pub(p) {
+  return new Promise((resolve, reject) => {
+    http.get({ host: '127.0.0.1', port: PORT, path: p }, res => {
+      let o = ''; res.on('data', c => o += c);
+      res.on('end', () => { try { resolve(JSON.parse(o)) } catch (e) { resolve(o) } });
+    }).on('error', reject);
+  });
+}
+
 function call(p, method, payload) {
   return new Promise((resolve, reject) => {
     const data = payload ? JSON.stringify(payload) : null;
@@ -199,7 +209,10 @@ function call(p, method, payload) {
   {
     let r = await call('grant', 'POST', { userId: 'u1', note: 'فائز مسابقة' });
     ok(r.j.ok === true && !r.j.warning, 'التفعيل نجح بلا تحذير — ' + JSON.stringify(r.j));
-    ok(DB.profiles[0].subscription_expires_at === '2026-12-30T20:59:59.000Z', 'والملف فُعّل حتى نهاية الترم');
+    /* الهدية = ترم الشراء اليوم (ورقة الباقات) — كانت ترم الدراسة */
+    const st = await pub('/api/monitor-status');
+    ok(st.plans && DB.profiles[0].subscription_expires_at === st.plans.termEnd,
+       'والملف فُعّل حتى تاريخ الشراء نفسه — ' + DB.profiles[0].subscription_expires_at);
     const subs = DB.subscriptions.filter(x => x.user_id === 'u1');
     ok(subs.length === 1 && subs[0].status === 'comp', 'صف «هدية» في سجل الاشتراكات');
     ok(subs[0] && subs[0].note === 'فائز مسابقة', 'والسبب محفوظ');
