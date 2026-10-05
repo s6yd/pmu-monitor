@@ -275,7 +275,11 @@ const PUSHOVER_ON = !!(PUSHOVER_TOKEN && PUSHOVER_USER);
    وهذا مفتاح القتل على مستوى النشر. واسم النموذج من متغيّر ثانٍ عشان
    تبدّله من Render، واللوحة تتقدّم عليه بلا نشر (مثل ACTIVE_TERM). */
 const ANTHROPIC_KEY = (process.env.ANTHROPIC_API_KEY || '').trim();
-const AI_MODEL_ENV = (process.env.AI_MODEL || 'claude-haiku-4-5').trim();
+/* Sonnet 5.5 لا Haiku — قرار محمد بعد محادثات تخطيط ضعيفة («المساعد مو ذكي»):
+   هايكو بلا تفكير ما يقدر يبني خطة ترمات ويشرح سلاسل المتطلبات. سونيت ضعف سعره
+   للرمز (والتخزين المؤقت يشتغل معه من ٥١٢ رمزاً — هايكو يحتاج ٤٠٩٦)، والسقوف
+   تحمي. اللوحة تغيّره بلا نشر. */
+const AI_MODEL_ENV = (process.env.AI_MODEL || 'claude-sonnet-5-5').trim();
 
 function pushover(title, message, opts) {
   if (!PUSHOVER_ON) {
@@ -3545,6 +3549,21 @@ async function tgToTeam(chatId, from, text, photo, markup) {
     (tk ? `✅ وصلتنا رسالتك — رقم تذكرتك <b>#${tk.id}</b>\n\n`
         : '✅ وصلتنا رسالتك\n\n') +
     'نقرأ كل رسالة ونرد عليك هنا 🙏', markup);
+}
+
+/* تيليغرام يعيد إرسال التحديث لو ما رددنا بسرعة (يحسبه فشلاً)، وردّنا ينتظر
+   جواب المساعد — وصار يفكّر قبل ما يجاوب فيطوّل. بلا هذا الطالب يستلم الجواب
+   مرتين ونُحاسب على السؤال مرتين. آخر المعرّفات في الذاكرة (تفضى مع النشر). */
+const TG_SEEN = new Map();
+function tgSeenBefore(id) {
+  if (id === undefined || id === null || !Number.isFinite(Number(id))) return false;
+  const k = Number(id);
+  if (TG_SEEN.has(k)) return true;
+  TG_SEEN.set(k, Date.now());
+  if (TG_SEEN.size > 5000) {          /* الأقدم أولاً — Map بترتيب الإضافة */
+    for (const key of TG_SEEN.keys()) { TG_SEEN.delete(key); if (TG_SEEN.size <= 4000) break }
+  }
+  return false;
 }
 
 async function handleTelegramUpdate(update) {
@@ -8876,20 +8895,25 @@ function validateAiCaps(c) {
    والتقريب للهللة يخلّي مجموع الشهر غلطاً.
    الكاش: الكتابة ١٫٢٥× سعر الدخل، والقراءة ٠٫١×. */
 const AI_SAR_PER_USD = 3.75;
+/* [دخل، خرج، قراءة الكاش لو ما هي ٠٫١× الدخل] — دولار للمليون */
 const AI_PRICES = {
-  'claude-haiku-4-5': [1, 5],
-  'claude-sonnet-5':  [2, 10],
-  'claude-opus-5':    [5, 25],
+  'claude-haiku-4-5':  [1, 5],
+  'claude-sonnet-5':   [2, 10],
+  'claude-sonnet-5-5': [2, 10],
+  'claude-opus-5':     [5, 25],
+  'claude-opus-5-5':   [4, 20, 0.20],
+  'claude-fable-5':    [10, 50],
+  'claude-fable-5-1':  [10, 50, 0.25],
 };
 /* نموذج ما نعرف سعره = أغلى سعر معروف. نبالغ في التقدير ولا نقلّل أبداً،
    لأن التقليل معناه سقف شهري يتجاوزه الإنفاق الحقيقي بصمت. */
-const AI_PRICE_FALLBACK = [5, 25];
+const AI_PRICE_FALLBACK = [10, 50];
 const aiModelKey = m => String(m || '').trim().replace(/-\d{8}$/, '');
 const aiKnownModel = m => Object.prototype.hasOwnProperty.call(AI_PRICES, aiModelKey(m));
 
 function aiPriceOf(m) {
   const p = AI_PRICES[aiModelKey(m)] || AI_PRICE_FALLBACK;
-  return { in: p[0], out: p[1], cw: p[0] * 1.25, cr: p[0] * 0.1 };
+  return { in: p[0], out: p[1], cw: p[0] * 1.25, cr: p[2] !== undefined ? p[2] : p[0] * 0.1 };
 }
 function aiCostMicro(model, u) {
   const p = aiPriceOf(model);
@@ -9219,10 +9243,21 @@ const AI_SYSTEM = `أنت «مساعد جدولك» — مساعد داخل مو
 const AI_API_HOST = 'api.anthropic.com';
 const AI_API_PATH = '/v1/messages';
 const AI_API_VERSION = '2023-06-01';
-const AI_MAX_TOKENS = 1024;
-const AI_MAX_STEPS = 4;          /* سقف نداءات النموذج في السؤال الواحد */
-const AI_CALL_MS = 45000;
-const AI_TURN_MS = 90000;        /* ميزانية السؤال كله */
+/* السقف يشمل تفكير النموذج (Sonnet 5.5 يفكّر قبل ردّه، والتفكير من نفس السقف).
+   1024 كانت تقصّ جواب خطة بترماتها. حماية لا هدف — الجواب أقصر غالباً */
+const AI_MAX_TOKENS = 8000;
+const AI_MAX_STEPS = 6;          /* سقف نداءات النموذج في السؤال الواحد — الأخير بلا أدوات */
+const AI_CALL_MS = 60000;
+const AI_TURN_MS = 120000;       /* ميزانية السؤال كله */
+/* جهد التفكير: medium نقطة البداية المنصوحة لاستعمال الأدوات متعدد الخطوات
+   (low للدردشة — والتخطيط مو دردشة). هايكو 4.5 يرفض الحقل بـ400، فيُرسل
+   للنماذج اللي تقبله وحدها. */
+const AI_EFFORT = 'medium';
+const aiEffortOk = m => /^claude-(sonnet-5|opus-5|fable|mythos|opus-4-[678]|sonnet-4-6)/.test(aiModelKey(m));
+/* نفس الحقول لكل نداء — المحادثة والفحص من اللوحة (ai-ping يكشف نموذجاً يرفضها) */
+const aiModelOpts = m => aiEffortOk(m) ? { output_config: { effort: AI_EFFORT } } : {};
+/* رفض النموذج (stop_reason: refusal) — رد عادي ٢٠٠ بلا جواب. نقول للطالب شي مفهوم */
+const AI_REFUSED = 'ما أقدر أساعد في هذا الطلب. لو سؤالك عن دراستك أو جدولك أو خطتك، صِغه بطريقة ثانية وأنا حاضر.';
 const AI_Q_MAX = 1000;           /* أطول سؤال نقبله */
 
 function aiCall(payload) {
@@ -9415,14 +9450,17 @@ async function aiChat(userId, question, opt) {
   const usage = { input_tokens: 0, output_tokens: 0,
                   cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
   const tools_used = [];
-  let calls = 0, answer = '', why = '', proposal = null, signIn = false;
+  let calls = 0, answer = '', why = '', proposal = null, signIn = false, refused = false;
 
   for (let step = 0; step < AI_MAX_STEPS; step++) {
     if (Date.now() - t0 > AI_TURN_MS) { why = 'timeout'; break }
-    const r = await aiCall({ model, max_tokens: AI_MAX_TOKENS,
+    /* آخر نداء بلا أدوات (tool_choice: none): جواب من اللي جمعه بدل
+       «ما قدرت أطلع لك جواب» لما تخلص النداءات وهو يبي أداة ثانية */
+    const last = step === AI_MAX_STEPS - 1;
+    const r = await aiCall(Object.assign({ model, max_tokens: AI_MAX_TOKENS,
       system: [{ type: 'text', text: AI_SYSTEM,
                  cache_control: { type: 'ephemeral' } }],
-      tools, messages });
+      tools, messages }, aiModelOpts(model), last ? { tool_choice: { type: 'none' } } : {}));
     calls++;
     const j = r.json;
     if (r.status !== 200 || !j || !Array.isArray(j.content)) {
@@ -9433,6 +9471,8 @@ async function aiChat(userId, question, opt) {
     }
     const u = j.usage || {};
     Object.keys(usage).forEach(k => { usage[k] += Math.max(0, Number(u[k] || 0)) });
+    /* رفض: قبل قراءة المحتوى — ما نعرض نصاً ناقصاً ولا نكمل أدوات */
+    if (j.stop_reason === 'refusal') { answer = AI_REFUSED; refused = true; break }
 
     const text = j.content.filter(c => c.type === 'text')
       .map(c => String(c.text || '')).join('\n').trim();
@@ -9507,7 +9547,7 @@ async function aiChat(userId, question, opt) {
   }
 
   return { ok: !why, why, answer, tools: tools_used, calls, proposal, signIn,
-           model, cost, tokens: usage, guest, used: aiUsedOf(quota) };
+           model, cost, tokens: usage, guest, used: aiUsedOf(quota), refused };
 }
 
 /* حساب صاحب الموقع — لمربّع التجربة في اللوحة. نلقاه بنفس الربط اللي
@@ -9528,8 +9568,10 @@ async function aiPing() {
     return { ok: false, error: 'ANTHROPIC_API_KEY ناقص في Render' };
   const model = aiModel();
   const t0 = Date.now();
-  const r = await aiCall({ model, max_tokens: 16,
-    messages: [{ role: 'user', content: 'قل: تمام' }] });
+  /* بنفس حقول المحادثة (الجهد): نموذج يرفضها ينكشف هنا لا مع أول طالب.
+     والسقف يتسع لتفكير قصير قبل الرد — بـ١٦ رمزاً يطلع الرد فاضياً */
+  const r = await aiCall(Object.assign({ model, max_tokens: 200,
+    messages: [{ role: 'user', content: 'قل: تمام' }] }, aiModelOpts(model)));
   const j = r.json;
   if (r.status !== 200 || !j || !Array.isArray(j.content))
     return { ok: false, model, status: r.status || 0,
@@ -10119,7 +10161,11 @@ const server = http.createServer(async (req, res) => {
     req.setEncoding('utf8');
     req.on('data', c => body += c);
     req.on('end', async () => {
-      try { await handleTelegramUpdate(JSON.parse(body)); } catch (e) {}
+      let u = null;
+      try { u = JSON.parse(body) } catch (e) {}
+      /* إعادة إرسال لتحديث انعالج (أو ينعالج الحين): نرد ولا نعيده */
+      if (u && tgSeenBefore(u.update_id)) { res.writeHead(200); res.end('ok'); return; }
+      try { if (u) await handleTelegramUpdate(u); } catch (e) {}
       res.writeHead(200); res.end('ok');
     });
     return;
