@@ -7525,8 +7525,8 @@ const AI_MAJOR_TOOLS = new Set(['plan_overview', 'next_term_suggestion',
 /* أدوات الزائر: **العام وحده**. ما فيها ولا أداة تحتاج تخصصه أو
    صفوفه — والخطة منها: ما نعرف تخصصه، وافتراضه يعطيه خطة غيره. */
 const AI_GUEST_TOOLS = new Set(['guide', 'academic_calendar',
-  'registration_calendar', 'sections', 'instructor_reviews', 'free_rooms',
-  'finals', 'propose_support_ticket', 'plans_info']);
+  'registration_calendar', 'sections', 'instructor_reviews', 'course_instructors',
+  'free_rooms', 'finals', 'propose_support_ticket', 'plans_info']);
 
 function aiCourse(ctx, code) {
   const c = PLANS_DATA.findPlanCourse(ctx.plan, code);
@@ -8708,6 +8708,87 @@ const AI_TOOLS = {
     },
   },
 
+  /* «مين أفضل الدكاترة لموادي الباقية؟» — لقاها محمد: الجواب كان «ما قدرت أطلع
+     لك جواب». السؤال يحتاج شعب كل مادة ثم تقييم كل دكتور، عشرين نداءً وأكثر،
+     فتخلص نداءات السؤال قبل الجواب. صار نداءً واحداً لكل المواد: مين يدرّسها في
+     جدول الترم (بجنس الطالب لو بان من جدوله)، ومين قيّمه الطلاب فيها — وتقييمه
+     في المادة نفسها وتقييمه كله (التقييم واحد لكل طالب ودكتور، والمادة فيه
+     اختيارية). ترتيب الطلاب لا رأينا، وبلا هوية أي مقيّم. */
+  course_instructors: {
+    tier: 'free',
+    description: 'دكاترة مواد بعينها وتقييم الطلاب لهم — لسؤال «مين أفضل دكتور لمادة كذا» '
+      + 'أو «لموادي الباقية». **مرّر أكواد المواد كلها في نداء واحد** (موادك الباقية: أكوادها '
+      + 'من graduation_forecast). لكل مادة: teaching = يدرّسونها في جدول الترم (term)، '
+      + 'وtaughtBefore = قيّمهم الطلاب فيها من قبل — مرتّبين بتقييم الطلاب: في المادة نفسها '
+      + '(inCourse) وكله (overall) بعدد التقييمات. **ترتيب الطلاب لا رأيك** — قل العدد، '
+      + 'وتقييم أو تقييمين ما يكفي حكماً. وللتعليقات نفسها: instructor_reviews.',
+    input_schema: { type: 'object', properties: {
+      codes: { type: 'array', items: { type: 'string' },
+        description: 'أكواد المواد مثل ["MEEN 4392","COMM 2311"] — حتى 15' } },
+      required: ['codes'] },
+    run: async (ctx, a) => {
+      const codes = [...new Set((Array.isArray(a.codes) ? a.codes : [a.codes])
+        .map(aiCodeNorm).filter(c => /^[A-Z]{2,5} \d{3,4}[A-Z]?$/.test(c)))].slice(0, 15);
+      if (!codes.length) return { error: 'مرّر أكواد المواد، مثل ["MEEN 4392"]' };
+      const q = v => encodeURIComponent('"' + String(v).replace(/"/g, '') + '"');
+      /* بلا user_id في select ولا في الناتج — التقييم مجهول للقارئ */
+      const COLS = 'select=instructor_name,rating,course_code,tags';
+      const inCourse = await sb('GET', 'instructor_reviews', { query:
+        `?course_code=in.(${codes.map(q).join(',')})&hidden=is.false&${COLS}&limit=1000` });
+      if (!Array.isArray(inCourse)) return { error: 'تعذّر قراءة التقييمات' };
+      /* مين يدرّسها في جدول الترم — الكاش بحرّاس تسخينه، وما توفّر؟ نكمل بالتقييمات */
+      const c = await aiCacheWarm();
+      let gender = null;
+      if (!ctx.guest && ctx.userId) { try { gender = aiGender(await aiSchedule(ctx)) } catch (e) {} }
+      const teaching = {};
+      if (c.available) c.courses.forEach(x => {
+        const code = aiCodeNorm(x.courseCode), who = String(x.instructor || '').trim();
+        if (!codes.includes(code) || !who || /^(TBA|STAFF)$/i.test(who)) return;
+        if (gender && x.gender && x.gender !== gender) return;
+        (teaching[code] = teaching[code] || new Set()).add(who);
+      });
+      /* تقييم كل دكتور كله — ممكن قيّمه الطلاب بلا ذكر المادة */
+      const names = [...new Set(inCourse.map(x => String(x.instructor_name || '').trim())
+        .concat(...Object.values(teaching).map(t => [...t])).filter(Boolean))].slice(0, 60);
+      const all = names.length ? await sb('GET', 'instructor_reviews', { query:
+        `?instructor_name=in.(${names.map(q).join(',')})&hidden=is.false&${COLS}&limit=1000` }) : [];
+      const stat = rows => {
+        const n = rows.length, r = rows.filter(x => Number.isFinite(x.rating));
+        const tags = {};
+        rows.forEach(x => (Array.isArray(x.tags) ? x.tags : []).forEach(t => { tags[t] = (tags[t] || 0) + 1 }));
+        return { reviews: n, average: r.length ? Number((r.reduce((s2, x) => s2 + x.rating, 0) / r.length).toFixed(2)) : null,
+          topTags: Object.entries(tags).sort((x, y) => y[1] - x[1]).slice(0, 3).map(([t]) => t) };
+      };
+      const ALL = Array.isArray(all) ? all : [];
+      const one = (code, name) => {
+        const inC = stat(inCourse.filter(x => aiCodeNorm(x.course_code) === code
+          && String(x.instructor_name || '').trim() === name));
+        const ov = stat(ALL.filter(x => String(x.instructor_name || '').trim() === name));
+        return { name, inCourse: { reviews: inC.reviews, average: inC.average },
+          overall: { reviews: ov.reviews, average: ov.average }, topTags: ov.topTags };
+      };
+      /* بتقييمه في المادة لو فيه، وإلا تقييمه كله؛ وبلا تقييم آخر القائمة */
+      const score = x => x.inCourse.average !== null ? x.inCourse.average
+        : x.overall.average !== null ? x.overall.average - 0.001 : -1;
+      const rank = l => l.sort((x, y) => score(y) - score(x)
+        || (y.inCourse.reviews + y.overall.reviews) - (x.inCourse.reviews + x.overall.reviews));
+      const courses = codes.map(code => {
+        const now = teaching[code] ? [...teaching[code]] : [];
+        const before = [...new Set(inCourse.filter(x => aiCodeNorm(x.course_code) === code)
+          .map(x => String(x.instructor_name || '').trim()).filter(n => n && !now.includes(n)))];
+        return { code, teaching: rank(now.map(n => one(code, n))).slice(0, 8),
+          taughtBefore: rank(before.map(n => one(code, n))).slice(0, 5) };
+      });
+      const out = { term: c.available ? c.term : null,
+        termName: c.available ? payTermName(c.term) : null,
+        campus: gender, courses,
+        note: 'ترتيب بتقييم الطلاب — رأيهم لا رأينا. قل عدد التقييمات، وتقييم أو تقييمين ما '
+          + 'يكفي حكماً. teaching من جدول الترم المذكور، والترم الجاي ممكن يتغيّر' };
+      if (!c.available) out.scheduleNote = 'جدول الترم مو متاح الحين — القائمة من التقييمات وحدها';
+      return out;
+    },
+  },
+
   free_rooms: {
     tier: 'free',
     description: 'القاعات اللي ما فيها محاضرة في نافذة وقت من يوم معيّن. '
@@ -9282,7 +9363,9 @@ const AI_SYSTEM = `أنت «مساعد جدولك» — مستشار أكادي�
   والأفعال اللي ما لها أداة اقتراح دلّه على مكانها في الموقع.
 - ما تحل واجبات ولا كويزات ولا اختبارات ولا تعطي حلولها، ولا تلخّص حلاً لعمل مقيّم.
   تشرح الفكرة وطريقة المذاكرة نعم، تحل المطلوب منه لا.
-- الدكاترة: تلخّص تقييمات الطلاب الموجودة فقط. ما تضيف رأيك ولا تفاضل بين دكتور ودكتور من عندك.
+- الدكاترة: تلخّص تقييمات الطلاب الموجودة فقط. «مين أفضل دكتور لمادة/لموادي الباقية؟» ⇒
+  course_instructors **بكل الأكواد في نداء واحد** (الباقية من graduation_forecast)، وترتّبهم
+  بتقييم الطلاب **مع عدد التقييمات**. ما تضيف رأيك ولا تفاضل بين دكتور ودكتور من عندك.
 - الغياب والمعدل حساب إرشادي — ذكّره إن المرجع الرسمي سجل الجامعة.
 
 المجاني والاشتراك:

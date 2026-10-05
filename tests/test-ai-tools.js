@@ -259,11 +259,20 @@ const ctxObj = {
     if (table === 'absences') return Promise.resolve(sort(DB.absences[id] || []));
     if (table === 'course_events') return Promise.resolve(sort(DB.events[id] || []));
     if (table === 'instructor_reviews') {
-      /* PostgREST: ilike.*x* و hidden=is.false */
+      /* PostgREST: ilike.*x* · in.("a","b") (قيم مقتبسة فيها مسافات) · hidden=is.false */
       const like = (/instructor_name=ilike\.\*([^*&]+)\*/.exec(q) || [])[1];
       const who = like ? decodeURIComponent(like) : '';
+      const inOf = col => {
+        const m = new RegExp(col + '=in\\.\\(([^&]*)\\)').exec(q);
+        if (!m) return null;
+        return [...decodeURIComponent(m[1]).matchAll(/"([^"]*)"|([^,]+)/g)]
+          .map(x => (x[1] !== undefined ? x[1] : x[2]).trim());
+      };
       let rows = DB.reviews.filter(r => !r.hidden);
       if (who) rows = rows.filter(r => String(r.instructor_name).includes(who));
+      const codes = inOf('course_code'), names = inOf('instructor_name');
+      if (codes) rows = rows.filter(r => codes.includes(r.course_code));
+      if (names) rows = rows.filter(r => names.includes(r.instructor_name));
       return Promise.resolve(sort(rows));
     }
     return Promise.resolve([]);
@@ -345,7 +354,7 @@ ok(typeof ctxObj.schedTime === 'function', 'schedTime الحقيقية محمّ�
      'ومحاضرتان متتاليتان ما تتعارضان');
 }
 vm.runInContext(REGION + '\nthis.aiStudentCtx=aiStudentCtx; this.aiRunTool=aiRunTool;'
-  + 'this.aiToolSchemas=aiToolSchemas; this.AI_TOOLS=AI_TOOLS;'
+  + 'this.aiToolSchemas=aiToolSchemas; this.AI_TOOLS=AI_TOOLS; this.AI_GUEST_TOOLS=AI_GUEST_TOOLS;'
   /* حالة التسخين: نقرأها ونصفّرها بين الحالات — من داخل المنطقة
      نفسها لا بنسخة، فما نختبر متغيّراً غير اللي يشتغل.
      وداخل try: على كود قديم بلا تسخين نبلّغ فشلاً مرتّباً بدل انهيار
@@ -1298,6 +1307,37 @@ function fakeModel(ctx) {
     const open = await callFree('sections', '{"code":"MATH 1422","openOnly":true}');
     eq(open.found, 1, 'المفتوحة فقط: وحدة');
     eq(open.sections[0].crn, '10002', 'وهي المفتوحة');
+
+    /* «المواد اللي باقية لي، مين أفضل الدكاترة اللي يدرّسونها؟» — لقاها محمد: الجواب
+       كان «ما قدرت أطلع لك جواب». يحتاج شعب كل مادة ثم تقييم كل دكتور (٢٠ نداء وأكثر)
+       فتخلص نداءات السؤال قبل الجواب — صار نداءً واحداً لكل المواد */
+    {
+      const n0 = SB_CALLS.length;
+      PULLED = [];
+      const ci = await callFree('course_instructors',
+        JSON.stringify({ codes: ['math 1422', 'ALIS 1212', 'COMM 1311', 'MEEN 9999'] }));
+      const by = k => ((ci.courses || []).find(x => x.code === k)) || {};
+      eq((by('ALIS 1212').teaching || []).map(x => x.name), ['Ahmad Salem'],
+         '**نداء واحد لكل المواد**: مين يدرّس ALIS 1212 في جدول الترم — ' + JSON.stringify(ci).slice(0, 90));
+      eq(((by('ALIS 1212').teaching || [])[0] || {}).inCourse, { reviews: 2, average: 4 },
+         'وتقييم الطلاب له فيها: ٥ و٣ — والمخفي ما ينحسب');
+      eq((by('MATH 1422').teaching || []).map(x => x.name), ['Sara Nasser'],
+         'و MATH 1422 بكودها ولو كتبه الطالب بحروف صغيرة');
+      eq((by('COMM 1311').teaching || []).length, 0, 'COMM 1311 ما لها شعب في جدول الترم');
+      eq((by('COMM 1311').taughtBefore || []).map(x => x.name), ['Abumuhammad Moinuddeen'],
+         'لكن قيّم الطلاب دكتورها فيها من قبل');
+      eq([(by('MEEN 9999').teaching || []).length, (by('MEEN 9999').taughtBefore || []).length], [0, 0],
+         'ومادة بلا شي ترجع فاضية — ما نخترع');
+      eq(ci.termName, 'خريف 2026/2027', 'والترم باسمه');
+      ok(/عدد التقييمات/.test(ci.note || ''), 'والملاحظة: ترتيب الطلاب بعدد تقييماتهم لا رأينا');
+      ok(!/u-pro|u-other|u-free|user_id/.test(JSON.stringify(ci)), '**ولا هوية مقيّم في الناتج**');
+      ok(SB_CALLS.slice(n0).every(c => c.method === 'GET'), 'قراءة فقط');
+      ok(SB_CALLS.slice(n0).filter(c => c.table === 'instructor_reviews').length <= 2,
+         'بنداءين للقاعدة على الأكثر — لا نداء لكل مادة');
+      eq(PULLED, [], 'ولا سحبة من الجامعة والكاش دافئ');
+      ok(ctxObj.AI_GUEST_TOOLS.has('course_instructors'), 'وللزائر مثل أخواتها (الشعب والدكاترة)');
+      ok(!!(await callFree('course_instructors', '{"codes":[]}')).error, 'وبلا أكواد: خطأ واضح');
+    }
 
     const byWho = await callFree('sections', '{"instructor":"Sara"}');
     eq(byWho.found, 2, 'البحث بالدكتور يرجع شعبه');
