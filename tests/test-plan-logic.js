@@ -249,6 +249,22 @@ eq(L.level(200), 'Senior', 'level(200)');
   ok(L.isInternship({ c: 'COOP 4399', n: 'Co-op Training' }) === true, 'يعرف التطبيق العملي');
   ok(L.isInternship({ c: 'CSCI 1401', n: 'Programming I' }) === false, 'مادة عادية مو تطبيقاً');
   ok(L.isInternship({}) === false, 'كائن فاضٍ لا ينهار');
+  /* كانت بادئات («INTERN» · «PRACTIC» · «TRAINING») فمسكت مواد عادية:
+     صارت «تدريباً» ما يُقترح إلا لحاله وبعد ٩٠ ساعة — MEEN 3101 ما ظهرت
+     في مقترح «خطتي» لأي طالب ميكانيكا. */
+  for (const [c, n] of [['MEEN 3101', 'Machine Shop Practice and Safety'],
+    ['BUSI 4321', 'International Business'], ['FINA 4314', 'International Finance'],
+    ['HRMT 3332', 'Training and Development'], ['LAWB 4364', 'Internal Legal Practice'],
+    ['INTL 3321', 'Public International Law'], ['ARCH 5363', 'Professional Practice and Ethics']])
+    ok(L.isInternship({ c, n }) === false, `«${n}» مادة عادية مو تدريباً`);
+  /* وفي كل خطة: التدريب هو مادة ترم SU وحدها، لا أقل ولا أكثر */
+  const wrong = [];
+  for (const key of Object.keys(L.PLANS)) {
+    L.PLANS[key].sems.forEach(s => s.courses.forEach(c => {
+      if (L.isInternship(c) !== (s.id === 'SU')) wrong.push(`${key}:${c.c}`);
+    }));
+  }
+  eq(wrong, [], '**في كل الخطط: التدريب = مادة ترم SU بالضبط**');
 }
 
 /* كل تخصص: الدوال تشتغل بلا انهيار */
@@ -376,6 +392,44 @@ eq(L.level(200), 'Senior', 'level(200)');
     }
   }
   ok(bad === 0, 'المقترح يمر لكل تخصص × ترم بلا انهيار ولا تجاوز سقف');
+
+  /* ولا مادة مرتين: «آخر فرصة» بلا مواد تفتحها كانت تنزل في الأساسية
+     والاختيارية معاً، وساعاتها تنحسب مرتين (MEEN 3111 في ربيع 2027) */
+  let dup = 0, badH = 0;
+  for (const code of Object.keys(L.PLANS)) {
+    for (const term of ['202710', '202720', '202810', '202820']) {
+      const mk = k => L.ctxOf({ major: code, planVer: 'new', prep: false, grades: {}, term,
+        completed: L.allPlanCourses(L.ctxOf({ major: code, planVer: 'new' })).map(c => c.c).slice(0, k) });
+      const n = L.allPlanCourses(mk(0)).length;
+      for (let k = 0; k <= n; k += 3) {
+        const r = L.suggestNext(mk(k));
+        const codes = r.crit.concat(r.opt).map(c => c.c);
+        if (new Set(codes).size !== codes.length) {
+          dup++;
+          if (dup < 3) console.log(`  ✗ ${code}/${term}/${k}: مكررة ${codes.filter((c, i) => codes.indexOf(c) !== i)}`);
+        }
+        if (!r.internOnly && r.hours !== r.crit.concat(r.opt).reduce((s, c) => s + c.h, 0)) badH++;
+      }
+    }
+  }
+  eq(dup, 0, '**ولا مادة تنقترح مرتين** — آخر فرصة كانت تنزل أساسية واختيارية معاً');
+  eq(badH, 0, 'والساعات = مجموع المعروض، ما تنحسب مادة مرتين');
+
+  /* المحاكاة وحدها تتخطّى ما لا يُطرح (offeredOnly) — الصفحة تعرضه بشارته كما كانت */
+  {
+    const st = { completed: all.map(c => c.c).slice(0, 30), term: '202720' };
+    const page = L.suggestNext(M(st));
+    const sim = L.suggestNext(M(Object.assign({ offeredOnly: true }, st)));
+    const blocked = L.NOT_OFFERED['202720'];
+    ok(page.crit.concat(page.opt).some(c => blocked.includes(c.c)),
+       'الصفحة: المادة اللي ما تُطرح تبقى في المقترح بشارتها');
+    ok(!sim.crit.concat(sim.opt).some(c => blocked.includes(c.c)),
+       'المحاكاة: ما تنحط في ترم ما تُطرح فيه');
+    const skipped = sim.notOffered || [];
+    ok(skipped.length > 0 && skipped.every(c => blocked.includes(c)),
+       'وتُذكر في notOffered — ' + skipped);
+    eq(page.notOffered || [], [], 'وبلا الخيار ما يتخطّى شي');
+  }
 }
 
 }  /* نهاية الحالات السلوكية */
@@ -478,8 +532,14 @@ eq(L.level(200), 'Senior', 'level(200)');
   eq(g0.hoursLeft, 139, 'وساعاته ١٣٩ — مجموع الخطة');
   ok(g0.terms.every(t => t.hours > 0 && t.courses.length),
      'وكل ترم فيه مواد وساعات');
-  ok(g0.terms.every(t => String(t.term).slice(4) !== '30'),
-     '**والصيف متخطّى** — الجامعة ما تطرح مواد التخصص فيه');
+  /* **قاعدة تغيّرت عمداً:** كان «الصيف متخطّى» كله. الخطة نفسها تحطّ
+     التدريب في ترم SU، وتخطّيه كان ينزّله آخر الخطة لحاله فيأخّر التخرج
+     ترماً. صار الصيف متخطّى **للمواد** ومكان التدريب. */
+  ok(g0.terms.filter(t => String(t.term).slice(4) === '30')
+       .every(t => t.courses.length === 1 && L.isInternship({ c: t.courses[0].code, n: t.courses[0].name })),
+     '**والصيف متخطّى للمواد** — ما فيه إلا التدريب لحاله');
+  ok(g0.terms.some(t => String(t.term).slice(4) === '30' && t.kind === 'internship'),
+     '**والتدريب في صيف** — مكانه في الخطة');
   ok(g0.terms.every((t, i) => i === 0 || t.term > g0.terms[i - 1].term),
      'والترمات متصاعدة');
   eq(g0.electivesLeft.length, ELEC.length,
@@ -553,6 +613,99 @@ eq(L.level(200), 'Senior', 'level(200)');
   const gCS = L.gradPlan(cs, {});
   ok(gCS.count > 0 && gCS.count <= 16, 'وتشتغل على تخصص ثانٍ — ' + gCS.count);
   ok(gCS.terms.every(t => t.courses.length), 'وترماته فيها مواد');
+
+  /* ── الاختياريات داخل الترمات، والمجاميع تطلع ── */
+  const els = g0.terms.flatMap(t => t.courses.filter(c => c.elective).map(c => c.code)).sort();
+  eq(els, ELEC.slice().sort(), '**خانات الاختياري داخل الترمات** — كل خانة مرة واحدة');
+  eq(g0.hoursPlanned, 139, 'ومجموع ساعات الترمات = الخطة كلها (كانت ١٣٠ بلا الاختياريات)');
+  ok(g0.terms.every(t => t.hours === t.courses.reduce((n, c) => n + c.credits, 0)),
+     'وساعات كل ترم = مجموع مواده');
+  /* **أسرع تخرّج**: ٨ ترمات عادية من خريف 2026 = ربيع 2030. كان خريف 2030:
+     MEEN 3101 تنحسب «تدريباً» فتنزل لحالها، والتدريب الحقيقي ترم عادي بعدها */
+  eq(g0.lastTerm, '203020', '**طالب ميكانيكا جديد يتخرج ربيع 2030** — ٨ ترمات والتدريب صيفاً');
+
+  /* ── جدول الطرح يُحترم ── */
+  const g15 = L.gradPlan(mk([]), { maxHours: 15 });
+  const gS2 = L.gradPlan(mk([]), { summer: true });
+  const viol = [];
+  for (const g of [g0, g15, gS2]) g.terms.forEach(t => t.courses.forEach(c => {
+    if (L.notOfferedIn(t.term, c.code)) viol.push(t.term + ':' + c.code);
+  }));
+  eq(viol, [], '**ولا مادة في ترم جدول الطرح يقول ما تُطرح فيه**');
+
+  /* ── سقف الساعات ── */
+  ok(g15.terms.every(t => t.hours <= 15), 'بسقف 15: ولا ترم فوقه — ' + g15.terms.map(t => t.hours));
+  ok(g15.lastTerm > g0.lastTerm, 'والأخف يتأخر');
+  eq(g15.maxHours, 15, 'والسقف يُذكر');
+  eq(L.gradPlan(mk([]), { maxHours: 99 }).maxHours, 20, 'وفوق ٢٠ = ٢٠ — سقف suggestNext');
+
+  /* ── الصيفي بطلبه: بسقفه لا بـ٢٠ ── */
+  const sumC = g => g.terms.filter(t => t.term.slice(4) === '30' && t.kind !== 'internship');
+  ok(sumC(gS2).length > 0 && sumC(gS2).every(t => t.hours <= 9),
+     'الصيفي بسقف 9 افتراضاً — لا 20 — ' + sumC(gS2).map(t => t.hours));
+  eq(gS2.summerMaxHours, 9, 'والافتراض يُذكر عشان يُقال للطالب');
+  ok(sumC(L.gradPlan(mk([]), { summer: true, summerMaxHours: 6 })).every(t => t.hours <= 6),
+     'وحد الطالب يغلب الافتراض');
+  eq(g0.summerMaxHours, null, 'وبلا الصيفي ما فيه افتراض صيفي');
+
+  /* ── ما بقى إلا التدريب ── */
+  const ALLN = L.allPlanCourses(mk([])).map(c => c.c);
+  const only = (left, term) => L.ctxOf({ major: 'MEEN', planVer: 'new', prep: false, grades: {},
+    term: term || '202720', completed: ALLN.filter(c => !left.includes(c)) });
+  const gi = L.gradPlan(only(['MEEN 3301', 'ELEC 1', 'ELEC 2', 'ELEC 3']), {});
+  eq(gi.terms.map(t => [t.term, t.kind]), [['202720', 'electives'], ['202730', 'internship']],
+     'باقي التدريب والاختياريات: الربيع لها والتدريب صيفه — يتخرج صيفاً لا خريفاً');
+  const gj = L.gradPlan(only(['MEEN 3301', 'MEEN 4311']), {});
+  eq(gj.terms.map(t => [t.term, t.kind]), [['202720', 'courses'], ['202730', 'internship']],
+     'ومادة + تدريب: المادة الربيع والتدريب صيفه');
+  const gk = L.gradPlan(only(['MEEN 3301'], '202810'), {});
+  eq(gk.terms.map(t => [t.term, t.kind]), [['202810', 'internship']], 'وما بقى إلا التدريب: أول ترم');
+
+  /* ── التحضيري: مستوياته ترمات، ومواد الإدارة فيها ── */
+  const gp = L.gradPlan(L.ctxOf({ major: 'COSC', planVer: 'new', prep: true,
+    completed: [], grades: {}, term: '202710' }), {});
+  eq(gp.done, true, '**طالب التحضيري: الحساب يكمل** — كان يقف عند أول مستوى تنزّله الإدارة');
+  eq(gp.terms.slice(0, 4).map(t => t.prepLevel), ['PP1', 'PP2', 'PP3', 'PP4'], 'وأول ترماته مستويات التحضيري بالترتيب');
+  ok(gp.terms.filter(t => t.prepLevel).every(t => !t.courses.some(c => c.elective)),
+     'وما ينزل اختياري تخصص مع التحضيري');
+
+  /* ── مواد كانت «تدريباً» بالغلط صارت في ترماتها ── */
+  const gl = L.gradPlan(L.ctxOf({ major: 'LAWB', planVer: 'new', prep: false,
+    completed: [], grades: {}, term: '202710' }), {});
+  ok(['INTL 3321', 'INTL 3322', 'LAWB 4364', 'LAWB 4371'].every(c =>
+    gl.terms.some(t => t.kind === 'courses' && t.courses.some(x => x.code === c))),
+     'مواد القانون الدولي مواد عادية في ترماتها');
+  eq(gl.terms.filter(t => t.kind === 'internship').map(t => t.courses[0].code), ['LAWB 4365'],
+     'والتدريب واحد: LAWB 4365');
+}
+
+/* ═══ توقّع التخرج — المحادثة اللي لقاها محمد ═══
+   طالب ميكانيكا خطة قديمة (بشكل حالته لا بياناته): باقي عليه بعد هالترم ١٠
+   مواد منها التدريب و٣ اختياريات. المساعد قال «تتخرج ربيع 2028» والصحيح
+   خريف 2027 — التدريب مكانه صيف 2027. وقال «باقي 44 ساعة» وترماته تجمع 21. */
+{
+  const base = L.ctxOf({ major: 'MEEN', planVer: 'old', prep: false, completed: [], grades: {}, term: '202720' });
+  const ALL = L.allPlanCourses(base).map(c => c.c);
+  const LEFT = ['COMM 2311', 'COMM 2312', 'GEEN 4311', 'MEEN 4392', 'MEEN 4393', 'MEEN 3301',
+    'MEEN 4397', 'ELEC 1', 'ELEC 2', 'ELEC 3'];
+  const NOW = ['MEEN 4396', 'MEEN 4322', 'MEEN 4311', 'ALIS 2212', 'MEEN 3395'];
+  const ctx = L.ctxOf({ major: 'MEEN', planVer: 'old', prep: false, term: '202720', grades: {},
+    completed: ALL.filter(c => !LEFT.includes(c) && !NOW.includes(c)) });
+  const g = L.gradPlan(ctx, { taking: NOW });
+  eq(g.lastTerm, '202810', '**يتخرج خريف 2027 لا ربيع 2028**');
+  eq(g.terms.map(t => [t.term, t.kind]),
+     [['202720', 'courses'], ['202730', 'internship'], ['202810', 'courses']], 'ربيع ← صيف التدريب ← خريف');
+  eq(g.terms[0].courses.map(c => c.code).sort(), ['COMM 2311', 'GEEN 4311', 'MEEN 4392', 'MEEN 4393'],
+     'الربيع: الأربع اللي متطلباتها تكتمل بمواد هالترم');
+  eq(g.terms[1].courses.map(c => c.code), ['MEEN 3301'], 'والصيف: التدريب لحاله');
+  eq(g.internTerm, '202730', 'وترم التدريب يُسمّى');
+  ok(['COMM 2312', 'MEEN 4397', 'ELEC 1', 'ELEC 2', 'ELEC 3'].every(c =>
+    g.terms[2].courses.some(x => x.code === c)), 'والخريف: الباقي مع الاختياريات الثلاث');
+  eq([g.hoursTaking, g.hoursPlanned, g.hoursLeft], [14, 30, 44],
+     '**المجاميع تطلع: 14 هالترم + 30 بعده = 44**');
+  ok(g.terms.every(t => t.hours === t.courses.reduce((n, c) => n + c.credits, 0)),
+     'وساعات كل ترم = مجموع مواده');
+  eq(g.done, true, 'ويخلّص');
 }
 
 console.log(`\n${pass} نجحت · ${fail} فشلت`);

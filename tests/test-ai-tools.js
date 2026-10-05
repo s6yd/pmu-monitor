@@ -526,7 +526,13 @@ function fakeModel(ctx) {
     ok(!!g.graduatesIn && /^\d{6}$/.test(g.graduatesIn.term), 'وترم تخرّجه');
     eq(g.graduatesIn.season, ({ '10': 'fall', '20': 'spring', '30': 'summer' })
        [g.graduatesIn.term.slice(4)], 'وموسمه مطابق لرمزه');
-    ok(g.hoursLeft > 0, 'وساعاته الباقية');
+    /* **قاعدة تغيّرت عمداً:** كانت hoursLeft وحدها وفيها ساعات هالترم، والترمات
+       ما تجمعها (طالب قيل له «باقي 44» وترماته تجمع 21). صارت ثلاثة تجمع بعضها */
+    ok(g.hoursAfterThisTerm > 0, 'وساعاته الباقية بعد هالترم');
+    eq(g.hoursAfterThisTerm, g.plan.reduce((n, x) => n + x.hours, 0),
+       '**وتساوي مجموع ترماته بالضبط**');
+    ok(g.hoursThisTerm > 0, 'وساعات هالترم من مواد جدوله — ' + g.hoursThisTerm);
+    eq(g.hoursLeftIncludingThisTerm, g.hoursThisTerm + g.hoursAfterThisTerm, 'والكل = هالترم + بعده');
     ok(Array.isArray(g.plan) && g.plan.length === g.termsLeft,
        'وخطة الترمات بعددها');
     ok(g.plan.every(x => x.courses.length && x.hours > 0), 'وكل ترم بمواده');
@@ -540,7 +546,24 @@ function fakeModel(ctx) {
     /* الصيفي عند طلبه */
     const gs = await call('graduation_forecast', '{"summer":true}');
     ok(gs.plan.some(x => x.season === 'summer'), 'وبطلب الصيفي يدخل');
-    ok(!g.plan.some(x => x.season === 'summer'), 'وبدونه ما يدخل');
+    /* **قاعدة تغيّرت عمداً:** كان الصيف ما يدخل أبداً بلا طلبه، فالتدريب ينزل آخر
+       الخطة لحاله ويأخّر التخرج ترماً. صار الصيف بلا طلبه للتدريب وحده — مكانه في الخطة */
+    ok(g.plan.filter(x => x.season === 'summer')
+       .every(x => x.kind === 'internship' && x.courses.length === 1 && x.courses[0].internship),
+       'وبدونه ما يدخل الصيف إلا التدريب لحاله');
+    ok(g.plan.some(x => x.season === 'summer' && x.kind === 'internship'), 'والتدريب في صيفه');
+    ok((g.electiveSlots || []).length > 0 && g.electiveSlots.every(e =>
+       g.plan.some(x => x.courses.some(c => c.elective && c.code === e.slot))),
+       '**وخانات الاختياري داخل الترمات** — كانت تُذكر لحالها وتاريخ التخرج ما يحسبها');
+    /* المقترح = أول ترم في التوقّع — حسبة وحدة لا اثنتين تختلفان */
+    const sg = await call('next_term_suggestion', '{}');
+    eq(sg.critical.concat(sg.optional).map(c => c.code).concat((sg.electiveSlots || []).map(e => e.slot)).sort(),
+       g.plan[0].courses.map(c => c.code).sort(), '**المقترح للترم الجاي = أول ترم في التوقّع**');
+    /* ترم أخف لمن يبيه */
+    const g12 = await call('graduation_forecast', '{"maxHours":12}');
+    ok((g12.plan || []).every(x => x.hours <= 12) && g12.maxHours === 12,
+       'وبسقف 12 ساعة: ولا ترم فوقه — ' + (g12.plan || []).map(x => x.hours) + (g12.error || ''));
+    ok(g12.termsLeft >= g.termsLeft, 'والأخف ما يخلّص أبكر');
     /* للمشتركين */
     const gf = await callFree('graduation_forecast', '{}');
     ok(!gf.termsLeft && /اشتراك/.test(gf.error || ''), 'والتوقّع للمشتركين');
@@ -983,13 +1006,33 @@ function fakeModel(ctx) {
     ok(r.hours === r.critical.concat(r.optional)
        .reduce((n, c) => n + (Number(c.credits) || 0), 0),
        'والساعات محسوبة من المقترح بعد الاستبعاد لا قبله');
-    ok(typeof r.planHours === 'number', 'وساعات الخطة الأصلية باقية للمرجع');
+    /* **قاعدة تغيّرت عمداً:** planHours كانت ساعات المقترح **قبل** شيل مواد جدوله.
+       صار المقترح يحسبها ناجحة (أول ترم في محاكاة التوقّع) فما فيه «قبل» — والأهم: */
+    ok(r.critical.concat(r.optional).some(c => c.code === 'MATH 1423'),
+       '**اللي تفتحه مواد جدوله يُقترح**: MATH 1423 بعد MATH 1422 اللي يعيدها الحين — كان ناقصاً');
+    ok(r.critical.concat(r.optional).some(c => c.code === 'COMM 1312'),
+       'و COMM 1312 بعد COMM 1311 اللي يدرسها');
+    ok(/ينجح في مواد جدوله/.test(r.basis || ''), 'ويقول على أي افتراض بنى المقترح');
     /* والاتجاه الثاني: نفس المنجزات بلا جدول ⇒ الإعادة تظهر */
     const NO = await aiStudentCtx('u-nosched');
     const r2 = await aiRunTool('next_term_suggestion', {}, NO);
     ok(r2.critical.some(c => c.retake), 'وبلا جدول ترجع الإعادة للمقترح');
     ok(r2.critical.some(c => c.code === 'MATH 1422'), 'وهي MATH 1422 بعينها');
     ok((r2.alreadyTaking || []).length === 0, 'وما فيه مسجّل يُستبعد');
+
+    /* مادة في جدوله مو في خطته: ما نحسبها ولا نسكت عنها — المرشد البشري يمسكها
+       (اختياري؟ نسخة خطة غلط؟). CHEM 1421 مو في خطة علوم الحاسب */
+    const SC = await aiStudentCtx('u-sched');
+    const ns = await aiRunTool('next_term_suggestion', {}, SC);
+    eq(ns.notInPlan, ['CHEM 1421'], 'مادة جدوله اللي مو في خطته تُسمّى');
+    ok(!(ns.alreadyTaking || []).includes('CHEM 1421') && /اختياري/.test(ns.notInPlanNote || ''),
+       'وما تنحسب، والملاحظة تقول وش يسأله');
+    const f0 = await aiRunTool('graduation_forecast', {}, SC);
+    const f1 = await aiRunTool('graduation_forecast', { electivesNow: ['chem 1421', 'COSC 9999'] }, SC);
+    eq((f1.electivesNow || []).map(e => e.code), ['CHEM 1421'],
+       'قال إنها اختياري ⇒ تملأ خانة — ومادة مو في جدوله ما تُصدَّق');
+    eq((f1.electiveSlots || []).length, (f0.electiveSlots || []).length - 1, 'وخانات الاختياري الباقية تنقص وحدة');
+    eq(f1.hoursThisTerm, f0.hoursThisTerm + 3, 'وساعاتها تنحسب لهالترم');
   }
   {
     const r = await call('plan_overview', '{}');

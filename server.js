@@ -7556,6 +7556,28 @@ const AI_PLAN_EMPTY = 'ما علّم ولا مادة منجزة في «خطتي�
   + 'ما خلّص شي. الخطة يعبّيها الطالب بنفسه — قل له إن الأرقام من اللي علّمه، ويعلّم '
   + 'مواده المنجزة ودرجاتها في تبويب «خطتي» عشان يطلع الحساب صح.';
 const aiPlanEmpty = ctx => !((ctx.plan && ctx.plan.completed) || []).length;
+
+/* ═══ أدوات التخطيط: جدوله الحالي ═══
+   مواد جدوله تُحسب ناجحة قبل الترم الجاي (درجتها ما طلعت لكنه بيخلّصها).
+   وما هو في خطته ولا اختيار تقني يُسمّى لحاله (notInPlan): ما نحسبه،
+   وغالباً نسخة خطة غلط أو اختياري — المرشد البشري يمسكها، فنقولها. */
+const aiCodeNorm = c => String(c || '').trim().toUpperCase().replace(/\s+/g, ' ');
+/* رقم صحيح من وسيط النموذج — نص «15» أو 15، وغيره undefined (الافتراضي) */
+const aiInt = v => (Number.isFinite(Number(v)) && String(v).trim() !== '') ? Math.round(Number(v)) : undefined;
+async function aiPlanNow(ctx) {
+  const rows = await aiSchedule(ctx);
+  const codes = [...new Set(rows.map(r => aiCodeNorm(r.course_code)).filter(Boolean))];
+  const inPlan = c => !!PLANS_DATA.findPlanCourse(ctx.plan, c);
+  const tech = c => !!(ctx.plan.tech && ctx.plan.tech[c]);
+  return { taking: codes,
+    countingNow: codes.filter(c => inPlan(c) ? !PLANS_DATA.isPassed(ctx.plan, c) : tech(c)),
+    notInPlan: codes.filter(c => !inPlan(c) && !tech(c)) };
+}
+const AI_NOT_IN_PLAN = 'مواد في جدوله مو في خطته (notInPlan) — ما حسبناها في الخطة. اسأله: '
+  + 'هي اختياري تخصصه؟ (graduation_forecast بـelectivesNow تحسبها خانة اختياري) أو نسخة خطته '
+  + 'غلط (القديمة/الجديدة في «📋 خطتي»)؟ ولا تفترض.';
+const AI_SUMMER_NOTE = h => `حسبنا الصيفي بحد ${h} ساعات — افتراض لا قاعدة: الحد الفعلي وطرح `
+  + 'المواد فيه تحدّدهما الجامعة، قلها له.';
 /* جدول فاضي: أي الحالتين؟ */
 const aiSchedEmptyNote = rows => rows.total ? AI_SLOT_EMPTY : AI_SCHED_EMPTY;
 
@@ -7902,38 +7924,52 @@ const AI_TOOLS = {
 
   next_term_suggestion: {
     tier: 'pro',
-    description: 'المقترح للترم الجاي: المواد الأساسية والاختيارية بترتيبها، '
-      + 'وساعاتها، وليش كل مادة (إعادة/تفتح مواد/آخر فرصة).',
-    input_schema: { type: 'object', properties: {}, required: [] },
-    run: async (ctx) => {
-      const s = PLANS_DATA.suggestNext(ctx.plan);
-      /* المسجّل هذا الترم مو «منجزاً» في الخطة — درجته ما طلعت بعد —
-         فالمقترح يرجّعه كأنه ناقص، ونقترح على الطالب مواد هو قاعد
-         ياخذها الحين. نقرأ جدوله ونستبعدها، ونسمّيها له صريحاً.
-         ما نلمس suggestNext نفسها: الصفحة تشاركها وتبويب «خطتي»
-         يرسم منها لكل طالب. */
-      const rows = await aiSchedule(ctx);
-      const now = new Set(rows.map(r =>
-        String(r.course_code || '').trim().toUpperCase()).filter(Boolean));
-      const map = c => ({ code: c.c, name: c.n, credits: c.h,
-        unlocks: c.unlocks || 0, retake: !!c.retake,
-        lastChance: !!c.lastChance, prep: !!c.prep });
-      const taking = c => now.has(String(c.c || '').trim().toUpperCase());
-      const crit = s.crit.filter(c => !taking(c)).map(map);
-      const opt = s.opt.filter(c => !taking(c)).map(map);
-      const hrs = l => l.reduce((n, c) => n + (Number(c.credits) || 0), 0);
-      const out = { term: ctx.plan.term, termName: payTermName(ctx.plan.term),
-        critical: crit, optional: opt,
-        hours: hrs(crit) + hrs(opt),
-        alreadyTaking: s.crit.concat(s.opt).filter(taking).map(c => c.c),
-        planHours: s.hours,
-        internshipOnly: !!s.internOnly,
-        internshipAvailable: !!s.internAvailable,
-        adminPlacedOnly: !!s.admOnly,
-        prepLevel: s.prepSem ? s.prepSem.id : null };
+    description: 'المقترح للترم الجاي (term · termName): المواد بترتيب أولويتها وساعاتها وليش '
+      + 'كل مادة (إعادة · تفتح مواد · آخر فرصة)، وخانات الاختياري لو جا وقتها، والتدريب. '
+      + '**مواد جدوله الحالي محسوبة ناجحة** (alreadyTaking) فيقترح اللي بعدها، ويتخطّى ما لا '
+      + 'يُطرح ذاك الترم — وهو نفسه أول ترم في graduation_forecast. maxHours لو طلب ترماً أخف.',
+    input_schema: { type: 'object', properties: {
+      maxHours: { type: 'integer',
+        description: 'أقصى ساعات للترم لو الطالب طلب أخف (6–20) — اتركه فاضياً للمعتاد (20)' } },
+      required: [] },
+    run: async (ctx, a) => {
+      /* المسجّل هذا الترم مو «منجزاً» في الخطة — درجته ما طلعت — فكان
+         المقترح يرجّعه، ونشيله فيبقى مقترح ناقص: ما فيه المواد اللي
+         تنفتح بنجاحه (طالب طلع له ٦ ساعات وهو يقدر ١٢). صار المقترح أول
+         ترم في محاكاة gradPlan نفسها: مواد جدوله ناجحة، والطرح محترم.
+         ما نلمس suggestNext للصفحة — تبويب «خطتي» يرسم منها كما كان. */
+      const now = await aiPlanNow(ctx);
+      const term = ctx.plan.term;
+      const summer = String(term).slice(4) === '30';
+      const g = PLANS_DATA.gradPlan(ctx.plan, { taking: now.taking, summer,
+        maxHours: aiInt(a.maxHours) });
+      const first = g.terms[0] && g.terms[0].term === term ? g.terms[0] : null;
+      const gap = (g.gaps || []).find(x => x.term === term);
+      const list = first ? first.courses : [];
+      const map = c => ({ code: c.code, name: c.name, credits: c.credits,
+        unlocks: c.unlocks || 0, retake: !!c.retake, lastChance: !!c.lastChance });
+      const out = { term, termName: payTermName(term),
+        critical: list.filter(c => c.critical || c.internship).map(map),
+        optional: list.filter(c => !c.critical && !c.internship && !c.elective).map(map),
+        /* خانة يملؤها بمادة يختارها — لا مادة بعينها */
+        electiveSlots: list.filter(c => c.elective).map(c => ({ slot: c.code, credits: c.credits })),
+        hours: first ? first.hours : 0,
+        maxHours: g.maxHours,
+        alreadyTaking: now.countingNow,
+        basis: now.countingNow.length
+          ? 'على افتراض إنه ينجح في مواد جدوله الحالي (alreadyTaking) — المقترح للي بعدها' : null,
+        internshipOnly: !!(first && first.kind === 'internship'),
+        internship: g.internTerm
+          ? { term: g.internTerm, termName: payTermName(g.internTerm) } : null,
+        notOfferedThatTerm: (first && first.notOffered) || (gap && gap.notOffered) || [],
+        adminPlacedOnly: !!(first && first.courses.every(c => c.admin)),
+        prepLevel: (first && first.prepLevel) || null,
+        notInPlan: now.notInPlan };
+      if (summer) out.summerNote = AI_SUMMER_NOTE(g.summerMaxHours);
       /* بلا منجزات المقترح مواد الترم الأول — صحيحة لطالب جديد، وغلط
          لطالب ما عبّا خطته. نقولها ولا نخمّن أيّهما هو */
       if (aiPlanEmpty(ctx)) out.note = AI_PLAN_EMPTY;
+      if (now.notInPlan.length) out.notInPlanNote = AI_NOT_IN_PLAN;
       return out;
     },
   },
@@ -7941,38 +7977,69 @@ const AI_TOOLS = {
 
   graduation_forecast: {
     tier: 'pro',
-    description: 'توقّع التخرج: كم ترماً باقياً ومتى، وتوزيع المواد على الترمات '
-      + 'القادمة. **تقدير من الخطة لا وعد** — الطرح الفعلي والمقاعد وقرار '
-      + 'المرشد تغيّره، فقل ذلك للطالب.',
+    description: 'توقّع التخرج — أسرع مسار من خطته: كل ترم بمواده وساعاته (ومعها خانات '
+      + 'الاختياري، والتدريب في صيفه لحاله)، وترم التخرج، والساعات: هالترم (hoursThisTerm) + '
+      + 'بعده (hoursAfterThisTerm). مواد جدوله الحالي محسوبة ناجحة، وجدول الطرح محترم. **تقدير '
+      + 'من الخطة لا وعد** — الطرح الفعلي والمقاعد وقرار المرشد تغيّره، فقل ذلك للطالب.',
     input_schema: { type: 'object', properties: {
+      maxHours: { type: 'integer',
+        description: 'أقصى ساعات للترم لو الطالب يبي ترمات أخف (6–20) — بلاه 20' },
       summer: { type: 'boolean',
-        description: 'يحسب الصيفي كترم دراسي — الافتراضي لا، لأن الجامعة '
-          + 'ما تطرح مواد التخصص فيه عملياً' } },
+        description: 'يدرس مواد في الصيفي — الافتراضي لا، لأن الجامعة ما تطرح مواد التخصص '
+          + 'فيه عملياً. (التدريب ينحط في صيفه في الحالتين)' },
+      summerMaxHours: { type: 'integer',
+        description: 'أقصى ساعات الصيفي لو ذكرها الطالب — بلاها نفترض 9 وتقولها له' },
+      electivesNow: { type: 'array', items: { type: 'string' },
+        description: 'مواد من جدوله الحالي (من notInPlan) قال الطالب إنها اختياري تخصصه' } },
       required: [] },
     run: async (ctx, a) => {
-      /* المسجّل الآن يُحسب منجزاً: درجته ما طلعت لكنه بيخلّصه */
-      const rows = await aiSchedule(ctx);
-      const taking = [...new Set(rows.map(r =>
-        String(r.course_code || '').trim()).filter(Boolean))];
-      const g = PLANS_DATA.gradPlan(ctx.plan, { taking, summer: !!a.summer });
+      const now = await aiPlanNow(ctx);
+      /* اختياري يدرسه الحين: من مواد جدوله وحدها — ما نصدّق كوداً من برّا */
+      const elNow = (Array.isArray(a.electivesNow) ? a.electivesNow : [])
+        .map(aiCodeNorm).filter(c => now.notInPlan.includes(c));
+      const g = PLANS_DATA.gradPlan(ctx.plan, { taking: now.taking, summer: !!a.summer,
+        maxHours: aiInt(a.maxHours), summerMaxHours: aiInt(a.summerMaxHours), electivesNow: elNow });
       const season = c => ({ '10': 'fall', '20': 'spring', '30': 'summer' })[String(c).slice(4)] || '?';
-      return {
+      const out = {
         termsLeft: g.count,
         graduatesIn: g.lastTerm
           ? { term: g.lastTerm, name: payTermName(g.lastTerm),
               year: Number(String(g.lastTerm).slice(0, 4)),
               season: season(g.lastTerm) } : null,
-        hoursLeft: g.hoursLeft,
-        countingNow: taking,
-        /* خانات اختيارية يملؤها بنفسه — داخل نفس الترمات لا زيادة عليها */
-        electivesLeft: g.electivesLeft,
+        /* كانت «hoursLeft» وحدها: ساعات هالترم داخلة فيها والترمات ما تجمعها
+           (طالب قيل له «باقي 44» وترماته 21). صارت ثلاثة تجمع بعضها */
+        hoursThisTerm: g.hoursTaking,
+        hoursAfterThisTerm: g.hoursPlanned,
+        hoursLeftIncludingThisTerm: g.hoursLeft,
+        countingNow: now.countingNow,
+        maxHours: g.maxHours,
+        summerMaxHours: g.summerMaxHours,
+        internship: g.internTerm
+          ? { term: g.internTerm, name: payTermName(g.internTerm) } : null,
+        /* خانات اختيارية يملؤها بنفسه — موزّعة داخل الترمات (elective) */
+        electiveSlots: g.electivesLeft.map(e => ({ slot: e.code, credits: e.credits })),
+        electivesNow: g.electivesTaking,
         plan: g.terms.map(x => ({ term: x.term, name: payTermName(x.term),
-          season: season(x.term), hours: x.hours, courses: x.courses })),
+          season: season(x.term), kind: x.kind, hours: x.hours,
+          courses: x.courses.map(c => {
+            const o = { code: c.code, name: c.name, credits: c.credits };
+            if (c.retake) o.retake = true;
+            if (c.lastChance) o.lastChance = true;
+            if (c.elective) o.elective = true;
+            if (c.internship) o.internship = true;
+            return o;
+          }) })),
+        notOfferedGaps: (g.gaps || []).map(x => ({ term: x.term, name: payTermName(x.term),
+          notOffered: x.notOffered })),
         blocked: g.stuck ? g.remaining : [],
+        notInPlan: now.notInPlan,
         note: (aiPlanEmpty(ctx) ? AI_PLAN_EMPTY + ' ' : '') + (g.stuck
           ? 'وقف الحساب: فيه مواد متطلبها ما ينفتح من الخطة — راجع مرشدك'
           : 'تقدير من خطتك — الطرح الفعلي والمقاعد وقرار مرشدك تغيّره'),
       };
+      if (a.summer) out.summerNote = AI_SUMMER_NOTE(g.summerMaxHours);
+      if (now.notInPlan.length) out.notInPlanNote = AI_NOT_IN_PLAN;
+      return out;
     },
   },
 
