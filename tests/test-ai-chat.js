@@ -317,6 +317,8 @@ this.resetGuests = () => { AI_GUEST = { ymd: '', ips: new Map(), ym: '',
 }catch(e){ this.aiGuestState = () => ({}); this.resetGuests = () => {} }
 /* حسب القناة — على كود قديم بلاها نبلّغ فشلاً مرتّباً */
 this.aiSpendMonth = aiSpendMonth;
+try{ this.AI_PRICES = AI_PRICES; this.aiPing = aiPing }catch(e){ this.AI_PRICES = {} }
+try{ this.AI_REFUSED = AI_REFUSED }catch(e){ this.AI_REFUSED = 'ما فيه AI_REFUSED' }
 try{ this.aiSpendChannels = aiSpendChannels }
 catch(e){ this.aiSpendChannels = () => Promise.resolve('ما فيه aiSpendChannels') }
 `, ctxObj);
@@ -359,8 +361,19 @@ const usageRow = (over) => Object.assign({
     eq(A.aiCostMicro('claude-sonnet-5', U), 22688, 'سونيت ضعف هايكو');
     /* 3.75 × (1000×5 + 200×25 + 500×6.25 + 4000×0.5) = 3.75 × 15125 */
     eq(A.aiCostMicro('claude-opus-5', U), 56719, 'أوبس');
-    eq(A.aiCostMicro('نموذج-ما-نعرفه', U), 56719,
-       'نموذج مجهول يُحسب بأغلى سعر — ما نقلّل أبداً');
+    /* **الرقم تغيّر لا القاعدة:** «المجهول بأغلى سعر معروف» — والأغلى صار Fable
+       (10/50) لا أوبس 5. نفحص القاعدة نفسها بدل رقم يتقادم مع كل نموذج جديد */
+    const known = Object.keys(A.AI_PRICES).map(m => A.aiCostMicro(m, U));
+    eq(A.aiCostMicro('نموذج-ما-نعرفه', U), Math.max(...known),
+       'نموذج مجهول يُحسب بأغلى سعر معروف — ما نقلّل أبداً');
+    /* النماذج اللي نختارها لازم تكون معروفة — وإلا انحسبت بأغلى سعر */
+    eq(A.aiCostMicro('claude-sonnet-5-5', U), 22688, '**سونيت 5.5 معروف** بسعر سونيت 5 (2/10)');
+    /* أوبس 5.5: 4/20 والكاش يُقرأ بـ0.20 (٠٫٠٥×) — 3.75 × (4000 + 4000 + 2500 + 800) */
+    eq(A.aiCostMicro('claude-opus-5-5', U), 42375, 'أوبس 5.5 بسعره وقراءة كاشه');
+    /* Fable 5.1: 10/50 والكاش 0.25 — 3.75 × (10000 + 10000 + 6250 + 1000) */
+    eq(A.aiCostMicro('claude-fable-5-1', U), 102188, 'Fable 5.1 بسعره');
+    ok(['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-fable-5-1'].every(A.aiKnownModel),
+       'والنماذج الجديدة كلها معروفة');
     ok(A.aiCostMicro('نموذج-ما-نعرفه', U) > A.aiCostMicro('claude-haiku-4-5', U),
        'والمجهول أغلى من الرخيص فعلاً');
     ok(!A.aiKnownModel('نموذج-ما-نعرفه'), 'ونعرف إنه مجهول');
@@ -643,6 +656,29 @@ const usageRow = (over) => Object.assign({
        شعبة، التذكير) دلّه على مكانها» يخلّيه يرفض شي يقدر يجهّزه */
     ok(!/المراقبة، إضافة شعبة، التذكير/.test(A.AI_SYSTEM),
        'وما تقول إن التذكير والمراقبة بلا أداة — لها أدوات');
+    /* ── مستشار هدفه أسرع تخرّج — قرار محمد بعد محادثات تخطيط «خبصة» ── */
+    ok(/أسرع وقت/.test(A.AI_SYSTEM), '**الهدف مكتوب: يتخرّج بأسرع وقت**');
+    ok(/graduation_forecast/.test(A.AI_SYSTEM) && /لا تبني خطة من عندك/.test(A.AI_SYSTEM),
+       '**الخطة من أداة التوقّع لا من حسابه** — كان يجمع الترمات بنفسه ويغلط');
+    ok(/ترماً ترماً/.test(A.AI_SYSTEM) && /تتخرّج متى/.test(A.AI_SYSTEM),
+       'وتُعرض ترماً ترماً وآخرها ترم التخرج');
+    ok(/whyThisTerm/.test(A.AI_SYSTEM) && /lastChance/.test(A.AI_SYSTEM),
+       'ويشرح ليش: سلسلة المتطلبات وآخر فرصة — من بيانات الأداة');
+    ok(/summer/.test(A.AI_SYSTEM) && /maxHours/.test(A.AI_SYSTEM),
+       'ويدوّر على أسرع بخيارات الأداة (صيفي · ترم أخف) لا بوعد');
+    ok(/الافتراض في سطر واحد/.test(A.AI_SYSTEM), 'والافتراض والتقدير سطر واحد — لا تحذير في كل سطر');
+    /* **قاعدة تغيّرت عمداً:** «جملتين أو ثلاث غالباً» كانت تقصّ الخطة لسطرين */
+    ok(!/جملتين أو ثلاث غالباً/.test(A.AI_SYSTEM) && /طول الرد على قد السؤال/.test(A.AI_SYSTEM),
+       '**طول الرد على قد السؤال** — لا «جملتين أو ثلاث» لخطة تخرج');
+    ok(/سؤال عام ما يخص جامعته/.test(A.AI_SYSTEM),
+       '**والسؤال العام (كيف أذاكر) يجاوبه** — «ما يحده ولا سؤال»');
+    ok(/3000 حرف/.test(A.AI_SYSTEM), 'وتحت حد رسالة تيليغرام');
+    /* «مين أفضل الدكاترة لموادي الباقية؟» طلع «ما قدرت أطلع لك جواب» — عشرين نداءً
+       لشعب كل مادة وتقييم كل دكتور. صار نداءً واحداً، والتعليمات تقوله */
+    ok(/course_instructors/.test(A.AI_SYSTEM) && /نداء واحد/.test(A.AI_SYSTEM),
+       '**«مين أفضل دكتور لموادي» بنداء واحد** — لا مادة مادة');
+    ok(/مع عدد التقييمات/.test(A.AI_SYSTEM) && /ما تضيف رأيك/.test(A.AI_SYSTEM),
+       'وبتقييم الطلاب مع عددها — لا رأيه');
   }
 
   /* ══════════ ٧) شكل الطلب: تخزين مؤقت وأدوات نظيفة ══════════ */
@@ -701,6 +737,51 @@ const usageRow = (over) => Object.assign({
     eq(SENT[0].payload.model, 'claude-sonnet-5', 'اللوحة تتقدّم على متغيّر Render');
     eq(DB.ai_usage[DB.ai_usage.length - 1].model, 'claude-sonnet-5',
        'والسطر يحفظ النموذج المستعمل فعلاً');
+  }
+
+  /* ══════════ ٧ب) النموذج: Sonnet 5.5 بتفكير — قرار محمد ══════════
+     محادثات تخطيط ضعيفة على البوت («المساعد مو ذكي»): هايكو بلا تفكير،
+     و١٠٢٤ رمزاً للجواب كله. */
+  {
+    ok(/process\.env\.AI_MODEL \|\| 'claude-sonnet-5-5'/.test(src),
+       '**الافتراضي Sonnet 5.5** — بلا AI_MODEL في Render');
+    resetAll();
+    A.setModel('claude-sonnet-5-5');
+    SENT = [];
+    await A.aiChat('u-pro', 'سؤال');
+    const p = SENT[0].payload;
+    eq((p.output_config || {}).effort, 'medium',
+       '**جهد التفكير medium** — نقطة البداية لاستعمال الأدوات متعدد الخطوات');
+    ok(p.max_tokens >= 4000, 'والسقف يتسع للتفكير والجواب معاً — ' + p.max_tokens);
+    ok(!('thinking' in p), 'وبلا thinking — التكيّفي افتراضي، وdisabled يرجّع 400 على 5.5');
+    ok(!('temperature' in p) && !('top_p' in p), 'وبلا معاملات عيّنة');
+    /* هايكو يرفض الحقل بـ400 — ما يُرسل له */
+    A.setModel('claude-haiku-4-5');
+    SENT = [];
+    await A.aiChat('u-pro', 'سؤال');
+    ok(!('output_config' in SENT[0].payload), 'هايكو بلا output_config');
+
+    /* الرفض: رد ٢٠٠ بـstop_reason refusal — ما نعرض نصاً ناقصاً ولا ننفّذ أداة */
+    resetAll();
+    SCRIPT = () => ({ status: 200, body: { id: 'm', type: 'message', role: 'assistant', model: 'x',
+      content: [{ type: 'text', text: 'نص ناقص' },
+                { type: 'tool_use', id: 't1', name: 'guide', input: {} }],
+      stop_reason: 'refusal', usage: { input_tokens: 50, output_tokens: 5 } } });
+    SENT = [];
+    const rf = await A.aiChat('u-pro', 'سؤال');
+    eq(rf.answer, A.AI_REFUSED, '**الرفض يرجّع رسالة مفهومة** — لا النص الناقص');
+    eq(SENT.length, 1, 'وما يكمل أدوات بعده');
+    ok(rf.refused === true, 'ويُعلَّم');
+
+    /* فحص اللوحة بنفس الحقول — نموذج يرفضها ينكشف هنا لا مع أول طالب */
+    resetAll();
+    A.setModel('claude-sonnet-5-5');
+    SENT = [];
+    await A.aiPing();
+    const pp = (SENT[0] || {}).payload || {};
+    eq((pp.output_config || {}).effort, 'medium', 'فحص اللوحة يرسل الجهد كذلك');
+    ok(pp.max_tokens >= 100, 'وبسقف يتسع لتفكير قصير قبل «تمام» — ' + pp.max_tokens);
+    A.setModel(null);
   }
 
   /* ══════════ ٨) المحادثة المحفوظة ══════════ */
@@ -794,8 +875,14 @@ const usageRow = (over) => Object.assign({
     SENT = [];
     SCRIPT = () => ({ status: 200, body: replyTool([{ name: 'guide', input: {} }]) });
     const r5 = await A.aiChat('u-pro', 'سؤال');
-    ok(SENT.length <= 4, 'حلقة الأدوات محدودة — ' + SENT.length + ' نداءات');
+    /* **السقف تغيّر عمداً (٤ ⇒ ٦):** سؤال تخطيط يحتاج المقترح والتوقّع والطرح
+       ومعلومات مادة قبل جوابه، وأربعة نداءات كانت تخلص قبله */
+    ok(SENT.length <= 6, 'حلقة الأدوات محدودة — ' + SENT.length + ' نداءات');
     ok(!!r5.answer, 'ويطلع للطالب شي مهما صار');
+    /* وآخر نداء بلا أدوات: جواب من اللي جمعه، لا «ما قدرت أطلع لك جواب» */
+    eq((SENT[SENT.length - 1].payload.tool_choice || {}).type, 'none',
+       '**آخر نداء: tool_choice none** — يجاوب بدل ما يطلب أداة ثانية');
+    ok(SENT.slice(0, -1).every(x => !x.payload.tool_choice), 'وما قبله حر');
   }
 
   /* ══════════ ١١) الحدود والسقوف: التحقق ══════════ */

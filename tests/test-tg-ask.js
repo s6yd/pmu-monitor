@@ -274,7 +274,7 @@ async function main() {
   const first = ans.find(c => /جواب المساعد/.test(c.b.text || '')) || { b: {} };
   ok(/💡/.test(first.b.text || '') && /أي شي/.test(first.b.text || '')
      && /أمثلة/.test(first.b.text || '') && /عبّيته/.test(first.b.text || ''),
-     '**أول جواب: «اسألني أي شي — الأزرار أمثلة» ومن وين بياناته**');
+     '**أول جواب: «اكتب أي شي» بأمثلة، ومن وين بياناته**');
   ok(ans.some(c => c.b.reply_markup && Array.isArray(c.b.reply_markup.keyboard)),
      'والجواب يدخله وضع المساعد — لوحته تبان');
   const ed = since(n).find(c => c.method === 'editMessageText');
@@ -476,7 +476,8 @@ async function main() {
      '**والنموذج يعرف إنه زائر: استعمال الموقع وحده**');
   const ga = sentTo(since(n), '7002').find(c => /جواب المساعد/.test(c.b.text || '')) || { b: {} };
   ok(/اربط/.test(ga.b.text || ''), 'وجوابه يقول له يربط عشان جدوله وخطته');
-  ok(/أراقب/.test(JSON.stringify(ga.b.reply_markup || {})), 'ولوحته أمثلة من استعمال الموقع');
+  /* **قاعدة تغيّرت عمداً — قرار محمد:** اللوحة الخروج وحده، والحقل يقول وش يسأل */
+  ok(/استعمال الموقع/.test(JSON.stringify(ga.b.reply_markup || {})), 'ولوحته لوحة الزائر — «استعمال الموقع»');
   eq(ticketOf('7002'), undefined, 'ولا تذكرة');
   /* يطلب جدوله: الأداة ترفض «اربط حسابك» — لا «سجّل دخولك بقوقل» — والخطوات تطلع */
   let r0 = AI_RES.length;
