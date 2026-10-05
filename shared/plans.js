@@ -1715,6 +1715,8 @@ function ctxOf(o){
     /* الترم المعروض في البحث — مرجع الطالب للتخطيط. الصفحة تقرأه من
        قائمة الترم وتمرّره؛ الافتراضي نفس افتراضي activeTermCode. */
     term: o.term || '202710',
+    /* للمحاكاة وحدها: المقترح يتخطّى ما لا يُطرح هالترم (suggestNext) */
+    offeredOnly: !!o.offeredOnly,
     /* الأصل يقرأ PLANS[MAJOR] لا planOf — أي النسخة الجديدة دائماً.
        نطابقه حرفياً: تغييره يغيّر حد الرسوب على خطة قديمة. */
     minPassC: !!(PLANS[major]&&PLANS[major].minPassC),
@@ -1809,10 +1811,16 @@ function unlockedBy(ctx,code){
   return allPlanCourses(ctx).filter(c=>!isDone(ctx,c.c)&&(c.p||[]).includes(code));
 }
 
-/* التطبيق العملي (Internship / Co-op) ينزل لحاله — ممنوع معه مواد */
+/* التطبيق العملي (Internship / Co-op) ينزل لحاله — ممنوع معه مواد.
+   **بالكلمة كاملة لا ببادئتها**: كانت «INTERN» و«PRACTIC» و«TRAINING»
+   بادئات، فمسكت «International Business» و«Internal Legal Practice»
+   و«Machine Shop Practice and Safety» (MEEN 3101) و«Training and
+   Development» — ١٠ مواد عادية في ٧ تخصصات صارت «تدريباً» ما يُقترح إلا
+   لحاله وبعد ٩٠ ساعة، فتنزل آخر الخطة وتأخّر التخرج. التدريب الحقيقي في
+   كل الخطط اسمه «Internship» في ترم SU. */
 function isInternship(c){
   const code=((c&&c.c)||'').toUpperCase(), name=((c&&c.n)||'').toUpperCase();
-  return /\b(INTERN|COOP|CO-OP|TRAINING|PRACTIC)/.test(name) ||
+  return /\b(INTERNSHIP|CO-?OP|COOPERATIVE (EDUCATION|TRAINING)|(FIELD|PRACTICAL|SUMMER) TRAINING)\b/.test(name) ||
          /^(INTR|COOP|TRAI)/.test(code) ||
          /\b(4399|4499|4999)\b/.test(code);
 }
@@ -1837,37 +1845,151 @@ function retakeList(ctx){
    نحاكي الترمات القادمة بتكرار suggestNext نفسها — لا خوارزمية ثانية
    تنحرف عنها مع الوقت. كل ترم: نأخذ مقترحه، نعدّه منجزاً، ونكمّل.
 
-   ثلاثة قرارات:
+   القرارات:
    ١) **المسجّل الآن يُحسب منجزاً** للترم الأول: درجته ما طلعت لكنه
       بيخلّصه، وبدونه نقترح عليه مواد هو قاعد ياخذها (نفس علّة
       next_term_suggestion).
-   ٢) **الصيف يُتخطّى** افتراضياً: الجامعة ما تطرح مواد التخصص فيه
-      عملياً، فعدّه ترماً يعطي تاريخاً متفائلاً كذباً.
-   ٣) **تقدير لا وعد**: الطرح الفعلي والمقاعد وقرار المرشد تغيّرها. */
+   ٢) **الصيف يُتخطّى للمواد** افتراضياً: الجامعة ما تطرح مواد التخصص
+      فيه عملياً، فعدّه ترماً يعطي تاريخاً متفائلاً كذباً.
+   ٣) **إلا التدريب — مكانه الصيف**: الخطة نفسها تحطّه في ترم SU بين
+      الجونيور والسينيور، فأول صيف يكون فيه مؤهلاً ينحط فيه لحاله. كان
+      الصيف يُتخطّى والتدريب معه، فينزل آخر الخطة في ترم عادي لحاله
+      ويتأخر التخرج ترماً كاملاً — لقاها محمد في محادثة طالب: «تتخرج
+      ربيع 2028» والصحيح خريف 2027.
+   ٤) **جدول الطرح يُحترم** (offeredOnly): مادة ما تُطرح في ترم ما تنحط
+      فيه. ومقترح الصفحة ما يتغيّر — تعرضها بشارتها كما كانت.
+   ٥) **خانات الاختياري تنحط في الترمات**: الأخير أولاً (مكانها في الخطة
+      ترمات السينيور، والاختيار التقني له متطلبات)، وإن ما كفى المكان
+      ترم جديد. كانت تُذكر لحالها فيطلع آخر ترم «6 ساعات» وهو فعلياً
+      15، وتاريخ تخرّج ما يحسب حسابها.
+   ٦) **ما بقى من المواد إلا التدريب**: ياخذ هالترم لو الاختياريات
+      الباقية تدخل ترمات قبله، وإلا هالترم لها والتدريب بعده.
+   ٧) **سقف الساعات** (maxHours) لمن يبي ترمات أخف: نقصّ مقترح كل ترم
+      بترتيب أولويته نفسه. بلاه ٢٠ — سقف suggestNext. والصيفي لمن طلبه
+      (summer) سقفه summerMaxHours، وافتراضه ٩ — **افتراض يُقال للطالب**
+      لا قاعدة جامعة نعرفها: ٢٠ ساعة في صيف تعطي تاريخاً متفائلاً كذباً.
+   ٨) **تقدير لا وعد**: الطرح الفعلي والمقاعد وقرار المرشد تغيّرها. */
+const GRAD_MAXT=30;                       /* حماية من حلقة لا تنتهي */
+const GRAD_SUMMER_HOURS=9;                /* افتراض الصيفي — يُقال للطالب */
+
+/* مقترح ترم بسقف أقل: بترتيب الأولوية نفسه، ومادة وحدة على الأقل */
+function capPicks(list,cap){
+  const out=[];let h=0;
+  list.forEach(c=>{const n=Number(c.h)||0;if(h+n<=cap){out.push(c);h+=n}});
+  if(!out.length&&list.length)out.push(list[0]);
+  return out;
+}
+
 function gradPlan(ctx,opts){
   const o=opts||{};
-  const MAXT=16;                         /* حماية من حلقة لا تنتهي */
+  const cap=Math.min(20,Math.max(6,Math.round(Number(o.maxHours))||20));
+  const sCap=Math.min(cap,Math.max(3,Math.round(Number(o.summerMaxHours))||GRAD_SUMMER_HOURS));
+  const isSummer=t=>String(t).slice(4)==='30';
+  const capOf=t=>isSummer(t)?sCap:cap;
   const taking=Array.isArray(o.taking)?o.taking.filter(Boolean):[];
+  const all=allPlanCourses(ctx);
+  const inPlan=new Set(all.map(c=>c.c));
+  const H=c=>Number(c.h)||0;
   let completed=ctx.completed.slice();
   /* الدرجات تتغيّر مع المحاكاة: المادة المعادة تصير ناجحة. بلا هذا
      تبقى «تحتاج إعادة» للأبد، فيقترحها كل ترم وما يتقدّم الحساب —
      وكل طالب راسب في مادة ينهار توقّعه. */
   let grades=Object.assign({},ctx.grades);
   /* والمسجّل الآن كذلك: من يعيد مادة هذا الترم بيخلّصها، فلا نقترحها
-     عليه مرة ثانية. */
+     عليه مرة ثانية. وساعاته «ساعات هالترم» — بلاها ما يطلع المجموع. */
+  let hoursTaking=0;
   taking.forEach(c=>{
+    const pc=all.find(x=>x.c===c);
+    if(pc&&!isPassed(ctx,c))hoursTaking+=H(pc);
     if(!completed.includes(c))completed.push(c);
     delete grades[c];
   });
-  let term=o.from||ctx.term;
+  /* مادة اختيار يدرسها الحين تملأ خانة: اختيار تقني (من tech — مو في
+     الخطة)، أو مادة قال الطالب إنها اختياري تخصصه (electivesNow) */
+  const electivesTaking=[];
+  const elNow=new Set((Array.isArray(o.electivesNow)?o.electivesNow:[]).filter(Boolean));
+  taking.filter(c=>!inPlan.has(c)&&((ctx.tech&&ctx.tech[c])||elNow.has(c))).forEach(c=>{
+    const slot=all.find(x=>x.el&&!completed.includes(x.c));
+    if(!slot)return;
+    completed.push(slot.c); hoursTaking+=H(slot);
+    electivesTaking.push({code:c,slot:slot.c});
+  });
+  let pendingEl=all.filter(c=>c.el&&!completed.includes(c.c));
+  const electivesLeft=pendingEl.map(c=>({code:c.c,name:c.n,credits:c.h}));
   const terms=[]; let stuck=false;
-  for(let i=0;i<MAXT&&terms.length<MAXT;i++){
-    if(!o.summer&&String(term).slice(4)==='30'){ term=nextTermCode(term); continue }
-    const s=suggestNext(ctxOf(Object.assign({},ctx,{completed,grades,term})));
-    const picked=s.crit.concat(s.opt);
-    if(!picked.length)break;
-    terms.push({term,hours:s.hours,
-      courses:picked.map(c=>({code:c.c,name:c.n,credits:c.h,retake:!!c.retake}))});
+  const elItem=c=>({code:c.c,name:c.n,credits:c.h,retake:false,elective:true});
+  /* خانات الاختياري في ترمات قائمة، الأخير أولاً، بلا تجاوز السقف.
+     whole: كلها أو ولا وحدة — للسؤال «تدخل كلها قبل التدريب؟» */
+  const placeEls=whole=>{
+    /* ترم التدريب لحاله، وترم التحضيري ما تنزل معه مواد تخصص */
+    const room=terms.map(t=>(t.kind==='internship'||t.prepLevel)?0:capOf(t.term)-t.hours);
+    const put=[];
+    for(const e of pendingEl){
+      let k=-1;
+      for(let j=terms.length-1;j>=0;j--) if(room[j]>=H(e)){k=j;break}
+      if(k<0){ if(whole)return false; continue }
+      room[k]-=H(e); put.push([k,e]);
+    }
+    put.forEach(([k,e])=>{ terms[k].courses.push(elItem(e)); terms[k].hours+=H(e) });
+    const done=put.map(([,e])=>e.c);
+    pendingEl=pendingEl.filter(e=>!done.includes(e.c));
+    return true;
+  };
+  /* ترم للاختياريات وحدها، بسقفه */
+  const elTerm=term=>{
+    const t={term,kind:'electives',hours:0,courses:[]};
+    pendingEl.forEach(e=>{ if(t.hours+H(e)<=capOf(term)){ t.courses.push(elItem(e)); t.hours+=H(e) } });
+    if(!t.courses.length&&pendingEl.length){ t.courses.push(elItem(pendingEl[0])); t.hours+=H(pendingEl[0]) }
+    const done=t.courses.map(c=>c.code);
+    pendingEl=pendingEl.filter(e=>!done.includes(e.c));
+    done.forEach(c=>{ if(!completed.includes(c))completed.push(c) });
+    return t;
+  };
+  let term=o.from||ctx.term;
+  for(let i=0;i<GRAD_MAXT*3&&terms.length<GRAD_MAXT;i++){
+    const summer=isSummer(term);
+    const now=ctxOf(Object.assign({},ctx,{completed,grades,term,offeredOnly:true}));
+    const s=suggestNext(now);
+    let picked=[], kind='courses';
+    if(summer&&s.intern){ picked=[s.intern]; kind='internship' }
+    else if(summer&&!o.summer){ term=nextTermCode(term); continue }
+    else if(s.internOnly){
+      if(pendingEl.length&&!placeEls(true)){
+        terms.push(elTerm(term)); term=nextTermCode(term); continue;
+      }
+      picked=[s.intern||s.crit[0]]; kind='internship';
+    } else {
+      picked=s.crit.concat(s.opt);
+      if(capOf(term)<20)picked=capPicks(picked,capOf(term));
+      /* مستوى تحضيري: مواده اللي تنزّلها الإدارة تُدرس في نفس الترم —
+         بلاها يقف الحساب عند أول مستوى (suggestNext ما ترجّعها) */
+      if(s.prepSem){
+        const sem=now.sems.find(x=>x.id===s.prepSem.id);
+        (sem?sem.courses:[]).forEach(c=>{
+          if(c.adm&&!isPassed(now,c.c))picked.push(Object.assign({},c,{admin:true}));
+        });
+      }
+    }
+    if(!picked.length){
+      /* اللي باقي ما يُطرح هالترم: ترم بلا مواد خطة، ونكمل للي بعده */
+      if(s.notOffered&&s.notOffered.length){
+        terms.push({term,kind:'courses',hours:0,courses:[],notOffered:s.notOffered.slice()});
+        term=nextTermCode(term); continue;
+      }
+      break;
+    }
+    const crit=new Set(s.crit.map(c=>c.c));
+    const t={term,kind,hours:picked.reduce((n,c)=>n+H(c),0),
+      courses:picked.map(c=>{
+        const x={code:c.c,name:c.n,credits:c.h,retake:!!c.retake,
+          critical:crit.has(c.c),unlocks:c.unlocks||0,lastChance:!!c.lastChance};
+        if(kind==='internship')x.internship=true;
+        if(c.admin)x.admin=true;
+        return x;
+      })};
+    if(s.notOffered&&s.notOffered.length)t.notOffered=s.notOffered.slice();
+    if(s.prepSem)t.prepLevel=s.prepSem.id;
+    terms.push(t);
     let moved=false;
     picked.forEach(c=>{
       if(!completed.includes(c.c)){ completed.push(c.c); moved=true }
@@ -1877,22 +1999,35 @@ function gradPlan(ctx,opts){
     if(!moved){ terms.pop(); stuck=true; break }
     term=nextTermCode(term);
   }
-  /* خانات المواد الاختيارية (el) ما تُقترح: هي خانة لا مادة، والطالب
-     يملؤها بما يختار. والخطة تضعها داخل نفس الترمات فما تزيد عددها —
-     فنفصلها عن «ما انحطّت» حتى لا يطلع التوقّع «ما بتخلص» أبداً. */
-  const all=allPlanCourses(ctx);
-  const left=all.filter(c=>!completed.includes(c.c));
-  const electivesLeft=left.filter(c=>c.el).map(c=>({code:c.c,name:c.n,credits:c.h}));
-  const remaining=left.filter(c=>!c.el).map(c=>c.c);
+  /* الاختياريات اللي بقت: في ترمات قائمة فيها مكان، والباقي ترمات جديدة */
+  if(pendingEl.length)placeEls(false);
+  while(pendingEl.length&&terms.length<GRAD_MAXT){
+    let nt=terms.length?nextTermCode(terms[terms.length-1].term):(o.from||ctx.term);
+    while(!o.summer&&isSummer(nt))nt=nextTermCode(nt);
+    terms.push(elTerm(nt));
+  }
+  /* ترم ما طُرح فيه شي من الباقي وما دخله اختياري — يُذكر لحاله لا كترم */
+  const gaps=terms.filter(t=>!t.courses.length)
+    .map(t=>({term:t.term,notOffered:t.notOffered||[]}));
+  const list=terms.filter(t=>t.courses.length);
+  const left=all.filter(c=>!c.el&&!completed.includes(c.c));
+  const remaining=left.map(c=>c.c);
+  /* ما انحطّت وما وصلنا السقف = متطلب ما ينفتح من الخطة */
+  const truncated=remaining.length>0&&terms.length>=GRAD_MAXT;
+  if(remaining.length&&!truncated)stuck=true;
+  const hoursPlanned=list.reduce((n,t)=>n+t.hours,0);
+  const hoursUnplaced=left.concat(pendingEl).reduce((n,c)=>n+H(c),0);
   return {
-    terms, count:terms.length,
-    lastTerm:terms.length?terms[terms.length-1].term:null,
-    taking, stuck,
-    done:!remaining.length&&!stuck,
-    remaining, electivesLeft,
-    /* الساعات الباقية من الخطة — بلا المسجّل الآن */
-    hoursLeft:all.filter(c=>!ctx.completed.includes(c.c))
-      .reduce((n,c)=>n+(Number(c.h)||0),0),
+    terms:list, count:list.length,
+    lastTerm:list.length?list[list.length-1].term:null,
+    taking, stuck, truncated,
+    done:!remaining.length&&!pendingEl.length&&!stuck,
+    remaining, electivesLeft, electivesTaking, gaps,
+    internTerm:(list.find(t=>t.kind==='internship')||{}).term||null,
+    maxHours:cap, summerMaxHours:o.summer?sCap:null,
+    /* هالترم (مواد جدوله) + الترمات الجاية = كل اللي باقي عليه */
+    hoursTaking, hoursPlanned,
+    hoursLeft:hoursTaking+hoursPlanned+hoursUnplaced,
     note:'تقدير من خطتك — الطرح الفعلي والمقاعد وقرار مرشدك تغيّره',
   };
 }
@@ -2006,9 +2141,13 @@ function offerWarn(ctx,courseCode){
 
 /* ═══ المقترح للترم الجاي ═══
    يرجع بيانات لا نصاً: prepSem معرّف الترم واسمه الخام، والصفحة
-   تترجمه. أي تغيير في الترتيب هنا يغيّر ما يراه كل طالب. */
+   تترجمه. أي تغيير في الترتيب هنا يغيّر ما يراه كل طالب.
+
+   `ctx.offeredOnly` للمحاكاة وحدها (gradPlan): مادة جدول الطرح يقول ما
+   تُطرح هالترم ما تنحط فيه، وتُذكر في `notOffered`. الصفحة ما تمرّره،
+   فتعرضها بشارة «ما تُطرح» كما كانت. */
 function suggestNext(ctx){
-  const cands=[]; let intern=null;
+  const cands=[]; let intern=null; const notOffered=[];
   /* طالب التحضيري يشوف مستواه الحالي فقط.
      وفي المستوى المتقدم يقدر ينزل معه مواد من تخصصه. */
   /* ما يبدأ مقترح مواد التخصص إلا بعد ما يخلّص التحضيري كامل — يمنع الخربطة */
@@ -2020,6 +2159,9 @@ function suggestNext(ctx){
     if(c.prep && (!pSem || sem.id!==pSem.id))return;   /* مستوى التحضيري الحالي فقط */
     if(!c.prep && pSem)return;                         /* مواد التخصص تنتظر إنهاء التحضيري */
     if(!prereqCheck(ctx,c.c).ok)return;
+    if(ctx.offeredOnly&&OFFER_MAJORS.includes(ctx.major)&&notOfferedIn(ctx.term,c.c)){
+      notOffered.push(c.c); return;
+    }
     const item={...c,order:si,unlocks:unlocksCount(ctx,c.c),retake:isFailed(ctx,c.c)};
     if(isInternship(c)){
       /* ما نعرضه إلا لو وصل ساعات السينيور فعلاً */
@@ -2035,7 +2177,7 @@ function suggestNext(ctx){
 
   /* التطبيق العملي ينزل لحاله — ممنوع معه أي مادة */
   if(intern && !cands.length)
-    return {crit:[intern],opt:[],hours:intern.h,internOnly:true};
+    return {crit:[intern],opt:[],hours:intern.h,internOnly:true,intern,notOffered};
 
   /* «آخر فرصة» تسبق «يفتح مواد»: تأخير مادة يفتح غيرها يكلّف ترماً،
      وتأخير مادة لا تُطرح الترم الجاي يكلّف سنة. الأثقل أولاً. */
@@ -2047,9 +2189,12 @@ function suggestNext(ctx){
   /* مواد التحضيري أساسية دائماً وما يحدّها سقف الساعات */
   cands.filter(c=>c.prep).forEach(c=>{crit.push(c);hrs+=c.h});
   cands.filter(c=>!c.prep&&(c.retake||c.lastChance||c.unlocks>0)).forEach(c=>{if(hrs+c.h<=20){crit.push(c);hrs+=c.h}});
-  cands.filter(c=>!c.prep&&!c.retake&&c.unlocks===0).forEach(c=>{if(hrs+c.h<=20){opt.push(c);hrs+=c.h}});
+  /* الاختيارية = الباقي. «آخر فرصة» بلا مواد تفتحها كانت تنزل في الاثنتين:
+     تتكرر في القائمة وتنحسب ساعاتها مرتين (MEEN 3111 في ربيع 2027). */
+  cands.filter(c=>!c.prep&&!c.retake&&!c.lastChance&&c.unlocks===0).forEach(c=>{if(hrs+c.h<=20){opt.push(c);hrs+=c.h}});
   return {crit,opt,hours:hrs,internAvailable:!!intern,admOnly,
-          prepSem:pSem?{id:pSem.id,label:pSem.label}:null};
+          prepSem:pSem?{id:pSem.id,label:pSem.label}:null,
+          intern:intern||null,notOffered};
 }
 
 const LOGIC = {

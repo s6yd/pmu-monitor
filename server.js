@@ -275,7 +275,11 @@ const PUSHOVER_ON = !!(PUSHOVER_TOKEN && PUSHOVER_USER);
    وهذا مفتاح القتل على مستوى النشر. واسم النموذج من متغيّر ثانٍ عشان
    تبدّله من Render، واللوحة تتقدّم عليه بلا نشر (مثل ACTIVE_TERM). */
 const ANTHROPIC_KEY = (process.env.ANTHROPIC_API_KEY || '').trim();
-const AI_MODEL_ENV = (process.env.AI_MODEL || 'claude-haiku-4-5').trim();
+/* Sonnet 5.5 لا Haiku — قرار محمد بعد محادثات تخطيط ضعيفة («المساعد مو ذكي»):
+   هايكو بلا تفكير ما يقدر يبني خطة ترمات ويشرح سلاسل المتطلبات. سونيت ضعف سعره
+   للرمز (والتخزين المؤقت يشتغل معه من ٥١٢ رمزاً — هايكو يحتاج ٤٠٩٦)، والسقوف
+   تحمي. اللوحة تغيّره بلا نشر. */
+const AI_MODEL_ENV = (process.env.AI_MODEL || 'claude-sonnet-5-5').trim();
 
 function pushover(title, message, opts) {
   if (!PUSHOVER_ON) {
@@ -3545,6 +3549,21 @@ async function tgToTeam(chatId, from, text, photo, markup) {
     (tk ? `✅ وصلتنا رسالتك — رقم تذكرتك <b>#${tk.id}</b>\n\n`
         : '✅ وصلتنا رسالتك\n\n') +
     'نقرأ كل رسالة ونرد عليك هنا 🙏', markup);
+}
+
+/* تيليغرام يعيد إرسال التحديث لو ما رددنا بسرعة (يحسبه فشلاً)، وردّنا ينتظر
+   جواب المساعد — وصار يفكّر قبل ما يجاوب فيطوّل. بلا هذا الطالب يستلم الجواب
+   مرتين ونُحاسب على السؤال مرتين. آخر المعرّفات في الذاكرة (تفضى مع النشر). */
+const TG_SEEN = new Map();
+function tgSeenBefore(id) {
+  if (id === undefined || id === null || !Number.isFinite(Number(id))) return false;
+  const k = Number(id);
+  if (TG_SEEN.has(k)) return true;
+  TG_SEEN.set(k, Date.now());
+  if (TG_SEEN.size > 5000) {          /* الأقدم أولاً — Map بترتيب الإضافة */
+    for (const key of TG_SEEN.keys()) { TG_SEEN.delete(key); if (TG_SEEN.size <= 4000) break }
+  }
+  return false;
 }
 
 async function handleTelegramUpdate(update) {
@@ -7506,8 +7525,8 @@ const AI_MAJOR_TOOLS = new Set(['plan_overview', 'next_term_suggestion',
 /* أدوات الزائر: **العام وحده**. ما فيها ولا أداة تحتاج تخصصه أو
    صفوفه — والخطة منها: ما نعرف تخصصه، وافتراضه يعطيه خطة غيره. */
 const AI_GUEST_TOOLS = new Set(['guide', 'academic_calendar',
-  'registration_calendar', 'sections', 'instructor_reviews', 'free_rooms',
-  'finals', 'propose_support_ticket', 'plans_info']);
+  'registration_calendar', 'sections', 'instructor_reviews', 'course_instructors',
+  'free_rooms', 'finals', 'propose_support_ticket', 'plans_info']);
 
 function aiCourse(ctx, code) {
   const c = PLANS_DATA.findPlanCourse(ctx.plan, code);
@@ -7556,6 +7575,49 @@ const AI_PLAN_EMPTY = 'ما علّم ولا مادة منجزة في «خطتي�
   + 'ما خلّص شي. الخطة يعبّيها الطالب بنفسه — قل له إن الأرقام من اللي علّمه، ويعلّم '
   + 'مواده المنجزة ودرجاتها في تبويب «خطتي» عشان يطلع الحساب صح.';
 const aiPlanEmpty = ctx => !((ctx.plan && ctx.plan.completed) || []).length;
+
+/* ═══ أدوات التخطيط: جدوله الحالي ═══
+   مواد جدوله تُحسب ناجحة قبل الترم الجاي (درجتها ما طلعت لكنه بيخلّصها).
+   وما هو في خطته ولا اختيار تقني يُسمّى لحاله (notInPlan): ما نحسبه،
+   وغالباً نسخة خطة غلط أو اختياري — المرشد البشري يمسكها، فنقولها. */
+const aiCodeNorm = c => String(c || '').trim().toUpperCase().replace(/\s+/g, ' ');
+/* رقم صحيح من وسيط النموذج — نص «15» أو 15، وغيره undefined (الافتراضي) */
+const aiInt = v => (Number.isFinite(Number(v)) && String(v).trim() !== '') ? Math.round(Number(v)) : undefined;
+async function aiPlanNow(ctx) {
+  const rows = await aiSchedule(ctx);
+  const codes = [...new Set(rows.map(r => aiCodeNorm(r.course_code)).filter(Boolean))];
+  const inPlan = c => !!PLANS_DATA.findPlanCourse(ctx.plan, c);
+  const tech = c => !!(ctx.plan.tech && ctx.plan.tech[c]);
+  return { taking: codes,
+    countingNow: codes.filter(c => inPlan(c) ? !PLANS_DATA.isPassed(ctx.plan, c) : tech(c)),
+    notInPlan: codes.filter(c => !inPlan(c) && !tech(c)) };
+}
+const AI_NOT_IN_PLAN = 'مواد في جدوله مو في خطته (notInPlan) — ما حسبناها في الخطة. اسأله: '
+  + 'هي اختياري تخصصه؟ (graduation_forecast بـelectivesNow تحسبها خانة اختياري) أو نسخة خطته '
+  + 'غلط (القديمة/الجديدة في «📋 خطتي»)؟ ولا تفترض.';
+const AI_SUMMER_NOTE = h => `حسبنا الصيفي بحد ${h} ساعات — افتراض لا قاعدة: الحد الفعلي وطرح `
+  + 'المواد فيه تحدّدهما الجامعة، قلها له.';
+/* ليش ترم التخرج هذا بالذات: سلاسل متطلبات **بلا فراغ** تنتهي في آخر ترم —
+   كل حلقة في الترم اللي قبل اللي بعدها مباشرة (ترم التدريب الصيفي ما يُعدّ
+   فراغاً). هذي اللي ما تنضغط، والمرشد البشري يشرحها: «COMM 2311 الربيع لأن
+   COMM 2312 بعدها، وهي آخر ترم». بلاها يا يخمّن النموذج يا يسكت. */
+function aiGradChains(plan, terms) {
+  const reg = terms.filter(t => t.kind !== 'internship');
+  const at = new Map();
+  reg.forEach((t, i) => t.courses.forEach(c => { if (!c.elective) at.set(c.code, i) }));
+  const last = reg.length - 1, out = [];
+  const walk = (code, chain) => {
+    const i = at.get(code);
+    const pc = PLANS_DATA.findPlanCourse(plan, code);
+    const pre = ((pc && pc.p) || []).filter(x => at.get(x) === i - 1);
+    if (!pre.length) { if (chain.length > 1) out.push(chain); return }
+    pre.forEach(x => walk(x, [x].concat(chain)));
+  };
+  if (last > 0) reg[last].courses.forEach(c => { if (!c.elective) walk(c.code, [c.code]) });
+  const name = c => payTermName(reg[at.get(c)].term);
+  return out.sort((a, b) => b.length - a.length).slice(0, 3)
+    .map(ch => ch.map(c => ({ code: c, term: name(c) })));
+}
 /* جدول فاضي: أي الحالتين؟ */
 const aiSchedEmptyNote = rows => rows.total ? AI_SLOT_EMPTY : AI_SCHED_EMPTY;
 
@@ -7902,38 +7964,52 @@ const AI_TOOLS = {
 
   next_term_suggestion: {
     tier: 'pro',
-    description: 'المقترح للترم الجاي: المواد الأساسية والاختيارية بترتيبها، '
-      + 'وساعاتها، وليش كل مادة (إعادة/تفتح مواد/آخر فرصة).',
-    input_schema: { type: 'object', properties: {}, required: [] },
-    run: async (ctx) => {
-      const s = PLANS_DATA.suggestNext(ctx.plan);
-      /* المسجّل هذا الترم مو «منجزاً» في الخطة — درجته ما طلعت بعد —
-         فالمقترح يرجّعه كأنه ناقص، ونقترح على الطالب مواد هو قاعد
-         ياخذها الحين. نقرأ جدوله ونستبعدها، ونسمّيها له صريحاً.
-         ما نلمس suggestNext نفسها: الصفحة تشاركها وتبويب «خطتي»
-         يرسم منها لكل طالب. */
-      const rows = await aiSchedule(ctx);
-      const now = new Set(rows.map(r =>
-        String(r.course_code || '').trim().toUpperCase()).filter(Boolean));
-      const map = c => ({ code: c.c, name: c.n, credits: c.h,
-        unlocks: c.unlocks || 0, retake: !!c.retake,
-        lastChance: !!c.lastChance, prep: !!c.prep });
-      const taking = c => now.has(String(c.c || '').trim().toUpperCase());
-      const crit = s.crit.filter(c => !taking(c)).map(map);
-      const opt = s.opt.filter(c => !taking(c)).map(map);
-      const hrs = l => l.reduce((n, c) => n + (Number(c.credits) || 0), 0);
-      const out = { term: ctx.plan.term, termName: payTermName(ctx.plan.term),
-        critical: crit, optional: opt,
-        hours: hrs(crit) + hrs(opt),
-        alreadyTaking: s.crit.concat(s.opt).filter(taking).map(c => c.c),
-        planHours: s.hours,
-        internshipOnly: !!s.internOnly,
-        internshipAvailable: !!s.internAvailable,
-        adminPlacedOnly: !!s.admOnly,
-        prepLevel: s.prepSem ? s.prepSem.id : null };
+    description: 'المقترح للترم الجاي (term · termName): المواد بترتيب أولويتها وساعاتها وليش '
+      + 'كل مادة (إعادة · تفتح مواد · آخر فرصة)، وخانات الاختياري لو جا وقتها، والتدريب. '
+      + '**مواد جدوله الحالي محسوبة ناجحة** (alreadyTaking) فيقترح اللي بعدها، ويتخطّى ما لا '
+      + 'يُطرح ذاك الترم — وهو نفسه أول ترم في graduation_forecast. maxHours لو طلب ترماً أخف.',
+    input_schema: { type: 'object', properties: {
+      maxHours: { type: 'integer',
+        description: 'أقصى ساعات للترم لو الطالب طلب أخف (6–20) — اتركه فاضياً للمعتاد (20)' } },
+      required: [] },
+    run: async (ctx, a) => {
+      /* المسجّل هذا الترم مو «منجزاً» في الخطة — درجته ما طلعت — فكان
+         المقترح يرجّعه، ونشيله فيبقى مقترح ناقص: ما فيه المواد اللي
+         تنفتح بنجاحه (طالب طلع له ٦ ساعات وهو يقدر ١٢). صار المقترح أول
+         ترم في محاكاة gradPlan نفسها: مواد جدوله ناجحة، والطرح محترم.
+         ما نلمس suggestNext للصفحة — تبويب «خطتي» يرسم منها كما كان. */
+      const now = await aiPlanNow(ctx);
+      const term = ctx.plan.term;
+      const summer = String(term).slice(4) === '30';
+      const g = PLANS_DATA.gradPlan(ctx.plan, { taking: now.taking, summer,
+        maxHours: aiInt(a.maxHours) });
+      const first = g.terms[0] && g.terms[0].term === term ? g.terms[0] : null;
+      const gap = (g.gaps || []).find(x => x.term === term);
+      const list = first ? first.courses : [];
+      const map = c => ({ code: c.code, name: c.name, credits: c.credits,
+        unlocks: c.unlocks || 0, retake: !!c.retake, lastChance: !!c.lastChance });
+      const out = { term, termName: payTermName(term),
+        critical: list.filter(c => c.critical || c.internship).map(map),
+        optional: list.filter(c => !c.critical && !c.internship && !c.elective).map(map),
+        /* خانة يملؤها بمادة يختارها — لا مادة بعينها */
+        electiveSlots: list.filter(c => c.elective).map(c => ({ slot: c.code, credits: c.credits })),
+        hours: first ? first.hours : 0,
+        maxHours: g.maxHours,
+        alreadyTaking: now.countingNow,
+        basis: now.countingNow.length
+          ? 'على افتراض إنه ينجح في مواد جدوله الحالي (alreadyTaking) — المقترح للي بعدها' : null,
+        internshipOnly: !!(first && first.kind === 'internship'),
+        internship: g.internTerm
+          ? { term: g.internTerm, termName: payTermName(g.internTerm) } : null,
+        notOfferedThatTerm: (first && first.notOffered) || (gap && gap.notOffered) || [],
+        adminPlacedOnly: !!(first && first.courses.every(c => c.admin)),
+        prepLevel: (first && first.prepLevel) || null,
+        notInPlan: now.notInPlan };
+      if (summer) out.summerNote = AI_SUMMER_NOTE(g.summerMaxHours);
       /* بلا منجزات المقترح مواد الترم الأول — صحيحة لطالب جديد، وغلط
          لطالب ما عبّا خطته. نقولها ولا نخمّن أيّهما هو */
       if (aiPlanEmpty(ctx)) out.note = AI_PLAN_EMPTY;
+      if (now.notInPlan.length) out.notInPlanNote = AI_NOT_IN_PLAN;
       return out;
     },
   },
@@ -7941,38 +8017,75 @@ const AI_TOOLS = {
 
   graduation_forecast: {
     tier: 'pro',
-    description: 'توقّع التخرج: كم ترماً باقياً ومتى، وتوزيع المواد على الترمات '
-      + 'القادمة. **تقدير من الخطة لا وعد** — الطرح الفعلي والمقاعد وقرار '
-      + 'المرشد تغيّره، فقل ذلك للطالب.',
+    description: 'توقّع التخرج — أسرع مسار من خطته: كل ترم بمواده وساعاته (ومعها خانات '
+      + 'الاختياري، والتدريب في صيفه لحاله)، وترم التخرج، والساعات: هالترم (hoursThisTerm) + '
+      + 'بعده (hoursAfterThisTerm). مواد جدوله الحالي محسوبة ناجحة، وجدول الطرح محترم. '
+      + 'whyThisTerm: سلاسل المتطلبات اللي تحدّد ترم التخرج — منها تشرح «ليش ما أتخرج أبكر»، '
+      + 'وnotOffered في الترم: مواد مؤهّل لها وما تُطرح فيه فتأجلت. '
+      + '**تقدير من الخطة لا وعد** — الطرح الفعلي والمقاعد وقرار المرشد تغيّره، فقل ذلك للطالب.',
     input_schema: { type: 'object', properties: {
+      maxHours: { type: 'integer',
+        description: 'أقصى ساعات للترم لو الطالب يبي ترمات أخف (6–20) — بلاه 20' },
       summer: { type: 'boolean',
-        description: 'يحسب الصيفي كترم دراسي — الافتراضي لا، لأن الجامعة '
-          + 'ما تطرح مواد التخصص فيه عملياً' } },
+        description: 'يدرس مواد في الصيفي — الافتراضي لا، لأن الجامعة ما تطرح مواد التخصص '
+          + 'فيه عملياً. (التدريب ينحط في صيفه في الحالتين)' },
+      summerMaxHours: { type: 'integer',
+        description: 'أقصى ساعات الصيفي لو ذكرها الطالب — بلاها نفترض 9 وتقولها له' },
+      electivesNow: { type: 'array', items: { type: 'string' },
+        description: 'مواد من جدوله الحالي (من notInPlan) قال الطالب إنها اختياري تخصصه' } },
       required: [] },
     run: async (ctx, a) => {
-      /* المسجّل الآن يُحسب منجزاً: درجته ما طلعت لكنه بيخلّصه */
-      const rows = await aiSchedule(ctx);
-      const taking = [...new Set(rows.map(r =>
-        String(r.course_code || '').trim()).filter(Boolean))];
-      const g = PLANS_DATA.gradPlan(ctx.plan, { taking, summer: !!a.summer });
+      const now = await aiPlanNow(ctx);
+      /* اختياري يدرسه الحين: من مواد جدوله وحدها — ما نصدّق كوداً من برّا */
+      const elNow = (Array.isArray(a.electivesNow) ? a.electivesNow : [])
+        .map(aiCodeNorm).filter(c => now.notInPlan.includes(c));
+      const g = PLANS_DATA.gradPlan(ctx.plan, { taking: now.taking, summer: !!a.summer,
+        maxHours: aiInt(a.maxHours), summerMaxHours: aiInt(a.summerMaxHours), electivesNow: elNow });
       const season = c => ({ '10': 'fall', '20': 'spring', '30': 'summer' })[String(c).slice(4)] || '?';
-      return {
+      const out = {
         termsLeft: g.count,
         graduatesIn: g.lastTerm
           ? { term: g.lastTerm, name: payTermName(g.lastTerm),
               year: Number(String(g.lastTerm).slice(0, 4)),
               season: season(g.lastTerm) } : null,
-        hoursLeft: g.hoursLeft,
-        countingNow: taking,
-        /* خانات اختيارية يملؤها بنفسه — داخل نفس الترمات لا زيادة عليها */
-        electivesLeft: g.electivesLeft,
-        plan: g.terms.map(x => ({ term: x.term, name: payTermName(x.term),
-          season: season(x.term), hours: x.hours, courses: x.courses })),
+        /* كانت «hoursLeft» وحدها: ساعات هالترم داخلة فيها والترمات ما تجمعها
+           (طالب قيل له «باقي 44» وترماته 21). صارت ثلاثة تجمع بعضها */
+        hoursThisTerm: g.hoursTaking,
+        hoursAfterThisTerm: g.hoursPlanned,
+        hoursLeftIncludingThisTerm: g.hoursLeft,
+        countingNow: now.countingNow,
+        maxHours: g.maxHours,
+        summerMaxHours: g.summerMaxHours,
+        internship: g.internTerm
+          ? { term: g.internTerm, name: payTermName(g.internTerm) } : null,
+        /* خانات اختيارية يملؤها بنفسه — موزّعة داخل الترمات (elective) */
+        electiveSlots: g.electivesLeft.map(e => ({ slot: e.code, credits: e.credits })),
+        electivesNow: g.electivesTaking,
+        plan: g.terms.map(x => Object.assign({ term: x.term, name: payTermName(x.term),
+          season: season(x.term), kind: x.kind, hours: x.hours,
+          courses: x.courses.map(c => {
+            const o = { code: c.code, name: c.name, credits: c.credits };
+            if (c.retake) o.retake = true;
+            if (c.lastChance) o.lastChance = true;
+            if (c.elective) o.elective = true;
+            if (c.internship) o.internship = true;
+            return o;
+          }) },
+          /* مؤهّل لها وما تُطرح ذاك الترم (جدول الطرح) — «ليش تأجلت» */
+          x.notOffered && x.notOffered.length ? { notOffered: x.notOffered } : {})),
+        notOfferedGaps: (g.gaps || []).map(x => ({ term: x.term, name: payTermName(x.term),
+          notOffered: x.notOffered })),
+        /* سلاسل متطلبات بلا فراغ تنتهي بترم التخرج — «ليش ما أتخرج أبكر» */
+        whyThisTerm: aiGradChains(ctx.plan, g.terms),
         blocked: g.stuck ? g.remaining : [],
+        notInPlan: now.notInPlan,
         note: (aiPlanEmpty(ctx) ? AI_PLAN_EMPTY + ' ' : '') + (g.stuck
           ? 'وقف الحساب: فيه مواد متطلبها ما ينفتح من الخطة — راجع مرشدك'
           : 'تقدير من خطتك — الطرح الفعلي والمقاعد وقرار مرشدك تغيّره'),
       };
+      if (a.summer) out.summerNote = AI_SUMMER_NOTE(g.summerMaxHours);
+      if (now.notInPlan.length) out.notInPlanNote = AI_NOT_IN_PLAN;
+      return out;
     },
   },
 
@@ -8595,6 +8708,87 @@ const AI_TOOLS = {
     },
   },
 
+  /* «مين أفضل الدكاترة لموادي الباقية؟» — لقاها محمد: الجواب كان «ما قدرت أطلع
+     لك جواب». السؤال يحتاج شعب كل مادة ثم تقييم كل دكتور، عشرين نداءً وأكثر،
+     فتخلص نداءات السؤال قبل الجواب. صار نداءً واحداً لكل المواد: مين يدرّسها في
+     جدول الترم (بجنس الطالب لو بان من جدوله)، ومين قيّمه الطلاب فيها — وتقييمه
+     في المادة نفسها وتقييمه كله (التقييم واحد لكل طالب ودكتور، والمادة فيه
+     اختيارية). ترتيب الطلاب لا رأينا، وبلا هوية أي مقيّم. */
+  course_instructors: {
+    tier: 'free',
+    description: 'دكاترة مواد بعينها وتقييم الطلاب لهم — لسؤال «مين أفضل دكتور لمادة كذا» '
+      + 'أو «لموادي الباقية». **مرّر أكواد المواد كلها في نداء واحد** (موادك الباقية: أكوادها '
+      + 'من graduation_forecast). لكل مادة: teaching = يدرّسونها في جدول الترم (term)، '
+      + 'وtaughtBefore = قيّمهم الطلاب فيها من قبل — مرتّبين بتقييم الطلاب: في المادة نفسها '
+      + '(inCourse) وكله (overall) بعدد التقييمات. **ترتيب الطلاب لا رأيك** — قل العدد، '
+      + 'وتقييم أو تقييمين ما يكفي حكماً. وللتعليقات نفسها: instructor_reviews.',
+    input_schema: { type: 'object', properties: {
+      codes: { type: 'array', items: { type: 'string' },
+        description: 'أكواد المواد مثل ["MEEN 4392","COMM 2311"] — حتى 15' } },
+      required: ['codes'] },
+    run: async (ctx, a) => {
+      const codes = [...new Set((Array.isArray(a.codes) ? a.codes : [a.codes])
+        .map(aiCodeNorm).filter(c => /^[A-Z]{2,5} \d{3,4}[A-Z]?$/.test(c)))].slice(0, 15);
+      if (!codes.length) return { error: 'مرّر أكواد المواد، مثل ["MEEN 4392"]' };
+      const q = v => encodeURIComponent('"' + String(v).replace(/"/g, '') + '"');
+      /* بلا user_id في select ولا في الناتج — التقييم مجهول للقارئ */
+      const COLS = 'select=instructor_name,rating,course_code,tags';
+      const inCourse = await sb('GET', 'instructor_reviews', { query:
+        `?course_code=in.(${codes.map(q).join(',')})&hidden=is.false&${COLS}&limit=1000` });
+      if (!Array.isArray(inCourse)) return { error: 'تعذّر قراءة التقييمات' };
+      /* مين يدرّسها في جدول الترم — الكاش بحرّاس تسخينه، وما توفّر؟ نكمل بالتقييمات */
+      const c = await aiCacheWarm();
+      let gender = null;
+      if (!ctx.guest && ctx.userId) { try { gender = aiGender(await aiSchedule(ctx)) } catch (e) {} }
+      const teaching = {};
+      if (c.available) c.courses.forEach(x => {
+        const code = aiCodeNorm(x.courseCode), who = String(x.instructor || '').trim();
+        if (!codes.includes(code) || !who || /^(TBA|STAFF)$/i.test(who)) return;
+        if (gender && x.gender && x.gender !== gender) return;
+        (teaching[code] = teaching[code] || new Set()).add(who);
+      });
+      /* تقييم كل دكتور كله — ممكن قيّمه الطلاب بلا ذكر المادة */
+      const names = [...new Set(inCourse.map(x => String(x.instructor_name || '').trim())
+        .concat(...Object.values(teaching).map(t => [...t])).filter(Boolean))].slice(0, 60);
+      const all = names.length ? await sb('GET', 'instructor_reviews', { query:
+        `?instructor_name=in.(${names.map(q).join(',')})&hidden=is.false&${COLS}&limit=1000` }) : [];
+      const stat = rows => {
+        const n = rows.length, r = rows.filter(x => Number.isFinite(x.rating));
+        const tags = {};
+        rows.forEach(x => (Array.isArray(x.tags) ? x.tags : []).forEach(t => { tags[t] = (tags[t] || 0) + 1 }));
+        return { reviews: n, average: r.length ? Number((r.reduce((s2, x) => s2 + x.rating, 0) / r.length).toFixed(2)) : null,
+          topTags: Object.entries(tags).sort((x, y) => y[1] - x[1]).slice(0, 3).map(([t]) => t) };
+      };
+      const ALL = Array.isArray(all) ? all : [];
+      const one = (code, name) => {
+        const inC = stat(inCourse.filter(x => aiCodeNorm(x.course_code) === code
+          && String(x.instructor_name || '').trim() === name));
+        const ov = stat(ALL.filter(x => String(x.instructor_name || '').trim() === name));
+        return { name, inCourse: { reviews: inC.reviews, average: inC.average },
+          overall: { reviews: ov.reviews, average: ov.average }, topTags: ov.topTags };
+      };
+      /* بتقييمه في المادة لو فيه، وإلا تقييمه كله؛ وبلا تقييم آخر القائمة */
+      const score = x => x.inCourse.average !== null ? x.inCourse.average
+        : x.overall.average !== null ? x.overall.average - 0.001 : -1;
+      const rank = l => l.sort((x, y) => score(y) - score(x)
+        || (y.inCourse.reviews + y.overall.reviews) - (x.inCourse.reviews + x.overall.reviews));
+      const courses = codes.map(code => {
+        const now = teaching[code] ? [...teaching[code]] : [];
+        const before = [...new Set(inCourse.filter(x => aiCodeNorm(x.course_code) === code)
+          .map(x => String(x.instructor_name || '').trim()).filter(n => n && !now.includes(n)))];
+        return { code, teaching: rank(now.map(n => one(code, n))).slice(0, 8),
+          taughtBefore: rank(before.map(n => one(code, n))).slice(0, 5) };
+      });
+      const out = { term: c.available ? c.term : null,
+        termName: c.available ? payTermName(c.term) : null,
+        campus: gender, courses,
+        note: 'ترتيب بتقييم الطلاب — رأيهم لا رأينا. قل عدد التقييمات، وتقييم أو تقييمين ما '
+          + 'يكفي حكماً. teaching من جدول الترم المذكور، والترم الجاي ممكن يتغيّر' };
+      if (!c.available) out.scheduleNote = 'جدول الترم مو متاح الحين — القائمة من التقييمات وحدها';
+      return out;
+    },
+  },
+
   free_rooms: {
     tier: 'free',
     description: 'القاعات اللي ما فيها محاضرة في نافذة وقت من يوم معيّن. '
@@ -8809,20 +9003,25 @@ function validateAiCaps(c) {
    والتقريب للهللة يخلّي مجموع الشهر غلطاً.
    الكاش: الكتابة ١٫٢٥× سعر الدخل، والقراءة ٠٫١×. */
 const AI_SAR_PER_USD = 3.75;
+/* [دخل، خرج، قراءة الكاش لو ما هي ٠٫١× الدخل] — دولار للمليون */
 const AI_PRICES = {
-  'claude-haiku-4-5': [1, 5],
-  'claude-sonnet-5':  [2, 10],
-  'claude-opus-5':    [5, 25],
+  'claude-haiku-4-5':  [1, 5],
+  'claude-sonnet-5':   [2, 10],
+  'claude-sonnet-5-5': [2, 10],
+  'claude-opus-5':     [5, 25],
+  'claude-opus-5-5':   [4, 20, 0.20],
+  'claude-fable-5':    [10, 50],
+  'claude-fable-5-1':  [10, 50, 0.25],
 };
 /* نموذج ما نعرف سعره = أغلى سعر معروف. نبالغ في التقدير ولا نقلّل أبداً،
    لأن التقليل معناه سقف شهري يتجاوزه الإنفاق الحقيقي بصمت. */
-const AI_PRICE_FALLBACK = [5, 25];
+const AI_PRICE_FALLBACK = [10, 50];
 const aiModelKey = m => String(m || '').trim().replace(/-\d{8}$/, '');
 const aiKnownModel = m => Object.prototype.hasOwnProperty.call(AI_PRICES, aiModelKey(m));
 
 function aiPriceOf(m) {
   const p = AI_PRICES[aiModelKey(m)] || AI_PRICE_FALLBACK;
-  return { in: p[0], out: p[1], cw: p[0] * 1.25, cr: p[0] * 0.1 };
+  return { in: p[0], out: p[1], cw: p[0] * 1.25, cr: p[2] !== undefined ? p[2] : p[0] * 0.1 };
 }
 function aiCostMicro(model, u) {
   const p = aiPriceOf(model);
@@ -9074,25 +9273,59 @@ const aiUsedOf = q => ({ day: q.day, dayCap: q.cap.day,
    ما فيها ولا حرف يخص طالباً بعينه — فالبادئة (التعليمات + الأدوات)
    واحدة لكل الطلاب، والتخزين المؤقت مشترك بينهم كلهم. بيانات الطالب
    تروح في رسالته لا هنا. */
-const AI_SYSTEM = `أنت «مساعد جدولك» — مساعد داخل موقع جدولك لطلاب جامعة الأمير محمد بن فهد (PMU).
+const AI_SYSTEM = `أنت «مساعد جدولك» — مستشار أكاديمي ذكي داخل موقع جدولك لطلاب جامعة الأمير محمد بن فهد (PMU).
+هدفك الأول: **يتخرّج الطالب بأسرع وقت ممكن وبلا مفاجآت.** وأي سؤال ثاني — جدوله، يومه،
+قاعة، دكتور، تذكير، استعمال الموقع — تجاوبه بنفس الإتقان.
 
 كيف تتكلم:
-- **لهجة سعودية/خليجية**، قصير ومباشر. جملتين أو ثلاث غالباً.
+- **لهجة سعودية/خليجية** واضحة.
   قل: وش · كم · عندك · تبي · ما فيه · شوف · زين · باقي لك · خلّص.
   لا تقل أبداً: «ما فيش» · «بدك» · «هاي» · «دي» · «عايز» · «كده» ·
   «إزاي» · «شوية» بمعنى قليل — هذي مصرية أو شامية وتبيّن إنك غريب.
-- **بلا أي تنسيق Markdown.** الموقع يعرض ردك **نصاً خاماً**، فالنجمتان
-  تظهران نجمتين للطالب لا خطاً غامقاً. ممنوع: ** و ## و * في أول السطر.
-  للقوائم استعمل سطراً لكل عنصر يبدأ بـ«- » أو برقم لاتيني.
-- إيموجي واحد على الأكثر، وأحياناً فقط — لا في كل رسالة.
-- الأكواد والأرقام والتواريخ لاتينية وميلادية: MATH 1422 · 2026-09-23.
+- **طول الرد على قد السؤال.** سؤال بسيط (وش عندي بكرة؟ قاعة فاضية؟) = سطر أو سطرين.
+  سؤال تخطيط (وش أنزل؟ متى أتخرج؟ رتّب لي خطتي) = خطة كاملة مرتّبة، لا جملة مبتورة ولا كلام عام.
+- **مرتّب يُقرأ من الجوال:** الجواب المباشر أول سطر، والتفاصيل بعده. سطر لكل عنصر،
+  وسطر فاضي بين المجموعات. لا فقرات طويلة متلاصقة. وخلّ الرد تحت 3000 حرف.
+- **بلا أي تنسيق Markdown.** ردك يُعرض **نصاً خاماً**، فالنجمتان تظهران نجمتين للطالب
+  لا خطاً غامقاً. ممنوع: ** و ## و * في أول السطر. للقوائم سطر يبدأ بـ«- » أو برقم لاتيني.
+- إيموجي قليل: علامة في رأس قسم مقبولة (📅 🎓 ⚠️)، لا في كل سطر.
+- الأكواد والأرقام والتواريخ لاتينية وميلادية: MATH 1422 · 2026-09-23. والترم باسمه
+  كما ترجعه الأداة (ربيع 2026/2027) لا برمزه.
 - لا تعتذر كثير ولا تكرّر «معذرة». صحّح وكمّل.
+- اختم بعرض واحد مفيد لو فيه خطوة جاية طبيعية (تبي أبني لك جدول الربيع بهالمواد؟) — لا أكثر.
+
+التخطيط — شغلك الأهم:
+- «وش أنزل الترم الجاي؟» · «كم باقي لي؟» · «متى أتخرج؟» · «رتّب لي خطة» ⇒ graduation_forecast،
+  ومعه next_term_suggestion لما يسأل عن الترم الجاي بعينه. **لا تبني خطة من عندك ولا
+  تجمع ساعات بنفسك** — الأداة تحسب المتطلبات والطرح والتدريب والاختياريات، وأنت تغلط فيها.
+- اعرض الخطة ترماً ترماً كما رجعت: سطر عنوان لكل ترم باسمه وساعاته، وتحته مواده:
+  ربيع 2026/2027 — 12 ساعة
+  - COMM 2311 Oral Communication
+  وترم التدريب لحاله، وخانة الاختياري «اختياري تخصص — تختاره أنت». وبعدها سطر:
+  تتخرّج متى، وكم ساعة باقية (هالترم + بعده — بأرقام الأداة نفسها لا بجمعك).
+- **قل الافتراض في سطر واحد:** إنه ينجح في مواد جدوله الحالي (countingNow · alreadyTaking)،
+  وإن التوقّع تقدير — الطرح الفعلي والمقاعد وقرار مرشده تغيّره. مرة وحدة، لا في كل سطر.
+- **اشرح ليش، من بيانات الأداة:** وش يحدّد ترم تخرّجه (whyThisTerm: سلسلة متطلبات
+  ما تنضغط — «هذي تفتح هذي»)، ووش «آخر فرصة» (lastChance: ما تُطرح الترم الجاي،
+  وتفويتها يأخّره)، ووش لازم يعيده أول (retake).
+- **دوّر له على أسرع:** لما يفيد، شغّل الأداة مرة ثانية بخيار — summer (صيفي) أو maxHours —
+  وقل الفرق بالأرقام: «لو أخذت صيفي تتخرج قبل بترم». ولا تعد بشي ما طلع في الأداة.
+- قال «أبي ترم خفيف» أو «ما أبي أكثر من 15 ساعة» ⇒ maxHours. وقال «أقدر آخذ صيفي» ⇒ summer.
+- مواد في جدوله مو في خطته (notInPlan)؟ اسأله عنها قبل ما تبني عليها: اختياري تخصصه؟
+  (electivesNow) ولا نسخة خطته غلط؟
+- العبء الأعلى للترم والصيفي يحدّده نظام الجامعة ومعدله — ما تعده بأكثر من اللي في
+  الأداة، وانصحه يتأكد من مرشده لو قرّب الحد.
 
 من وين تجيب المعلومة:
-- من الأدوات وحدها. ما عندك أي معرفة عن الجامعة أو خططها أو دكاترتها غير اللي ترجّعه الأدوات.
+- **كل شي يخص الجامعة أو بيانات الطالب من الأدوات وحدها**: المواد والمتطلبات والساعات
+  والطرح والشعب والأوقات والقاعات والدكاترة والتقويم والأنظمة والأسعار. حتى لو تحس إنك
+  تعرف — استعمل الأداة، فمعلوماتك العامة عن الجامعات مو معلومات جامعته.
 - ما لقيت الجواب في أداة؟ قل «ما أعرف» بصراحة، واقترح عليه وش يسوي.
 - ممنوع تخترع: مادة، متطلب، ساعات، وقت، قاعة، دكتور، تاريخ، رقم شعبة، مقعد.
 - رجّعت الأداة خطأ أو «ما لقيتها»؟ انقلها للطالب ولا تكمّل من عندك.
+- **سؤال عام ما يخص جامعته** (كيف أذاكر مادة ثقيلة · كيف أنظّم وقتي بين المواد · وش
+  أتوقع من مادة الثيرمو · كيف أستعد للنهائي) جاوبه من معرفتك بإيجاز وبشي عملي يطبّقه —
+  بلا ما تنسبه لجامعته.
 - **جدول الطالب وخطته ودرجاته وغيابه ومواعيده يعبّيها هو في موقعنا** — ما تجينا
   من الجامعة. رجّعت الأداة فاضياً أو صفراً؟ قل له إن جوابك من اللي عبّاه ووين
   يعبّيه (النتيجة تقول لك وين) — لا تقول «ما عندك محاضرات» ولا «باقي لك الخطة
@@ -9129,7 +9362,10 @@ const AI_SYSTEM = `أنت «مساعد جدولك» — مساعد داخل مو
   فلا تقول «سجّلت» ولا «ضفت» ولا «تم» — قل «جهّزت لك التسجيل، اضغط تأكيد».
   والأفعال اللي ما لها أداة اقتراح دلّه على مكانها في الموقع.
 - ما تحل واجبات ولا كويزات ولا اختبارات ولا تعطي حلولها، ولا تلخّص حلاً لعمل مقيّم.
-- الدكاترة: تلخّص تقييمات الطلاب الموجودة فقط. ما تضيف رأيك ولا تفاضل بين دكتور ودكتور من عندك.
+  تشرح الفكرة وطريقة المذاكرة نعم، تحل المطلوب منه لا.
+- الدكاترة: تلخّص تقييمات الطلاب الموجودة فقط. «مين أفضل دكتور لمادة/لموادي الباقية؟» ⇒
+  course_instructors **بكل الأكواد في نداء واحد** (الباقية من graduation_forecast)، وترتّبهم
+  بتقييم الطلاب **مع عدد التقييمات**. ما تضيف رأيك ولا تفاضل بين دكتور ودكتور من عندك.
 - الغياب والمعدل حساب إرشادي — ذكّره إن المرجع الرسمي سجل الجامعة.
 
 المجاني والاشتراك:
@@ -9152,10 +9388,21 @@ const AI_SYSTEM = `أنت «مساعد جدولك» — مساعد داخل مو
 const AI_API_HOST = 'api.anthropic.com';
 const AI_API_PATH = '/v1/messages';
 const AI_API_VERSION = '2023-06-01';
-const AI_MAX_TOKENS = 1024;
-const AI_MAX_STEPS = 4;          /* سقف نداءات النموذج في السؤال الواحد */
-const AI_CALL_MS = 45000;
-const AI_TURN_MS = 90000;        /* ميزانية السؤال كله */
+/* السقف يشمل تفكير النموذج (Sonnet 5.5 يفكّر قبل ردّه، والتفكير من نفس السقف).
+   1024 كانت تقصّ جواب خطة بترماتها. حماية لا هدف — الجواب أقصر غالباً */
+const AI_MAX_TOKENS = 8000;
+const AI_MAX_STEPS = 6;          /* سقف نداءات النموذج في السؤال الواحد — الأخير بلا أدوات */
+const AI_CALL_MS = 60000;
+const AI_TURN_MS = 120000;       /* ميزانية السؤال كله */
+/* جهد التفكير: medium نقطة البداية المنصوحة لاستعمال الأدوات متعدد الخطوات
+   (low للدردشة — والتخطيط مو دردشة). هايكو 4.5 يرفض الحقل بـ400، فيُرسل
+   للنماذج اللي تقبله وحدها. */
+const AI_EFFORT = 'medium';
+const aiEffortOk = m => /^claude-(sonnet-5|opus-5|fable|mythos|opus-4-[678]|sonnet-4-6)/.test(aiModelKey(m));
+/* نفس الحقول لكل نداء — المحادثة والفحص من اللوحة (ai-ping يكشف نموذجاً يرفضها) */
+const aiModelOpts = m => aiEffortOk(m) ? { output_config: { effort: AI_EFFORT } } : {};
+/* رفض النموذج (stop_reason: refusal) — رد عادي ٢٠٠ بلا جواب. نقول للطالب شي مفهوم */
+const AI_REFUSED = 'ما أقدر أساعد في هذا الطلب. لو سؤالك عن دراستك أو جدولك أو خطتك، صِغه بطريقة ثانية وأنا حاضر.';
 const AI_Q_MAX = 1000;           /* أطول سؤال نقبله */
 
 function aiCall(payload) {
@@ -9348,14 +9595,17 @@ async function aiChat(userId, question, opt) {
   const usage = { input_tokens: 0, output_tokens: 0,
                   cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
   const tools_used = [];
-  let calls = 0, answer = '', why = '', proposal = null, signIn = false;
+  let calls = 0, answer = '', why = '', proposal = null, signIn = false, refused = false;
 
   for (let step = 0; step < AI_MAX_STEPS; step++) {
     if (Date.now() - t0 > AI_TURN_MS) { why = 'timeout'; break }
-    const r = await aiCall({ model, max_tokens: AI_MAX_TOKENS,
+    /* آخر نداء بلا أدوات (tool_choice: none): جواب من اللي جمعه بدل
+       «ما قدرت أطلع لك جواب» لما تخلص النداءات وهو يبي أداة ثانية */
+    const last = step === AI_MAX_STEPS - 1;
+    const r = await aiCall(Object.assign({ model, max_tokens: AI_MAX_TOKENS,
       system: [{ type: 'text', text: AI_SYSTEM,
                  cache_control: { type: 'ephemeral' } }],
-      tools, messages });
+      tools, messages }, aiModelOpts(model), last ? { tool_choice: { type: 'none' } } : {}));
     calls++;
     const j = r.json;
     if (r.status !== 200 || !j || !Array.isArray(j.content)) {
@@ -9366,6 +9616,8 @@ async function aiChat(userId, question, opt) {
     }
     const u = j.usage || {};
     Object.keys(usage).forEach(k => { usage[k] += Math.max(0, Number(u[k] || 0)) });
+    /* رفض: قبل قراءة المحتوى — ما نعرض نصاً ناقصاً ولا نكمل أدوات */
+    if (j.stop_reason === 'refusal') { answer = AI_REFUSED; refused = true; break }
 
     const text = j.content.filter(c => c.type === 'text')
       .map(c => String(c.text || '')).join('\n').trim();
@@ -9440,7 +9692,7 @@ async function aiChat(userId, question, opt) {
   }
 
   return { ok: !why, why, answer, tools: tools_used, calls, proposal, signIn,
-           model, cost, tokens: usage, guest, used: aiUsedOf(quota) };
+           model, cost, tokens: usage, guest, used: aiUsedOf(quota), refused };
 }
 
 /* حساب صاحب الموقع — لمربّع التجربة في اللوحة. نلقاه بنفس الربط اللي
@@ -9461,8 +9713,10 @@ async function aiPing() {
     return { ok: false, error: 'ANTHROPIC_API_KEY ناقص في Render' };
   const model = aiModel();
   const t0 = Date.now();
-  const r = await aiCall({ model, max_tokens: 16,
-    messages: [{ role: 'user', content: 'قل: تمام' }] });
+  /* بنفس حقول المحادثة (الجهد): نموذج يرفضها ينكشف هنا لا مع أول طالب.
+     والسقف يتسع لتفكير قصير قبل الرد — بـ١٦ رمزاً يطلع الرد فاضياً */
+  const r = await aiCall(Object.assign({ model, max_tokens: 200,
+    messages: [{ role: 'user', content: 'قل: تمام' }] }, aiModelOpts(model)));
   const j = r.json;
   if (r.status !== 200 || !j || !Array.isArray(j.content))
     return { ok: false, model, status: r.status || 0,
@@ -9535,32 +9789,23 @@ async function aiStatus(userId, opt) {
 const AI_TG_MODE = new Map();          /* chatId → متى ينتهي الوضع */
 const AI_TG_TTL = 20 * 60 * 1000;
 
-/* لوحة الأزرار: أمثلة تعلّمه وش يسأل + زر خروج ظاهر دائماً.
-   الزر يرسل نصه رسالةً عادية، فما يحتاج كود خاص غير فحص الخروج.
-   **الأمثلة أبواب مختلفة** (ملاحظة محمد): كانت أربعتها عن الجدول
-   والخطة، فيظن الطالب المساعد لهذا وبس. صارت: يومه · تذكير · قاعة ·
-   خطته — والتذكير يتثبّت من البوت نفسه (aiTgAct) فما يودّي لطريق مسدود. */
+/* لوحة الوضع: **زر الخروج وحده** — قرار محمد (٥ أكتوبر ٢٠٢٦): أزرار الأمثلة
+   الأربعة كانت تبقى طالعة طول الوقت، والطالب يظن إنه يضغطها وبس وما يدري إنه
+   يكتب. الأمثلة صارت نصاً في المقدمة وأول جواب، والحقل يقول «اكتب سؤالك».
+   وزر الخروج باقٍ ظاهراً: هو اللي يبيّن إنه داخل المساعد (الوضع لازم يبان).
+   الزر يرسل نصه رسالةً عادية، فما يحتاج كود خاص غير فحص الخروج. */
 const AI_TG_KB = {
-  keyboard: [
-    [{ text: 'وش عندي بكرة؟' }, { text: 'ذكّرني بعد ساعة أذاكر' }],
-    [{ text: 'قاعة فاضية الحين' }, { text: 'كم باقي لي أتخرج؟' }],
-    [{ text: '🚪 خروج' }],
-  ],
+  keyboard: [[{ text: '🚪 خروج' }]],
   resize_keyboard: true,
   is_persistent: true,
-  /* الأزرار أمثلة لا قائمة — الحقل نفسه يقول له يسأل أي شي */
-  input_field_placeholder: 'اسألني أي شي…',
+  input_field_placeholder: 'اكتب سؤالك هنا — أي شي…',
 };
-/* غير المربوط (قرار محمد): يسأل عن استعمال الموقع وحده، فأمثلته من هناك */
+/* غير المربوط (قرار محمد): يسأل عن استعمال الموقع وحده — والحقل يقولها */
 const AI_TG_KB_GUEST = {
-  keyboard: [
-    [{ text: 'كيف أراقب شعبة؟' }, { text: 'كيف أضيف جدولي؟' }],
-    [{ text: 'كيف أربط حسابي؟' }, { text: 'وش يقدر يسوي الموقع؟' }],
-    [{ text: '🚪 خروج' }],
-  ],
+  keyboard: [[{ text: '🚪 خروج' }]],
   resize_keyboard: true,
   is_persistent: true,
-  input_field_placeholder: 'اسألني عن استعمال الموقع…',
+  input_field_placeholder: 'اكتب سؤالك عن استعمال الموقع…',
 };
 const AI_TG_KB_OFF = { remove_keyboard: true };
 
@@ -9579,8 +9824,11 @@ const AI_TG_EXIT = ['/خروج', '/end', '🚪 خروج', 'خروج'];
 /* نصوص أزرارها: الوضع ينتهي بعد ٢٠ دقيقة **واللوحة تبقى معروضة** —
    فضغطة زر بعدها كانت تفتح تذكرة دعم اسمها «وش عندي بكرة؟». من ضغط
    زرنا يقصد المساعد، فنرجّعه له بدل ما نزعج الدعم. */
-/* والأمثلة القديمة كذلك: اللوحة اللي قبل التغيير باقية على جوال الطالب */
-const AI_TG_KB_OLD = ['وش أنزل الترم الجاي؟'];
+/* والأمثلة القديمة كذلك: اللوحة اللي قبل التغيير باقية على جوال الطالب
+   لين يدخل المساعد مرة ثانية — ضغطتها تروح للمساعد لا تذكرة دعم */
+const AI_TG_KB_OLD = ['وش أنزل الترم الجاي؟',
+  'وش عندي بكرة؟', 'ذكّرني بعد ساعة أذاكر', 'قاعة فاضية الحين', 'كم باقي لي أتخرج؟',
+  'كيف أراقب شعبة؟', 'كيف أضيف جدولي؟', 'كيف أربط حسابي؟', 'وش يقدر يسوي الموقع؟'];
 const AI_TG_KB_TEXTS = new Set([AI_TG_KB, AI_TG_KB_GUEST]
   .reduce((a, k) => a.concat(...k.keyboard.map(row => row.map(b => b.text))),
           AI_TG_KB_OLD.slice())
@@ -9601,10 +9849,11 @@ async function aiTgUser(chatId) {
 }
 
 /* أول دخول للوضع (زر «اسأل المساعد» أو اختصار — /ai له مقدمته): سطر
-   يقول إن الأزرار أمثلة، وإن جوابه من اللي عبّاه هو (ملاحظة محمد: طالب
-   ما عبّا جدوله يظن الموقع غلطان). مرة لكل دخول لا في كل رد. */
-const AI_TG_HINT = '\n\n<i>💡 اسألني أي شي بكلامك — الأزرار تحت أمثلة بس. '
-  + 'وجدولك وخطتك من اللي عبّيته في الموقع.</i>';
+   يقول إنه يكتب أي سؤال بكلامه (بأمثلة نصاً — ما عاد فيه أزرار أمثلة)، وإن
+   جوابه من اللي عبّاه هو (ملاحظة محمد: طالب ما عبّا جدوله يظن الموقع غلطان).
+   مرة لكل دخول لا في كل رد. */
+const AI_TG_HINT = '\n\n<i>💡 اكتب أي شي بكلامك — أمثلة: «متى أتخرج لو أخذت صيفي؟» · '
+  + '«ذكّرني بكرة 8 الصبح». وجدولك وخطتك من اللي عبّيته في الموقع.</i>';
 const AI_TG_HINT_GUEST = '\n\n<i>💡 أساعدك الحين في استعمال الموقع. وعشان أجاوبك عن '
   + 'جدولك وخطتك اربط حسابك: jadwalik.com ← ⚙️ ← «إشعارات تيليغرام».</i>';
 
@@ -9684,13 +9933,37 @@ async function aiTgAnswer(chatId, q) {
      فيها أزرار فعل: الرسالة تحمل لوحة وحدة، ولوحة الوضع باقية تحت. */
   const inMode = (AI_TG_MODE.get(key) || 0) > Date.now();
   const kbMode = inMode ? (guest ? AI_TG_KB_GUEST : AI_TG_KB) : undefined;
-  if (!act) return sendMsg(chatId, out + hint, kbMode);
+  if (!act) return aiTgSend(chatId, out + hint, kbMode);
   /* رسالة فيها زر فعل: سطر «الأزرار تحت أمثلة بس» فوق «✅ ثبّت التذكير»
      يناقضه (لقاها محمد)، ولوحة الوضع ما تنرسل معها. فالسطر في رسالة بعدها
      ومعه لوحة الوضع — «تحت» تعني الأمثلة فعلاً، والوضع يبان من أول دخول */
-  const sent = await sendMsg(chatId, out, act);
+  const sent = await aiTgSend(chatId, out, act);
   if (hint) await sendMsg(chatId, hint.replace(/^\n+/, ''), kbMode);
   return sent;
+}
+
+/* تيليغرام يرفض رسالة فوق ٤٠٩٦ حرفاً **كلها** — والطالب ما يوصله شي. خطة تخرج
+   بترماتها ممكن تتعداها، فنقسمها على حدود الأسطر، واللوحة مع آخر قطعة */
+function tgChunks(text, max) {
+  const lim = max || 3800, out = [];
+  let cur = '';
+  for (const line of String(text || '').split('\n')) {
+    if (cur && cur.length + 1 + line.length > lim) { out.push(cur); cur = '' }
+    if (line.length > lim) {
+      for (let i = 0; i < line.length; i += lim) out.push(line.slice(i, i + lim));
+      continue;
+    }
+    cur = cur ? cur + '\n' + line : line;
+  }
+  if (cur || !out.length) out.push(cur);
+  return out;
+}
+async function aiTgSend(chatId, text, markup) {
+  const parts = tgChunks(text);
+  let r = null;
+  for (let i = 0; i < parts.length; i++)
+    r = await sendMsg(chatId, parts[i], i === parts.length - 1 ? markup : undefined);
+  return r;
 }
 
 /* زر فعل من البوت (act:ok / act:no) — من handleCallback */
@@ -9752,26 +10025,27 @@ function aiTgLeaveAi(chatId) {
   return AI_TG_MODE.delete(String(chatId)) ? AI_TG_KB_OFF : undefined;
 }
 
-/* مقدمة /ai: «اسألني أي شي» أولاً — الأمثلة تحت ما هي كل شي (ملاحظة
-   محمد) — وإن جدوله وخطته من اللي عبّاه، فالفاضي ما يُفهم غلطاً */
+/* مقدمة /ai: «اكتب سؤالك بكلامك» أولاً — والأمثلة نصاً لا أزراراً (قرار محمد:
+   أزرار الأمثلة توهم إنه يضغط وبس) — وإن جدوله وخطته من اللي عبّاه، فالفاضي
+   ما يُفهم غلطاً */
 const AI_TG_INTRO = '✨ <b>مساعد جدولك</b>\n\n'
-  + 'اسألني أي شي بكلامك — الأزرار تحت أمثلة بس.\n\n'
-  + '📅 جدولك واليوم والفراغات\n'
-  + '⏰ ذكّرني بموعد — يوصلك هنا في وقته\n'
-  + '🎓 خطتك والمتطلبات وكم باقي لك\n'
-  + '🔍 الشعب والدكاترة وتقييمات الطلاب\n'
-  + '🚪 القاعات الفاضية الحين\n'
-  + '🗓️ الغياب والمواعيد والنهائيات\n'
-  + '🧩 وأركّب لك جدولاً كاملاً بلا تعارض\n\n'
-  + '<b>جرّب:</b> «ركّب لي جدول بدون خميس»\n\n'
+  + '<b>اكتب سؤالك هنا بكلامك</b> — أي شي عن دراستك، وأنا أجاوبك.\n\n'
+  + 'أمثلة تقدر تكتبها:\n'
+  + '🎓 وش أنزل الترم الجاي عشان أتخرج أسرع؟\n'
+  + '📈 متى أتخرج لو أخذت صيفي؟\n'
+  + '📅 وش عندي بكرة؟\n'
+  + '⏰ ذكّرني الساعة 9 الليل أذاكر\n'
+  + '🚪 أبي قاعة فاضية الحين\n'
+  + '🧩 ركّب لي جدول بدون خميس\n'
+  + '🔍 وش رأي الطلاب في دكتور الثيرمو؟\n\n'
   + '📌 جدولك وخطتك من اللي عبّيته في jadwalik.com — لو ما عبّيتها، عبّها أول '
   + 'عشان يطلع كلامي صح.\n\n'
-  + '<i>🚪 خروج — تطلع منه متى ما خلصت.</i>';
+  + '<i>🚪 زر «خروج» تحت يطلّعك متى ما خلصت.</i>';
 const AI_TG_INTRO_GUEST = '✨ <b>مساعد جدولك</b>\n\n'
   + 'أساعدك الحين في استعمال الموقع: كيف تراقب شعبة، كيف تضيف جدولك، '
   + 'كيف تعبّي خطتك — اسألني أي شي عنه.\n\n'
   + AI_TG_LINK + '\n\n'
-  + '<i>🚪 خروج — تطلع منه متى ما خلصت.</i>';
+  + '<i>🚪 زر «خروج» تحت يطلّعك متى ما خلصت.</i>';
 
 /* ترجع true لو تعاملت مع الرسالة — والمعالج يتوقف عندها */
 async function aiTgRoute(chatId, text) {
@@ -10052,7 +10326,11 @@ const server = http.createServer(async (req, res) => {
     req.setEncoding('utf8');
     req.on('data', c => body += c);
     req.on('end', async () => {
-      try { await handleTelegramUpdate(JSON.parse(body)); } catch (e) {}
+      let u = null;
+      try { u = JSON.parse(body) } catch (e) {}
+      /* إعادة إرسال لتحديث انعالج (أو ينعالج الحين): نرد ولا نعيده */
+      if (u && tgSeenBefore(u.update_id)) { res.writeHead(200); res.end('ok'); return; }
+      try { if (u) await handleTelegramUpdate(u); } catch (e) {}
       res.writeHead(200); res.end('ok');
     });
     return;
