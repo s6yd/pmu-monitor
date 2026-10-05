@@ -564,6 +564,21 @@ function fakeModel(ctx) {
     ok((g12.plan || []).every(x => x.hours <= 12) && g12.maxHours === 12,
        'وبسقف 12 ساعة: ولا ترم فوقه — ' + (g12.plan || []).map(x => x.hours) + (g12.error || ''));
     ok(g12.termsLeft >= g.termsLeft, 'والأخف ما يخلّص أبكر');
+    /* ليش ترم التخرج هذا بالذات: سلسلة متطلبات بلا فراغ تنتهي فيه — منها يشرح
+       «ليش ما أتخرج أبكر» بدل ما يخمّن */
+    const gm = await aiRunTool('graduation_forecast', {}, await aiStudentCtx('u-meen'));
+    const ch = (gm.whyThisTerm || [])[0] || [];
+    ok(ch.length >= 3 && ch[ch.length - 1].term === (gm.graduatesIn || {}).name,
+       '**whyThisTerm: سلسلة تنتهي بترم التخرج** — ' + ch.map(x => x.code + ' ' + x.term).join(' ← '));
+    const planM = PLANS_DATA.ctxOf({ major: 'MEEN', planVer: 'new' });
+    ok(ch.length > 0 && ch.every((x, k) => !k ||
+       (PLANS_DATA.findPlanCourse(planM, x.code).p || []).includes(ch[k - 1].code)),
+       'وكل حلقة متطلب فعلي للي بعدها — لا تخمين');
+    const sp28 = (gm.plan || []).find(x => x.term === '202820') || {};
+    ok((sp28.notOffered || []).includes('MEEN 3391'),
+       '**والترم يذكر اللي تأجل لأنه ما يُطرح فيه** (MEEN 3391 ربيع 2028) — ' + JSON.stringify(sp28.notOffered));
+    ok(!(gm.plan || []).some(x => x.courses.some(c => PLANS_DATA.notOfferedIn(x.term, c.code))),
+       'وولا مادة في ترم ما تُطرح فيه');
     /* للمشتركين */
     const gf = await callFree('graduation_forecast', '{}');
     ok(!gf.termsLeft && /اشتراك/.test(gf.error || ''), 'والتوقّع للمشتركين');

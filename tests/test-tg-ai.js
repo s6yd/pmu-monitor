@@ -440,6 +440,19 @@ const acts = m => (((m && m.markup) || {}).inline_keyboard || [])
       ok(ublk.includes('/' + n), `الأمر غير المعروف يذكر /${n}`);
   }
 
+  /* ── ٧ب) جواب طويل: تيليغرام يرفض الرسالة فوق ٤٠٩٦ حرفاً **كلها** ──
+     خطة تخرج كاملة بترماتها ممكن تتعداها — والطالب كان ما يوصله شي */
+  c = makeCtx();
+  REPLY = { ok: true, proposal: null,
+    answer: Array.from({ length: 300 }, (_, k) => '- سطر رقم ' + k + ' في خطة طويلة').join('\n') };
+  await c.aiTgRoute(7, '/ai رتّب لي خطتي');
+  ok(SENT.length >= 2 && SENT.every(m => m.text.length <= 4096),
+     '**الجواب الطويل ينقسم رسائل تحت حد تيليغرام** — ' + SENT.map(m => m.text.length));
+  ok(SENT.slice(0, -1).every(m => !m.markup) && !!(SENT[SENT.length - 1] || {}).markup,
+     'ولوحة الوضع مع آخر قطعة');
+  const whole = SENT.map(m => m.text).join('\n');
+  ok(whole.includes('سطر رقم 0 ') && whole.includes('سطر رقم 299 '), 'وما ضاع منه سطر');
+
   /* ── ٨) فحص ثابت ── */
   const CODE = REGION.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
   ok(!/'\/stop'/.test(CODE), 'وما يلمس /stop أصلاً');
