@@ -2146,25 +2146,29 @@ async function payPing(b){
   finally{ if(b)b.disabled=false }
 }
 
-/* ══ رخص Pushover ══ تنضاف تلقائياً من رصيد الرخص (السيرفر: poLicTick — الإنتاج وحده).
-   هنا الرصيد والوضع وآخر الطلاب، ولما توقف (رفضوها · ما ندري) زرّان: «🔁 أعد» و«✔️ تمّت».
-   وما توقف عند «خلص الرصيد»: تكمل لحالها بعد ما تشتري. تُحمَّل مع تبويب «النظام» تحت
-   بطاقة الدفع، مرة بالدقيقة على الأكثر */
+/* ══ رخص Pushover ══ بموافقتك على كل طالب — قرار محمد (٩ أكتوبر ٢٠٢٦): «ما أبي الرخصة تمنح
+   أوتوماتك بدون ما أأكد عليها أول». السيرفر (poLicTick — الإنتاج وحده) يسألك على تلقرام
+   ولا يضيف شي، وهنا نفس الزرّين لكل منتظر: «✅ أضف» و«✖️ لا». والرصيد والوضع وآخر الطلاب،
+   ولما يوقف طالب (رفضوها · ما ندري) زرّان: «🔁 أعد» و«✔️ تمّت». و«خلص الرصيد»: اللي وافقت
+   عليه يكمل لحاله بعد ما تشتري. تُحمَّل مع تبويب «النظام» تحت بطاقة الدفع، مرة بالدقيقة
+   على الأكثر */
 let POLIC=null, POLIC_AT=0;
-const POLIC_ST={assigned:'✅ انضافت',failed:'⛔ متوقفة',pending:'⏳ ننتظر ردّهم',manual:'✔️ يدوي'};
+const POLIC_ST={assigned:'✅ انضافت',failed:'⛔ متوقفة',pending:'⏳ ننتظر ردّهم',manual:'✔️ يدوي أو «لا»'};
+/* العدد بتمييزه: ٣–١٠ جمع، وغيرها مفرد («3 رخصة» شافها محمد) */
+const licN=n=>`${n} ${n>=3&&n<=10?'رخص':'رخصة'}`;
 const POLIC_KIND={credits:'خلص الرصيد',rejected:'Pushover رفضها',unknown:'ما ندري انضافت ولا لا'};
 function poLicCardHTML(){
-  const d=POLIC, head='<div class="maint-t">🎟 رخص Pushover — تنضاف تلقائياً</div>';
+  const d=POLIC, head='<div class="maint-t">🎟 رخص Pushover — بموافقتك</div>';
   if(!d)return `<div class="gauge" style="margin-bottom:12px">${head}<div class="gauge-sub">جاري التحميل…</div></div>`;
   const st={on:'<b style="color:var(--open)">شغّالة</b>',
-    stopped:'<b style="color:var(--close)">موقوفة — تحتاج نظرك</b>',
-    credits:'<b style="color:var(--warn)">خلص الرصيد — تكمل لحالها بعد ما تشتري</b>',
+    stopped:'<b style="color:var(--close)">فيه طالب واقف — يحتاج نظرك</b>',
+    credits:'<b style="color:var(--warn)">خلص الرصيد — اللي وافقت عليه يكمل بعد ما تشتري</b>',
     off:'<b style="color:var(--text3)">مطفأة — وضع Pushover «off» أو متغيّراته ناقصة</b>',
     missing:'<b style="color:var(--warn)">الجدول ناقص — نفّذ أمر SQL «رخص Pushover»</b>',
     dev:'<b style="color:var(--text3)">من الإنتاج وحده</b>'}[d.state]||esc(d.state||'');
   const cr=d.credits==null
     ?`<b style="color:var(--warn)">ما قدرنا نقرأه${d.creditsError?' — '+esc(d.creditsError):''}</b>`
-    :`<b style="color:${Number(d.credits)<=(Number(d.low)||2)?'var(--warn)':'var(--open)'}">${Number(d.credits)} رخصة</b>`;
+    :`<b style="color:${Number(d.credits)<=(Number(d.low)||2)?'var(--warn)':'var(--open)'}">${licN(Number(d.credits))}</b>`;
   const act=d.live&&d.state!=='dev';
   const btn=(k,u,txt,cls)=>`<button class="mini${cls?' '+cls:''}" data-u="${esc(u)}" onclick="poLicAct('${k}',this)">${txt}</button>`;
   const rows=(d.rows||[]).slice(0,12).map(x=>`<div class="pay-item"><div class="cr-row">
@@ -2173,13 +2177,20 @@ function poLicCardHTML(){
       x.status==='failed'?`<div class="pay-use"><b style="color:var(--close)">${esc(POLIC_KIND[x.kind]||x.kind||'')}</b>${
         x.error?` — <span dir="ltr" style="font-family:var(--mono);unicode-bidi:isolate">${esc(x.error)}</span>`:''}${
         act?`<div style="margin-top:6px">${btn('retry',x.user,'🔁 أعد','go')} ${btn('done',x.user,'✔️ تمّت')}</div>`:''}</div>`
-      :x.status==='assigned'&&act?`<div class="pay-use">${btn('again',x.user,'🔁 رخصة ثانية')}</div>`:''}</div>`).join('');
+      :x.status==='assigned'&&act?`<div class="pay-use">${btn('again',x.user,'🔁 رخصة ثانية')}</div>`
+      :x.status==='manual'&&act?`<div class="pay-use">${btn('addnow',x.user,'✅ أضفها')}</div>`:''}</div>`).join('');
+  /* المنتظرون موافقتك: ما ينضاف لأحد شي قبل «✅ أضف» */
+  const wait=(d.waitingList||[]).map(x=>`<div class="pay-item"><div class="cr-row">
+      <span>${esc(x.email||String(x.user||'').slice(0,8))} · ${x.source==='comp'?'هدية':'اشترى الإضافة'}</span>
+      <span style="color:var(--text3)">${x.since?esc('مستحق '+payAgo(x.since)):''}</span></div>${
+      act?`<div class="pay-use">${btn('approve',x.user,'✅ أضف','go')} ${btn('skip',x.user,'✖️ لا')}</div>`:''}</div>`).join('');
   return `<div class="gauge" style="margin-bottom:12px">${head}
     <div class="kv"><span>الوضع</span>${st}</div>
     <div class="kv"><span>الرصيد عند Pushover</span>${cr}</div>
-    ${d.waiting!=null?`<div class="kv"><span>مستحقون ينتظرون الحين</span><b>${Number(d.waiting)}</b></div>`:''}
-    ${payTip(`مشتري الإضافة تنضاف له بعد ${Number(d.refundDays)||7} أيام من الدفع (مدة الاسترجاع — الرخصة ما تنسترجع)، والهدية فوراً — وبشرط يربط التطبيق. الرصيد تشتريه من صفحة التطبيق في pushover.net («Purchase License Credits»).`)}
-    ${d.state==='stopped'?payTip('<b style="color:var(--close)">وقّفنا لين تشوف الطالب المتوقف تحت</b> — Pushover ينصح ما نعيد لحالنا. «🔁 أعد» يطلبها له من جديد، و«✔️ تمّت» لو أضفتها بيدك أو تبي تتخطّاه — والباقين يكملون.'):''}
+    ${d.waiting!=null?`<div class="kv"><span>ينتظرون موافقتك</span><b>${Number(d.waiting)}</b></div>`:''}
+    ${wait?`<div style="margin-top:8px">${wait}</div>`:''}
+    ${payTip(`<b>ما تنضاف رخصة إلا بموافقتك</b>: أول ما يصير طالب مستحقاً يوصلك على تلقرام زرّان «✅ أضف الرخصة» و«✖️ لا»، وهنا نفسهما. مشتري الإضافة يستحق بعد ${Number(d.refundDays)||7} أيام من الدفع (مدة الاسترجاع — الرخصة ما تنسترجع)، والهدية فوراً — وبشرط يربط التطبيق. الرصيد تشتريه من صفحة التطبيق في pushover.net («Purchase License Credits»).`)}
+    ${d.state==='stopped'?payTip('<b style="color:var(--close)">طالب واقف تحت</b> — Pushover ينصح ما نعيد لحالنا. «🔁 أعد» يطلبها له من جديد، و«✔️ تمّت» لو أضفتها بيدك أو تبي تتخطّاه.'):''}
     ${rows?`<div style="margin-top:8px">${rows}</div>`:''}
     <div class="row-meta" style="margin-top:10px">
       ${act?btn('go','','▶️ كمّل الحين','go'):''}
@@ -2192,22 +2203,31 @@ async function loadPoLic(force){
   const el=document.getElementById('poLicCard');
   if(el)el.innerHTML=poLicCardHTML();
 }
-/* go = كمّل الحين (بعد ما تشتري) · retry = أعد للمتوقف · again = رخصة ثانية لطالب أخذها
-   (غيّر حسابه أو جواله) · done = تمّت يدوياً أو تخطّاه */
+/* approve = أضف لمنتظر (موافقتك) · skip = لا · go = كمّل الحين (بعد ما تشتري) ·
+   retry = أعد للمتوقف · again = رخصة ثانية لطالب أخذها (غيّر حسابه أو جواله) ·
+   addnow = أضفها لطالب قلت له «لا» (أو «تمّت») · done = تمّت يدوياً أو تخطّاه */
 async function poLicAct(k,b){
   const u=(b&&b.dataset.u)||'';
+  const who=([...((POLIC&&POLIC.waitingList)||[]),...((POLIC&&POLIC.rows)||[])]
+    .find(x=>x.user===u)||{}).email||'هالطالب';
+  if(k==='approve'&&!confirm(`نضيف رخصة Pushover لـ${who}؟\n\nتنخصم رخصة من رصيدك وما ترجع.`))return;
+  if(k==='skip'&&!confirm(`ما نضيفها لـ${who}؟\n\nما نرجع نسألك عنه — ولو غيّرت رأيك: «✅ أضفها» على صفّه تحت.`))return;
+  if(k==='addnow'&&!confirm(`نضيف رخصة Pushover لـ${who} الحين؟\n\nلو أضفتها له بيدك من قبل، هذي رخصة ثانية. تنخصم من رصيدك وما ترجع.`))return;
   if(k==='again'&&!confirm('بنصرف رخصة ثانية من رصيدك لهالطالب.\n\n'+
     'بس لو غيّر حسابه في Pushover أو جواله لنظام ثاني (أندرويد ⇄ آيفون). نكمل؟'))return;
-  if(k==='done'&&!confirm('«تمّت» = أضفتها بيدك من Pushover أو تتخطّاه — ما نرجع له، والباقين يكملون.'))return;
+  if(k==='done'&&!confirm('«تمّت» = أضفتها بيدك من Pushover أو تتخطّاه — ما نرجع له.'))return;
   if(b)b.disabled=true;
   try{
-    const r=await api(k==='done'?'po-lic-done':'po-lic-retry',{body:u?{userId:u}:{}});
-    if(!r||r.ok===false){ toast((r&&r.error)||'تعذّر','err'); return }
+    const ep={done:'po-lic-done',approve:'po-lic-approve',skip:'po-lic-skip'}[k]||'po-lic-retry';
+    const r=await api(ep,{body:u?{userId:u}:{}});
+    /* رفض (ما عاد مستحقاً · خلص الرصيد · رفضوها): نقول ليش ونعيد قراءة البطاقة */
+    if(!r||r.ok===false){ toast((r&&r.error)||'تعذّر','err'); loadPoLic(true); return }
     POLIC=r; POLIC_AT=Date.now();
     const el=document.getElementById('poLicCard');
     if(el)el.innerHTML=poLicCardHTML();
-    toast(({on:'✅ شغّالة',credits:'الرصيد لسا خالص — اشترِ وتكمل لحالها',
-      stopped:'لسا فيه طالب متوقف — شوف الصفوف'})[r.state]||'تم',r.state==='stopped'?'err':'ok');
+    if(r.done) toast(r.done.skipped?'تمام — ما أضفناها':'✅ انضافت الرخصة','ok');
+    else toast(({on:'✅ شغّالة',credits:'الرصيد لسا خالص — اشترِ ونكمل لمن وافقت عليه',
+      stopped:'لسا فيه طالب واقف — شوف الصفوف'})[r.state]||'تم',r.state==='stopped'?'err':'ok');
   }catch(e){ toast(e.message,'err') }
   finally{ if(b&&b.isConnected)b.disabled=false }
 }

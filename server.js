@@ -952,7 +952,7 @@ function payReceipt(s) {
     `2️⃣ افتح ${PAY_ORIGIN_PROD}/?pushover=1 واضغط «تفعيل»`,
     '3️⃣ وافق في صفحة Pushover — ترجع للموقع ويطلع لك «🔔 التنبيه الطارئ شغّال»',
     '4️⃣ في إعدادات تطبيق Pushover فعّل <b>Critical Alerts</b> عشان يرن حتى لو الجوال صامت',
-    /* الرخصة تنضاف تلقائياً (رخص Pushover)، والإيصال ما يشرحها — قرار محمد (٤ أكتوبر ٢٠٢٦):
+    /* الرخصة علينا وتنضاف بموافقتك (رخص Pushover)، والإيصال ما يشرحها — قرار محمد (٤ أكتوبر ٢٠٢٦):
        «مو لازم كل هذا الشرح». الوعد وحده (§٧) */
     'إضافتك تغطي التطبيق: لو طلب منك دفعاً، راسلنا هنا ونتكفّل فيه.');
   return L.join('\n');
@@ -1434,22 +1434,26 @@ async function usageOf(orders) {
 }
 /* ═══ نهاية سجل الاستخدام ═══ */
 
-/* ═══ رخص Pushover — تنضاف تلقائياً ═══
+/* ═══ رخص Pushover — بموافقتك ═══
    الرخصة علينا (قرار محمد §٧)، وكانت بيده: الإيصال يقول «لو طلب منك دفعاً، راسلنا
    ونتكفّل» فيشتريها لكل طالب لحاله. طلبه «ابسط شي بدون تدخل مني»: يشتري رصيد رخص
-   مقدماً من صفحة التطبيق في Pushover («Purchase License Credits»)، والدورة تضيف
-   الرخصة لحساب الطالب (`licenses/assign.json` بمفتاحه وبلا `os` — أول جهاز يسجّله،
-   وهذي توصيتهم).
+   مقدماً من صفحة التطبيق في Pushover («Purchase License Credits»)، ونضيف الرخصة لحساب
+   الطالب (`licenses/assign.json` بمفتاحه وبلا `os` — أول جهاز يسجّله، وهذي توصيتهم).
+   · **بموافقة محمد على كل طالب — قراره (٩ أكتوبر ٢٠٢٦): «ما أبي الرخصة تمنح أوتوماتك
+     بدون ما أأكد عليها أول».** الرخصة فلوس ما ترجع. فالدورة **ما تضيف شي**: تلقى
+     المستحق وترسل لمحمد على تلقرام مرة وحدة زرّين «✅ أضف الرخصة» · «✖️ لا» (`poLicAsk`)،
+     واللوحة تعرض المنتظرين بنفس الزرّين. والإضافة (`poLicDecideOne`) تعيد فحص الاستحقاق
+     وقت الضغط — ممكن استرجع أو فكّ ربطه بعد رسالتنا.
    · **لمن؟** مشتري الإضافة **بعد مدة الاسترجاع** (٧ أيام من الدفع): الرخصة ما تنسترجع
      ولا تنتقل لغيره، وتجربة التطبيق ٣٠ يوم تغطيه لين ذاك. والهدية من اللوحة فوراً.
      وبشرطين: ربط التطبيق (`pushover_key`) والإضافة سارية — ما نصرف رخصة لمن ما فعّل.
      وصاحب الموقع لا (حسابه للتجربة، وتطبيقه مرخّص).
    · **مرة للأبد**: صف في `pushover_licenses` (المفتاح user_id) يُحجز **قبل** النداء —
      نسختان وقت النشر ما تصرفان رخصتين.
-   · **ما نعيد تلقائياً** (توصية Pushover نصاً): أي فشل يوقف الإضافة كلها ويبلّغ محمد،
-     وما تكمل إلا من اللوحة («🔁 أعد» · «✔️ تمّت»). **إلا «خلص الرصيد»**: نسأل عن الرصيد
-     كل ربع ساعة (سؤال لا إعادة طلب) ونكمل لحالنا أول ما يشتري. والرد الضايع (شبكة ·
-     ٥٠٠ · مو JSON) = ما ندري انخصمت ولا لا ⇒ وقف وتبليغ.
+   · **ما نعيد تلقائياً** (توصية Pushover نصاً): فشل طالب يوقفه هو ويبلّغ محمد، وما يرجع
+     إلا من اللوحة («🔁 أعد» · «✔️ تمّت»). **إلا «خلص الرصيد»**: اللي وافق عليه ينتظر، ونسأل
+     عن الرصيد كل ربع ساعة (سؤال لا إعادة طلب) ونكمل له أول ما يشتري — موافقته كانت عليه
+     هو. والرد الضايع (شبكة · ٥٠٠ · مو JSON) = ما ندري انخصمت ولا لا ⇒ وقف وتبليغ.
    · **الإنتاج وحده**: القاعدة مشتركة والرخص فلوس.
    · الطالب يوصله سطر على تلقرام، ومحمد ينبَّه لما يقرب الرصيد يخلص. */
 const PO_LIC_LOW = 2;                           /* ننبّهك لما يبقى رخصتان أو أقل */
@@ -1457,7 +1461,9 @@ const PO_LIC_STALE_MS = 10 * 60 * 1000;         /* حجز بلا نتيجة بع
 const PO_LIC_CREDIT_MS = 15 * 60 * 1000;        /* سؤال الرصيد وهو خالص */
 const PO_LIC_BATCH = 10;
 const PO_LIC = { busy: false, credits: null, creditsAt: 0, creditsErr: null, low: null,
-  unsaved: new Map() };                         /* انضافت وما انكتبت — ما نسمّيها «ما ندري» */
+  unsaved: new Map(),                           /* انضافت وما انكتبت — ما نسمّيها «ما ندري» */
+  asked: new Map(),                             /* سألناك عنه — مرة وحدة، ويُحفظ مع الحالة */
+  deciding: new Set() };                        /* ضغطتان على نفس الطالب ما تشتغلان معاً */
 const PO_LIC_DONE_MSG = '🎟 <b>انضافت رخصة Pushover لحسابك</b>\n\n' +
   'التطبيق صار مفعّل لك بلا دفع — لا الحين ولا بعد التجربة، علينا 🤍\n' +
   'لو طلب منك دفعاً، راسلنا هنا.';
@@ -1537,24 +1543,28 @@ async function poLicCandidates() {
   const cut = new Date(Date.now() - REFUND_DAYS * 864e5).toISOString();
   const [paid, comp, have] = await Promise.all([
     sbAll('subscriptions', { strict: true, query: '?status=eq.paid&gateway=eq.edfapay&pushover=eq.true' +
-      `&paid_at=lt.${enc(cut)}&valid_until=gt.${enc(now)}&select=id,user_id` }),
+      `&paid_at=lt.${enc(cut)}&valid_until=gt.${enc(now)}&select=id,user_id,paid_at` }),
     sbAll('subscriptions', { strict: true, query: '?status=eq.comp&pushover=eq.true' +
-      `&valid_until=gt.${enc(now)}&select=id,user_id` }),
+      `&valid_until=gt.${enc(now)}&select=id,user_id,created_at` }),
     sbAll('pushover_licenses', { strict: true, order: 'user_id', query: '?select=user_id' })]);
   const had = new Set(have.map(x => x.user_id)), src = new Map();
+  /* since: متى صار مستحقاً — نهاية مدة استرجاعه، أو وقت الهدية */
   for (const [rows, s] of [[paid, 'paid'], [comp, 'comp']])
-    for (const x of rows) if (!src.has(x.user_id)) src.set(x.user_id, s);
+    for (const x of rows) if (!src.has(x.user_id)) src.set(x.user_id, { source: s, since: s === 'paid'
+      ? new Date(Date.parse(x.paid_at) + REFUND_DAYS * 864e5).toISOString() : (x.created_at || null) });
   const ids = [...src.keys()].filter(id => isUuid(String(id)) && !had.has(id));
   const out = [];
   for (let i = 0; i < ids.length; i += 100) {
     const pr = await sb('GET', 'profiles', { query: `?id=in.(${ids.slice(i, i + 100).join(',')})` +
-      '&select=id,telegram_chat_id,is_pro,pushover_key,pushover_until' });
+      '&select=id,email,telegram_chat_id,is_pro,pushover_key,pushover_until' });
     if (!Array.isArray(pr)) throw new Error('profiles: ' + ((pr && pr.message) || 'رد غير متوقع'));
     for (const p of pr) {
       const key = String(p.pushover_key || '').trim();
       if (!/^[A-Za-z0-9]{20,40}$/.test(key) || !hasPushoverAddon(p)) continue;
       if (ADMIN_CHAT_ID && String(p.telegram_chat_id || '') === ADMIN_CHAT_ID) continue;
-      out.push({ id: p.id, key, chat: p.telegram_chat_id || null, source: src.get(p.id) });
+      const w = src.get(p.id);
+      out.push({ id: p.id, key, chat: p.telegram_chat_id || null, email: p.email || '',
+        source: w.source, since: w.since });
     }
   }
   return out.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
@@ -1570,11 +1580,11 @@ async function poLicFail(uid, kind, error, request) {
   console.log(`رخص Pushover: ${kind} — ${error}`);
   const panel = 'اللوحة ← «النظام» ← «🎟 رخص Pushover»';
   if (ADMIN_CHAT_ID) sendMsg(ADMIN_CHAT_ID, ({
-    credits: '🎟 <b>خلص رصيد رخص Pushover</b>\n\nطالب ينتظر رخصته. اشترِ من صفحة التطبيق في ' +
-      'pushover.net («Purchase License Credits») — ونكمل لحالنا خلال ربع ساعة من الشراء.',
+    credits: '🎟 <b>خلص رصيد رخص Pushover</b>\n\nطالب وافقت عليه ينتظر رخصته. اشترِ من صفحة التطبيق في ' +
+      'pushover.net («Purchase License Credits») — ونكمل له لحالنا خلال ربع ساعة من الشراء.',
     rejected: `🎟 <b>Pushover رفض إضافة رخصة</b>\n\n<code>${esc(error)}</code>\n\n` +
-      `وقّفنا الإضافة التلقائية لين تشوفها — ${panel}.`,
-    unknown: `🎟 <b>ما ندري انضافت رخصة ولا لا</b>\n\n${esc(error)}\n\nوقّفنا الإضافة التلقائية. ` +
+      `الطالب هذا واقف لين تشوفه — ${panel}.`,
+    unknown: `🎟 <b>ما ندري انضافت رخصة ولا لا</b>\n\n${esc(error)}\n\nالطالب هذا واقف. ` +
       `شيك على رصيد الرخص في صفحة التطبيق في pushover.net: نقص رخصة؟ اضغط «✔️ تمّت». ما نقص؟ «🔁 أعد» — ${panel}.`
   })[kind]).catch(() => {});
   return true;
@@ -1588,14 +1598,16 @@ function poLicLow(n) {
     (n ? 'اشترِ قبل ما تخلص' : 'خلصت — الطالب الجاي بينتظر لين تشتري') +
     ' من صفحة التطبيق في pushover.net («Purchase License Credits»).').catch(() => {});
 }
-/* طالب واحد: الحجز ⇒ النداء ⇒ النتيجة. false = وقّف الدورة */
+/* طالب واحد: الحجز ⇒ النداء ⇒ النتيجة.
+   { ok:true, credits } انضافت · { taken:true } غيرنا حجزه · { ok:false, kind, error } */
 async function poLicOne(c) {
   const rs = await sb('POST', 'pushover_licenses', { body: { user_id: c.id, status: 'pending', source: c.source },
     prefer: 'return=representation' }).catch(e => ({ message: e.message }));
-  if (rs && rs.code === '23505') return true;               /* نسخة ثانية سبقتنا عليه */
-  if (!Array.isArray(rs) || !rs.length) return false;
+  if (rs && rs.code === '23505') return { ok: false, taken: true };      /* نسخة ثانية سبقتنا عليه */
+  if (!Array.isArray(rs) || !rs.length)
+    return { ok: false, kind: 'table', error: (rs && rs.message) || 'تعذّر الحجز' };
   const a = await poLicAssign(c.key);
-  if (!a.ok) { await poLicFail(c.id, a.kind, a.error, a.request); return false }
+  if (!a.ok) { await poLicFail(c.id, a.kind, a.error, a.request); return { ok: false, kind: a.kind, error: a.error } }
   const body = { status: 'assigned', credits: a.credits, request: a.request, done_at: new Date().toISOString() };
   const w = await sb('PATCH', 'pushover_licenses', { query: `?user_id=eq.${c.id}&status=eq.pending`,
     body, prefer: 'return=representation' }).catch(e => ({ message: e.message }));
@@ -1604,7 +1616,21 @@ async function poLicOne(c) {
   console.log(`رخص Pushover: انضافت (${c.source}) — باقي ${a.credits}`);
   if (c.chat) sendMsg(c.chat, PO_LIC_DONE_MSG).catch(() => {});
   poLicLow(a.credits);
-  return true;
+  return { ok: true, credits: a.credits };
+}
+
+/* مستحق جديد: رسالة لك مرة وحدة بزرّين — ولا نضيف شي قبل ضغطتك */
+async function poLicAsk(c) {
+  if (!ADMIN_CHAT_ID) return false;
+  const day = v => v ? new Date(v).toLocaleDateString('ar-u-ca-gregory-nu-latn',
+    { day: 'numeric', month: 'long', timeZone: 'Asia/Riyadh' }) : '';
+  const why = c.source === 'comp' ? 'هدية منك (تنبيه طارئ)'
+    : 'اشترى التنبيه الطارئ' + (c.since ? ` — خلصت مدة استرجاعه ${day(c.since)}` : '');
+  const cr = PO_LIC.credits != null ? `\nرصيدك عند Pushover: ${PO_LIC.credits}` : '';
+  const r = await sendMsg(ADMIN_CHAT_ID, `🎟 <b>طالب يستحق رخصة Pushover</b>\n\n${esc(c.email || 'بلا إيميل')}\n` +
+    `${why}${cr}\n\nنضيفها له؟ تنخصم رخصة من رصيدك وما ترجع.`,
+    kb([[btn('✅ أضف الرخصة', 'pol:ok:' + c.id), btn('✖️ لا', 'pol:no:' + c.id)]])).catch(() => null);
+  return !!(r && r.ok);
 }
 
 /* الدورة — من payTick كل ٥ دقائق، والإنتاج وحده */
@@ -1632,25 +1658,97 @@ async function poLicRun() {
     }
   }
   if (open.some(x => x.status === 'pending')) return;       /* نسخة ثانية في نصّ نداء */
-  const failed = open.filter(x => x.status === 'failed');
-  if (failed.some(x => x.kind !== 'credits')) return;       /* موقوف لين تشوفه */
-  if (failed.length) {                                      /* خلص الرصيد: اشترى؟ */
-    if (Date.now() - PO_LIC.creditsAt < PO_LIC_CREDIT_MS) return;
+  /* اللي وافقت عليهم وخلص الرصيد قبل ما تنضاف: اشتريت؟ نكمل لهم — موافقتك كانت عليهم هم.
+     واحداً واحداً: نشيل صفّه ونعيد فحص استحقاقه (poLicCandidates — لا نثق بالصف القديم)
+     ثم نطلبها. خلص الرصيد ثانية؟ صفّه رجع «خلص الرصيد» ووقفنا — والباقون بصفوفهم، فما
+     تضيع موافقتك على أحد */
+  const held = open.filter(x => x.status === 'failed' && x.kind === 'credits').map(x => x.user_id);
+  if (held.length && Date.now() - PO_LIC.creditsAt >= PO_LIC_CREDIT_MS) {
     const c = await poLicCredits(true);
-    if (!(c.credits > 0)) return;
-    const d = await sb('DELETE', 'pushover_licenses', { query: '?status=eq.failed&kind=eq.credits',
-      prefer: 'return=representation' }).catch(() => null);
-    if (!Array.isArray(d)) return;
-    if (ADMIN_CHAT_ID) sendMsg(ADMIN_CHAT_ID, `🎟 وصل رصيد رخص Pushover (${c.credits}) — كمّلنا إضافة الرخص.`)
-      .catch(() => {});
+    if (c.credits > 0) {
+      let n = 0;
+      for (const id of held) {
+        const d = await sb('DELETE', 'pushover_licenses', { query: `?user_id=eq.${id}&status=eq.failed&kind=eq.credits`,
+          prefer: 'return=representation' }).catch(() => null);
+        if (!Array.isArray(d) || !d.length) continue;           /* «🔁 أعد» أو نسخة ثانية سبقتنا */
+        const x = (await poLicCandidates()).find(y => y.id === id);
+        if (!x) continue;                                       /* ما عاد مستحقاً: استرجع؟ فكّ ربطه؟ */
+        const r = await poLicOne(x);
+        if (r.ok) n++; else if (!r.taken) break;
+      }
+      if (n && ADMIN_CHAT_ID) sendMsg(ADMIN_CHAT_ID,
+        `🎟 وصل رصيد رخص Pushover (${c.credits}) — أضفنا ${n} ممن وافقت عليهم.`).catch(() => {});
+    }
   }
-  const list = await poLicCandidates();
-  for (const c of list.slice(0, PO_LIC_BATCH)) {
-    if (!(await poLicOne(c))) break;
-  }
+  /* المستحقون الجدد: نسألك عنهم — مرة لكل طالب، ولا نضيف شي. وصار مستحقاً من جديد بعد
+     سؤالنا (اشترى الإضافة لترم ثاني · هدية جديدة)؟ نسألك ثانية */
+  const fresh = (await poLicCandidates()).filter(c =>
+    !(PO_LIC.asked.get(c.id) >= (Date.parse(c.since || '') || 0))).slice(0, PO_LIC_BATCH);
+  if (!fresh.length) return;
+  await poLicCredits(false);                                    /* رصيدك في الرسالة (محفوظ ٥ دقائق) */
+  let asked = 0;
+  for (const c of fresh) if (await poLicAsk(c)) { PO_LIC.asked.set(c.id, Date.now()); asked++ }
+  if (asked) saveState().catch(() => {});
 }
 
-/* للوحة: الرصيد والوضع والصفوف، وكم واحد مستحق الحين */
+/* موافقتك أو رفضك لطالب (زر تلقرام أو اللوحة). الإضافة تعيد فحص الاستحقاق الحين —
+   ممكن استرجع أو فكّ ربطه بعد رسالتنا. { ok, email, credits } أو { ok:false, error } */
+async function poLicDecideOne(userId, yes) {
+  if (!PAY_LIVE) return { ok: false, error: 'الرخص تنضاف من الإنتاج وحده' };
+  if (!PUSHOVER_ON || PUSHOVER_MODE === 'off')
+    return { ok: false, error: 'Pushover مطفأ — وضعه «off» أو متغيّراته ناقصة' };
+  const uid = String(userId || '');
+  if (!isUuid(uid)) return { ok: false, error: 'معرّف غير صالح' };
+  if (PO_LIC.deciding.has(uid)) return { ok: false, busy: true, error: 'شغّالين عليه الحين' };
+  PO_LIC.deciding.add(uid);
+  try {
+    let list;
+    try { list = await poLicCandidates() }
+    catch (e) { return { ok: false, again: true, error: 'تعذّر قراءة المستحقين — ' + e.message } }
+    const c = list.find(x => x.id === uid);
+    if (!c) {
+      const h = await sb('GET', 'pushover_licenses', { query: `?user_id=eq.${uid}&select=status&limit=1` })
+        .catch(() => null);
+      const st = Array.isArray(h) && h[0] ? h[0].status : null;
+      return { ok: false, already: st === 'assigned', error: st === 'assigned' ? 'انضافت له من قبل'
+        : st === 'pending' ? 'ننتظر ردّ Pushover عليه الحين'
+        : st ? 'له صف من قبل — شوفه في اللوحة'
+        : 'ما عاد مستحقاً: استرجع؟ انتهت إضافته أو سُحبت؟ فكّ ربط التطبيق؟' };
+    }
+    if (!yes) {
+      /* «✖️ لا»: صف «يدوي» فما نرجع نسألك عنه — وغيّرت رأيك؟ «✅ أضفها» على صفّه في اللوحة */
+      const w = await sb('POST', 'pushover_licenses', { body: { user_id: uid, status: 'manual', source: c.source,
+        done_at: new Date().toISOString() }, prefer: 'return=representation' }).catch(e => ({ message: e.message }));
+      if (w && w.code === '23505') return { ok: false, error: 'له صف من قبل — شوفه في اللوحة' };
+      if (!Array.isArray(w) || !w.length) return { ok: false, error: (w && w.message) || 'تعذّر' };
+      return { ok: true, email: c.email, skipped: true };
+    }
+    const r = await poLicOne(c);
+    if (r.taken) return { ok: false, error: 'نسخة ثانية سبقتنا عليه — انضافت أو تنضاف الحين' };
+    if (!r.ok) return { ok: false, kind: r.kind, again: r.kind === 'table', error: ({ credits: 'خلص رصيد الرخص — اشترِ ونكمل له لحالنا',
+      rejected: 'Pushover رفضها: ' + r.error, unknown: 'ما ندري انضافت ولا لا: ' + r.error })[r.kind] || r.error };
+    return { ok: true, email: c.email, credits: r.credits };
+  } finally { PO_LIC.deciding.delete(uid) }
+}
+/* زرّا رسالة poLicAsk — للإدارة وحدها، ومن handleCallback. النتيجة مكان الرسالة فتنشال
+   الأزرار — إلا عطل عابر (قراءة · حجز): الأزرار ترجع تحت الخطأ فتجرّب ثانية من تلقرام.
+   وضغطة ثانية والأولى شغّالة ما تكتب شي: الأولى ترد، وإلا غطّى «شغّالين» على «انضافت» */
+async function poLicTgDecide(cq, ack, chatId, yes, uid) {
+  if (!ADMIN_CHAT_ID || String(chatId) !== String(ADMIN_CHAT_ID)) return ack();
+  await ack(yes ? 'نضيفها…' : 'تمام');
+  const r = await poLicDecideOne(uid, yes);
+  if (r.busy || !cq.message) return;
+  if (!r.ok && r.again) return tg('editMessageText', { chat_id: cq.message.chat.id, message_id: cq.message.message_id,
+    text: `${esc(String(cq.message.text || '🎟').split('\n\n⚠️')[0])}\n\n⚠️ ${esc(r.error || 'تعذّر')} — جرّب ثانية`,
+    parse_mode: 'HTML',
+    reply_markup: kb([[btn('✅ أضف الرخصة', 'pol:ok:' + uid), btn('✖️ لا', 'pol:no:' + uid)]]) }).catch(() => {});
+  const who = r.email ? ' — ' + esc(r.email) : '';
+  return editMsg(cq, !r.ok ? `🎟 ${r.already ? '✅' : '⚠️'} ${esc(r.error || 'تعذّر')}`
+    : r.skipped ? `🎟 ✖️ <b>ما أضفناها</b>${who}\nلو غيّرت رأيك: اللوحة ← «النظام» ← «🎟 رخص Pushover» ← «✅ أضفها» على صفّه.`
+    : `🎟 ✅ <b>انضافت رخصة Pushover</b>${who}` + (r.credits != null ? `\nباقي في رصيدك: ${r.credits}` : ''));
+}
+
+/* للوحة: الرصيد والوضع والصفوف، والمنتظرون موافقتك */
 async function poLicState(fresh) {
   const [open, recent] = await Promise.all([
     sb('GET', 'pushover_licenses', { query: '?status=in.(pending,failed)&select=*&order=created_at.asc&limit=100' })
@@ -1667,18 +1765,23 @@ async function poLicState(fresh) {
   const pr = ids.length ? await sb('GET', 'profiles', { query: `?id=in.(${ids.join(',')})&select=id,email` })
     .catch(() => null) : [];
   const email = new Map((Array.isArray(pr) ? pr : []).map(p => [p.id, p.email || '']));
-  const waiting = table ? await poLicCandidates().then(l => l.length, () => null) : null;
+  /* المنتظرون موافقتك — بلا مفتاح أحد */
+  const wl = table ? await poLicCandidates().then(l => l.map(c => ({ user: c.id, email: c.email || '',
+    source: c.source, since: c.since || null, asked: PO_LIC.asked.has(c.id) })), () => null) : null;
+  const waiting = wl ? wl.length : null;
   const failed = rows.filter(x => x.status === 'failed');
   return { ok: true, live: PAY_LIVE, on: PUSHOVER_ON && PUSHOVER_MODE !== 'off',
     table: table ? 'ok' : 'missing', credits: c.credits, creditsError: c.error || null,
     state: !PAY_LIVE ? 'dev' : !PUSHOVER_ON || PUSHOVER_MODE === 'off' ? 'off' : !table ? 'missing'
       : failed.some(x => x.kind !== 'credits') ? 'stopped' : failed.length ? 'credits' : 'on',
-    waiting, refundDays: REFUND_DAYS, low: PO_LIC_LOW,
+    waiting, waitingList: wl ? wl.slice(0, 30) : null, approval: true, refundDays: REFUND_DAYS, low: PO_LIC_LOW,
     rows: rows.map(x => ({ user: x.user_id, email: email.get(x.user_id) || '', status: x.status,
       source: x.source, kind: x.kind || null, credits: x.credits == null ? null : Number(x.credits),
       error: x.error || null, at: x.created_at, doneAt: x.done_at || null })) };
 }
-/* «🔁 أعد»: يشيل صفّه (لو طالب) ويشغّل الدورة الحين — وبلا طالب «كمّل» بعد الشراء.
+/* «🔁 أعد» · «🔁 رخصة ثانية» · «✅ أضفها» (بعد «لا» أو «تمّت»): يشيل صفّه ويضيفها له
+   الحين — ضغطتك موافقتك عليه. وبلا
+   طالب «كمّل الحين» بعد الشراء: الدورة تكمل لمن وافقت عليهم وتسألك عن الجدد.
    صف «انضافت» ينشال كذلك (غيّر حسابه في Pushover؟) — واللوحة تنبّه إنها رخصة ثانية */
 async function poLicRetry(userId) {
   if (!PAY_LIVE) return { ok: false, error: 'الرخص تنضاف من الإنتاج وحده' };
@@ -1689,12 +1792,14 @@ async function poLicRetry(userId) {
       prefer: 'return=representation' }).catch(e => ({ message: e.message }));
     if (!Array.isArray(d)) return { ok: false, error: (d && d.message) || 'تعذّر' };
     if (!d.length) return { ok: false, error: 'ما لقيت صفّه — أو النداء شغّال الحين' };
+    const r = await poLicDecideOne(uid, true);
+    return r.ok ? Object.assign(await poLicState(true), { done: r }) : r;
   }
   PO_LIC.creditsAt = 0;                           /* ضغطتك = اسأل عن الرصيد الحين */
   await poLicTick();
   return poLicState(true);
 }
-/* «✔️ تمّت»: أضفتها بيدك من Pushover أو تتخطّاه — ما نرجع له، والباقين يكملون */
+/* «✔️ تمّت»: أضفتها بيدك من Pushover أو تتخطّاه — ما نرجع له */
 async function poLicDone(userId) {
   if (!PAY_LIVE) return { ok: false, error: 'الرخص تنضاف من الإنتاج وحده' };
   const uid = String(userId || '');
@@ -2576,7 +2681,9 @@ async function saveState() {
                             micro: AI_GUEST.micro, questions: AI_GUEST.questions,
                             dayMicro: AI_GUEST.dayMicro, ch: AI_GUEST.ch,
                             ips: [...AI_GUEST.ips.entries()].slice(0, 5000) },
-                 aiCaps: AI_CAPS, aiAlerted: AI_ALERTED },
+                 aiCaps: AI_CAPS, aiAlerted: AI_ALERTED,
+                 /* رخص Pushover: مين سألناك عنه — بلا حفظه يجيك السؤال مرة ثانية مع كل نشر */
+                 poLicAsked: [...PO_LIC.asked.entries()].slice(-2000) },
       ops: { searches: OPS.searches, feedback: OPS.feedback,
              pmuFails: OPS.pmuFails, tgFails: OPS.tgFails,
              searchesCached: OPS.searchesCached, searchStale: OPS.searchStale,
@@ -2643,6 +2750,8 @@ async function restoreState() {
     if (!validateAiCaps(merged)) AI_CAPS = merged;
   }
   if ('aiAlerted' in g) AI_ALERTED = String(g.aiAlerted || '');
+  if (Array.isArray(g.poLicAsked))
+    for (const [id, at] of g.poLicAsked) if (isUuid(String(id))) PO_LIC.asked.set(String(id), Number(at) || 0);
   if ('termOverride' in g) TERM_OVERRIDE = g.termOverride || null;
   if ('windowOverride' in g) WINDOW_OVERRIDE = g.windowOverride || null;
   if ('hoursOverride' in g) HOURS_OVERRIDE = g.hoursOverride || null;
@@ -3382,6 +3491,9 @@ async function handleCallback(cq) {
   /* فعل من المساعد يتأكد من البوت: تذكير أو تذكرة دعم (aiTgAct) */
   const act = data.match(/^act:(ok|no):(\d+)$/);
   if (act) return aiTgAct(cq, ack, act[1] === 'ok', act[2]);
+  /* رخصة Pushover بموافقتك (poLicAsk) — للإدارة وحدها */
+  const pl = data.match(/^pol:(ok|no):([0-9a-f-]{36})$/);
+  if (pl && chatId) return poLicTgDecide(cq, ack, chatId, pl[1] === 'ok', pl[2]);
 
   const mm = data.match(/^(stop|keep):(\d+)$/);
   if (!mm || !chatId) return ack();
@@ -10835,11 +10947,17 @@ const server = http.createServer(async (req, res) => {
       /* الدفع: الإعداد وعدّادات هالبيئة، وزر يثبت مفتاح EdfaPay */
       if (act === 'pay') return send(200, await adminPay());
       if (act === 'pay-ping' && req.method === 'POST') return send(200, await adminPayPing());
-      /* رخص Pushover: الرصيد والوضع، وزرّا «أعد» و«تمّت» لما توقف */
+      /* رخص Pushover: الرصيد والوضع والمنتظرون، وزرّا «أضف» و«لا» لكل واحد (موافقتك
+         قبل أي رخصة)، و«أعد» و«تمّت» لما يوقف طالب */
       if (act === 'po-lic') return send(200, await poLicState(parsed.query.fresh === '1'));
       if ((act === 'po-lic-retry' || act === 'po-lic-done') && req.method === 'POST') {
         const b = await readBody(req);
         return send(200, await (act === 'po-lic-done' ? poLicDone(b.userId) : poLicRetry(b.userId)));
+      }
+      if ((act === 'po-lic-approve' || act === 'po-lic-skip') && req.method === 'POST') {
+        const b = await readBody(req);
+        const r = await poLicDecideOne(b.userId, act === 'po-lic-approve');
+        return send(200, r.ok ? Object.assign(await poLicState(true), { done: r }) : r);
       }
 
       /* ملء الكاش بضغطة — لأدوات الشعب والدكاترة.
