@@ -2513,20 +2513,21 @@ async function doSearch(){
   }
 }
 
-/* عمر النتائج من السيرفر (X-Age-Ms) لا ساعة الجهاز: النتيجة ممكن تجي من نسخة محفوظة، و«آخر تحديث:
-   الحين» كان يكذب عليه. ونسخة قديمة لأن الجامعة ما ترد (X-Stale) = سطر يقوله وعمرها */
+/* عمر النتائج يُقال وقت التسجيل وحده، ولو فوق ربع ساعة بلا سحبة جديدة — قرار محمد (١٢ أكتوبر ٢٠٢٦).
+   السيرفر يقرّر (X-Old) والصفحة تعرض: سطر وعمرها من X-Age-Ms. غير كذا «آخر تحديث» وقت وصول النتائج
+   بلا عمر — خارج التسجيل الكاش ساعات عمداً، و«قبل 300 د» تخوّفه على الفاضي */
 function dataAge(r){
   const ar=LANG==='ar', lu=document.getElementById('lastUpdate'), note=document.getElementById('staleNote');
-  const age=r?Math.max(0,Number(r.headers.get('X-Age-Ms'))||0):0;
-  const stale=!!(r&&r.headers.get('X-Stale')==='1');
+  const old=!!(r&&r.headers.get('X-Old')==='1');
+  const age=old?Math.max(0,Number(r.headers.get('X-Age-Ms'))||0):0;
   const mins=Math.round(age/60000);
-  const ago=mins<1?'':(ar?` · قبل ${mins} د`:` · ${mins} min ago`);
+  const ago=!old?'':(ar?` · قبل ${mins} د`:` · ${mins} min ago`);
   if(lu)lu.textContent=r?new Date(Date.now()-age).toLocaleTimeString(ar?'ar-u-nu-latn':'en-GB',{hour:'2-digit',minute:'2-digit'})+ago:'—';
   if(!note)return;
-  note.classList.toggle('show',stale);
-  note.textContent=!stale?'':(ar
-    ?`⚠️ موقع الجامعة ما يرد الحين — هذي آخر نسخة عندنا${mins>=1?` من قبل ${mins} دقيقة`:''}، والحالات ممكن تكون تغيّرت.`
-    :`⚠️ The university site isn't responding — this is our last copy${mins>=1?` from ${mins} min ago`:''}; statuses may have changed.`);
+  note.classList.toggle('show',old);
+  note.textContent=!old?'':(ar
+    ?`⚠️ آخر بيانات وصلتنا من موقع الجامعة قبل ${mins} دقيقة — الحالات ممكن تكون تغيّرت.`
+    :`⚠️ Our latest data from the university site is ${mins} min old — statuses may have changed.`);
 }
 
 /* يشيل المسافات والرموز عشان "MEEN3395" = "meen 3395" */

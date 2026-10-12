@@ -7,6 +7,7 @@
    ٥) beat    — HEALTHCHECK_URL: نبض «سليم» بعد الدورة، و«/fail» لو آخر دورة سليمة قبل ربع ساعة.
    ٦) static  — كل فترة تسجيل وأول إضافة في التقويم تغطيها نافذة مراقبة (تعديل واحد بلا الثاني يمسكه).
    ٧) snap    — الإنتاج يحفظ آخر جدول كامل، ونسخة جديدة (dev هنا) والجامعة متعطّلة تخدم البحث منه بعمره.
+   ٨) old     — X-Old (الصفحة تقول عمر البيانات) وقت التسجيل وحده وفوق ربع ساعة بلا سحبة — قرار محمد.
 
    node tests/test-pmu-fallbacks.js [server.js] */
 const path = require('path');
@@ -333,6 +334,39 @@ const SCEN = {
     t.ok(Number(s.headers['x-age-ms']) >= 1000, 'وبعمره الحقيقي (X-Age-Ms من وقت الحفظ) — ' + s.headers['x-age-ms']);
     t.eq(st.DB.app_state.filter(x => /^snapshot-/.test(x.key)).length, 1, 'وdev ما يكتب نسخته');
     b.kill('SIGKILL');
+  },
+  async old(t) {
+    /* عمر البيانات يُقال للطالب وقت التسجيل وحده، وفوق ربع ساعة بلا سحبة جديدة — قرار محمد.
+       dev: بلا دورات تعبّي الكاش، فعمره من البحث وحده */
+    const pmu = () => ({ M1: [row('30011', 'CLOSED')], F1: [frow('40011', 'CLOSED')] });
+    const st = await makeOutside({ DB: base(), pmu: pmu() });
+    const c = instance(st, ['--at=' + IN_WINDOW, '--env=dev']); await c.up();
+    let s = await c.search('M1');
+    t.ok(s.status === 200 && !s.headers['x-old'], 'وقت التسجيل وبيانات طازجة: بلا X-Old');
+    st.pmu.mode = 'down';
+    c.warp(10 * 60 * 1000); await wait(300);
+    s = await c.search('M1');
+    t.ok(s.status === 200 && s.headers['x-stale'] === '1' && !s.headers['x-old'],
+      '**الجامعة ما ترد وآخر نسخة عمرها ١٠ دقائق: ولا كلمة للطالب** (تحت ربع ساعة طبيعي)');
+    c.warp(6 * 60 * 1000); await wait(300);
+    s = await c.search('M1');
+    t.ok(s.status === 200 && s.headers['x-old'] === '1' && Number(s.headers['x-age-ms']) > 15 * 60000,
+      '**وقت التسجيل وفوق ربع ساعة بلا سحبة جديدة: X-Old** (الصفحة تقول عمرها) — ' + s.headers['x-age-ms']);
+    c.kill('SIGKILL');
+    /* خارج التسجيل: ولا مرة — الجدول ما يتغيّر والكاش ساعات عمداً */
+    const st2 = await makeOutside({ DB: base(), pmu: pmu() });
+    const d = instance(st2, ['--at=2027-03-01T07:00:00Z', '--env=dev']); await d.up();
+    await d.search('M1');
+    d.warp(5 * 3600 * 1000); await wait(300);
+    s = await d.search('M1');
+    t.ok(s.status === 200 && Number(s.headers['x-age-ms']) > 4 * 3600e3 && !s.headers['x-old'],
+      '**خارج التسجيل وكاش عمره ٥ ساعات (عمداً): بلا X-Old**');
+    st2.pmu.mode = 'down';
+    d.warp(2 * 3600 * 1000); await wait(300);
+    s = await d.search('M1');
+    t.ok(s.status === 200 && s.headers['x-stale'] === '1' && !s.headers['x-old'],
+      '**خارج التسجيل والجامعة ما ترد وآخر نسخة عمرها ٧ ساعات: ولا كلمة للطالب**');
+    d.kill('SIGKILL');
   },
   async static(t) {
     /* من الكود نفسه: التقويم والنوافذ */

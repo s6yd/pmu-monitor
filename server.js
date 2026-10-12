@@ -6540,6 +6540,10 @@ const TTL_PEAK = 60 * 1000;
 const TTL_NEAR = 60 * 60 * 1000;
 const TTL_OFF  = 6 * 60 * 60 * 1000;
 
+/* عمر البيانات يُقال للطالب (X-Old ⇒ سطر في الصفحة) وقت التسجيل وحده، ولو فوق ربع ساعة بلا سحبة جديدة —
+   قرار محمد (١٢ أكتوبر ٢٠٢٦). خارجه الجدول ما يتغيّر والكاش ساعات عمداً، وتحت ربع ساعة طبيعي */
+const SEARCH_OLD_MS = 15 * 60 * 1000;
+
 /* تجاوز يدوي من لوحة التحكم — بالدقائق. null = تلقائي حسب الموسم */
 let TTL_OVERRIDE = null;
 
@@ -11353,6 +11357,7 @@ const server = http.createServer(async (req, res) => {
       res.setHeader('X-Cached', r.cached ? '1' : '0');
       res.setHeader('X-Age-Ms', String(r.age || 0));
       res.setHeader('X-TTL-Min', String(Math.round(coursesTTL() / 60000)));
+      if (currentWindow() && (r.age || 0) > SEARCH_OLD_MS) res.setHeader('X-Old', '1');
       const wantsGzip = /\bgzip\b/.test(req.headers['accept-encoding'] || '');
       const hit = key ? RESP_CACHE.get(key) : null;
 
