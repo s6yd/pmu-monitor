@@ -281,6 +281,30 @@ const ANTHROPIC_KEY = (process.env.ANTHROPIC_API_KEY || '').trim();
    تحمي. اللوحة تغيّره بلا نشر. */
 const AI_MODEL_ENV = (process.env.AI_MODEL || 'claude-sonnet-5-5').trim();
 
+/* ═══ حارس الطلبات الخارجية ═══
+   مهلة Node (req.setTimeout) على السكوت لا على المدة: ردّ يقطّر حرفاً كل ثانية ما ينتهي.
+   والاتصال اللي ينقطع وسط الرد ما يطلق end — ولا error إلا لو فيه من يسمعه (جرّبناه
+   على Node 22) — فالوعد يعلق للأبد. صارت في دورة المراقبة: قفلها ما ينفك، والمراقبة
+   تموت بصمت لين أول نشر. فكل طلب خارجي: حد مطلق للمدة كلها، والرد الناقص فشل.
+   req.on('error') يبقى عند صاحب الطلب وينادي g.fail — محاكي الاختبارات يحفظ مستمعاً
+   واحداً له. ونداء g.ok() أول شي في end (قبل close). */
+function outGuard(req, ms, fail) {
+  let over = false;
+  const end = e => { if (over) return; over = true; clearTimeout(t); if (e) fail(e) };
+  const t = setTimeout(() => {
+    end(new Error(`انتهت المهلة (${Math.round(ms / 1000)} ثانية)`));
+    try { req.destroy() } catch (e) {}
+  }, ms);
+  return {
+    res(res) {
+      res.on('error', e => end(e));
+      res.on('close', () => { if (!res.complete) end(new Error('انقطع الاتصال وسط الرد')) });
+    },
+    ok() { end() },
+    fail(e) { end(e) }
+  };
+}
+
 function pushover(title, message, opts) {
   if (!PUSHOVER_ON) {
     console.log('pushover: معطّل — PUSHOVER_TOKEN أو PUSHOVER_USER ناقص');
@@ -307,22 +331,26 @@ function pushover(title, message, opts) {
         fields.expire = String(o.expire || 3600);  /* يوقف بعد ساعة */
       }
       const body = new URLSearchParams(fields).toString();
+      let g;
       const req = https.request({
         hostname: 'api.pushover.net', path: '/1/messages.json', method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded',
                    'Content-Length': Buffer.byteLength(body) }
       }, res => {
+        g.res(res);
         let out = '';
         res.setEncoding('utf8');
         res.on('data', c => { if (out.length < 400) out += c; });
         res.on('end', () => {
+          g.ok();
           if (res.statusCode === 200) console.log(`pushover: تم الإرسال ✓ (أولوية ${pr})`);
           else console.log(`pushover: فشل ${res.statusCode} — ${out.slice(0, 300)}`);
           resolve(res.statusCode === 200);
         });
       });
-      req.on('error', e => { console.log('pushover: خطأ اتصال —', e.message); resolve(false) });
-      req.setTimeout(8000, () => { req.destroy(); console.log('pushover: انتهت المهلة'); resolve(false) });
+      g = outGuard(req, 15000, e => { console.log('pushover: خطأ —', e.message); resolve(false) });
+      req.on('error', e => g.fail(e));
+      req.setTimeout(8000, () => { req.destroy(); g.fail(new Error('انتهت المهلة')) });
       req.write(body); req.end();
     } catch (e) { console.log('pushover: استثناء —', e.message); resolve(false) }
   });
@@ -359,21 +387,25 @@ function sb(method, table, { query = '', body = null, prefer = '' } = {}) {
     if (prefer) headers['Prefer'] = prefer;
     if (data) headers['Content-Length'] = Buffer.byteLength(data);
 
+    let g;
     const req = https.request({
       hostname: u.hostname, path: u.pathname + u.search, method, headers
     }, res => {
+      g.res(res);
       let out = '';
       /* نص لا بايتات: الحرف العربي بايتان، والقطعة ممكن تنقطع في نصّه — فيطلع
          «م��» لو حوّلنا كل قطعة لوحدها (§٦). StringDecoder يحفظ نصف الحرف للقطعة الجاية */
       res.setEncoding('utf8');
       res.on('data', c => out += c);
       res.on('end', () => {
+        g.ok();
         try { resolve(out ? JSON.parse(out) : []); }
         catch (e) { resolve([]); }
       });
     });
-    req.on('error', reject);
-    req.setTimeout(20000, () => { req.destroy(); reject(new Error('Supabase timeout')); });
+    g = outGuard(req, 30000, reject);
+    req.on('error', e => g.fail(e));
+    req.setTimeout(20000, () => { req.destroy(); g.fail(new Error('Supabase timeout')); });
     if (data) req.write(data);
     req.end();
   });
@@ -391,12 +423,15 @@ function sbAuthUser(token) {
     if (hit && hit.until > Date.now()) return resolve(hit.user);
     let u;
     try { u = new URL(`${SB_URL}/auth/v1/user`) } catch (e) { return resolve(null) }
+    let g;
     const req = https.request({ hostname: u.hostname, path: u.pathname, method: 'GET',
       headers: { apikey: SB_SERVICE_KEY, Authorization: `Bearer ${token}` } }, res => {
+      g.res(res);
       let out = '';
       res.setEncoding('utf8');
       res.on('data', c => out += c);
       res.on('end', () => {
+        g.ok();
         let j = null; try { j = JSON.parse(out) } catch (e) {}
         /* الاسم من بيانات قوقل نفسها — نفس ما تعرضه الصفحة، بلا ما نثق بالمتصفح */
         const md = (j && j.user_metadata) || {};
@@ -409,8 +444,9 @@ function sbAuthUser(token) {
         resolve(user);
       });
     });
-    req.on('error', () => resolve(null));
-    req.setTimeout(8000, () => { req.destroy(); resolve(null) });
+    g = outGuard(req, 10000, () => resolve(null));
+    req.on('error', e => g.fail(e));
+    req.setTimeout(8000, () => { req.destroy(); g.fail(new Error('timeout')) });
     req.end();
   });
 }
@@ -692,17 +728,21 @@ function epReq(method, path, body, host) {
       headers['Content-Type'] = 'application/json';
       headers['Content-Length'] = Buffer.byteLength(data);
     }
+    let g;
     const req = https.request({ hostname: host || EP_HOST, path, method, headers }, res => {
+      g.res(res);
       let out = '';
       res.setEncoding('utf8');
       res.on('data', c => { if (out.length < 200000) out += c });
       res.on('end', () => {
+        g.ok();
         let j = null; try { j = JSON.parse(out) } catch (e) {}
         resolve({ status: res.statusCode, j, text: out.slice(0, 300) });
       });
     });
-    req.on('error', e => resolve({ status: 0, j: null, text: e.message }));
-    req.setTimeout(15000, () => { req.destroy(); resolve({ status: 0, j: null, text: 'انتهت المهلة' }) });
+    g = outGuard(req, 30000, e => resolve({ status: 0, j: null, text: e.message }));
+    req.on('error', e => g.fail(e));
+    req.setTimeout(15000, () => { req.destroy(); g.fail(new Error('انتهت المهلة')) });
     if (data) req.write(data);
     req.end();
   });
@@ -1481,16 +1521,19 @@ function poLicReq(method, p, fields) {
     };
     const body = method === 'POST' ? new URLSearchParams(fields).toString() : '';
     try {
+      let g;
       const req = https.request({ hostname: 'api.pushover.net', path: p, method,
         headers: body ? { 'Content-Type': 'application/x-www-form-urlencoded',
                           'Content-Length': Buffer.byteLength(body) } : {} }, res => {
+        g.res(res);
         let out = '';
         res.setEncoding('utf8');
         res.on('data', c => { if (out.length < 4000) out += c });
-        res.on('end', () => done(res.statusCode, out));
+        res.on('end', () => { g.ok(); done(res.statusCode, out) });
       });
-      req.on('error', e => done(0, e.message));
-      req.setTimeout(10000, () => { req.destroy(); done(0, 'انتهت المهلة') });
+      g = outGuard(req, 20000, e => done(0, e.message));
+      req.on('error', e => g.fail(e));
+      req.setTimeout(10000, () => { req.destroy(); g.fail(new Error('انتهت المهلة')) });
       if (body) req.write(body);
       req.end();
     } catch (e) { done(0, e.message) }
@@ -2516,13 +2559,16 @@ function tg(method, payload) {
     let req;
     try {
       const data = JSON.stringify(payload);
+      let g;
       req = https.request({
         hostname: 'api.telegram.org',
         path: `/bot${TELEGRAM_TOKEN}/${method}`,
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) }
-      }, res => { let o=''; res.setEncoding('utf8'); res.on('data',c=>o+=c); res.on('end',()=>{ try{resolve(JSON.parse(o))}catch(e){resolve(null)} }); });
-      req.on('error', e => resolve({ ok: false, description: e.message }));
+      }, res => { g.res(res); let o=''; res.setEncoding('utf8'); res.on('data',c=>o+=c); res.on('end',()=>{ g.ok(); try{resolve(JSON.parse(o))}catch(e){resolve(null)} }); });
+      /* كان بلا أي مهلة: تيليغرام يعلق ⇒ دورة المراقبة تعلق معه */
+      g = outGuard(req, 20000, e => resolve({ ok: false, description: e.message }));
+      req.on('error', e => g.fail(e));
       req.write(data);
       req.end();
     } catch (e) {
@@ -2662,6 +2708,7 @@ async function saveState() {
     key: STATE_KEY,
     value: {
       feedPeak: [...FEED_PEAK.entries()],
+      partPeak: [...PMU_PART_PEAK.entries()].slice(-40),
       totalUpdated: SCHED_SYNC.totalUpdated,
       runs: SCHED_SYNC.runs,
       confirmForces: CONFIRM_STAT.forces,
@@ -2683,7 +2730,11 @@ async function saveState() {
                             ips: [...AI_GUEST.ips.entries()].slice(0, 5000) },
                  aiCaps: AI_CAPS, aiAlerted: AI_ALERTED,
                  /* رخص Pushover: مين سألناك عنه — بلا حفظه يجيك السؤال مرة ثانية مع كل نشر */
-                 poLicAsked: [...PO_LIC.asked.entries()].slice(-2000) },
+                 poLicAsked: [...PO_LIC.asked.entries()].slice(-2000),
+                 /* «الشعبة اختفت» انقالت لصاحبها — بلا حفظه تتكرر مع كل نشر */
+                 monGone: [...MON_GONE_TOLD].slice(-3000),
+                 /* احتياط بانر: مفتاحه من اللوحة، ومصدر آخر دورة (رجوع الجدول بعده يسجّل بلا إشعار) */
+                 bannerOn: BANNER_ON, monSource: MON_SOURCE },
       ops: { searches: OPS.searches, feedback: OPS.feedback,
              pmuFails: OPS.pmuFails, tgFails: OPS.tgFails,
              searchesCached: OPS.searchesCached, searchStale: OPS.searchStale,
@@ -2703,6 +2754,7 @@ async function restoreState() {
   const v = Array.isArray(rows) && rows[0] ? rows[0].value : null;
   if (!v) { console.log('استعادة الحالة: ما فيه نسخة محفوظة بعد'); return; }
   (v.feedPeak || []).forEach(([t, n]) => FEED_PEAK.set(t, n));
+  (v.partPeak || []).forEach(([k, n]) => { if (Number(n) > 0) PMU_PART_PEAK.set(k, Number(n)) });
   SCHED_SYNC.totalUpdated = v.totalUpdated || 0;
   SCHED_SYNC.runs = v.runs || 0;
   CONFIRM_STAT.forces = v.confirmForces || 0;
@@ -2752,6 +2804,9 @@ async function restoreState() {
   if ('aiAlerted' in g) AI_ALERTED = String(g.aiAlerted || '');
   if (Array.isArray(g.poLicAsked))
     for (const [id, at] of g.poLicAsked) if (isUuid(String(id))) PO_LIC.asked.set(String(id), Number(at) || 0);
+  if ('bannerOn' in g) BANNER_ON = !!g.bannerOn;
+  if (g.monSource === 'pmu' || g.monSource === 'banner') MON_SOURCE = g.monSource;
+  if (Array.isArray(g.monGone)) g.monGone.forEach(k => { if (/^\d+\|\d{3,8}$/.test(String(k))) MON_GONE_TOLD.add(String(k)) });
   if ('termOverride' in g) TERM_OVERRIDE = g.termOverride || null;
   if ('windowOverride' in g) WINDOW_OVERRIDE = g.windowOverride || null;
   if ('hoursOverride' in g) HOURS_OVERRIDE = g.hoursOverride || null;
@@ -2901,55 +2956,166 @@ const btn = (label, data) => ({ text: label, callback_data: data });
 const kb  = rows => ({ inline_keyboard: rows });
 
 /* ============ PMU fetch ============ */
-function fetchPMUData(termList, collegeList, genderList) {
-  return new Promise((resolve, reject) => {
-    const req = https.request({
-      hostname: 'masterschedule.pmu.edu.sa', path: '/', method: 'GET',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9'
-      }
-    }, res => {
-      let data = '';
-      const cookieStr = (res.headers['set-cookie'] || []).map(c => c.split(';')[0]).join('; ');
-      res.setEncoding('utf8');
-      res.on('data', c => data += c);
-      res.on('end', () => {
-        const m = data.match(/__RequestVerificationToken[^>]+value="([^"]+)"/);
-        if (!m) return reject(new Error('Token not found'));
-        const postData = new URLSearchParams({
-          TermList: termList, CollegeList: collegeList, GenderList: genderList,
-          DataTables_Table_1_length: '10000',
-          __RequestVerificationToken: m[1], 'X-Requested-With': 'XMLHttpRequest'
-        }).toString();
+const PMU_HOST = 'masterschedule.pmu.edu.sa';
+const PMU_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+/* حد مطلق لكل طلب فوق مهلة السكوت (حارس الطلبات): السحبة الطبيعية كلها ١٣–١٨ ثانية */
+const PMU_GET_MS = 20000, PMU_POST_MS = 60000;
 
-        const p = https.request({
-          hostname: 'masterschedule.pmu.edu.sa', path: '/Home/getData', method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-            'Content-Length': Buffer.byteLength(postData),
-            'Cookie': cookieStr, 'X-Requested-With': 'XMLHttpRequest',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Referer': 'https://masterschedule.pmu.edu.sa/',
-            'Origin': 'https://masterschedule.pmu.edu.sa'
-          }
-        }, pr => { let h=''; pr.setEncoding('utf8'); pr.on('data',c=>h+=c); pr.on('end',()=>resolve(h)); });
-        p.on('error', reject);
-        p.setTimeout(20000, () => { p.destroy(); reject(new Error('PMU data timeout')); });
-        p.write(postData); p.end();
-      });
+/* طلب واحد لموقع الجامعة ⇒ { status, headers, text }
+   مضغوط لو يقبلون (gzip): جدول الترم كامل قرابة ميغا نص، ومضغوطاً عُشره — أسرع علينا وأخف عليهم.
+   الفك قبل النص (setEncoding على المفكوك — الحرف ما ينقسم §٦)، وعطل الفك فشل للطلب */
+function pmuReq(method, path, headers, body, idleMs, maxMs) {
+  return uniReq(PMU_HOST, method, path, headers, body, idleMs, maxMs);
+}
+/* أي موقع للجامعة (الجدول · بانر) — نفس الحارس والفك */
+function uniReq(host, method, path, headers, body, idleMs, maxMs) {
+  return new Promise((resolve, reject) => {
+    let g;
+    const req = https.request({ hostname: host, path, method,
+      headers: Object.assign({ 'Accept-Encoding': 'gzip, deflate' }, headers) }, res => {
+      g.res(res);
+      let text = '', src = res;
+      const enc = String((res.headers && res.headers['content-encoding']) || '').trim().toLowerCase();
+      if (enc === 'gzip' || enc === 'deflate') {
+        src = res.pipe(enc === 'gzip' ? zlib.createGunzip() : zlib.createInflate());
+        src.on('error', e => g.fail(new Error('PMU ' + enc + ': ' + e.message)));
+        OPS.pmuGzip = (OPS.pmuGzip || 0) + 1;
+      }
+      src.setEncoding('utf8');
+      src.on('data', c => text += c);
+      src.on('end', () => { g.ok(); resolve({ status: res.statusCode, headers: res.headers || {}, text }) });
     });
-    req.on('error', reject);
-    req.setTimeout(15000, () => { req.destroy(); reject(new Error('PMU token timeout')); });
+    g = outGuard(req, maxMs, reject);
+    req.on('error', e => g.fail(e));
+    req.setTimeout(idleMs, () => {
+      req.destroy();
+      g.fail(new Error(method === 'GET' ? 'PMU token timeout' : 'PMU data timeout'));
+    });
+    if (body) req.write(body);
     req.end();
   });
 }
 
+/* ═══ إشارات الجامعة: ما يرد · يرد بشي ما نفهمه · يرفضنا ═══
+   كان كل فشل «موقع الجامعة ما يستجيب»: صفحة بشكل جديد ورفض صريح (403/429) نفس الإنذار، والسحب
+   يكمل كل دورة على باب يرفضنا. الحين كل فشل له نوع (e.pmu):
+   • down   — شبكة · مهلة · 5xx · جدول فاضي ⇒ إنذار «ما يستجيب» كما كان.
+   • format — يرد ٢٠٠ (أو 3xx/4xx) بشي ما نفهمه: صفحة بلا رمز · جدول أعمدته تغيّرت ⇒ إنذار
+              «يرد بشكل ما نفهمه»، و**ما نكتب حالة من جدول ما نفهمه** (كانت تنكتب حالات غلط).
+   • block  — 403/429 ⇒ نوقف **كل** السحب من موقعهم مدة تتضاعف (أو Retry-After)، والبحث يخدم آخر
+              نسخة عندنا. ما نحاول نتجاوز الرفض — ننتظر. */
+const PMU_BLOCK = { until: 0, n: 0, status: 0, at: 0 };
+const pmuBlocked = () => Date.now() < PMU_BLOCK.until;
+function pmuErr(kind, msg, extra) { return Object.assign(new Error(msg), { pmu: kind }, extra || {}) }
+/* عنوان الصفحة اللي رجعت — يعرّفك وش الشي اللي ما فهمناه (صيانة؟ دخول؟ حجب؟) */
+function pmuTitle(html) {
+  const m = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(String(html || ''));
+  return m ? pmuPlain(m[1]).replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+}
+function pmuBlockHit(status, retryAfter) {
+  PMU_BLOCK.n++;
+  PMU_BLOCK.status = status; PMU_BLOCK.at = Date.now();
+  /* Retry-After بالثواني أو بتاريخ HTTP */
+  const raN = Number(retryAfter);
+  const ra = raN > 0 ? raN : Math.max(0, Math.round((Date.parse(retryAfter) - Date.now()) / 1000)) || 0;
+  const base = status === 429 ? Math.min(2 * 60e3 * 2 ** (PMU_BLOCK.n - 1), 30 * 60e3)
+                              : Math.min(15 * 60e3 * 2 ** (PMU_BLOCK.n - 1), 2 * 3600e3);
+  const wait = ra > 0 ? Math.min(ra * 1000, 2 * 3600e3) : base;
+  PMU_BLOCK.until = Date.now() + wait;
+  OPS.pmuBlocks = (OPS.pmuBlocks || 0) + 1;
+  console.log(`PMU ${status}: نوقف السحب ${Math.round(wait / 60000)} دقيقة`);
+  alert('pmu-block', `موقع الجامعة يرفض طلباتنا (${status})`,
+    `وقفنا كل السحب من موقعهم ${Math.max(1, Math.round(wait / 60000))} دقيقة` +
+    (ra > 0 ? ' (المدة اللي طلبوها).' : ' — والمدة تتضاعف لو تكرر (لين ساعتين).') +
+    `\n\nالمراقبة واقفة هالمدة، والبحث يخدم آخر نسخة عندنا.`);
+}
+function pmuCheckStatus(r, what) {
+  if (r.status === 200) return;
+  if (r.status === 403 || r.status === 429) {
+    pmuBlockHit(r.status, r.headers && r.headers['retry-after']);
+    throw pmuErr('block', `PMU ${what} ${r.status}`, { status: r.status });
+  }
+  if (!r.status || r.status >= 500) throw pmuErr('down', `PMU ${what} ${r.status}`, { status: r.status });
+  /* تحويل لصفحة ثانية أو طلب ما يقبلونه: الموقع تغيّر عن اللي نعرفه */
+  const loc = r.headers && r.headers.location ? String(r.headers.location).slice(0, 80) : '';
+  throw pmuErr('format', `PMU ${what} ${r.status}${loc ? ' → ' + loc : ''}`,
+    { status: r.status, title: pmuTitle(r.text) });
+}
+
+/* ═══ جلسة الجامعة: الرمز والكوكي ═══
+   كل سحبة كانت تفتح صفحتهم الرئيسية أول عشان رمز التحقق — طلب كامل قبل كل جدول، والمتصفح نفسه
+   يفتحها مرة ويبحث مرات بنفس الرمز. نحتفظ بهما ١٠ دقائق: الدورة ثلاث طلبات لا أربعة، والبحث طلب
+   لا اثنين. ورمز قديم رجع بلا جدول (انتهى عندهم) ⇒ رمز جديد ومرة وحدة — إلا الرفض (403/429) */
+const PMU_SESSION_MS = 10 * 60 * 1000;
+let PMU_SESSION = null, PMU_SESSION_P = null;
+function pmuSession() {
+  if (PMU_SESSION && Date.now() - PMU_SESSION.at < PMU_SESSION_MS) return Promise.resolve(PMU_SESSION);
+  if (!PMU_SESSION_P) PMU_SESSION_P = (async () => {
+    try {
+      const page = await pmuReq('GET', '/', {
+        'User-Agent': PMU_UA,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9'
+      }, null, 15000, PMU_GET_MS);
+      pmuCheckStatus(page, 'GET');
+      const m = page.text.match(/__RequestVerificationToken[^>]+value="([^"]+)"/);
+      if (!m) throw pmuErr('format', 'Token not found', { title: pmuTitle(page.text) });
+      const cookie = (page.headers['set-cookie'] || []).map(c => c.split(';')[0]).join('; ');
+      return (PMU_SESSION = { token: m[1], cookie, at: Date.now(), uses: 0 });
+    } finally { PMU_SESSION_P = null }
+  })();
+  return PMU_SESSION_P;
+}
+
+/* الجدول: بجلسة محفوظة لو فيه، وإلا صفحة الرمز أول */
+async function fetchPMUData(termList, collegeList, genderList) {
+  if (pmuBlocked()) throw pmuErr('block', 'PMU backoff', { status: PMU_BLOCK.status, local: true });
+  const post = sess => {
+    sess.uses++;
+    const postData = new URLSearchParams({
+      TermList: termList, CollegeList: collegeList, GenderList: genderList,
+      DataTables_Table_1_length: '10000',
+      __RequestVerificationToken: sess.token, 'X-Requested-With': 'XMLHttpRequest'
+    }).toString();
+    return pmuReq('POST', '/Home/getData', {
+      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+      'Content-Length': Buffer.byteLength(postData),
+      'Cookie': sess.cookie, 'X-Requested-With': 'XMLHttpRequest',
+      'User-Agent': PMU_UA,
+      'Referer': 'https://' + PMU_HOST + '/',
+      'Origin': 'https://' + PMU_HOST
+    }, postData, 20000, PMU_POST_MS);
+  };
+  let s = await pmuSession();
+  const reused = s.uses > 0;
+  let r = await post(s);
+  if (reused && r.status !== 403 && r.status !== 429 && !(r.status === 200 && /<table\b/i.test(r.text))) {
+    if (PMU_SESSION === s) PMU_SESSION = null;
+    OPS.pmuSessionRenew = (OPS.pmuSessionRenew || 0) + 1;
+    s = await pmuSession();
+    r = await post(s);
+  }
+  /* كوكي جديد مع الرد (جلستهم تتجدد) ⇒ نحدّثه مثل المتصفح، بالاسم */
+  const sc = r.headers && r.headers['set-cookie'];
+  if (Array.isArray(sc) && sc.length && PMU_SESSION === s) {
+    const jar = new Map(s.cookie.split('; ').filter(Boolean).map(c => [c.split('=')[0], c]));
+    sc.forEach(c => { const kv = String(c).split(';')[0]; jar.set(kv.split('=')[0], kv) });
+    s.cookie = [...jar.values()].join('; ');
+  }
+  /* رد بلا صفوف أصلاً: الجلسة مشكوك فيها — اللي بعده يبدأ برمز جديد */
+  if (!(r.status === 200 && /<tr\b/i.test(r.text)) && PMU_SESSION === s) PMU_SESSION = null;
+  pmuCheckStatus(r, 'POST');
+  if (PMU_BLOCK.n) { PMU_BLOCK.n = 0; resolve('pmu-block', 'موقع الجامعة يرفض طلباتنا') }
+  return r.text;
+}
+
+/* الوسوم بخصائص أو بحروف كبيرة تنقرأ (<tr class=…> · <TD>) — الجامعة لو زادت صنفاً على الصف كان
+   الجدول كله يطلع فاضياً. وفك النص **ما يتغيّر** (&amp; وحدها): جداول الطلاب انحفظت بهالصيغة، وأي
+   فرق يطلع «تغيّر في جدولك» كاذباً — للعرض escP/pmuPlain */
 function parseHTML(html) {
   const rows = [];
-  for (const tr of (html.match(/<tr>[\s\S]*?<\/tr>/g) || [])) {
-    const tds = tr.match(/<td>([\s\S]*?)<\/td>/g) || [];
+  for (const tr of (String(html || '').match(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi) || [])) {
+    const tds = tr.match(/<td\b[^>]*>([\s\S]*?)<\/td>/gi) || [];
     if (tds.length < 9) continue;
     const t = td => td.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').trim();
     rows.push({
@@ -2960,6 +3126,146 @@ function parseHTML(html) {
   }
   return rows;
 }
+
+/* شكل الجدول: عمود أُضيف في النص يزيح الحالة — فتنقرأ «M-CORE - G034» حالةً، وتنكتب في
+   last_status، والشعبة اللي تفتح ما تنشاف. نقيس الشكل قبل ما نصدّق الجدول: الـCRN أرقام
+   (٩٠٪)، والحالة OPEN/CLOSED لنصف الصفوف على الأقل (حالة ثالثة ما نعرفها ما تطيّحه) */
+function pmuShape(rows) {
+  const n = rows.length;
+  const crn = rows.filter(r => /^\d{4,6}$/.test(r.crn)).length;
+  const st = rows.filter(r => r.status === 'OPEN' || r.status === 'CLOSED').length;
+  return { ok: n > 0 && crn >= n * 0.9 && st >= n * 0.5, n, crn, st };
+}
+/* جدول ترم كامل من الجامعة ⇒ صفوف موثوقة أو خطأ بنوعه */
+function pmuRows(html, g) {
+  const rows = tagGender(parseHTML(html), g);
+  if (!rows.length) {
+    /* جدول بلا صفوف = ما عندهم بيانات الحين؛ صفحة بلا جدول أصلاً = شي ثاني رجع لنا */
+    if (!String(html || '').trim() || /<table\b/i.test(html)) throw pmuErr('down', 'رد بلا صفوف');
+    throw pmuErr('format', 'رد بلا جدول', { title: pmuTitle(html) });
+  }
+  const sh = pmuShape(rows);
+  if (!sh.ok) throw pmuErr('format', `شكل الجدول تغيّر (${sh.n} صف)`, { shape: sh });
+  return rows;
+}
+/* ═══ احتياط المراقبة: بحث بانر العام (Browse Classes) — قرار محمد ═══
+   banreg.pmu.edu.sa — صفحة البحث العامة في بانر (بلا دخول — تأكّد منها محمد). **للمراقبة وحدها، ولما
+   موقع الجدول ما يرد أو تغيّر شكله** — لا لو رفضنا (403/429: رفض متعمّد ما نلتف عليه، ولا بانر نفسه لو
+   رفض)، ولا للبحث ولا للمزامنة: صياغتها (القاعة مثلاً) ممكن تفرق عن الجدول، فتطلع «تغيّر في جدولك»
+   كاذبة أو تنحفظ شعبة بصياغة ثانية في جدول طالب. صفوفها بشكل صفوف الجدول نفسه (الكود «ACCT 2311» ·
+   الأيام «MW» · الوقت «0800 - 0915» · الجنس من رقم الشعبة)، والحالة OPEN لو فيها مقاعد ومفتوحة.
+   ورجوع الجدول بعدها = دورة تسجّل بلا إشعار (MON_SOURCE): الجدول ممكن يتأخر عن بانر، فـ«مفتوحة» قديمة
+   منه تطلع «فتحت» كاذبة. والشكل والحجم يُفحصان مثل الجدول (pmuShape · pmuShort) */
+const BANNER_HOST = 'banreg.pmu.edu.sa', BANNER_BASE = '/StudentRegistrationSsb/ssb';
+const BANNER_PAGE = 500, BANNER_MAX = 6000;
+const BANNER_BLOCK = { until: 0, n: 0, status: 0 };
+let BANNER_ON = true, BANNER_LAST = null, BANNER_PING_AT = 0;
+const BANNER_DAYS = [['sunday', 'U'], ['monday', 'M'], ['tuesday', 'T'], ['wednesday', 'W'],
+                     ['thursday', 'R'], ['friday', 'F'], ['saturday', 'S']];
+function bannerBlockHit(status, retryAfter) {
+  BANNER_BLOCK.n++; BANNER_BLOCK.status = status;
+  const raN = Number(retryAfter);
+  const ra = raN > 0 ? raN : Math.max(0, Math.round((Date.parse(retryAfter) - Date.now()) / 1000)) || 0;
+  const wait = ra > 0 ? Math.min(ra * 1000, 2 * 3600e3) : Math.min(15 * 60e3 * 2 ** (BANNER_BLOCK.n - 1), 2 * 3600e3);
+  BANNER_BLOCK.until = Date.now() + wait;
+  alert('banner-block', `بانر يرفض طلباتنا (${status})`,
+    `وقفنا الاحتياط من بانر ${Math.max(1, Math.round(wait / 60000))} دقيقة. موقع الجدول هو الأساس — هذا الاحتياط بس.`);
+}
+/* صفوف بانر ⇒ صفوف بشكل جدول الجامعة: صف لكل اجتماع (المحاضرة والمعمل بنفس CRN صفّان، مثل الجدول) */
+function bannerRows(list) {
+  const rows = [];
+  for (const s of list || []) {
+    if (!s || typeof s !== 'object') continue;
+    const seats = Number(s.seatsAvailable);
+    const open = s.openSection === false ? false : (Number.isFinite(seats) ? seats > 0 : s.openSection === true);
+    const fac = Array.isArray(s.faculty) ? s.faculty : [];
+    const inst = (fac.find(f => f && f.primaryIndicator) || fac[0] || {}).displayName || '';
+    const base = {
+      crn: String(s.courseReferenceNumber || '').trim(),
+      courseCode: `${String(s.subject || '').trim()} ${String(s.courseNumber || '').trim()}`.trim(),
+      courseTitle: String(s.courseTitle || '').replace(/&amp;/g, '&').trim(),
+      section: String(s.sequenceNumber || '').trim(),
+      instructor: String(inst).replace(/&amp;/g, '&').trim(),
+      status: open ? 'OPEN' : 'CLOSED'
+    };
+    const meets = (Array.isArray(s.meetingsFaculty) ? s.meetingsFaculty : [])
+      .map(m => m && m.meetingTime).filter(Boolean);
+    if (!meets.length) { rows.push(Object.assign({ courseDate: '', courseTiming: '', room: '' }, base)); continue }
+    for (const mt of meets)
+      rows.push(Object.assign({
+        courseDate: BANNER_DAYS.filter(([k]) => mt[k] === true).map(([, d]) => d).join(''),
+        courseTiming: mt.beginTime && mt.endTime ? `${mt.beginTime} - ${mt.endTime}` : '',
+        room: [mt.building, mt.room].filter(Boolean).join(' - ')
+      }, base));
+  }
+  return tagGender(rows, 'ALL');
+}
+/* جدول الترم كاملاً من بانر (أو صفحة صغيرة للتجربة من اللوحة) ⇒ صفوف أو خطأ بنوعه */
+async function fetchBannerTerm(term, opts) {
+  const ping = !!(opts && opts.ping), t0 = Date.now();
+  if (Date.now() < BANNER_BLOCK.until) throw pmuErr('block', 'Banner backoff', { local: true });
+  const jar = new Map();
+  const take = r => ((r.headers && r.headers['set-cookie']) || [])
+    .forEach(c => { const kv = String(c).split(';')[0]; jar.set(kv.split('=')[0], kv) });
+  const H = extra => Object.assign({ 'User-Agent': PMU_UA, 'Accept-Language': 'en-US,en;q=0.9' },
+    jar.size ? { Cookie: [...jar.values()].join('; ') } : {}, extra);
+  const check = (r, what, redirectOk) => {
+    if (r.status === 403 || r.status === 429) {
+      bannerBlockHit(r.status, r.headers && r.headers['retry-after']);
+      throw pmuErr('block', `Banner ${what} ${r.status}`, { status: r.status });
+    }
+    if (!r.status || r.status >= 500) throw pmuErr('down', `Banner ${what} ${r.status}`, { status: r.status });
+    if (r.status !== 200 && !(redirectOk && r.status >= 300 && r.status < 400))
+      throw pmuErr('format', `Banner ${what} ${r.status}`, { status: r.status, title: pmuTitle(r.text) });
+  };
+  const sid = 'jdw' + crypto.randomBytes(5).toString('hex') + Date.now();
+  const XHR = { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json, text/javascript, */*; q=0.01' };
+  try {
+    let r = await uniReq(BANNER_HOST, 'GET', `${BANNER_BASE}/term/termSelection?mode=search`,
+      H({ Accept: 'text/html,application/xhtml+xml' }), null, 15000, 20000);
+    check(r, 'session', true); take(r);
+    const form = new URLSearchParams({ term, studyPath: '', studyPathText: '', startDatepicker: '',
+      endDatepicker: '', uniqueSessionId: sid }).toString();
+    r = await uniReq(BANNER_HOST, 'POST', `${BANNER_BASE}/term/search?mode=search`, H(Object.assign({
+      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+      'Content-Length': Buffer.byteLength(form) }, XHR)), form, 15000, 20000);
+    check(r, 'term'); take(r);
+    const all = [], size = ping ? 10 : BANNER_PAGE;
+    let total = null;
+    for (let off = 0; off < BANNER_MAX; off += size) {
+      const q = new URLSearchParams({ txt_term: term, startDatepicker: '', endDatepicker: '', uniqueSessionId: sid,
+        pageOffset: String(off), pageMaxSize: String(size), sortColumn: 'subjectDescription', sortDirection: 'asc' });
+      r = await uniReq(BANNER_HOST, 'GET', `${BANNER_BASE}/searchResults/searchResults?${q}`, H(XHR), null, 20000, 60000);
+      check(r, 'results'); take(r);
+      let j; try { j = JSON.parse(r.text) } catch (e) { throw pmuErr('format', 'Banner: الرد مو JSON', { title: pmuTitle(r.text) }) }
+      if (!j || j.success === false || !Array.isArray(j.data)) throw pmuErr('format', 'Banner: رد بلا data');
+      if (total == null && Number.isFinite(Number(j.totalCount))) total = Number(j.totalCount);
+      all.push(...j.data);
+      if (ping || j.data.length < size || (total != null && all.length >= total)) break;
+      await new Promise(x => setTimeout(x, 800));
+    }
+    const rows = bannerRows(all);
+    if (!rows.length) throw pmuErr('down', 'Banner: صفر شعب');
+    const sh = pmuShape(rows);
+    if (!sh.ok) throw pmuErr('format', `Banner: شكل الرد تغيّر (${sh.n} صف)`, { shape: sh });
+    /* ناقص عن العدد اللي قاله بانر نفسه = صفحة ضاعت: ما نصدّقه (الغايب يطلع «اختفى» ثم «جديد») */
+    if (!ping && total != null && all.length < total * 0.95)
+      throw pmuErr('down', `Banner: وصلنا ${all.length} من ${total}`);
+    if (BANNER_BLOCK.n) { BANNER_BLOCK.n = 0; resolve('banner-block', 'بانر يرفض طلباتنا') }
+    BANNER_LAST = { at: Date.now(), ok: true, sections: all.length, total, rows: rows.length, ms: Date.now() - t0, ping };
+    return { rows, total, sections: all.length };
+  } catch (e) {
+    BANNER_LAST = { at: Date.now(), ok: false, kind: e.pmu || 'down', err: String(e.message || e).slice(0, 160),
+                    ms: Date.now() - t0, ping };
+    throw e;
+  }
+}
+
+const pmuWhy = e => e.pmu === 'format'
+  ? (e.shape ? `وصل جدول ${e.shape.n} صف، لكن ${Math.round(100 * e.shape.crn / e.shape.n)}٪ منها رقم الشعبة ` +
+               `أرقام و${Math.round(100 * e.shape.st / e.shape.n)}٪ حالتها OPEN/CLOSED — الأعمدة تغيّرت`
+     : `${escP(e.message)}${e.title ? ` — عنوان الصفحة: «${escP(e.title)}»` : ''}`)
+  : escP(e.message);
 
 /* ============ الفحص الجماعي ============ */
 /* سحبة واحدة من الجامعة لكل ترم مطلوب، ثم توزيع على كل الطلاب */
@@ -2972,7 +3278,94 @@ async function inBatches(items, size, fn) {
   }
 }
 
-let cycleRunning = false;
+/* حصة المجاني: أقدم N مراقبات شعبة لكل طالب (PRICING.freeMonitors) — المكان الوحيد اللي تنحسب فيه */
+function freeQuota(monitors) {
+  const ok = new Set(), perUser = {};
+  monitors.forEach(m => {
+    if (m.scope !== 'course') (perUser[m.user_id] = perUser[m.user_id] || []).push(m);
+  });
+  Object.values(perUser).forEach(list => {
+    list.sort((a, b) => ((Date.parse(a.created_at) || 0) - (Date.parse(b.created_at) || 0))
+                        || (Number(a.id) - Number(b.id)));
+    list.slice(0, PRICING.freeMonitors).forEach(m => ok.add(m.id));
+  });
+  return ok;
+}
+
+/* ═══ شعبة اختفت من جدول الجامعة ═══
+   كانت تنتخطّى بصمت (`!live`): طالب يراقب شعبة انلغت وينتظر للأبد. ثلاث دورات ورا بعض بجدول كامل
+   وطازج بلا أثر لها ⇒ رسالة وحدة («غالباً انلغت — شوف شعبة ثانية»)، ومراقبتها تكمل لو رجعت.
+   العدّ في الذاكرة (نشر يصفّره — ثلاث دورات ثانية)، واللي انقال له يُحفظ مع الحالة فما يتكرر */
+const MON_GONE = new Map(), MON_GONE_TOLD = new Set(), MON_GONE_AFTER = 3;
+async function notifyGone(list, monitors) {
+  const freeOk = freeQuota(monitors);
+  const ids = [...new Set(list.map(m => m.user_id))].map(u => `"${u}"`).join(',');
+  const profs = await sb('GET', 'profiles', {
+    query: `?id=in.(${ids})&select=id,telegram_chat_id,is_pro,subscription_expires_at`
+  }).catch(() => []);
+  const byId = new Map((Array.isArray(profs) ? profs : []).map(p => [p.id, p]));
+  for (const m of list) {
+    const p = byId.get(m.user_id), k = m.id + '|' + m.crn;
+    /* بلا تلقرام أو مراقبة فوق حصة المجاني (ما تنخدم أصلاً): ما نرسل، ولا نرجع نسأل */
+    if (!p || !p.telegram_chat_id || !(hasAccess(p) || freeOk.has(m.id))) { MON_GONE_TOLD.add(k); continue }
+    const r = await sendMsg(p.telegram_chat_id,
+      `⚠️ <b>الشعبة اللي تراقبها اختفت من جدول الجامعة</b>\n\n` +
+      `<b>${escP(m.course_code || '—')}</b> — شعبة ${escP(m.section || '?')} · CRN <code>${escP(m.crn)}</code>\n` +
+      `ما لقيناها في جدول الترم ${MON_GONE_AFTER} مرات ورا بعض — غالباً الجامعة ألغتها أو غيّرت رقمها.\n\n` +
+      `بنكمل نراقبها لو رجعت، بس الأحسن تختار شعبة ثانية من الموقع.`,
+      kb([[btn('🔕 أوقف مراقبة هذي الشعبة', 'stop:' + m.id)]])).catch(() => null);
+    if (r && r.ok) MON_GONE_TOLD.add(k);
+    await new Promise(r2 => setTimeout(r2, 300));
+  }
+}
+
+/* ═══ نبض خارجي (اختياري) ═══
+   الإنذارات كلها تطلع من السيرفر نفسه — لو وقف كله (انهيار · Render · خدمة موقوفة) ما يوصلك شي.
+   HEALTHCHECK_URL (رابط فحص من healthchecks.io مثلاً) ننبضه كل ٥ دقائق وبعد كل دورة: «سليم» لو المراقبة
+   ماشية أو خارج وقتها، و«/fail» لو المفروض تشتغل وآخر دورة سليمة قبل ربع ساعة. وقف النبض = السيرفر
+   واقف ⇒ الخدمة تنبّهك هي. بلا المتغيّر ما يصير شي */
+const HEALTHCHECK_URL = (() => {
+  const u = String(process.env.HEALTHCHECK_URL || '').trim();
+  return /^https:\/\/[^\s"'<>]+$/.test(u) ? u.replace(/\/+$/, '') : '';
+})();
+let LAST_GOOD_CYCLE = Date.now(), HC_LAST = 0;   /* الإقلاع مهلة: ما نقول «فشل» قبل ربع ساعة منه */
+const HC_FAIL_AFTER = 15 * 60 * 1000;
+function hcVerdict() {
+  if (!monitorState().active) return 'ok';        /* خارج الوقت أو موقوفة: السيرفر حي وبس */
+  return Date.now() - LAST_GOOD_CYCLE > HC_FAIL_AFTER ? 'fail' : 'ok';
+}
+function heartbeat() {
+  if (!HEALTHCHECK_URL || !MONITOR_ENABLED) return Promise.resolve(null);
+  HC_LAST = Date.now();
+  const verdict = hcVerdict();
+  let u;
+  try { u = new URL(HEALTHCHECK_URL + (verdict === 'fail' ? '/fail' : '')) } catch (e) { return Promise.resolve(null) }
+  return new Promise(resolve => {
+    let g;
+    const req = https.request({ hostname: u.hostname, path: u.pathname + u.search, method: 'GET',
+      headers: { 'User-Agent': 'jadwalik-heartbeat' } }, res => {
+      g.res(res);
+      res.resume();
+      res.on('end', () => { g.ok(); resolve(verdict) });
+    });
+    g = outGuard(req, 10000, () => resolve(null));
+    req.on('error', e => g.fail(e));
+    req.end();
+  });
+}
+
+let cycleRunning = false, cycleStartedAt = 0, CYCLE_GEN = 0, CYCLE_SKIPS = 0;
+/* إشعار فشل إرساله: كم مرة حاولنا (مراقبة|CRN) — نعيده الدورة الجاية بحد ثلاث */
+const NOTIFY_FAILS = new Map(), NOTIFY_MAX_TRIES = 3;
+/* مصدر آخر جدول راقبنا منه: موقع الجدول ('pmu') أو احتياط بانر ('banner') — يُحفظ مع الحالة */
+let MON_SOURCE = 'pmu';
+/* إغلاق (نشر جديد): ما نبدأ دورة، وننتظر الشغّالة تكمل إرسالها. وإرسال طويل (مئات
+   الطلاب) يوقف بعد SHUTDOWN_SEND_MS ويرجّع الباقي محجوزاً للنسخة الجديدة — Render يمهل ٣٠ ثانية */
+let SHUTTING_DOWN = false, SHUTDOWN_AT = 0;
+const SHUTDOWN_SEND_MS = 18000;
+/* دورة أطول من هذا = علقت: نفكّ قفلها ونبدأ غيرها. حارس الطلبات يمنع أغلب التعليق،
+   وهذا للباقي — والقديمة لو صحت ما تكتب ولا ترسل (CYCLE_GEN) */
+const CYCLE_STUCK_MS = 8 * 60 * 1000;
 
 /* سجل تشغيلي — يُقرأ من لوحة التحكم. في الذاكرة فقط، يُصفّر عند إعادة النشر. */
 const OPS = {
@@ -3048,9 +3441,9 @@ async function sendFollowups() {
   let sent = 0;
   for (const m of due) {
     const p = byUser[m.user_id];
-    const label = m.scope === 'course'
+    const label = escP(m.scope === 'course'
       ? (m.course_code || 'المادة')
-      : `${m.course_code || 'المادة'}${m.crn ? ' · CRN ' + m.crn : ''}`;
+      : `${m.course_code || 'المادة'}${m.crn ? ' · CRN ' + m.crn : ''}`);
     if (p && p.telegram_chat_id) {
       const r = await sendMsg(p.telegram_chat_id,
         `⏳ <b>سجّلت ${label}؟</b>\n\n` +
@@ -3087,22 +3480,35 @@ async function dropExpired() {
 }
 
 async function runMonitorCycle() {
-  if (!SB_URL || !SB_SERVICE_KEY) return;
+  /* نسخة بلا مراقبة (dev) ما تشغّل دورة من أي طريق — القاعدة مشتركة */
+  if (!SB_URL || !SB_SERVICE_KEY || !MONITOR_ENABLED || SHUTTING_DOWN) return;
 
   /* قفل: لو الدورة السابقة ما خلصت، ما نبدأ وحدة جديدة فوقها.
-     بدونه الدورات تتراكم في الذروة وتاكل الذاكرة. */
+     بدونه الدورات تتراكم في الذروة وتاكل الذاكرة. والإنذار كان مرة وحدة طول عمر
+     السيرفر (العدّاد التراكمي === 3) — صار عن التخطّي المتتالي، وينحل لما تخلص دورة */
   if (cycleRunning) {
-    OPS.skipped++;
-    console.log('cycle still running — skipped');
-    if (OPS.skipped === 3)
-      alert('skip', 'دورات المراقبة تتراكم',
-        `تخطّت ${OPS.skipped} دورات لأن السابقة ما خلصت في وقتها.\n` +
-        `الإشعارات بتتأخر على الطلاب.`);
-    return;
+    const ranMin = Math.round((Date.now() - cycleStartedAt) / 60000);
+    if (Date.now() - cycleStartedAt < CYCLE_STUCK_MS) {
+      OPS.skipped++; CYCLE_SKIPS++;
+      console.log('cycle still running — skipped');
+      if (CYCLE_SKIPS >= 2)
+        alert('skip', 'دورات المراقبة تتراكم',
+          `تخطّت ${CYCLE_SKIPS} دورات ورا بعض لأن السابقة ما خلصت (شغّالة من ${ranMin} دقيقة).\n` +
+          `الإشعارات متأخرة على الطلاب.`);
+      return;
+    }
+    OPS.stuck = (OPS.stuck || 0) + 1;
+    console.log(`cycle stuck ${ranMin} min — releasing the lock`);
+    alert('stuck', 'دورة المراقبة علقت',
+      `آخر دورة بدأت قبل ${ranMin} دقيقة وما خلصت — فكّينا قفلها وبدأنا دورة جديدة.\n` +
+      `لو تكرر، شي يعلّق الدورة: شوف سجل Render.`);
   }
   cycleRunning = true;
+  cycleStartedAt = Date.now();
+  const gen = ++CYCLE_GEN;
+  const current = () => gen === CYCLE_GEN;   /* علقت وفكّينا قفلها؟ ما تكتب ولا ترسل */
   const t0 = Date.now();
-  const stat = { at: t0, rows: 0, changed: 0, toNotify: 0, eligible: 0,
+  const stat = { at: t0, gen, rows: 0, changed: 0, toNotify: 0, eligible: 0,
                  notified: 0, terms: 0, snapshot: 0, sec: 0, error: null };
 
   try {
@@ -3112,8 +3518,18 @@ async function runMonitorCycle() {
 
     /* sbAll لا sb: sb تقصّ عند ١٠٠٠ صف بلا خطأ — فالمراقبة رقم ١٠٠١ كانت
        ما تنفحص أبداً، ولا أحد يدري. الموسم الماضي ٥٧٧ صفاً، والقادم أكثر. */
-    const allMons = await sbAll('monitored_courses', { query: '?select=*' });
-    if (!Array.isArray(allMons) || !allMons.length) return;
+    /* strict: قراءة فشلت كانت ترجع [] — «ما فيه مراقبات» فترجع الدورة بصمت، والمراقبة كلها واقفة
+       بلا أحد يدري (أو صفحة وسطى تفشل فينقطع الباقي). الحين إنذار، وينحل مع أول قراءة سليمة */
+    let allMons;
+    try { allMons = await sbAll('monitored_courses', { query: '?select=*', strict: true }) }
+    catch (e) {
+      stat.error = 'db: ' + e.message;
+      alert('db', 'القاعدة ما ترد — المراقبة واقفة',
+        `ما قدرنا نقرأ قائمة المراقبة: ${escP(e.message)}\n\nولا شعبة انفحصت هالدورة. لو تكرر، شوف حالة Supabase.`);
+      return;
+    }
+    resolve('db', 'القاعدة ما ترد — المراقبة واقفة');
+    if (!allMons.length) { LAST_GOOD_CYCLE = Date.now(); return; }
 
     /* الترم النشط وحده. صف واحد بترم آخر كان يضيف سحبة كاملة من موقع
        الجامعة في كل دورة، والأخطر: في الموسم القادم كانت الدورة تسحب
@@ -3123,14 +3539,17 @@ async function runMonitorCycle() {
     const TERM = regTerm();
     const monitors = allMons.filter(m => String(m.term || '') === TERM);
     stat.otherTerm = allMons.length - monitors.length;
-    if (!monitors.length) return;
+    if (!monitors.length) { LAST_GOOD_CYCLE = Date.now(); return; }
 
     /* ── 1. سحبة واحدة، للترم النشط ── */
     const terms = [TERM];
     const snapshot = {};
     let fetchFailed = false, partial = false;
+    let gotFeed = false, usedBanner = false, freshPmu = false;
     for (const term of terms) {
       const snap = await fetchTermSnapshot(term);
+      if (!current()) { stat.superseded = true; return }
+      if (snap.courses) gotFeed = freshPmu = true;
 
       if (snap.courses) {
         const parsed = snap.courses;
@@ -3139,6 +3558,21 @@ async function runMonitorCycle() {
            يتطابق أبداً، فتتعطّل مراقبة المادة كاملة بصمت. نوسمه هنا. */
         parsed.forEach(c => { c.term = term; snapshot[term + ':' + c.crn] = c; });
         if (snap.guessed) stat.guessedGender = true;
+        /* كل جنس وصل كاملاً يصير كاش بحثه (ترم|ALL|M1 · F1) — البحث الافتراضي بالجنس، وكان
+           يسحب من الجامعة مع أن الدورة سحبت نفس الجدول قبل دقيقة. حتى لو الثاني تعثّر */
+        for (const [g, rows] of Object.entries(snap.byG || {})) {
+          const gk = `${term}|ALL|${g}`, gp = coursesCache.get(gk);
+          coursesCache.set(gk, { at: Date.now(), lastHit: (gp && gp.lastHit) || 0, courses: rows });
+          OPS.cacheFromMonitor = (OPS.cacheFromMonitor || 0) + 1;
+        }
+        if (snap.short) {
+          stat.short = snap.short;
+          alert('pmu-short', 'جدول الجامعة وصل ناقص',
+            `سحبة ${snap.short.g} للترم ${term}: ${snap.short.n} صف، والمعتاد ${snap.short.peak}.\n\n` +
+            `الشعبة بعينها تنراقب عادي. مراقبة المادة كاملة واقفة لين يرجع كامل — أو يثبت ` +
+            `${PMU_SHORT_ACCEPT} سحبات على الحجم الجديد فنعتمده.`);
+        } else resolve('pmu-short', 'جدول الجامعة وصل ناقص');
+        if (!snap.errs.some(e => e.pmu === 'format')) resolve('pmu-format', 'موقع الجامعة يرد بشكل ما نفهمه');
 
         if (snap.partial) {
           /* نصف جدول: يكفي لمراقبة شعبة بعينها — حضورها حقيقة مقيسة —
@@ -3169,6 +3603,7 @@ async function runMonitorCycle() {
              تعبّي الكاش، ما عادت تنطلق من هناك — فنطلقها من هنا.
              الحارس الزمني داخل syncSchedules يمنع الكتابة المتكررة. */
           syncSchedules(term, parsed).catch(() => {});
+          snapSave(term, snap.byG).catch(() => {});
         }
       } else {
         fetchFailed = true;
@@ -3185,10 +3620,42 @@ async function runMonitorCycle() {
           stat.fromCache = Math.round(age / 1000);
           console.log(`cycle: نسخة من الكاش عمرها ${stat.fromCache} ثانية`);
         } else {
-          alert('pmu', 'موقع الجامعة ما يستجيب',
-            `فشل سحب بيانات الترم ${term} — الطلبات الثلاثة كلها.\n\n` +
-            `وما فيه نسخة حديثة في الذاكرة نرجع لها.\n` +
-            `المراقبة والبحث بيتأثرون. لو تكرر كثير، تحقق إذا السيرفر محجوب.`);
+          const blocked = snap.errs.some(e => e.pmu === 'block') || pmuBlocked();
+          /* الاحتياط: بحث بانر العام — للمراقبة وحدها، وإلا لو رفضونا (رفض متعمّد ما نلتف عليه) */
+          let via = '';
+          if (!blocked && BANNER_ON) {
+            try {
+              const b = await fetchBannerTerm(term);
+              if (!current()) { stat.superseded = true; return }
+              const sh = pmuShort(term, 'BANNER', b.rows.length);
+              b.rows.forEach(c => { c.term = term; snapshot[term + ':' + c.crn] = c; });
+              usedBanner = true; gotFeed = true; stat.banner = b.rows.length;
+              if (sh) { partial = true; stat.short = Object.assign({ g: 'BANNER' }, sh) }
+              via = '🛟 المراقبة مستمرة من صفحة بحث بانر العامة (احتياط) لين يرجع — والبحث للطلاب يخدم آخر نسخة عندنا.';
+              resolve('banner-down', 'احتياط بانر ما اشتغل');
+            } catch (e) {
+              stat.bannerErr = String(e.message || e).slice(0, 120);
+              if (e.pmu !== 'block')
+                alert('banner-down', 'احتياط بانر ما اشتغل',
+                  `موقع الجدول متعطّل، والاحتياط من بانر كذلك: ${escP(e.message)}\n\n` +
+                  `المراقبة واقفة لين يرجع واحد منهما.`);
+            }
+          }
+          if (blocked) {
+            stat.blocked = true;               /* إنذاره طلع وقت الرفض (pmuBlockHit) */
+          } else if (snap.errs.some(e => e.pmu === 'format')) {
+            stat.format = true;
+            alert('pmu-format', 'موقع الجامعة يرد بشكل ما نفهمه',
+              `سحبنا بيانات الترم ${term} ورجع لنا شي غير الجدول المعروف:\n` +
+              [...new Set(snap.errs.filter(e => e.pmu === 'format').map(pmuWhy))].map(x => '• ' + x).join('\n') +
+              `\n\nما كتبنا ولا حالة منه. ` + (via || `المراقبة واقفة لين يرجع الشكل المعروف — ` +
+              `لو استمر، الموقع تغيّر والكود يحتاج تعديل.`));
+          } else {
+            alert('pmu', 'موقع الجامعة ما يستجيب',
+              `فشل سحب بيانات الترم ${term} — الطلبات الثلاثة كلها.\n\n` +
+              (via || `وما فيه نسخة حديثة في الذاكرة نرجع لها.\n` +
+              `المراقبة والبحث بيتأثرون. لو تكرر كثير، تحقق إذا السيرفر محجوب.`));
+          }
         }
       }
     }
@@ -3198,6 +3665,23 @@ async function runMonitorCycle() {
     CYCLE_RETRIES = fetchFailed
       ? Math.min(CYCLE_RETRIES + 1, CYCLE_RETRY_MAX + 1)
       : 0;
+    CYCLE_DOWN = gotFeed ? 0 : CYCLE_DOWN + 1;
+    if (gotFeed) LAST_GOOD_CYCLE = Date.now();
+
+    /* مصدر الجدول: موقع الجدول أو احتياط بانر. رجوع الجدول بعد بانر = دورة تسجّل بلا إشعار (settle):
+       الجدول ممكن يتأخر عن بانر، فـ«مفتوحة» قديمة منه تطلع «فتحت» كاذبة. والذهاب لبانر عادي — بانر
+       أحدث، و«فتحت» منه بمقاعد فعلاً */
+    const source = usedBanner ? 'banner' : 'pmu';
+    const settle = gotFeed && source === 'pmu' && MON_SOURCE === 'banner';
+    /* أول دورة من بانر: شعبة «جديدة» عليه ممكن تكون شعبة ملغاة يعرضها والجدول يخفيها — ما نقول «نزلت
+       شعبة» من التبديل نفسه (الحالة تنكتب، والجديد فعلاً يبان الدورة الجاية) */
+    const toBanner = gotFeed && source === 'banner' && MON_SOURCE !== 'banner';
+    if (gotFeed && source !== MON_SOURCE) {
+      stat.source = `${MON_SOURCE}→${source}`;
+      MON_GONE.clear();                       /* عدّ «اختفت» من مصدر واحد بس */
+      console.log(`cycle: المصدر ${stat.source}`);
+    }
+    if (gotFeed) MON_SOURCE = source;
 
     const now = new Date().toISOString();
 
@@ -3205,7 +3689,10 @@ async function runMonitorCycle() {
     stat.rows = monitors.length;
     stat.terms = terms.length;
     stat.snapshot = Object.keys(snapshot).length;
-    if (stat.snapshot > 0) resolve('pmu', 'موقع الجامعة ما يستجيب');
+    if (freshPmu) {
+      resolve('pmu', 'موقع الجامعة ما يستجيب');
+      resolve('banner-down', 'احتياط بانر ما اشتغل');
+    }
 
     /* فهرس المواد: ترم|كود → كل شعبها. نحتاجه لمراقبة المادة كاملة. */
     const normCode = s => String(s || '').trim().toUpperCase().replace(/\s+/g, ' ');
@@ -3220,7 +3707,7 @@ async function runMonitorCycle() {
     stat.courseRows = courseMons.length;
 
     const changed = [];      // {m, live}
-    const toNotify = [];     // {m, live}
+    let toNotify = [];       // {m, live}
     /* ═══ تصحيح الأساس عند التفعيل ═══
        last_status يجي من القائمة المعروضة عند الطالب، وقد تكون قديمة
        بدقائق. فتنشأ حالتان خاطئتان:
@@ -3236,13 +3723,30 @@ async function runMonitorCycle() {
       if (live.status === m.last_status) continue;
 
       const age = m.created_at ? (Date.now() - new Date(m.created_at).getTime()) : Infinity;
-      if (age < BASELINE_GRACE) {
+      if (age < BASELINE_GRACE || settle) {
         changed.push({ m, live });          /* نكتب الحالة الصحيحة */
-        stat.baselineFixed = (stat.baselineFixed || 0) + 1;
+        if (settle) stat.settled = (stat.settled || 0) + 1;
+        else stat.baselineFixed = (stat.baselineFixed || 0) + 1;
         continue;                            /* بلا إشعار */
       }
       changed.push({ m, live });
       if (live.status === 'OPEN' && m.last_status !== 'OPEN') toNotify.push({ m, live });
+    }
+
+    /* شعبة مراقَبة ما لها أثر في جدول كامل وطازج (لا نصف ولا ناقص ولا من الكاش) — ثلاث مرات ورا بعض */
+    const gone = [];
+    if (!partial && !stat.fromCache && stat.snapshot > 0 && source === 'pmu' && !settle) {
+      for (const m of sectionMons) {
+        const k = m.id + '|' + m.crn;
+        if (snapshot[(m.term || '202630') + ':' + m.crn]) { MON_GONE.delete(k); continue }
+        if (MON_GONE_TOLD.has(k) || !m.crn) continue;
+        const age = m.created_at ? (Date.now() - new Date(m.created_at).getTime()) : Infinity;
+        if (age < BASELINE_GRACE) continue;
+        const n = (MON_GONE.get(k) || 0) + 1;
+        MON_GONE.set(k, n);
+        if (n >= MON_GONE_AFTER) gone.push(m);
+      }
+      if (gone.length) stat.gone = gone.length;
     }
 
     /* ── 2ب. مراقبة المادة كاملة ──
@@ -3272,41 +3776,56 @@ async function runMonitorCycle() {
         .map(k => k + ':' + o[k]).join('|');
       if (!prev || fp(prev) !== fp(cur))
         courseStateUpdates.push({ id: m.id, state: cur });
-      if (!prev) continue;                       /* أول دورة — تسجيل فقط */
+      if (!prev || settle) continue;             /* أول دورة (أو رجوع الجدول بعد بانر) — تسجيل فقط */
 
       const hits = [];
       for (const c of list) {
         const crn = String(c.crn);
         const was = prev[crn];
         const isNew = !(crn in prev);
-        if (c.status === 'OPEN' && was !== 'OPEN') hits.push({ c, isNew });
-        else if (isNew) hits.push({ c, isNew, closedNew: true });
+        if (isNew && toBanner) continue;
+        if (c.status === 'OPEN' && was !== 'OPEN') hits.push({ c, isNew, was });
+        else if (isNew) hits.push({ c, isNew, was, closedNew: true });
       }
       /* سقف ثلاث شعب في الدورة الواحدة — الباقي يُذكر بالعدد */
       hits.slice(0, 3).forEach(h => toNotify.push({
-        m, live: h.c, courseScope: true, isNew: h.isNew, closedNew: h.closedNew,
+        m, live: h.c, courseScope: true, isNew: h.isNew, closedNew: h.closedNew, was: h.was,
         more: hits.length > 3 ? hits.length - 3 : 0
       }));
     }
 
-    /* حفظ حالة صفوف المادة — كل صف بحالته */
-    for (const u of courseStateUpdates) {
-      await sb('PATCH', 'monitored_courses', {
-        query: `?id=eq.${u.id}`,
-        body: { sections_state: u.state },
-        prefer: 'return=minimal'
-      }).catch(() => {});
-    }
-
     stat.changed = changed.length;
     stat.toNotify = toNotify.length;
-    if (!changed.length && !toNotify.length) return;
+    if (!changed.length && !toNotify.length && !courseStateUpdates.length) {
+      if (gone.length && current() && !SHUTTING_DOWN) await notifyGone(gone, monitors).catch(() => {});
+      return;
+    }
+    if (!current()) { stat.superseded = true; return }
 
-    /* ── 3. تحديث الحالة بالجملة ──
-       بدل PATCH لكل صف، نجمع الصفوف حسب الحالة الجديدة ونرسل طلباً واحداً
-       لكل حالة باستخدام id=in.(...). 2000 طلب تصير 2-3 طلبات. */
+    /* ── 3. الحجز ثم تحديث الحالة بالجملة ──
+       «فتحت» اللي بنرسلها **تُحجز**: تحديث مشروط (ما كانت OPEN) يرجّع الصفوف اللي
+       تغيّرت فعلاً — نسختان شغّالتان معاً (وقت النشر) كانت كل وحدة تقرأ CLOSED وترسل،
+       فيوصل الطالب الإشعار مرتين. الحين اللي حجزت ترسل، والثانية ما يرجع لها صف.
+       والإرسال اللي يفشل يرجّع الحجز تحت (فتعيده الدورة الجاية) — كانت الحالة تنكتب
+       قبل الإرسال وما ترجع، فرسالة رفضها تيليغرام مرة = إشعار ضاع للأبد.
+       الباقي (مقفلة · تصحيح الأساس) بلا شرط: نجمعها حسب الحالة، طلب لكل حالة. */
+    const claimIds = toNotify.filter(x => !x.courseScope).map(x => x.m.id);
+    const claimSet = new Set(claimIds), claimed = new Set();
+    for (let i = 0; i < claimIds.length; i += 200) {
+      const r = await sb('PATCH', 'monitored_courses', {
+        query: `?id=in.(${claimIds.slice(i, i + 200).join(',')})` +
+               '&or=(last_status.is.null,last_status.neq.OPEN)',
+        body: { last_status: 'OPEN' }, prefer: 'return=representation'
+      }).catch(() => null);
+      (Array.isArray(r) ? r : []).forEach(x => claimed.add(x.id));
+    }
+    if (claimIds.length > claimed.size) {
+      stat.claimLost = claimIds.length - claimed.size;    /* نسخة ثانية سبقتنا عليها */
+      toNotify = toNotify.filter(x => x.courseScope || claimed.has(x.m.id));
+    }
     const byStatus = {};
     changed.forEach(({ m, live }) => {
+      if (claimSet.has(m.id)) return;                     /* انكتبت بالحجز */
       (byStatus[live.status] = byStatus[live.status] || []).push(m.id);
     });
 
@@ -3322,8 +3841,6 @@ async function runMonitorCycle() {
         });
       }
     }
-
-    if (!toNotify.length) return;
 
     /* ── 4. سحب ملفات المستخدمين المعنيين دفعة واحدة ── */
     const userIds = [...new Set(toNotify.map(x => x.m.user_id))];
@@ -3341,20 +3858,9 @@ async function runMonitorCycle() {
        فقط، ومراقبة «كل الشعب» للمشتركين. الباقي متوقف لا محذوف — يرجع
        يشتغل لو اشترك. والصفحة تكتب في القاعدة مباشرة، فأي أحد يتجاوز
        الحد من أدوات المتصفح — لكن الدورة ما تخدم إلا حصّته. */
-    const freeOk = new Set();
-    {
-      const perUser = {};
-      monitors.forEach(m => {
-        if (m.scope !== 'course') (perUser[m.user_id] = perUser[m.user_id] || []).push(m);
-      });
-      Object.values(perUser).forEach(list => {
-        list.sort((a, b) => ((Date.parse(a.created_at) || 0) - (Date.parse(b.created_at) || 0))
-                            || (Number(a.id) - Number(b.id)));
-        list.slice(0, PRICING.freeMonitors).forEach(m => freeOk.add(m.id));
-      });
-    }
+    const freeOk = freeQuota(monitors);
     let withheld = 0;
-    const sendList = toNotify.filter(({ m }) => {
+    let sendList = toNotify.filter(({ m }) => {
       const p = profiles[m.user_id];
       if (!p || !p.telegram_chat_id) return false;
       if (hasAccess(p)) return true;
@@ -3364,12 +3870,41 @@ async function runMonitorCycle() {
     });
     if (withheld) console.log(`   الحصة المجانية: ${withheld} إشعار ما خرج (فوق الحد)`);
 
-    /* ── 6. إرسال على دفعات متوازية ──
-       تيليغرام يسمح بحوالي 30 رسالة/ثانية، فدفعات من 20 مع فاصل بسيط آمنة. */
+    /* ── 5ب. حجز المادة كاملة ──
+       حالتها JSON فما تنحجز بشرط عليها مثل الشعبة — الحجز بـnotified_at: نكتب الحالة الجديدة
+       بشرط إنه ما تغيّر من قرأناه (نسخة حجزت قبلنا = تغيّر)، واللي يقرأ بعد حجزنا يلقى الحالة
+       الجديدة فما يشوف «فتحت». نحجز اللي بنرسل له وحده: المحجوب (فوق الحصة · بلا تلقرام)
+       حالته تنكتب بلا شرط مع الباقي — notified_at له ما يتغيّر على إشعار ما راح */
+    const courseRows = new Map();
+    sendList.forEach(x => { if (x.courseScope) courseRows.set(x.m.id, x.m) });
+    const stateOf = new Map(courseStateUpdates.map(u => [u.id, u.state]));
+    const claimAt = new Date().toISOString(), courseLost = new Set();
+    for (const [id, m] of courseRows) {
+      const r = await sb('PATCH', 'monitored_courses', {
+        query: `?id=eq.${id}&notified_at=` +
+               (m.notified_at == null ? 'is.null' : 'eq.' + encodeURIComponent(m.notified_at)),
+        body: { sections_state: stateOf.get(id), notified_at: claimAt },
+        prefer: 'return=representation'
+      }).catch(() => null);
+      if (!(Array.isArray(r) && r.length)) courseLost.add(id);
+    }
+    if (courseLost.size) {
+      stat.claimLost = (stat.claimLost || 0) + courseLost.size;
+      sendList = sendList.filter(x => !courseLost.has(x.m.id));
+    }
+
+    /* ── 6. الإرسال ──
+       محادثات مختلفة على دفعات متوازية (تيليغرام ~٣٠ رسالة/ثانية)، ورسائل **نفس
+       المحادثة ورا بعض** بثانية بينها: مراقب المادة كاملة يطلع له ثلاث رسائل بنفس
+       اللحظة، وتيليغرام يحد المحادثة الوحدة — والمرفوضة كانت تضيع. وطلب «استنى»
+       (429 · retry_after) نستناه ونعيد مرة. ونصوص الجامعة تُهرَّب (esc): «&» وحدها في
+       اسم مادة كافية ليرفض تيليغرام الرسالة كلها. */
     stat.eligible = sendList.length;
     const notified = [];
     const followups = [];      /* نسأل صاحبها بعد عشر دقائق: سجّلتها؟ */
-    await inBatches(sendList, 20, async ({ m, live, courseScope, isNew, closedNew, more }) => {
+    const sentFail = [];       /* فشلت ⇒ نرجّع الحجز وتعيدها الدورة الجاية */
+    const deferred = [];       /* نشر جديد قطع الإرسال ⇒ نرجّع الحجز بلا عدّ محاولة */
+    const sendOne = async ({ m, live, courseScope, isNew, closedNew, more }) => {
       const p = profiles[m.user_id];
       /* أربع حالات، والعنوان هو الوحيد الظاهر في إشعار القفل —
          فالتمييز لازم يكون فيه لا في سطر داخلي.
@@ -3383,28 +3918,34 @@ async function runMonitorCycle() {
       const tail = closedNew ? '📌 مقفلة حالياً — بنراقبها لك.'
                              : '⚡️ سجّل الحين قبل ما تنسكر!';
       const scopeLine = courseScope
-        ? `\n<i>وصلتك لأنك تراقب ${live.courseCode} كاملة</i>`
+        ? `\n<i>وصلتك لأنك تراقب ${escP(live.courseCode)} كاملة</i>`
         : `\n<i>وصلتك لأنك مراقب هذي الشعبة بالذات</i>`;
       const moreLine = more ? `\n<i>+ ${more} شعبة ثانية تغيّرت</i>` : '';
-      const r = await sendMsg(p.telegram_chat_id,
-        `${head}\n\n` +
-        `<b>${live.courseCode}</b> — شعبة ${live.section}\n` +
-        `${live.courseTitle}\n\n` +
-        `🔢 CRN: <code>${live.crn}</code>\n` +
-        `📅 ${live.courseDate}  ⏰ ${live.courseTiming}\n` +
-        `👤 ${live.instructor || '—'}\n` +
-        `🏛️ ${live.room || '—'}${scopeLine}${moreLine}\n\n` +
-        tail,
-        /* زر يوقف المراقبة من داخل تيليغرام — الطالب يسجّل وينسى
-           يرجع للموقع، فيظل يستقبل إشعارات ما عاد يحتاجها. */
-        kb([[btn(courseScope ? '🔕 أوقف مراقبة هذي المادة'
-                             : '🔕 أوقف مراقبة هذي الشعبة', 'stop:' + m.id)]]));
-      if (r && r.ok) { notified.push(m.id); followups.push(m.id); }
-      else OPS.tgFails++;
+      const text = `${head}\n\n` +
+        `<b>${escP(live.courseCode)}</b> — شعبة ${escP(live.section)}\n` +
+        `${escP(live.courseTitle)}\n\n` +
+        `🔢 CRN: <code>${escP(live.crn)}</code>\n` +
+        `📅 ${escP(live.courseDate)}  ⏰ ${escP(live.courseTiming)}\n` +
+        `👤 ${escP(live.instructor || '—')}\n` +
+        `🏛️ ${escP(live.room || '—')}${scopeLine}${moreLine}\n\n` +
+        tail;
+      /* زر يوقف المراقبة من داخل تيليغرام — الطالب يسجّل وينسى
+         يرجع للموقع، فيظل يستقبل إشعارات ما عاد يحتاجها. */
+      const markup = kb([[btn(courseScope ? '🔕 أوقف مراقبة هذي المادة'
+                                          : '🔕 أوقف مراقبة هذي الشعبة', 'stop:' + m.id)]]);
+      let r = await sendMsg(p.telegram_chat_id, text, markup);
+      const wait = r && !r.ok && Number(r.error_code) === 429
+        ? Number(r.parameters && r.parameters.retry_after) || 1 : 0;
+      if (wait && wait <= 10) {
+        await new Promise(r2 => setTimeout(r2, wait * 1000 + 250));
+        r = await sendMsg(p.telegram_chat_id, text, markup);
+      }
+      if (!(r && r.ok)) { OPS.tgFails++; return false }
+      notified.push(m.id); followups.push(m.id);
       /* إشعار من مراقبة فوق حصة المجاني وصل = ميزة مدفوعة استُعملت (الشروط §٤) —
          يمسك مراقبات انضافت قبل الدفع (الفترة المجانية) واشتغلت به: مشغّل القاعدة
          يسجّل الإضافة وحدها فما يشوفها */
-      if (r && r.ok && (m.scope === 'course' || !freeOk.has(m.id)))
+      if (m.scope === 'course' || !freeOk.has(m.id))
         usageLog(p, 'alert', m.scope === 'course' ? 'course' : 'section');
 
       /* Pushover: لك أنت دائماً، ولأي طالب سجّل مفتاحه في ملفه.
@@ -3414,10 +3955,10 @@ async function runMonitorCycle() {
         String(p.telegram_chat_id) === String(ADMIN_CHAT_ID);
       const poKey = (p.pushover_key || '').trim();
       if (PUSHOVER_ON && (isAdmin || pushoverAllowed(p))) {
-        pushover(`${closedNew || isNew ? '🆕' : '🟢'} ${live.courseCode} §${live.section}`,
-          `${live.courseTitle}\nCRN ${live.crn}\n` +
-          `${live.courseDate} · ${live.courseTiming}\n` +
-          `${live.instructor || '—'} · ${live.room || '—'}`,
+        pushover(`${closedNew || isNew ? '🆕' : '🟢'} ${pmuPlain(live.courseCode)} §${pmuPlain(live.section)}`,
+          `${pmuPlain(live.courseTitle)}\nCRN ${pmuPlain(live.crn)}\n` +
+          `${pmuPlain(live.courseDate)} · ${pmuPlain(live.courseTiming)}\n` +
+          `${pmuPlain(live.instructor || '—')} · ${pmuPlain(live.room || '—')}`,
           /* الشعبة المغلقة الجديدة خبر لا طارئ */
           closedNew ? { priority: 0, sound: 'pushover', user: poKey || undefined }
                     : { priority: 2, sound: 'siren', retry: 30, expire: 1800,
@@ -3425,8 +3966,89 @@ async function runMonitorCycle() {
           /* وصل لمفتاح الطالب نفسه = «وصول تنبيه طارئ» (الشروط §٤) */
           .then(sent => { if (sent && poKey) usageLog(p, 'pushover') }).catch(() => {});
       }
+      return true;
+    };
+    const byChat = new Map();
+    for (const x of sendList) {
+      const cid = String(profiles[x.m.user_id].telegram_chat_id);
+      if (!byChat.has(cid)) byChat.set(cid, []);
+      byChat.get(cid).push(x);
+    }
+    await inBatches([...byChat.values()], 20, async items => {
+      for (let i = 0; i < items.length; i++) {
+        if (!current()) { stat.superseded = true; return }
+        if (SHUTTING_DOWN && Date.now() - SHUTDOWN_AT > SHUTDOWN_SEND_MS) {
+          deferred.push(...items.slice(i)); return;
+        }
+        if (i) await new Promise(r2 => setTimeout(r2, 1100));   /* رسالة بالثانية للمحادثة */
+        const x = items[i], k = x.m.id + '|' + x.live.crn;
+        if (await sendOne(x)) NOTIFY_FAILS.delete(k); else sentFail.push(x);
+      }
       await new Promise(r2 => setTimeout(r2, 700));   // تهدئة بين الدفعات
     });
+    if (!current()) { stat.superseded = true; return }
+
+    /* ── 6ب. اللي فشل إرساله يرجع للدورة الجاية — بحد ثلاث محاولات ──
+       الشعبة: نرجّع last_status لقيمته قبل الحجز (لو ما تغيّرت بعده). والمادة كاملة:
+       الشعبة نفسها ترجع بحالتها القديمة في sections_state (أو تنشال لو كانت جديدة).
+       بعد ثلاث محاولات نوقف: رسالة يرفضها تيليغرام دائماً ما نعيدها كل دورة للأبد. */
+    const revert = new Map(), courseBack = new Map();
+    const back = x => {
+      if (x.courseScope) {
+        if (!courseBack.has(x.m.id)) courseBack.set(x.m.id, []);
+        courseBack.get(x.m.id).push(x);
+      } else {
+        const was = x.m.last_status == null ? '' : String(x.m.last_status);
+        if (!revert.has(was)) revert.set(was, []);
+        revert.get(was).push(x.m.id);
+      }
+    };
+    for (const x of sentFail) {
+      const k = x.m.id + '|' + x.live.crn, n = (NOTIFY_FAILS.get(k) || 0) + 1;
+      if (n >= NOTIFY_MAX_TRIES) {
+        NOTIFY_FAILS.delete(k);
+        stat.gaveUp = (stat.gaveUp || 0) + 1;
+        console.log(`notify: أوقفنا إعادة ${k} بعد ${n} محاولات`);
+        continue;
+      }
+      NOTIFY_FAILS.set(k, n);
+      back(x);
+    }
+    deferred.forEach(back);
+    if (deferred.length) stat.deferred = deferred.length;
+    for (const [was, ids] of revert)
+      for (let i = 0; i < ids.length; i += 200)
+        await sb('PATCH', 'monitored_courses', {
+          query: `?id=in.(${ids.slice(i, i + 200).join(',')})&last_status=eq.OPEN`,
+          body: { last_status: was || null }, prefer: 'return=minimal'
+        }).catch(() => {});
+    stat.retryNext = sentFail.length - (stat.gaveUp || 0) + deferred.length;
+
+    /* الفاشل من المادة كاملة يرجع لحاله القديم في sections_state (أو ينشال لو جديد) —
+       بشرط حجزنا: نسخة حجزت بعدنا كتبت أحدث منه. وما وصل منها شي ⇒ notified_at يرجع */
+    const sentIds = new Set(notified);
+    for (const [id, xs] of courseBack) {
+      const st = Object.assign({}, stateOf.get(id));
+      for (const x of xs) {
+        const crn = String(x.live.crn);
+        if (x.isNew) delete st[crn]; else st[crn] = x.was;
+      }
+      const body = { sections_state: st };
+      if (!sentIds.has(id)) body.notified_at = courseRows.get(id).notified_at || null;
+      await sb('PATCH', 'monitored_courses', {
+        query: `?id=eq.${id}&notified_at=eq.${encodeURIComponent(claimAt)}`,
+        body, prefer: 'return=minimal'
+      }).catch(() => {});
+    }
+    /* وحالة باقي صفوف المادة (تغيّرت بلا إشعار يطلع منّا — قفلت · محجوب) بلا شرط */
+    for (const u of courseStateUpdates) {
+      if (courseRows.has(u.id)) continue;      /* انكتبت مع الحجز — أو حجزتها نسخة ثانية */
+      await sb('PATCH', 'monitored_courses', {
+        query: `?id=eq.${u.id}`,
+        body: { sections_state: u.state },
+        prefer: 'return=minimal'
+      }).catch(() => {});
+    }
 
     /* ── 7. تعليم المُشعَرين بالجملة ── */
     for (let i = 0; i < notified.length; i += 200) {
@@ -3452,6 +4074,9 @@ async function runMonitorCycle() {
       }
     }
 
+    /* رسالة «اختفت» آخر شي — بعد إشعارات «فتحت» المستعجلة */
+    if (gone.length && current() && !SHUTTING_DOWN) await notifyGone(gone, monitors).catch(() => {});
+
     stat.notified = notified.length;
     console.log(`cycle: ${monitors.length} rows | ${changed.length} changed | ` +
                 `${notified.length} notified | ${((Date.now() - t0) / 1000).toFixed(1)}s`);
@@ -3462,12 +4087,19 @@ async function runMonitorCycle() {
   } finally {
     stat.sec = Number(((Date.now() - t0) / 1000).toFixed(1));
     logCycle(stat);
-    if (stat.sec > 240)
-      alert('slow', 'دورة المراقبة بطيئة',
-        `آخر دورة أخذت ${stat.sec} ثانية (الحد 300).\n` +
-        `${stat.rows} صف · ${stat.notified} إشعار.`);
-    else if (stat.sec < 120) resolve('slow', 'دورة المراقبة بطيئة');
-    cycleRunning = false;
+    /* دورة جديدة أخذت القفل (هذي علقت وفكّيناه) — ما نفكّه عنها ولا ننذر عنها */
+    if (current()) {
+      if (stat.sec > 240)
+        alert('slow', 'دورة المراقبة بطيئة',
+          `آخر دورة أخذت ${stat.sec} ثانية (الحد 300).\n` +
+          `${stat.rows} صف · ${stat.notified} إشعار.`);
+      else if (stat.sec < 120) resolve('slow', 'دورة المراقبة بطيئة');
+      CYCLE_SKIPS = 0;
+      resolve('skip', 'دورات المراقبة تتراكم');
+      resolve('stuck', 'دورة المراقبة علقت');
+      cycleRunning = false;
+      if (HEALTHCHECK_URL && Date.now() - HC_LAST > 60000) heartbeat().catch(() => {});
+    }
   }
 }
 
@@ -4567,15 +5199,18 @@ function sbStorage(method, path, body) {
       headers['Content-Type'] = 'application/json';
       headers['Content-Length'] = Buffer.byteLength(data);
     }
+    let g;
     const rq = https.request(
       { hostname: u.hostname, path: u.pathname + u.search, method, headers },
       r => {
+        g.res(r);
         let d = '';
         r.setEncoding('utf8');
         r.on('data', c => d += c);
-        r.on('end', () => { try { resolve(JSON.parse(d)) } catch (e) { resolve(null) } });
+        r.on('end', () => { g.ok(); try { resolve(JSON.parse(d)) } catch (e) { resolve(null) } });
       });
-    rq.on('error', () => resolve(null));
+    g = outGuard(rq, 60000, () => resolve(null));
+    rq.on('error', e => g.fail(e));
     if (data) rq.write(data);
     rq.end();
   });
@@ -5420,9 +6055,23 @@ async function adminHealth() {
     add('bad', 'بوت تيليغرام ما يرسل', 'Telegram bot cannot send',
         tgErr + ' — تأكد أن TELEGRAM_TOKEN في Render بدون مسافات.');
 
-  if (pmuOk === false)
+  /* نوع الفشل بعينه لا «فشلت» وبس (إشارات الجامعة §٦) */
+  if (pmuBlocked())
+    add('bad', `موقع الجامعة يرفض طلباتنا (${PMU_BLOCK.status})`, `University refuses our requests (${PMU_BLOCK.status})`,
+        `وقفنا كل السحب من موقعهم لين ${new Date(PMU_BLOCK.until + 3 * 3600e3).toISOString().slice(11, 16)} ` +
+        `بتوقيت الرياض — المراقبة واقفة والبحث يخدم آخر نسخة. ما نحاول نتجاوز الرفض.`);
+  else if (last && last.format)
+    add('bad', 'موقع الجامعة يرد بشكل ما نفهمه', 'University responds in a format we do not understand',
+        'السبب في إنذار تلقرام. ما نكتب ولا حالة منه — لو استمر، الكود يحتاج تعديل.');
+  else if (pmuOk === false)
     add('bad', 'آخر سحبة من الجامعة فشلت', 'Last university fetch failed',
         'موقع الجامعة قد يكون معطلاً أو حجب السيرفر. تحقق من masterschedule.pmu.edu.sa');
+  if (MON_SOURCE === 'banner')
+    add('warn', 'المراقبة من بانر (احتياط)', 'Monitoring from Banner (backup)',
+        'موقع الجدول ما يرد أو تغيّر — نراقب من صفحة بحث بانر العامة لين يرجع. البحث للطلاب يخدم آخر نسخة.');
+  if (last && last.short)
+    add('warn', 'جدول الجامعة وصل ناقص', 'University table arrived short',
+        `${last.short.n} صف والمعتاد ${last.short.peak} — الشعبة بعينها تنراقب، ومراقبة المادة كاملة واقفة.`);
 
   if (last && last.sec > 240)
     add('bad', `الدورة أخذت ${last.sec} ثانية`, `Cycle took ${last.sec}s`,
@@ -5481,7 +6130,7 @@ async function adminHealth() {
   /* الإنذار لا يسري إلا لو المراقبة يفترض أنها شغّالة —
      الاشتكاء من غياب دورة أوقفتها بنفسك خارج ساعات العمل
      يضيء نقطة حمراء كل ليلة، فتتعوّد تجاهلها يوم يتعطل شيء حقيقي. */
-  if (last && (now - last.at) > 12 * 60 * 1000 && monitorState().active)
+  if (last && (now - last.at) > 12 * 60 * 1000 && monitorState().active && !pmuBlocked())
     add('bad', 'ما فيه دورة مراقبة منذ فترة', 'No monitor cycle recently',
         'المفروض كل 5 دقائق. تحقق من سجل Render.');
 
@@ -5515,6 +6164,7 @@ async function adminHealth() {
 
     /* التشغيل */
     uptimeHours: Number(((now - OPS.bootedAt) / 3600000).toFixed(1)),
+    booted: EVENTS_READY,                 /* الاستعادة عند الإقلاع خلصت */
     memMB: Math.round(mem.rss / 1048576),
     memPct: Math.round(memPct * 100),
 
@@ -5574,6 +6224,18 @@ async function adminHealth() {
       riyadhTime: riyadhTime(),
       riyadhDate: riyadhDate(),
       intervalMin: INTERVAL_PEAK / 60000,
+      intervalHotMin: INTERVAL_HOT / 60000,
+      hotToday: hotDay(),
+      /* عطل طويل: كم دورة ورا بعض بلا جدول، والفاصل اللي صار (بلا تشويش) */
+      downCycles: CYCLE_DOWN,
+      backoffMin: cycleBackoffMs(hotDay()) / 60000,
+      /* احتياط بانر: مفتاحه · آخر محاولة · رفض · ومصدر آخر دورة */
+      banner: { on: BANNER_ON, last: BANNER_LAST,
+                blockedUntil: BANNER_BLOCK.until > Date.now() ? BANNER_BLOCK.until : null },
+      source: MON_SOURCE,
+      /* النبض الخارجي: مضبوط؟ وش بيقول الحين؟ (بلا الرابط — فيه رمز الفحص) */
+      heartbeat: HEALTHCHECK_URL ? { verdict: hcVerdict(),
+        lastAgoSec: HC_LAST ? Math.round((Date.now() - HC_LAST) / 1000) : null } : null,
       jitterPct: Math.round(JITTER * 100),
       intervalMinLow: Number(((INTERVAL_PEAK * (1 - JITTER)) / 60000).toFixed(2)),
       intervalMinHigh: Number(((INTERVAL_PEAK * (1 + JITTER)) / 60000).toFixed(2)),
@@ -5602,6 +6264,9 @@ async function adminHealth() {
     ttlLimits: { min: TTL_MIN_ALLOWED, max: TTL_MAX_ALLOWED },
     monitorJitterPct: Math.round(JITTER * 100),
     cycleRetries: CYCLE_RETRIES,
+    /* الجامعة رافضتنا؟ لين متى — وأحجام الجدول المعتادة لكل سحبة (للجدول الناقص) */
+    pmuBlock: pmuBlocked() ? { until: PMU_BLOCK.until, status: PMU_BLOCK.status, n: PMU_BLOCK.n } : null,
+    partPeak: Object.fromEntries(PMU_PART_PEAK),
     schedSync: {
       last: SCHED_SYNC.last,
       lastChange: SCHED_SYNC.lastChange,
@@ -5774,6 +6439,7 @@ const FINALS_TTL = 6 * 60 * 60 * 1000;
 
 function fetchPage(pathname) {
   return new Promise((resolve, reject) => {
+    let g;
     const req = https.request({
       hostname: 'pmu.edu.sa', path: pathname, method: 'GET',
       headers: {
@@ -5782,13 +6448,15 @@ function fetchPage(pathname) {
         'Accept-Language': 'en-US,en;q=0.9'
       }
     }, res => {
+      g.res(res);
       let d = '';
       res.setEncoding('utf8');
       res.on('data', c => d += c);
-      res.on('end', () => resolve(d));
+      res.on('end', () => { g.ok(); resolve(d) });
     });
-    req.on('error', reject);
-    req.setTimeout(25000, () => { req.destroy(); reject(new Error('timeout')); });
+    g = outGuard(req, 40000, reject);
+    req.on('error', e => g.fail(e));
+    req.setTimeout(25000, () => { req.destroy(); g.fail(new Error('timeout')); });
     req.end();
   });
 }
@@ -5871,6 +6539,10 @@ async function getFinals() {
 const TTL_PEAK = 60 * 1000;
 const TTL_NEAR = 60 * 60 * 1000;
 const TTL_OFF  = 6 * 60 * 60 * 1000;
+
+/* عمر البيانات يُقال للطالب (X-Old ⇒ سطر في الصفحة) وقت التسجيل وحده، ولو فوق ربع ساعة بلا سحبة جديدة —
+   قرار محمد (١٢ أكتوبر ٢٠٢٦). خارجه الجدول ما يتغيّر والكاش ساعات عمداً، وتحت ربع ساعة طبيعي */
+const SEARCH_OLD_MS = 15 * 60 * 1000;
 
 /* تجاوز يدوي من لوحة التحكم — بالدقائق. null = تلقائي حسب الموسم */
 let TTL_OVERRIDE = null;
@@ -6044,6 +6716,18 @@ function esc(v) {
   return String(v == null ? '' : v)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
+/* نص الجامعة يجي وفيه كيانات HTML مرمَّزة أصلاً («Think&#x27;g» — parseHTML تفك &amp; وحدها،
+   والصفحة تفكها بـdecodeEnt). esc وحدها تطبع الكيان كما هو أمام الطالب، وبلا esc «&» وحدها
+   تخلّي تيليغرام يرفض الرسالة كلها — فنفك ثم نهرّب (escP). وpmuPlain للنص العادي (Pushover) */
+const PMU_NAMED = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+function pmuPlain(v) {
+  return String(v == null ? '' : v).replace(/&(#[xX][0-9a-fA-F]{1,6}|#\d{1,7}|[a-zA-Z]{2,6});/g, (m, e) => {
+    if (e[0] !== '#') { const c = PMU_NAMED[e.toLowerCase()]; return c == null ? m : c }
+    const n = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+    return n > 0 && n <= 0x10FFFF && !(n >= 0xD800 && n <= 0xDFFF) ? String.fromCodePoint(n) : m;
+  });
+}
+const escP = v => esc(pmuPlain(v));
 
 /* ═══ كشف التعارض في السيرفر ═══
    نسخة مطابقة لمنطق الصفحة. تغيّر الوقت قد يخلق تصادماً مع مادة
@@ -6434,7 +7118,7 @@ async function notifyChanges(list, stat) {
          بصرياً ولا يعرف الطالب أيهما القديم. سطران وكلام صريح
          يزيلان اللبس، وما فيه شطب يعتمد عليه الفهم. */
       const lines = it.fields.map(f => {
-        const from = esc(f.from || '—'), to = esc(f.to || '—');
+        const from = escP(f.from || '—'), to = escP(f.to || '—');
         /* الدكتور مذكّر والقاعة والمادة مؤنثة — الصياغة الموحّدة تطلع ركيكة */
         const m = f.field === 'instructor';
         /* خانة كانت فاضية ثم تحدّدت — خبر لا تحذير */
@@ -6450,8 +7134,8 @@ async function notifyChanges(list, stat) {
                `   ${m ? 'صار' : 'صارت'}: <b>${to}</b>`;
       });
       const cl = it.clashes && it.clashes.length
-        ? `\n⚠️ <b>صار يتعارض مع ${it.clashes.map(esc).join('، ')}</b>` : '';
-      return `📌 <b>${esc(it.code)} §${esc(it.section)}</b>\n` + lines.join('\n') + cl;
+        ? `\n⚠️ <b>صار يتعارض مع ${it.clashes.map(escP).join('، ')}</b>` : '';
+      return `📌 <b>${escP(it.code)} §${escP(it.section)}</b>\n` + lines.join('\n') + cl;
     }).join('\n\n');
 
     const r = await sendMsg(cid,
@@ -6517,33 +7201,114 @@ function tagGender(courses, gender) {
      خاطئ، ويتسرّب للبحث لأن هذي السحبة تغذّي كاشه.
    نصف الجدول أخطر من لا شيء لبعض الأغراض — شعب الجنس الغائب تبدو
    مختفية ثم «جديدة» في الدورة التالية — فنرفع partial ليحترس النداء. */
+/* ═══ جدول ناقص ═══ رد سليم الشكل لكن أصغر بكثير من المعتاد (الجامعة قصّته) = الشعب الغايبة
+   تنقرأ «اختفت» ثم ترجع «نزلت جديدة» لمراقب المادة كاملة. نقيس كل سحبة (ترم|جنس) بأكبر عدد
+   شفناه لها (يُحفظ مع الحالة)، والأصغر من ٦٠٪ نعامله مثل نصف الجدول: الشعبة بعينها تمر
+   (حضورها حقيقة)، والمادة كاملة والكاش والمزامنة لا. ونزول حقيقي (الجامعة شالت شعباً) يثبت
+   ست سحبات ورا بعض بنفس الحجم (±٥٪) ⇒ نقبله ذروةً جديدة، وإلا وقفت مراقبة المادة للأبد */
+const PMU_PART_PEAK = new Map();      /* ترم|جنس → أكبر عدد صفوف */
+const PMU_SHORT = new Map();          /* ترم|جنس → {n, count} سحبات ناقصة ورا بعض */
+const PMU_SHORT_ACCEPT = 6;
+function pmuShort(term, g, n) {
+  const k = term + '|' + g, peak = PMU_PART_PEAK.get(k) || 0;
+  if (!peak || n >= peak * FEED_MIN_RATIO) {
+    PMU_SHORT.delete(k);
+    if (n > peak) PMU_PART_PEAK.set(k, n);
+    return false;
+  }
+  const prev = PMU_SHORT.get(k);
+  const same = prev && Math.abs(n - prev.n) <= prev.n * 0.05;
+  const cur = { n, count: same ? prev.count + 1 : 1 };
+  if (cur.count >= PMU_SHORT_ACCEPT) {
+    PMU_PART_PEAK.set(k, n); PMU_SHORT.delete(k);
+    console.log(`pmuShort: ${k} ثبت على ${n} صف (كان ${peak}) — ذروة جديدة`);
+    return false;
+  }
+  PMU_SHORT.set(k, cur);
+  return { n, peak };
+}
+
+/* ═══ آخر جدول محفوظ في القاعدة ═══
+   الكاش في الذاكرة يضيع مع كل نشر — وبعد نشر والجامعة متعطّلة (أو رافضتنا) كان البحث يطلع خطأ للكل
+   لين ترجع، وdev ما يراقب فكاشه بارد دائماً. الإنتاج يحفظ آخر جدول كامل (مصفوفات — أصغر بكثير) مرة كل
+   نص ساعة لو تغيّر، والبيئتان تقرآنه عند الإقلاع **بعمره الحقيقي**: البحث يسحب طازجاً كالعادة، وهذا
+   للعطل بس (X-Stale)، والدورة ما تستعمله (أقدم من ٣ دقائق). صف `snapshot-<ترم>` في app_state —
+   بيانات الجامعة العامة، ما فيها شي يخص بيئة ولا طالب */
+const SNAP_EVERY = 30 * 60 * 1000, SNAP_MAX_AGE = 7 * 864e5;
+const SNAP_COLS = ['crn', 'courseCode', 'courseTitle', 'section', 'courseDate', 'courseTiming', 'instructor', 'room', 'status'];
+let SNAP_SAVED = { at: 0, fp: '' };
+async function snapSave(term, byG) {
+  if (SITE_ENV !== 'prod' || !byG || !byG.M1 || !byG.F1) return false;
+  if (Date.now() - SNAP_SAVED.at < SNAP_EVERY) return false;
+  const pack = rows => rows.map(r => SNAP_COLS.map(k => (r[k] == null ? '' : String(r[k]))));
+  const M1 = pack(byG.M1), F1 = pack(byG.F1);
+  const fp = crypto.createHash('sha1').update(JSON.stringify([M1, F1])).digest('hex');
+  SNAP_SAVED.at = Date.now();
+  if (fp === SNAP_SAVED.fp) return false;               /* نفسه — ما نكتب */
+  const r = await sb('POST', 'app_state', {
+    body: { key: 'snapshot-' + term, value: { term, at: Date.now(), cols: SNAP_COLS, M1, F1 },
+            updated_at: new Date().toISOString() },
+    prefer: 'resolution=merge-duplicates,return=minimal'
+  }).catch(() => null);
+  if (r && !Array.isArray(r) && (r.code || r.message)) return false;
+  SNAP_SAVED.fp = fp;
+  return true;
+}
+async function snapRestore() {
+  for (const term of [...new Set([regTerm(), activeTerm()])]) {
+    const rows = await sb('GET', 'app_state', {
+      query: `?key=eq.${encodeURIComponent('snapshot-' + term)}&select=value&limit=1`
+    }).catch(() => null);
+    const v = Array.isArray(rows) && rows[0] && rows[0].value;
+    if (!v || !Array.isArray(v.M1) || !Array.isArray(v.F1) || !(Number(v.at) > 0) ||
+        Date.now() - Number(v.at) > SNAP_MAX_AGE) continue;
+    const cols = Array.isArray(v.cols) ? v.cols : SNAP_COLS;
+    const unpack = (arr, g) => tagGender(arr.filter(Array.isArray)
+      .map(a => Object.fromEntries(cols.map((k, i) => [k, a[i] == null ? '' : String(a[i])]))), g);
+    const M1 = unpack(v.M1, 'M1'), F1 = unpack(v.F1, 'F1');
+    if (!M1.length && !F1.length) continue;
+    for (const [k, courses] of [[`${term}|ALL|M1`, M1], [`${term}|ALL|F1`, F1], [`${term}|ALL|ALL`, M1.concat(F1)]])
+      if (!coursesCache.has(k)) coursesCache.set(k, { at: Number(v.at), lastHit: 0, courses, restored: true });
+    OPS.snapRestored = { term, at: Number(v.at), n: M1.length + F1.length };
+    console.log(`snapshot: رجّعنا ${M1.length + F1.length} شعبة للترم ${term} (عمرها ${Math.round((Date.now() - v.at) / 60000)} دقيقة)`);
+  }
+}
+
 async function fetchTermSnapshot(term) {
-  const parts = [];
+  const parts = [], errs = [], byG = {};
+  let short = null;
   for (const g of ['M1', 'F1']) {
     try {
-      const rows = tagGender(parseHTML(await fetchPMUData(term, 'ALL', g)), g);
-      if (!rows.length) throw new Error('رد بلا صفوف');
+      const rows = pmuRows(await fetchPMUData(term, 'ALL', g), g);
+      const sh = pmuShort(term, g, rows.length);
+      if (sh) short = Object.assign({ g }, sh);
+      else byG[g] = rows;                      /* جنس كامل — يصلح كاشاً لبحثه */
       parts.push(rows);
     } catch (e) {
-      OPS.pmuFails++;
+      if (!e.local) OPS.pmuFails++;           /* مدة التوقف: ما طلع طلب أصلاً */
+      errs.push(e);
       console.log(`fetch fail ${term} ${g}: ${e.message}`);
+      if (e.pmu === 'block') break;          /* رفضونا: ما نطرق الباب ثانية في نفس الدورة */
     }
     await new Promise(r => setTimeout(r, 1500));
   }
-  if (parts.length === 2) return { courses: parts[0].concat(parts[1]), partial: false };
-  if (parts.length === 1) return { courses: parts[0], partial: true };
+  if (parts.length === 2) return { courses: parts[0].concat(parts[1]), partial: !!short, short, errs, byG };
+  if (parts.length === 1) return { courses: parts[0], partial: true, short, errs, byG };
+  if (errs.some(e => e.pmu === 'block')) return { courses: null, partial: false, errs };
 
   /* سقطت الاثنتان — نجرّب الطلب الشامل مرة أخيرة. الجنس فيه مخمَّن،
      لكنه أفضل من دورة عمياء تماماً. */
   try {
-    const rows = tagGender(parseHTML(await fetchPMUData(term, 'ALL', 'ALL')), 'ALL');
-    if (rows.length) return { courses: rows, partial: false, guessed: true };
-    throw new Error('رد بلا صفوف');
+    const rows = pmuRows(await fetchPMUData(term, 'ALL', 'ALL'), 'ALL');
+    const sh = pmuShort(term, 'ALL', rows.length);
+    return { courses: rows, partial: !!sh, short: sh ? Object.assign({ g: 'ALL' }, sh) : null,
+             guessed: true, errs };
   } catch (e) {
     OPS.pmuFails++;
+    errs.push(e);
     console.log(`fetch fail ${term} ALL: ${e.message}`);
   }
-  return { courses: null, partial: false };
+  return { courses: null, partial: false, errs };
 }
 
 async function syncSchedules(term, courses, force) {
@@ -6914,7 +7679,32 @@ const RESP_CACHE = new Map();   /* مفتاح → {at, raw, gz} — البايت
 const coursesCache = new Map();     // key → {at, courses}
 const inFlight     = new Map();     // key → Promise (يمنع سحبتين متزامنتين لنفس التركيبة)
 
-async function getCourses(term, college, gender, force) {
+/* ═══ حدود البحث العام ═══
+   الترم والكلية والجنس تجي من الطلب نفسه، وكل تركيبة جديدة سحبة من موقع الجامعة.
+   فالقيم من قوائم الصفحة وحدها، وسحب البحث بسقف بالدقيقة: فوقه نخدم آخر نسخة عندنا.
+   الدورة وساعة التأكيد وأدوات المساعد خارجه — لها حرّاسها، وعددها محسوب. */
+const PMU_COLLEGES = new Set(['ALL', 'EN', 'IT', 'BA', 'CS', 'CC', 'SH', 'MT', 'PR']);
+const PMU_GENDERS  = new Set(['ALL', 'M1', 'F1']);
+/* صيغة الجامعة (السنة + 10/20/30)، ومن سنتين قبل سنة ترم الدراسة لسنة بعدها —
+   قائمة الصفحة فيها ست ترمات بهذا المدى */
+function searchTermOk(t) {
+  const m = /^(20\d{2})([123]0)$/.exec(String(t || ''));
+  if (!m) return false;
+  const y = Number(String(activeTerm()).slice(0, 4)) || new Date().getUTCFullYear() + 1;
+  return Number(m[1]) >= y - 2 && Number(m[1]) <= y + 1;
+}
+const PMU_SEARCH_MAX = 20;            /* سحبات البحث بالدقيقة — كل سحبة طلب للجامعة (وطلبان لو انتهت جلستها) */
+const PMU_SEARCH_LOG = [];
+function pmuSearchTake() {
+  const now = Date.now();
+  while (PMU_SEARCH_LOG.length && now - PMU_SEARCH_LOG[0] >= 60000) PMU_SEARCH_LOG.shift();
+  if (PMU_SEARCH_LOG.length >= PMU_SEARCH_MAX) return false;
+  PMU_SEARCH_LOG.push(now);
+  return true;
+}
+
+/* opts.capped: البحث العام — يمر على سقف السحب بالدقيقة */
+async function getCourses(term, college, gender, force, opts) {
   const key = `${term}|${college}|${gender}`;
   /* التسخين وساعة التأكيد ينادياها بـforce — وهي ليست بحث طالب.
      كانت تُحسب في المقام بلا أن تدخل البسط (force يتجاوز فرع الكاش)،
@@ -6939,11 +7729,41 @@ async function getCourses(term, college, gender, force) {
     return { courses, cached: true, age: 0, at: (h2 && h2.at) || Date.now() };
   }
 
+  /* الجامعة رفضتنا (403/429): ما نطرق بابهم — آخر نسخة عندنا مهما كان عمرها، وبلاها خطأ بنوعه */
+  if (pmuBlocked()) {
+    if (hit) {
+      OPS.searchesCached++;
+      if (!force) recordSearch(true);
+      return { courses: hit.courses, cached: true, stale: true, age: Date.now() - hit.at, at: hit.at };
+    }
+    throw pmuErr('block', 'PMU backoff', { status: PMU_BLOCK.status, local: true });
+  }
+
+  /* البحث العام فوق السقف: آخر نسخة عندنا مهما كان عمرها، وبلاها «زحمة — جرّب بعد دقيقة» */
+  if (opts && opts.capped && !pmuSearchTake()) {
+    OPS.searchCapped = (OPS.searchCapped || 0) + 1;
+    alert('search-cap', 'البحث وصل سقف السحب من الجامعة',
+      `البحث احتاج أكثر من ${PMU_SEARCH_MAX} سحبة من موقع الجامعة في دقيقة.\n\n` +
+      `خدمنا آخر نسخة محفوظة بدل ما نسحب أكثر. لو تكرر في ذروة عادية، السقف يحتاج رفع.`);
+    if (hit) {
+      OPS.searchesCached++;
+      recordSearch(true);
+      return { courses: hit.courses, cached: true, stale: true, age: Date.now() - hit.at, at: hit.at };
+    }
+    const e = new Error('busy'); e.busy = true; throw e;
+  }
+
   const p = (async () => {
     /* سحبة واحدة بـ ALL، ونوزّع الجنس من رقم الشعبة:
        1xx = طلاب · 2xx = طالبات — قاعدة الجامعة الثابتة.
        أوفر من سحبتين منفصلتين، وأدق من التخمين من القاعة. */
     const courses = tagGender(parseHTML(await fetchPMUData(term, college, gender)), gender);
+    /* جدول كبير أعمدته تغيّرت ما يدخل الكاش ولا المزامنة (الصغير ما نحكم عليه — حالة ما نعرفها
+       في خمس شعب تطيّح النسبة) */
+    if (courses.length >= 50 && !pmuShape(courses).ok) {
+      const sh = pmuShape(courses);
+      throw pmuErr('format', `شكل الجدول تغيّر (${sh.n} صف)`, { shape: sh });
+    }
     coursesCache.set(key, { at: Date.now(), lastHit: (hit && hit.lastHit) || Date.now(), courses });
     resolve('search', 'البحث ما يشتغل');
     /* قائمة ALL/ALL هي الأشمل — نصحّح بها جداول الطلاب المحفوظة */
@@ -7007,9 +7827,32 @@ const CYCLE_CACHE_MAX  = 3 * 60 * 1000;  /* أقصى عمر نسخة نقبله�
 const CYCLE_RETRY_WAIT = 60 * 1000;      /* نعاود بعد دقيقة لا بعد الفاصل */
 const CYCLE_RETRY_MAX  = 3;              /* وبعد ثلاث محاولات نهدأ */
 let CYCLE_RETRIES = 0;
+/* عطل طويل: دورات ورا بعض بلا جدول من الجامعة. بعد المحاولات السريعة الفاصل يتضاعف لين ربع ساعة —
+   كان يرجع لفاصله (دقيقتان في أيام التسجيل) للأبد، ثلاث طلبات فاشلة كل مرة على موقع متعثّر.
+   أول جدول يوصل يرجّعه طبيعي */
+let CYCLE_DOWN = 0;
+const CYCLE_DOWN_MAX_MS = 15 * 60 * 1000;
+function cycleBackoffMs(hot) {
+  if (CYCLE_DOWN <= CYCLE_RETRY_MAX) return 0;
+  return Math.min((hot ? INTERVAL_HOT : INTERVAL_PEAK) * 2 ** (CYCLE_DOWN - CYCLE_RETRY_MAX), CYCLE_DOWN_MAX_MS);
+}
 
 const INTERVAL_PEAK = 5 * 60 * 1000;    // داخل نافذة التسجيل
 const JITTER        = 0.25;             // ±25% تفادياً لنمط منتظم تماماً
+/* أيام التسجيل نفسها وأول يوم إضافة: الشعب تنفتح وتنسكّر في دقائق، والفاصل دقيقتان (للجميع —
+   §٧ لا بيع للأسبقية). من التقويم (ACAD_CAL) لا تاريخ مكتوب: «reg» كاملة، وأول «add» لكل ترم.
+   والسحبة صارت أخف (جلسة محفوظة · مضغوط · كاش البحث منها) فالحمل على الجامعة ما يتضاعف */
+const INTERVAL_HOT = 2 * 60 * 1000;
+let HOT_ADD = null;
+function hotDay(d) {
+  const day = d || riyadhDate();
+  if (!HOT_ADD) {
+    HOT_ADD = new Set();
+    const seen = new Set();
+    for (const x of ACAD_CAL) if (x.t === 'add' && !seen.has(x.term)) { seen.add(x.term); HOT_ADD.add(x.s) }
+  }
+  return HOT_ADD.has(day) || ACAD_CAL.some(x => x.t === 'reg' && day >= x.s && day <= (x.e || x.s));
+}
 
 /* خارج نوافذ التسجيل المراقبة تتوقف تماماً.
    لو حبيت ترجّعها مخفّفة، حط هنا مثلاً 30*60*1000 بدل null. */
@@ -7044,6 +7887,35 @@ function nextWindow() {
 }
 const dayShift = (iso, n) =>
   new Date(Date.parse(iso + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+
+/* ═══ نوافذ المراقبة والتقويم ═══
+   النوافذ مكتوبة بيد (MONITOR_WINDOWS) والتقويم بيد (ACAD_CAL): نسيان واحد منهما = تسجيل كامل بلا
+   مراقبة، والدورة ما تشتغل أصلاً فما فيه إنذار يطلع. مرة باليوم نقارن: فترة تسجيل جاية في التقويم
+   ما تغطيها نافذة، أو ما فيه نافذة جاية أبداً ⇒ إنذار لين تنضاف */
+function windowGaps(day) {
+  const d = day || riyadhDate(), wins = windowList();
+  return ACAD_CAL.filter(x => x.t === 'reg' && (x.e || x.s) >= d &&
+      !wins.some(w => w.from <= x.s && w.to >= (x.e || x.s)))
+    .map(x => ({ term: x.term, s: x.s, e: x.e || x.s, ar: x.ar }));
+}
+let WINDOWS_CHECKED = '';
+function windowsCheck() {
+  if (!MONITOR_ENABLED) return;
+  const d = riyadhDate();
+  if (WINDOWS_CHECKED === d) return;
+  WINDOWS_CHECKED = d;
+  const gaps = windowGaps(d), manual = WINDOW_OVERRIDE ? '\n\n(فيه نافذة يدوية من اللوحة — هي وحدها الشغّالة الحين)' : '';
+  if (gaps.length)
+    return alert('windows', 'نوافذ المراقبة ناقصة',
+      'فترة تسجيل جاية في التقويم ما تغطيها نافذة مراقبة — بتمر بلا مراقبة:\n' +
+      gaps.map(g => `• ${g.ar} (${g.term}): ${g.s} → ${g.e}`).join('\n') +
+      `\n\nتنضاف في MONITOR_WINDOWS بالسيرفر (من بداية التسجيل لآخر يوم إضافة).${manual}`);
+  if (!currentWindow() && !nextWindow())
+    return alert('windows', 'نوافذ المراقبة ناقصة',
+      'آخر نافذة مراقبة انتهت وما فيه وحدة جاية — التسجيل الجاي بيمر بلا مراقبة.\n\n' +
+      `تنضاف نوافذه في MONITOR_WINDOWS وتقويمه في ACAD_CAL بالسيرفر.${manual}`);
+  resolve('windows', 'نوافذ المراقبة ناقصة');
+}
 
 /* هل نحن خلال أسبوع قبل نافذة تسجيل أو أسبوع بعدها؟
    windowList لا MONITOR_WINDOWS: كانت تقرأ التقويم المكتوب في الكود
@@ -7142,9 +8014,11 @@ function monitorState() {
              window: win, intervalMin: null };
   }
   if (win) {
-    return { active: true, reason: 'peak', ar: 'مراقبة مكثفة — ' + win.ar,
-             en: 'Intensive monitoring — registration period',
-             window: win, intervalMin: INTERVAL_PEAK / 60000 };
+    const hot = hotDay();
+    return { active: true, reason: 'peak', hot,
+             ar: (hot ? 'مراقبة مكثفة (يوم تسجيل — كل دقيقتين) — ' : 'مراقبة مكثفة — ') + win.ar,
+             en: 'Intensive monitoring — registration period' + (hot ? ' (registration day: every 2 min)' : ''),
+             window: win, intervalMin: (hot ? INTERVAL_HOT : INTERVAL_PEAK) / 60000 };
   }
   if (!INTERVAL_IDLE) {
     return { active: false, reason: 'offseason',
@@ -7164,11 +8038,18 @@ function nextDelay() {
 
   if (st.reason === 'disabled') return 60 * 60 * 1000;
 
+  /* الجامعة رفضتنا (403/429): الدورة الجاية بعد ما تخلص مدة التوقف، لا كل دقيقة على باب مقفول */
+  if (st.active && pmuBlocked())
+    return Math.max(60000, PMU_BLOCK.until - Date.now()) + Math.random() * 30000;
+
   /* بعد فشل جلب، نعاود بعد دقيقة بدل الفاصل الكامل — بحد ثلاث محاولات
      حتى لا نطرق باب الجامعة كل دقيقة وهي ساقطة. يُحسب قبل حارس
      الساعات عمداً: الفشل داخل الموسم وحده يهم. */
   if (st.active && CYCLE_RETRIES > 0 && CYCLE_RETRIES <= CYCLE_RETRY_MAX)
     return CYCLE_RETRY_WAIT * (1 + Math.random() * 0.3);
+
+  const back = st.active ? cycleBackoffMs(st.hot) : 0;
+  if (back) return back * (1 + Math.random() * 0.2);
 
   /* خارج الموسم: نفحص مرة كل ساعة فقط إذا بدأت نافذة جديدة */
   if (st.reason === 'offseason') return 60 * 60 * 1000 * (1 + Math.random() * 0.2);
@@ -7182,7 +8063,7 @@ function nextDelay() {
     return Math.max(60000, target - now) + Math.random() * 120000;
   }
 
-  const base = st.reason === 'peak' ? INTERVAL_PEAK : INTERVAL_IDLE;
+  const base = st.reason === 'peak' ? (st.hot ? INTERVAL_HOT : INTERVAL_PEAK) : INTERVAL_IDLE;
   return base * (1 + (Math.random() * 2 - 1) * JITTER);
 }
 
@@ -7192,6 +8073,7 @@ function scheduleNextCycle() {
   NEXT_CYCLE_AT = Date.now() + delay;      /* لعرضه في اللوحة */
   console.log(`next cycle in ${(delay / 60000).toFixed(1)} min — ${st.reason}`);
   setTimeout(async () => {
+    windowsCheck();
     if (monitorState().active) {
       try { await runMonitorCycle(); } catch (e) { console.log('cycle err', e.message); }
     }
@@ -9522,7 +10404,7 @@ function aiCall(payload) {
     let data;
     try { data = JSON.stringify(payload) }
     catch (e) { return resolve({ status: 0, json: null, err: 'payload' }) }
-    let done = false;
+    let done = false, g;
     const fin = r => { if (!done) { done = true; resolve(r) } };
     const req = https.request({
       hostname: AI_API_HOST, path: AI_API_PATH, method: 'POST',
@@ -9531,17 +10413,20 @@ function aiCall(payload) {
                  'content-type': 'application/json',
                  'content-length': Buffer.byteLength(data) }
     }, res => {
+      g.res(res);
       let out = '';
       /* جواب النموذج عربي: نص لا بايتات، وإلا انكسر الحرف بين قطعتين (§٦) */
       res.setEncoding('utf8');
       res.on('data', c => { if (out.length < 2e6) out += c });
       res.on('end', () => {
+        g.ok();
         let j = null; try { j = JSON.parse(out) } catch (e) {}
         fin({ status: res.statusCode, json: j });
       });
     });
-    req.on('error', e => fin({ status: 0, json: null, err: e.message }));
-    req.setTimeout(AI_CALL_MS, () => { req.destroy(); fin({ status: 0, json: null, err: 'timeout' }) });
+    g = outGuard(req, AI_CALL_MS + 30000, e => fin({ status: 0, json: null, err: e.message }));
+    req.on('error', e => g.fail(e));
+    req.setTimeout(AI_CALL_MS, () => { req.destroy(); g.fail(new Error('timeout')) });
     req.write(data); req.end();
   });
 }
@@ -10472,6 +11357,7 @@ const server = http.createServer(async (req, res) => {
       res.setHeader('X-Cached', r.cached ? '1' : '0');
       res.setHeader('X-Age-Ms', String(r.age || 0));
       res.setHeader('X-TTL-Min', String(Math.round(coursesTTL() / 60000)));
+      if (currentWindow() && (r.age || 0) > SEARCH_OLD_MS) res.setHeader('X-Old', '1');
       const wantsGzip = /\bgzip\b/.test(req.headers['accept-encoding'] || '');
       const hit = key ? RESP_CACHE.get(key) : null;
 
@@ -10515,15 +11401,37 @@ const server = http.createServer(async (req, res) => {
         });
       } else { res.writeHead(200); res.end(buf); }
     };
-    const { term = '202630', college = 'ALL', gender = 'M1' } = parsed.query;
+    const { term = activeTerm(), college = 'ALL', gender = 'M1' } = parsed.query;
+    /* قيم قوائم الصفحة وحدها (حدود البحث العام) — غيرها ما يوصل الجامعة */
+    if (!searchTermOk(term) || !PMU_COLLEGES.has(college) || !PMU_GENDERS.has(gender)) {
+      res.writeHead(400);
+      res.end(JSON.stringify({ success: false, error: 'ترم أو كلية أو جنس غير معروف' }));
+      return;
+    }
     try {
-      const r = await getCourses(term, college, gender);
+      const r = await getCourses(term, college, gender, false, { capped: true });
+      if (r.stale) res.setHeader('X-Stale', '1');
       sendCourses(r, `${term}|${college}|${gender}`);
     } catch (err) {
+      /* فوق سقف السحب وما عندنا نسخة: ما هو عطل في الجامعة — «زحمة» بلا إنذار عطل */
+      if (err && err.busy) {
+        res.setHeader('Retry-After', '60');
+        res.writeHead(503);
+        res.end(JSON.stringify({ success: false, error: 'البحث مزحوم — جرّب بعد دقيقة' }));
+        return;
+      }
+      /* الجامعة رافضتنا مؤقتاً وما عندنا نسخة: إنذاره طلع وقت الرفض */
+      if (err && err.pmu === 'block') {
+        res.setHeader('Retry-After', String(Math.min(3600, Math.max(60,
+          Math.ceil((PMU_BLOCK.until - Date.now()) / 1000)))));
+        res.writeHead(503);
+        res.end(JSON.stringify({ success: false, error: 'موقع الجامعة مو متاح لنا الحين — جرّب بعد شوي' }));
+        return;
+      }
       /* لو الجامعة تعطلت، نخدم آخر نسخة محفوظة بدل ما نفشل */
       OPS.lastError = { at: Date.now(), where: 'search', msg: err.message };
       alert('search', 'البحث ما يشتغل',
-        `فشل جلب المواد من موقع الجامعة.\nالسبب: ${err.message}\n\n` +
+        `فشل جلب المواد من موقع الجامعة.\nالسبب: ${escP(err.message)}\n\n` +
         (coursesCache.size ? 'نخدم النسخة المحفوظة مؤقتاً.' : 'ما فيه نسخة محفوظة — البحث معطّل.'));
       const stale = coursesCache.get(`${term}|${college}|${gender}`);
       if (stale) {
@@ -11094,6 +12002,27 @@ const server = http.createServer(async (req, res) => {
         return send(200, { size: coursesCache.size });
       }
 
+      /* احتياط بانر: تجربة صغيرة (صفحة ١٠ شعب) — تثبت إنه شغّال قبل ما نحتاجه — ومفتاحه */
+      if (act === 'banner-ping' && req.method === 'POST') {
+        if (Date.now() - BANNER_PING_AT < 60000) return send(429, { ok: false, error: 'جرّبناه قبل أقل من دقيقة' });
+        BANNER_PING_AT = Date.now();
+        try {
+          const b = await fetchBannerTerm(regTerm(), { ping: true });
+          const x = b.rows[0] || {};
+          return send(200, { ok: true, term: regTerm(), total: b.total, ms: BANNER_LAST && BANNER_LAST.ms,
+            sample: { crn: x.crn, courseCode: x.courseCode, section: x.section, status: x.status,
+                      courseDate: x.courseDate, courseTiming: x.courseTiming } });
+        } catch (e) {
+          return send(200, { ok: false, term: regTerm(), kind: e.pmu || 'down', error: String(e.message || e) });
+        }
+      }
+      if (act === 'banner-toggle' && req.method === 'POST') {
+        const b = await readBody(req);
+        if ('on' in b) BANNER_ON = !!b.on;
+        saveState().catch(() => {});
+        return send(200, { on: BANNER_ON });
+      }
+
       if (act === 'prewarm-toggle') {
         if (req.method === 'POST') {
           const b = await readBody(req);
@@ -11635,11 +12564,24 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200); res.end(a.raw); return;
   }
 
-  /* تشغيل دورة فحص يدوياً (للاختبار) */
+  /* تشغيل دورة فحص يدوياً — برمز اللوحة، ومن نسخة المراقبة وحدها: القاعدة مشتركة
+     مع dev، فدورة منه تكتب حالات الإنتاج وترسل لطلابه */
   if (parsed.pathname === '/api/run-check') {
     res.setHeader('Content-Type', 'application/json');
+    if (!isAdmin(req)) {
+      res.writeHead(401); res.end(JSON.stringify({ started: false, error: 'unauthorized' }));
+      return;
+    }
+    if (!MONITOR_ENABLED) {
+      res.writeHead(403);
+      res.end(JSON.stringify({ started: false, error: 'المراقبة معطّلة في هذي النسخة' }));
+      return;
+    }
+    /* ran: بدأت دورة جديدة (لا = السابقة شغّالة فتخطّينا) · gen: رقمها، ونهايتها lastCycle.gen في الصحة —
+       الاختبارات تستنى نهايتها بها بدل وقت ثابت يسبقها تحت الحمل */
+    const g0 = CYCLE_GEN;
     runMonitorCycle();
-    res.writeHead(200); res.end(JSON.stringify({ started: true }));
+    res.writeHead(200); res.end(JSON.stringify({ started: true, ran: CYCLE_GEN !== g0, gen: CYCLE_GEN }));
     return;
   }
 
@@ -11900,16 +12842,38 @@ server.listen(PORT, () => {
     try {
       await restoreState();
       await restoreEvents();
+      await snapRestore().catch(() => {});
     } catch (e) {
       console.log('الاستعادة فشلت (نكمل بذاكرة فاضية): ' + e.message);
     } finally {
       EVENTS_READY = true;
     }
+    /* بعد الاستعادة (النافذة اليدوية من الحالة): نوافذ المراقبة تغطي التسجيل الجاي؟ */
+    windowsCheck();
+    /* تجميد النشر وقت النوافذ — قرار محمد: إقلاع وسط نافذة (نشر أو إعادة تشغيل) يوصلك سطر، فتعرف
+       إنه صار وتتأكد إن الإشعارات شغّالة. مرة لكل إقلاع، والإنتاج وحده */
+    const w = MONITOR_ENABLED && ADMIN_CHAT_ID && currentWindow();
+    if (w) sendMsg(ADMIN_CHAT_ID, `🚀 <b>السيرفر اشتغل من جديد وقت التسجيل</b> (${escP(w.ar)})\n\n` +
+      `نشر جديد أو إعادة تشغيل. تأكد من اللوحة ← النظام إن الدورات ماشية.\n` +
+      `وقت النوافذ: الدمج dev ← main لإصلاح عاجل بس.`).catch(() => {});
   })();
+  /* النبض الخارجي (لو HEALTHCHECK_URL مضبوط): بعد الإقلاع بنص دقيقة، ثم كل ٥ دقائق */
+  if (HEALTHCHECK_URL) {
+    setTimeout(() => { heartbeat().catch(() => {}) }, 30000);
+    setInterval(() => { heartbeat().catch(() => {}) }, 5 * 60 * 1000);
+  }
   /* حفظ العدّادات كل 5 دقائق، وعند الإغلاق النظيف */
   setInterval(() => { saveState().catch(() => {}) }, 5 * 60 * 1000);
+  /* الإغلاق (Render ينشر نسخة جديدة ويمهل القديمة ٣٠ ثانية): ما نبدأ دورة، وننتظر
+     الشغّالة تكمل إرسالها حتى ٢٥ ثانية — كانت تنقطع وسط الإرسال فيضيع إشعار الباقين */
   for (const sig of ['SIGTERM', 'SIGINT'])
-    process.on(sig, () => { saveState().catch(() => {}).finally(() => process.exit(0)); });
+    process.on(sig, async () => {
+      if (SHUTTING_DOWN) return;
+      SHUTTING_DOWN = true; SHUTDOWN_AT = Date.now();
+      const t = Date.now();
+      while (cycleRunning && Date.now() - t < 25000) await new Promise(r => setTimeout(r, 200));
+      saveState().catch(() => {}).finally(() => process.exit(0));
+    });
   const st = monitorState();
   console.log(`env=${SITE_ENV} | state=${STATE_KEY} | freeBeta=${FREE_BETA} | ترم المزامنة=${activeTerm()}` +
               ` | monitor: ${st.reason} — ${st.ar}`);

@@ -223,7 +223,7 @@ https.request = function (opts, cb) {
   return req;
 };
 
-const BASES = { prod: 49100, dev: 49200, restart: 49300 };
+const BASES = { prod: 24100, dev: 24200, restart: 24300 };
 const PORT = BASES[MODE] + (process.pid % 100), ADMIN = 'admin-token-for-po-license';
 Object.assign(process.env, {
   PORT: String(PORT), ADMIN_TOKEN: ADMIN, SITE_ENV: MODE === 'dev' ? 'dev' : 'prod', ACTIVE_TERM: '202710',

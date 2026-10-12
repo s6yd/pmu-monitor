@@ -35,12 +35,13 @@ for t in test-notif-repeat test-notif-approval test-cycle-recovery test-gender-s
 
 echo "— الصفحة —"
 for t in test-plan-regress test-guest-theme test-build-reload test-term-ui \
-         test-pushover-gate test-watch-gate test-slot-sync test-pay-page; do run "$t" "$F"; done
+         test-pushover-gate test-watch-gate test-slot-sync test-pay-page test-search-age; do run "$t" "$F"; done
 
 echo "— اللوحة —"
 run test-admin-season "$A"
 run test-admin-ai     "$A"
 run test-admin-pay    "$A"
+run test-admin-monitor "$A"
 
 echo "— عبر الملفات —"
 run test-calendar       "$S" "$F"
@@ -63,6 +64,13 @@ run test-pay            "$S"
 run test-edfapay-hook   "$S"
 run test-paid-usage     "$S"
 run test-po-license     "$S"
+run test-pmu-guard      "$S"
+run test-hang-guard     "$S"
+run test-alert-delivery "$S"
+run test-pmu-signals   "$S"
+run test-pmu-speed     "$S"
+run test-pmu-fallbacks "$S"
+run test-banner-backup "$S"
 run test-tg-ai          "$S" "$F"
 run test-tg-ask         "$S"
 run test-tg-hook        "$S"

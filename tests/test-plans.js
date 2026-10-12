@@ -19,7 +19,7 @@ const SHARED = path.join(ROOT, 'shared', 'plans.js');
 /* المنفذ يتغيّر مع كل تشغيل: منفذ ثابت يبقى محجوزاً بعد انتهاء
    العملية (TIME_WAIT أو بقايا جلسة)، فيفشل التشغيل التالي بـEADDRINUSE
    والاختبار يطلع أحمر بلا علاقة بالكود. النطاق ١٠٠ لكل ملف فما يتصادمان. */
-const PORT = 46300 + (process.pid % 100);
+const PORT = 21300 + (process.pid % 100);
 
 /* ═══ الابن: السيرفر الحقيقي، نطلب منه /plans.js والبصمة ═══ */
 if (process.argv[2] === '--child') {
@@ -290,8 +290,8 @@ window.supabase={createClient:()=>({
 
   /* ٤أ) الخطط وصلت: كل تخصص يُرسم بلا أخطاء */
   {
-    const srv = mk(true); await new Promise(r => srv.listen(45902, r));
-    const { pg, errs } = await open(browser, 45902);
+    const srv = mk(true); await new Promise(r => srv.listen(20902, r));
+    const { pg, errs } = await open(browser, 20902);
 
     const majors = await pg.evaluate(() => Object.keys(window.PLANS || {}));
     ok(majors.length >= 20, 'الصفحة قرأت الخطط من /plans.js — ' + majors.length + ' مفتاح');
@@ -321,8 +321,8 @@ window.supabase={createClient:()=>({
 
   /* ٤ب) الخطط ما وصلت: لا انهيار، ورسالة واضحة */
   {
-    const srv = mk(false); await new Promise(r => srv.listen(45903, r));
-    const { pg, errs } = await open(browser, 45903);
+    const srv = mk(false); await new Promise(r => srv.listen(20903, r));
+    const { pg, errs } = await open(browser, 20903);
 
     ok(await pg.evaluate(() => window.PLANS_OK === false), 'PLANS_OK خاطئة لما يغيب الملف');
 

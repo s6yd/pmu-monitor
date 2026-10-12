@@ -49,7 +49,7 @@ https.request = function (opts, cb) {
 };
 
 const SECRET = 'ep-hook-secret-7f3a91c2d4b8e6';
-const BASES = { on: 48600, nosecret: 48700, hidden: 48800 };
+const BASES = { on: 23600, nosecret: 23700, hidden: 23800 };
 const PORT = BASES[MODE] + (process.pid % 100);
 Object.assign(process.env, {
   EDFAPAY_WEBHOOK_SECRET: { on: SECRET, nosecret: '',

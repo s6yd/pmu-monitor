@@ -158,6 +158,8 @@ color:var(--text);font-family:inherit;font-size:12.5px;padding:7px 9px;width:82p
 .cr-plus{color:var(--open);font-family:var(--mono);direction:ltr;unicode-bidi:isolate}
 .cr-minus{color:var(--close);font-family:var(--mono);direction:ltr;unicode-bidi:isolate}
 .mon-ehint{font-size:10.5px;color:var(--text3);line-height:1.6;margin-top:3px}
+.mon-freeze{margin-top:10px;padding:8px 10px;border-radius:9px;font-size:11.5px;line-height:1.6;
+  background:rgba(96,165,250,.10);border:1px solid rgba(96,165,250,.25);color:var(--text)}
 .watchers{margin-top:9px;padding-top:8px;border-top:1px solid var(--border)}
 .w-row{display:flex;justify-content:space-between;align-items:center;gap:10px;
 padding:7px 0;border-bottom:1px solid rgba(255,255,255,.04)}
@@ -2430,6 +2432,44 @@ async function toggleMonitor(on){
   }catch(e){ toast(e.message,'err') }
 }
 
+/* ══════════ احتياط بانر ══════════
+   بحث بانر العام يراقب لما موقع الجدول ما يرد. «جرّب بانر» صفحة صغيرة (عشر شعب) تثبت إنه
+   شغّال قبل ما نحتاجه — النتيجة كما رجعت من السيرفر. */
+function bannerBoxHTML(mi){
+  const b=mi.banner||{}, L=b.last;
+  const age=L&&L.at?Math.round((Date.now()-L.at)/60000):null;
+  const lastTxt=!L?'ما جرّبناه بعد هالتشغيل'
+    : L.ok ? `✅ اشتغل${L.ping?' (تجربة)':''} — ${L.sections??'?'} شعبة · ${((L.ms||0)/1000).toFixed(1)} ث${age!=null?` · قبل ${age} د`:''}`
+    : `❌ ما اشتغل: ${esc(L.err||'')}${age!=null?` · قبل ${age} د`:''}`;
+  return `<div class="mon-elabel" style="margin-top:12px">🛟 احتياط بانر ${b.on===false?'<b class="warn">· مطفأ</b>':''}</div>
+    <div class="mon-ehint" id="bannerLast">${lastTxt}${b.blockedUntil?` · <b class="warn">بانر رافض لين ${new Date(b.blockedUntil+3*3600e3).toISOString().slice(11,16)}</b>`:''}</div>
+    <div class="mon-erow">
+      <button class="mini go" onclick="bannerPing()">🛟 جرّب بانر</button>
+      <button class="mini ${b.on===false?'go':'no'}" onclick="bannerToggle(${b.on===false?'true':'false'})">${b.on===false?'شغّله':'أطفه'}</button>
+    </div>
+    <div class="mon-ehint">لما موقع الجدول ما يرد نراقب من صفحة بحث بانر العامة (للمراقبة بس — لا للبحث). ولو الجامعة رافضتنا ما نلتف من بانر.</div>`;
+}
+async function bannerPing(){
+  const el=document.getElementById('bannerLast');
+  if(el)el.textContent='… نجرّب';
+  try{
+    const r=await api('banner-ping',{body:{}});
+    const msg=r.ok
+      ? `✅ بانر شغّال — ${r.total??'?'} شعبة في ${esc(r.term||'')}${r.sample?` · مثال: ${esc(r.sample.courseCode||'')} §${esc(r.sample.section||'')} ${esc(r.sample.status||'')}`:''}`
+      : `❌ ما اشتغل (${esc(r.kind||'')}): ${esc(r.error||'')}`;
+    if(el)el.innerHTML=msg;
+    toast(r.ok?'بانر شغّال':'بانر ما اشتغل',r.ok?'ok':'err');
+  }catch(e){ if(el)el.textContent=e.message; toast(e.message,'err') }
+}
+async function bannerToggle(on){
+  if(!on&&!confirm('إطفاء احتياط بانر؟ لو تعطّل موقع الجدول تقف المراقبة لين يرجع.'))return;
+  try{
+    await api('banner-toggle',{body:{on:!!on}});
+    toast(on?'احتياط بانر شغّال':'احتياط بانر مطفأ','ok');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
 /* ══════════ مسح الكاش الآن ══════════ */
 async function clearCache(){
   if(!confirm('مسح الكاش؟ أول بحث بعدها بيسحب نسخة جديدة من موقع الجامعة — استخدمها لو شفت بيانات قديمة أو غلط.'))return;
@@ -2735,7 +2775,7 @@ function renderSys(){
          <span class="${S.discarded?'bad':''}">${S.discarded} مرفوض</span></b></div>
     ${S.stormAbort?`<div class="kv"><span>⛔️ عاصفة — أُلغي التأكيد</span>
       <b class="bad">${S.stormAbort} من ${S.activeStudents||'?'} طالباً (الحد ${S.notifyCap})</b></div>
-    <div class="gauge-sub" style="color:var(--bad)">ما كُتب شي وما أُرسلت رسالة.
+    <div class="gauge-sub" style="color:var(--close)">ما كُتب شي وما أُرسلت رسالة.
       راجع التغييرات المعلّقة تحت — لو طلعت صحيحة اضغط الزر وبتنطلق فوراً.</div>
     <button class="mini" style="margin-top:10px" onclick="approveStorm()">
       ✅ راجعتها — وافق وأرسل</button>`:''}
@@ -2865,7 +2905,7 @@ function renderSys(){
     <div class="gauge-sub">${fdate(new Date(h.lastError.at).toISOString())}</div></div>`:''}
 
   <div class="fin-note" style="color:var(--text3);font-size:11px;margin-top:14px;line-height:1.7">
-    العدّادات تُصفّر مع كل إعادة نشر على Render. الدورة تشتغل كل 5 دقائق (300 ثانية).
+    العدّادات تُصفّر مع كل إعادة نشر على Render. الدورة كل 5 دقائق وقت التسجيل (ودقيقتين في أيام التسجيل نفسها).
   </div>`;
 
   /* ── تحكم سريع + تفاصيل جدولة المراقبة ── */
@@ -2900,10 +2940,23 @@ function renderSys(){
 
   const rows=[
     ['الحالة الآن', running
-      ? `<b style="color:var(--ok)">تفحص الشعب</b>`
+      ? `<b style="color:var(--open)">تفحص الشعب</b>`
       : `<b style="color:var(--warn)">متوقفة</b>`],
     !running&&why ? ['السبب', why] : null,
-    ['الفاصل بين الدورات', `كل ${mi.intervalMin} دقائق · مع تشويش ±${mi.jitterPct}% (${mi.intervalMinLow}–${mi.intervalMinHigh} دقيقة)`],
+    ['الفاصل بين الدورات', mi.hotToday
+      ? `<b>كل ${mi.intervalHotMin} دقائق اليوم</b> (يوم تسجيل) · باقي النافذة كل ${mi.intervalMin} · تشويش ±${mi.jitterPct}%`
+      : `كل ${mi.intervalMin} دقائق · مع تشويش ±${mi.jitterPct}% (${mi.intervalMinLow}–${mi.intervalMinHigh} دقيقة)`],
+    /* من وين نراقب، وهل الجامعة رافضتنا أو متعطّلة من فترة (إشارات الجامعة · الاحتياطات) */
+    ['مصدر الجدول', mi.source==='banner'
+      ? `<b style="color:var(--warn)">🛟 بانر (احتياط)</b> — موقع الجدول ما يرد`
+      : 'موقع الجدول (masterschedule)'],
+    h.pmuBlock ? ['الجامعة', `<b style="color:var(--close)">رافضة طلباتنا (${Number(h.pmuBlock.status)||'?'})</b> — وقفنا السحب لين ${
+      new Date(h.pmuBlock.until+3*3600e3).toISOString().slice(11,16)} بتوقيت الرياض`] : null,
+    mi.backoffMin>0 ? ['عطل طويل', `<b style="color:var(--warn)">${mi.downCycles} دورات بلا جدول</b> — الفاصل صار ${mi.backoffMin} دقيقة`] : null,
+    ['النبض الخارجي', mi.heartbeat
+      ? (mi.heartbeat.verdict==='fail' ? '<b style="color:var(--close)">يقول «فشل»</b>' : '<b style="color:var(--open)">سليم</b>') +
+        (mi.heartbeat.lastAgoSec!=null ? ` · آخر نبض قبل ${mi.heartbeat.lastAgoSec<60?mi.heartbeat.lastAgoSec+' ثانية':Math.round(mi.heartbeat.lastAgoSec/60)+' دقيقة'}` : '')
+      : 'مو مضبوط (HEALTHCHECK_URL في Render)'],
     ['الدورة القادمة', running?fmtIn(mi.nextCycleInSec):'—'],
     ['آخر دورة', h.lastCycleAgoSec!==null&&h.lastCycleAgoSec!==undefined
       ? `قبل ${h.lastCycleAgoSec<60?h.lastCycleAgoSec+' ثانية':Math.round(h.lastCycleAgoSec/60)+' دقيقة'}`
@@ -2952,7 +3005,9 @@ function renderSys(){
         ${mi.windowCustom?'<button class="mini" onclick="saveWindow(true)">رجوع للتقويم</button>':''}
       </div>
       <div class="mon-ehint">النافذة اليدوية تتجاهل تواريخ التقويم المكتوبة في الكود.</div>
+      ${bannerBoxHTML(mi)}
     </div>
+    ${mi.window?`<div class="mon-freeze">🧊 نافذة تسجيل شغّالة — <b>لا تدمج dev ← main</b> إلا لإصلاح عاجل (قرارك).</div>`:''}
   </div>`;
 
   const pOn=!!h.prewarmOn;

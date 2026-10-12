@@ -24,14 +24,14 @@ if (process.argv[2] === '--child') {
     constructor(...a) { super(...(a.length ? a : [FIXED])) }
     static now() { return FIXED }
   };
-  process.env.PORT = '45877';
+  process.env.PORT = '20877';
   process.env.SITE_ENV = 'prod';
   process.env.ACTIVE_TERM = active;
   process.env.ADMIN_TOKEN = 'x'.repeat(20);
   const log = console.log; console.log = () => {};
   require(srv);
   setTimeout(() => {
-    const get = p => new Promise(r => http.get({ host: '127.0.0.1', port: 45877, path: p },
+    const get = p => new Promise(r => http.get({ host: '127.0.0.1', port: 20877, path: p },
       res => { let o = ''; res.on('data', c => o += c); res.on('end', () => r({ code: res.statusCode, body: o, etag: res.headers.etag })) }));
     Promise.all([get('/api/monitor-status'), get('/calendar.js')]).then(([st, cal]) => {
       log(JSON.stringify({ st: JSON.parse(st.body), cal: { code: cal.code, body: cal.body, etag: cal.etag } }));

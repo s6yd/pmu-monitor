@@ -37,7 +37,7 @@ if (process.argv[2] === '--child') {
       } };
     return req;
   };
-  Object.assign(process.env, { PORT: '45891', ADMIN_TOKEN: 'admin-token-for-tests', SITE_ENV: env,
+  Object.assign(process.env, { PORT: '20891', ADMIN_TOKEN: 'admin-token-for-tests', SITE_ENV: env,
     SB_URL: 'https://fake.supabase.co', SUPABASE_URL: 'https://fake.supabase.co',
     SB_SERVICE_KEY: 'k', SUPABASE_SERVICE_KEY: 'k', SUPABASE_SERVICE_ROLE_KEY: 'k',
     TELEGRAM_TOKEN: 'tg', ADMIN_CHAT_ID: '5555', FREE_BETA: 'true' });
@@ -45,7 +45,7 @@ if (process.argv[2] === '--child') {
   require(srv);
   const call = (p, m, body) => new Promise(r => {
     const data = body ? JSON.stringify(body) : null;
-    const q = http.request({ host: '127.0.0.1', port: 45891, path: p, method: m,
+    const q = http.request({ host: '127.0.0.1', port: 20891, path: p, method: m,
       headers: Object.assign({ 'X-Admin-Token': 'admin-token-for-tests' },
         data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {}) },
       res => { let s = ''; res.on('data', c => s += c); res.on('end', () => r(JSON.parse(s || '{}'))) });

@@ -256,7 +256,7 @@ function sbStub(method, table, opt) {
 const NOW = '2026-09-23';
 const ctxObj = {
   console: { log() {} }, Promise, JSON, Object, Array, String, Number, Math, Date,
-  RegExp, Error, encodeURIComponent, setTimeout, Map, Set, Buffer,
+  RegExp, Error, encodeURIComponent, setTimeout, clearTimeout, Map, Set, Buffer,
   PLANS_DATA, ACAD_CAL,
   https: fakeHttps,
   SITE_ENV: 'prod', ADMIN_CHAT_ID: '5555',
@@ -285,11 +285,13 @@ const ctxObj = {
   saveState: () => Promise.resolve(),
 };
 vm.createContext(ctxObj);
-/* payTermName الحقيقية تُقتطع لا تُنسخ — صيغة الصفحة («ربيع 2026/2027») */
-{
+/* payTermName الحقيقية تُقتطع لا تُنسخ — صيغة الصفحة («ربيع 2026/2027»)،
+   وحارس الطلبات (outGuard) اللي ينادي عليه نداء المزوّد */
+for (const name of ['payTermName', 'outGuard']) {
   const L = src.split('\n');
-  const i = L.findIndex(x => x.startsWith('function payTermName('));
+  const i = L.findIndex(x => x.startsWith(`function ${name}(`));
   const j = L.findIndex((x, n) => n > i && x === '}');
+  ok(i >= 0 && j > i, `الدالة موجودة في السيرفر: ${name}`);
   if (i >= 0 && j > i) vm.runInContext(L.slice(i, j + 1).join('\n'), ctxObj);
 }
 vm.runInContext(TOOLS + '\n' + CHAT + `
@@ -1187,4 +1189,5 @@ const usageRow = (over) => Object.assign({
   }
 
   done();
-})().catch(e => { console.log('انهار: ' + (e && e.stack || e)); done() });
+/* الانهيار فشل — كان يطبع «٠ فشلت» فيعدّيه run-all كأنه نجح */
+})().catch(e => { console.log('انهار: ' + (e && e.stack || e)); fail++; done() });
