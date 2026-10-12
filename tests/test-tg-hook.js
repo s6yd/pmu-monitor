@@ -89,7 +89,7 @@ https.request = function (opts, cb) {
   return req;
 };
 
-const BASES = { ok: 48100, fail: 48200, nourl: 48300 };
+const BASES = { ok: 23100, fail: 23200, nourl: 23300 };
 const PORT = BASES[MODE] + (process.pid % 100);
 Object.assign(process.env, {
   SITE_ENV: 'prod', PORT: String(PORT), ADMIN_TOKEN: 'admin-token-for-tests',
@@ -207,9 +207,11 @@ async function main() {
 function child(mode) {
   return new Promise(resolve => {
     const p = fork(__filename, [SRV, '--mode=' + mode], { silent: true });
-    let s = '';
+    /* والخطأ معه: انهيار قبل أول سطر (منفذ محجوز مثلاً) كان يطلع «انهار:» فاضية بلا سبب */
+    let s = '', e = '';
     p.stdout.on('data', d => s += d);
-    p.on('exit', () => resolve(s));
+    p.stderr.on('data', d => e += d);
+    p.on('exit', () => resolve(s || (e.split('\n').find(l => /Error/.test(l)) || e).slice(0, 300)));
   });
 }
 

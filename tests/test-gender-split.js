@@ -10,7 +10,7 @@ const SRV = path.resolve(process.argv[2] || path.join(__dirname, '..', 'server.j
 /* المنفذ يتغيّر مع كل تشغيل: منفذ ثابت يبقى محجوزاً بعد انتهاء
    العملية (TIME_WAIT أو بقايا جلسة)، فيفشل التشغيل التالي بـEADDRINUSE
    والاختبار يطلع أحمر بلا علاقة بالكود. النطاق ١٠٠ لكل ملف فما يتصادمان. */
-const PORT = 46200 + (process.pid % 100);
+const PORT = 21200 + (process.pid % 100);
 const TOKEN = 'admin-token-for-tests';
 
 let pass = 0, fail = 0;
@@ -77,7 +77,8 @@ https.request = function (opts, cb) {
       if (host === 'api.telegram.org') {
         TG.push(JSON.parse(chunks.join('') || '{}'));
         o = JSON.stringify({ ok: true, result: {} });
-      } else o = JSON.stringify(supabase(opts.method, opts.path, chunks.join('')));
+      } else o = JSON.stringify(supabase(opts.method, opts.path, chunks.join(''),
+          (opts.headers && (opts.headers.Prefer || opts.headers.prefer)) || ''));
       const res = new Readable({ read() { this.push(o); this.push(null) } });
       res.statusCode = 200; res.headers = {};
       setImmediate(() => cb(res));
@@ -86,7 +87,7 @@ https.request = function (opts, cb) {
   return req;
 };
 
-function supabase(method, urlPath, body) {
+function supabase(method, urlPath, body, prefer) {
   const [p, rawQs = ''] = urlPath.split('?');
   let qs; try { qs = decodeURIComponent(rawQs) } catch (e) { qs = rawQs }
   const table = p.replace('/rest/v1/', '');
@@ -100,8 +101,10 @@ function supabase(method, urlPath, body) {
     const m = /id=in\.\(([^)]*)\)/.exec(qs) || /id=eq\.(\d+)/.exec(qs);
     const ids = m ? new Set(String(m[1]).split(',')) : new Set();
     const b = JSON.parse(body || '{}');
-    rows.forEach(r => { if (ids.has(String(r.id))) Object.assign(r, b) });
-    return [];
+    const hit = rows.filter(r => ids.has(String(r.id)));
+    hit.forEach(r => Object.assign(r, b));
+    /* PostgREST يرجّع الصفوف المتغيّرة مع return=representation — والدورة تحجز بها */
+    return /return=representation/.test(prefer || '') ? hit.map(r => Object.assign({}, r)) : [];
   }
   if (method === 'DELETE') return [];
   if (/expires_at=|followup_at=|followup_done=/.test(qs)) return [];

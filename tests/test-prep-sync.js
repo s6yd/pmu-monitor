@@ -101,7 +101,7 @@ window.supabase={createClient:()=>({
 })};`;
 
 (async () => {
-  await new Promise(r => server.listen(46601, r));
+  await new Promise(r => server.listen(21601, r));
   const browser = await chromium.launch();
 
   /* يفتح الصفحة بصف ملف معيّن وقيمة متصفح معيّنة */
@@ -119,7 +119,7 @@ window.supabase={createClient:()=>({
     }
     await pg.route('**/fonts.googleapis.com/**', r => r.fulfill({ status: 200, contentType: 'text/css', body: '' }));
     await pg.route('**/cdn.jsdelivr.net/**', r => r.fulfill({ status: 200, contentType: 'application/javascript', body: SB(row) }));
-    await pg.goto('http://127.0.0.1:46601/', { waitUntil: 'load' });
+    await pg.goto('http://127.0.0.1:21601/', { waitUntil: 'load' });
     await pg.waitForTimeout(1500);
     return { pg, ctx, errs };
   };

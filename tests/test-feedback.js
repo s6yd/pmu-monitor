@@ -112,7 +112,7 @@ https.request = function (opts, cb) {
   return req;
 };
 
-const PORT = 47400 + (process.pid % 100);
+const PORT = 22400 + (process.pid % 100);
 Object.assign(process.env, {
   PORT: String(PORT), ADMIN_TOKEN: 'admin-token-for-tests', SITE_ENV: 'dev', ACTIVE_TERM: '202710',
   SB_URL: 'https://fake.supabase.co', SUPABASE_URL: 'https://fake.supabase.co',

@@ -75,7 +75,7 @@ https.request = function (opts, cb) {
   return req;
 };
 
-const PORT = 48000 + (process.pid % 100);
+const PORT = 23000 + (process.pid % 100);
 Object.assign(process.env, {
   SITE_ENV: 'prod', PORT: String(PORT), ADMIN_TOKEN: 'admin-token-for-tests',
   ADMIN_CHAT_ID: '5555', TELEGRAM_TOKEN: 'tg', ANTHROPIC_API_KEY: 'sk-test-key',

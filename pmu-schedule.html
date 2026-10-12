@@ -201,6 +201,10 @@ border-radius:13px;padding:13px 15px;margin-bottom:13px}
 .results-count{font-size:13px;color:var(--text2)}
 .results-count span{color:var(--text);font-weight:600}
 .results-time{font-size:11px;color:var(--text3);font-family:var(--mono)}
+/* موقع الجامعة ما يرد: النتائج آخر نسخة عندنا — الطالب لازم يعرف عمرها */
+.stale-note{display:none;margin:0 0 11px;padding:9px 12px;border-radius:11px;font-size:12.5px;line-height:1.6;
+  background:var(--warn-bg);border:1px solid var(--warn);color:var(--text)}
+.stale-note.show{display:block}
 .results-list{display:flex;flex-direction:column;gap:8px}
 
 .course-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:13px 15px}
@@ -1713,6 +1717,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     <button class="ftab close-tab" onclick="setFilter('close',this)" data-i18n="onlyClosed">مغلق فقط</button>
   </div>
 
+  <div class="stale-note" id="staleNote"></div>
   <div class="results-header" id="resultsHeader">
     <div class="results-count"><span id="visibleCount">0</span> <span data-i18n="courseUnit">مادة</span></div>
     <div class="results-time" id="lastUpdate">—</div>
@@ -2494,16 +2499,35 @@ async function doSearch(){
     const kq=PRO_KEY?`&key=${encodeURIComponent(PRO_KEY)}`:'';
     const r=await fetch(`${API}?term=${term}&college=${college}&gender=${gender}&filter=${encodeURIComponent(filter)}${kq}`);
     const d=await r.json();
-    if(!d.success)throw new Error(d.error);
+    if(!d.success){ const er=new Error(d.error); er.fromServer=!!d.error; throw er }
     allCourses=d.courses;renderResults();setStatus(`${d.count} ${t('courseUnit')}`);
-    document.getElementById('lastUpdate').textContent=new Date().toLocaleTimeString(LANG==='ar'?'ar-SA':'en-GB');
+    dataAge(r);
   }catch(e){
     showLoading(false);setStatus(LANG==='ar'?'خطأ':'Error');
+    dataAge(null);
     const b=document.getElementById('initialBox');b.classList.add('visible');
     b.querySelector('.state-icon').textContent='❌';
     b.querySelector('.state-title').textContent=t('errConn');
-    b.querySelector('.state-sub').textContent=t('errConnSub');
+    /* «مزحوم — جرّب بعد دقيقة» · «موقع الجامعة مو متاح لنا الحين» من السيرفر نفسه أوضح من العام */
+    b.querySelector('.state-sub').textContent=(LANG==='ar'&&e&&e.fromServer&&e.message)?e.message:t('errConnSub');
   }
+}
+
+/* عمر النتائج يُقال وقت التسجيل وحده، ولو فوق ربع ساعة بلا سحبة جديدة — قرار محمد (١٢ أكتوبر ٢٠٢٦).
+   السيرفر يقرّر (X-Old) والصفحة تعرض: سطر وعمرها من X-Age-Ms. غير كذا «آخر تحديث» وقت وصول النتائج
+   بلا عمر — خارج التسجيل الكاش ساعات عمداً، و«قبل 300 د» تخوّفه على الفاضي */
+function dataAge(r){
+  const ar=LANG==='ar', lu=document.getElementById('lastUpdate'), note=document.getElementById('staleNote');
+  const old=!!(r&&r.headers.get('X-Old')==='1');
+  const age=old?Math.max(0,Number(r.headers.get('X-Age-Ms'))||0):0;
+  const mins=Math.round(age/60000);
+  const ago=!old?'':(ar?` · قبل ${mins} د`:` · ${mins} min ago`);
+  if(lu)lu.textContent=r?new Date(Date.now()-age).toLocaleTimeString(ar?'ar-u-nu-latn':'en-GB',{hour:'2-digit',minute:'2-digit'})+ago:'—';
+  if(!note)return;
+  note.classList.toggle('show',old);
+  note.textContent=!old?'':(ar
+    ?`⚠️ آخر بيانات وصلتنا من موقع الجامعة قبل ${mins} دقيقة — الحالات ممكن تكون تغيّرت.`
+    :`⚠️ Our latest data from the university site is ${mins} min old — statuses may have changed.`);
 }
 
 /* يشيل المسافات والرموز عشان "MEEN3395" = "meen 3395" */
@@ -2547,6 +2571,7 @@ async function quietRefresh(){
     const d=await r.json();
     if(!d||!d.success||!Array.isArray(d.courses))return;
     fresh=d.courses;
+    dataAge(r);
   }catch(e){ return }
 
   /* نبدّل الحالة فقط — الترتيب والفلاتر ما تتغيّر فما يقفز المكان */
