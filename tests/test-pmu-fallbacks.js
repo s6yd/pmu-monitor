@@ -6,6 +6,7 @@
                 وما تتكرر بعد نشر جديد (goneRestart).
    ٥) beat    — HEALTHCHECK_URL: نبض «سليم» بعد الدورة، و«/fail» لو آخر دورة سليمة قبل ربع ساعة.
    ٦) static  — كل فترة تسجيل وأول إضافة في التقويم تغطيها نافذة مراقبة (تعديل واحد بلا الثاني يمسكه).
+   ٧) snap    — الإنتاج يحفظ آخر جدول كامل، ونسخة جديدة (dev هنا) والجامعة متعطّلة تخدم البحث منه بعمره.
 
    node tests/test-pmu-fallbacks.js [server.js] */
 const path = require('path');
@@ -22,6 +23,7 @@ if (process.argv.includes('--child')) {
   const [outPort, port] = process.argv.slice(-2).map(Number);
   const at = process.argv.find(a => a.startsWith('--at='));
   const hc = process.argv.find(a => a.startsWith('--hc='));
+  const env = process.argv.find(a => a.startsWith('--env='));
   /* ساعة السيرفر: على يوم بعينه، وتتقدّم برسالة من الأب ({warp: ms}) */
   let shift = at ? Date.parse(at.slice(5)) - Date.now() : 0;
   const now = Date.now.bind(Date);
@@ -34,7 +36,7 @@ if (process.argv.includes('--child')) {
     PORT: String(port), ADMIN_TOKEN: ADMIN, SITE_ENV: 'prod', ACTIVE_TERM: '202710',
     SUPABASE_URL: 'https://fake.supabase.co', SUPABASE_SERVICE_KEY: 'k',
     TELEGRAM_TOKEN: 'tg', ADMIN_CHAT_ID: '5555', FREE_BETA: 'false'
-  }, hc ? { HEALTHCHECK_URL: hc.slice(5) } : {});
+  }, hc ? { HEALTHCHECK_URL: hc.slice(5) } : {}, env ? { SITE_ENV: env.slice(6) } : {});
   console.log = () => {};
   require(SRV);
   return;
@@ -156,6 +158,14 @@ function instance(st, extra) {
   c.check = () => get('/api/run-check', { 'X-Admin-Token': ADMIN }).then(r => r.status);
   c.health = () => get('/api/admin/health', { 'X-Admin-Token': ADMIN }).then(r => { try { return JSON.parse(r.body) } catch (e) { return {} } });
   c.warp = ms => c.send({ warp: ms });
+  c.search = g => new Promise(resolve => {
+    const r = http.request({ host: '127.0.0.1', port, path: `/api/courses?term=202710&college=ALL&gender=${g || 'M1'}`, method: 'GET' }, res => {
+      let b = ''; res.setEncoding('utf8'); res.on('data', x => b += x);
+      res.on('end', () => { let j = null; try { j = JSON.parse(b) } catch (e) {} resolve({ status: res.statusCode, headers: res.headers, j }) });
+    });
+    r.on('error', () => resolve({ status: 0, headers: {}, j: null })); r.end();
+  });
+  c.up = async () => { for (let i = 0; i < 50; i++) { if ((await get('/api/monitor-status')).status === 200) return true; await wait(200) } return false };
   return c;
 }
 const ready = async c => { for (let i = 0; i < 50; i++) { if (await c.check() === 200) return true; await wait(200) } return false };
@@ -277,6 +287,27 @@ const SCEN = {
     await cycleOf(c, 4000);
     t.ok(st.HC.includes('/abc123/fail'), '**ربع ساعة بلا دورة سليمة والمراقبة المفروض شغّالة: «/fail»**');
     c.kill('SIGKILL');
+  },
+  async snap(t) {
+    const DB = base(); user(DB, 1); watch(DB, 1, '30011', 'CLOSED');
+    const st = await makeOutside({ DB, pmu: { M1: [row('30011', 'CLOSED'), row('30012', 'OPEN', '102')],
+      F1: [frow('40011', 'CLOSED')] } });
+    const a = instance(st); await ready(a);
+    await cycleOf(a);
+    const saved = (DB.app_state || []).find(x => x.key === 'snapshot-202710');
+    t.ok(saved && saved.value && saved.value.M1.length === 2 && saved.value.F1.length === 1,
+      'الإنتاج حفظ آخر جدول كامل (صف snapshot-202710 — مصفوفات بلا أسماء حقول مكررة)');
+    a.kill('SIGKILL');
+    st.pmu.mode = 'down';                     /* الجامعة متعطّلة وقت الإقلاع الجديد */
+    const b = instance(st, ['--env=dev']); await b.up();
+    await wait(1500);
+    const s = await b.search('M1');
+    const crns = ((s.j && s.j.courses) || []).map(x => x.crn).sort();
+    t.eq([s.status, crns], [200, ['30011', '30012']],
+      '**نسخة جديدة والجامعة متعطّلة: البحث يخدم آخر جدول محفوظ** — كان «فشل» للكل لين ترجع');
+    t.ok(Number(s.headers['x-age-ms']) >= 1000, 'وبعمره الحقيقي (X-Age-Ms من وقت الحفظ) — ' + s.headers['x-age-ms']);
+    t.eq(st.DB.app_state.filter(x => /^snapshot-/.test(x.key)).length, 1, 'وdev ما يكتب نسخته');
+    b.kill('SIGKILL');
   },
   async static(t) {
     /* من الكود نفسه: التقويم والنوافذ */

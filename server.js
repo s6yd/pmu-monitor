@@ -3603,6 +3603,7 @@ async function runMonitorCycle() {
              تعبّي الكاش، ما عادت تنطلق من هناك — فنطلقها من هنا.
              الحارس الزمني داخل syncSchedules يمنع الكتابة المتكررة. */
           syncSchedules(term, parsed).catch(() => {});
+          snapSave(term, snap.byG).catch(() => {});
         }
       } else {
         fetchFailed = true;
@@ -7222,6 +7223,52 @@ function pmuShort(term, g, n) {
   return { n, peak };
 }
 
+/* ═══ آخر جدول محفوظ في القاعدة ═══
+   الكاش في الذاكرة يضيع مع كل نشر — وبعد نشر والجامعة متعطّلة (أو رافضتنا) كان البحث يطلع خطأ للكل
+   لين ترجع، وdev ما يراقب فكاشه بارد دائماً. الإنتاج يحفظ آخر جدول كامل (مصفوفات — أصغر بكثير) مرة كل
+   نص ساعة لو تغيّر، والبيئتان تقرآنه عند الإقلاع **بعمره الحقيقي**: البحث يسحب طازجاً كالعادة، وهذا
+   للعطل بس (X-Stale)، والدورة ما تستعمله (أقدم من ٣ دقائق). صف `snapshot-<ترم>` في app_state —
+   بيانات الجامعة العامة، ما فيها شي يخص بيئة ولا طالب */
+const SNAP_EVERY = 30 * 60 * 1000, SNAP_MAX_AGE = 7 * 864e5;
+const SNAP_COLS = ['crn', 'courseCode', 'courseTitle', 'section', 'courseDate', 'courseTiming', 'instructor', 'room', 'status'];
+let SNAP_SAVED = { at: 0, fp: '' };
+async function snapSave(term, byG) {
+  if (SITE_ENV !== 'prod' || !byG || !byG.M1 || !byG.F1) return false;
+  if (Date.now() - SNAP_SAVED.at < SNAP_EVERY) return false;
+  const pack = rows => rows.map(r => SNAP_COLS.map(k => (r[k] == null ? '' : String(r[k]))));
+  const M1 = pack(byG.M1), F1 = pack(byG.F1);
+  const fp = crypto.createHash('sha1').update(JSON.stringify([M1, F1])).digest('hex');
+  SNAP_SAVED.at = Date.now();
+  if (fp === SNAP_SAVED.fp) return false;               /* نفسه — ما نكتب */
+  const r = await sb('POST', 'app_state', {
+    body: { key: 'snapshot-' + term, value: { term, at: Date.now(), cols: SNAP_COLS, M1, F1 },
+            updated_at: new Date().toISOString() },
+    prefer: 'resolution=merge-duplicates,return=minimal'
+  }).catch(() => null);
+  if (r && !Array.isArray(r) && (r.code || r.message)) return false;
+  SNAP_SAVED.fp = fp;
+  return true;
+}
+async function snapRestore() {
+  for (const term of [...new Set([regTerm(), activeTerm()])]) {
+    const rows = await sb('GET', 'app_state', {
+      query: `?key=eq.${encodeURIComponent('snapshot-' + term)}&select=value&limit=1`
+    }).catch(() => null);
+    const v = Array.isArray(rows) && rows[0] && rows[0].value;
+    if (!v || !Array.isArray(v.M1) || !Array.isArray(v.F1) || !(Number(v.at) > 0) ||
+        Date.now() - Number(v.at) > SNAP_MAX_AGE) continue;
+    const cols = Array.isArray(v.cols) ? v.cols : SNAP_COLS;
+    const unpack = (arr, g) => tagGender(arr.filter(Array.isArray)
+      .map(a => Object.fromEntries(cols.map((k, i) => [k, a[i] == null ? '' : String(a[i])]))), g);
+    const M1 = unpack(v.M1, 'M1'), F1 = unpack(v.F1, 'F1');
+    if (!M1.length && !F1.length) continue;
+    for (const [k, courses] of [[`${term}|ALL|M1`, M1], [`${term}|ALL|F1`, F1], [`${term}|ALL|ALL`, M1.concat(F1)]])
+      if (!coursesCache.has(k)) coursesCache.set(k, { at: Number(v.at), lastHit: 0, courses, restored: true });
+    OPS.snapRestored = { term, at: Number(v.at), n: M1.length + F1.length };
+    console.log(`snapshot: رجّعنا ${M1.length + F1.length} شعبة للترم ${term} (عمرها ${Math.round((Date.now() - v.at) / 60000)} دقيقة)`);
+  }
+}
+
 async function fetchTermSnapshot(term) {
   const parts = [], errs = [], byG = {};
   let short = null;
@@ -7641,7 +7688,7 @@ function searchTermOk(t) {
   const y = Number(String(activeTerm()).slice(0, 4)) || new Date().getUTCFullYear() + 1;
   return Number(m[1]) >= y - 2 && Number(m[1]) <= y + 1;
 }
-const PMU_SEARCH_MAX = 20;            /* سحبات البحث بالدقيقة — كل سحبة طلبان للجامعة */
+const PMU_SEARCH_MAX = 20;            /* سحبات البحث بالدقيقة — كل سحبة طلب للجامعة (وطلبان لو انتهت جلستها) */
 const PMU_SEARCH_LOG = [];
 function pmuSearchTake() {
   const now = Date.now();
@@ -12786,6 +12833,7 @@ server.listen(PORT, () => {
     try {
       await restoreState();
       await restoreEvents();
+      await snapRestore().catch(() => {});
     } catch (e) {
       console.log('الاستعادة فشلت (نكمل بذاكرة فاضية): ' + e.message);
     } finally {
@@ -12793,6 +12841,12 @@ server.listen(PORT, () => {
     }
     /* بعد الاستعادة (النافذة اليدوية من الحالة): نوافذ المراقبة تغطي التسجيل الجاي؟ */
     windowsCheck();
+    /* تجميد النشر وقت النوافذ — قرار محمد: إقلاع وسط نافذة (نشر أو إعادة تشغيل) يوصلك سطر، فتعرف
+       إنه صار وتتأكد إن الإشعارات شغّالة. مرة لكل إقلاع، والإنتاج وحده */
+    const w = MONITOR_ENABLED && ADMIN_CHAT_ID && currentWindow();
+    if (w) sendMsg(ADMIN_CHAT_ID, `🚀 <b>السيرفر اشتغل من جديد وقت التسجيل</b> (${escP(w.ar)})\n\n` +
+      `نشر جديد أو إعادة تشغيل. تأكد من اللوحة ← النظام إن الدورات ماشية.\n` +
+      `وقت النوافذ: الدمج dev ← main لإصلاح عاجل بس.`).catch(() => {});
   })();
   /* النبض الخارجي (لو HEALTHCHECK_URL مضبوط): بعد الإقلاع بنص دقيقة، ثم كل ٥ دقائق */
   if (HEALTHCHECK_URL) {
