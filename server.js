@@ -3111,7 +3111,7 @@ async function sendFollowups() {
   let sent = 0;
   for (const m of due) {
     const p = byUser[m.user_id];
-    const label = esc(m.scope === 'course'
+    const label = escP(m.scope === 'course'
       ? (m.course_code || 'المادة')
       : `${m.course_code || 'المادة'}${m.crn ? ' · CRN ' + m.crn : ''}`);
     if (p && p.telegram_chat_id) {
@@ -3498,16 +3498,16 @@ async function runMonitorCycle() {
       const tail = closedNew ? '📌 مقفلة حالياً — بنراقبها لك.'
                              : '⚡️ سجّل الحين قبل ما تنسكر!';
       const scopeLine = courseScope
-        ? `\n<i>وصلتك لأنك تراقب ${esc(live.courseCode)} كاملة</i>`
+        ? `\n<i>وصلتك لأنك تراقب ${escP(live.courseCode)} كاملة</i>`
         : `\n<i>وصلتك لأنك مراقب هذي الشعبة بالذات</i>`;
       const moreLine = more ? `\n<i>+ ${more} شعبة ثانية تغيّرت</i>` : '';
       const text = `${head}\n\n` +
-        `<b>${esc(live.courseCode)}</b> — شعبة ${esc(live.section)}\n` +
-        `${esc(live.courseTitle)}\n\n` +
-        `🔢 CRN: <code>${esc(live.crn)}</code>\n` +
-        `📅 ${esc(live.courseDate)}  ⏰ ${esc(live.courseTiming)}\n` +
-        `👤 ${esc(live.instructor || '—')}\n` +
-        `🏛️ ${esc(live.room || '—')}${scopeLine}${moreLine}\n\n` +
+        `<b>${escP(live.courseCode)}</b> — شعبة ${escP(live.section)}\n` +
+        `${escP(live.courseTitle)}\n\n` +
+        `🔢 CRN: <code>${escP(live.crn)}</code>\n` +
+        `📅 ${escP(live.courseDate)}  ⏰ ${escP(live.courseTiming)}\n` +
+        `👤 ${escP(live.instructor || '—')}\n` +
+        `🏛️ ${escP(live.room || '—')}${scopeLine}${moreLine}\n\n` +
         tail;
       /* زر يوقف المراقبة من داخل تيليغرام — الطالب يسجّل وينسى
          يرجع للموقع، فيظل يستقبل إشعارات ما عاد يحتاجها. */
@@ -3535,10 +3535,10 @@ async function runMonitorCycle() {
         String(p.telegram_chat_id) === String(ADMIN_CHAT_ID);
       const poKey = (p.pushover_key || '').trim();
       if (PUSHOVER_ON && (isAdmin || pushoverAllowed(p))) {
-        pushover(`${closedNew || isNew ? '🆕' : '🟢'} ${live.courseCode} §${live.section}`,
-          `${live.courseTitle}\nCRN ${live.crn}\n` +
-          `${live.courseDate} · ${live.courseTiming}\n` +
-          `${live.instructor || '—'} · ${live.room || '—'}`,
+        pushover(`${closedNew || isNew ? '🆕' : '🟢'} ${pmuPlain(live.courseCode)} §${pmuPlain(live.section)}`,
+          `${pmuPlain(live.courseTitle)}\nCRN ${pmuPlain(live.crn)}\n` +
+          `${pmuPlain(live.courseDate)} · ${pmuPlain(live.courseTiming)}\n` +
+          `${pmuPlain(live.instructor || '—')} · ${pmuPlain(live.room || '—')}`,
           /* الشعبة المغلقة الجديدة خبر لا طارئ */
           closedNew ? { priority: 0, sound: 'pushover', user: poKey || undefined }
                     : { priority: 2, sound: 'siren', retry: 30, expire: 1800,
@@ -6258,6 +6258,18 @@ function esc(v) {
   return String(v == null ? '' : v)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
+/* نص الجامعة يجي وفيه كيانات HTML مرمَّزة أصلاً («Think&#x27;g» — parseHTML تفك &amp; وحدها،
+   والصفحة تفكها بـdecodeEnt). esc وحدها تطبع الكيان كما هو أمام الطالب، وبلا esc «&» وحدها
+   تخلّي تيليغرام يرفض الرسالة كلها — فنفك ثم نهرّب (escP). وpmuPlain للنص العادي (Pushover) */
+const PMU_NAMED = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+function pmuPlain(v) {
+  return String(v == null ? '' : v).replace(/&(#[xX][0-9a-fA-F]{1,6}|#\d{1,7}|[a-zA-Z]{2,6});/g, (m, e) => {
+    if (e[0] !== '#') { const c = PMU_NAMED[e.toLowerCase()]; return c == null ? m : c }
+    const n = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+    return n > 0 && n <= 0x10FFFF && !(n >= 0xD800 && n <= 0xDFFF) ? String.fromCodePoint(n) : m;
+  });
+}
+const escP = v => esc(pmuPlain(v));
 
 /* ═══ كشف التعارض في السيرفر ═══
    نسخة مطابقة لمنطق الصفحة. تغيّر الوقت قد يخلق تصادماً مع مادة
@@ -6648,7 +6660,7 @@ async function notifyChanges(list, stat) {
          بصرياً ولا يعرف الطالب أيهما القديم. سطران وكلام صريح
          يزيلان اللبس، وما فيه شطب يعتمد عليه الفهم. */
       const lines = it.fields.map(f => {
-        const from = esc(f.from || '—'), to = esc(f.to || '—');
+        const from = escP(f.from || '—'), to = escP(f.to || '—');
         /* الدكتور مذكّر والقاعة والمادة مؤنثة — الصياغة الموحّدة تطلع ركيكة */
         const m = f.field === 'instructor';
         /* خانة كانت فاضية ثم تحدّدت — خبر لا تحذير */
@@ -6664,8 +6676,8 @@ async function notifyChanges(list, stat) {
                `   ${m ? 'صار' : 'صارت'}: <b>${to}</b>`;
       });
       const cl = it.clashes && it.clashes.length
-        ? `\n⚠️ <b>صار يتعارض مع ${it.clashes.map(esc).join('، ')}</b>` : '';
-      return `📌 <b>${esc(it.code)} §${esc(it.section)}</b>\n` + lines.join('\n') + cl;
+        ? `\n⚠️ <b>صار يتعارض مع ${it.clashes.map(escP).join('، ')}</b>` : '';
+      return `📌 <b>${escP(it.code)} §${escP(it.section)}</b>\n` + lines.join('\n') + cl;
     }).join('\n\n');
 
     const r = await sendMsg(cid,

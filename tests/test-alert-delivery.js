@@ -3,6 +3,7 @@
    إشعار ضاع للأبد. ونسختان شغّالتان معاً (وقت النشر) كل وحدة ترسل. هنا كل نسخة سيرفر
    عملية مستقلة، و«الخارج» (الجامعة · القاعدة · تيليغرام) خادم واحد مشترك في الأب:
    ١) amp     — «&» في اسم المادة: تيليغرام يرفض HTML غلط ⇒ نهرّب، والرسالة توصل.
+      apos    — والجامعة ترمّز «'» أصلاً («&#x27;»): نفكّه قبل التهريب، وإلا طلع الكيان للطالب.
    ٢) retry   — تيليغرام رفض مرة ⇒ الدورة الجاية تعيدها، ومرة وحدة.
    ٣) burst   — ثلاث شعب فتحت لنفس الطالب ⇒ ورا بعض، و«استنى» (429) نستناه.
    ٤) twin    — نسختان بنفس اللحظة ⇒ إشعار واحد (الحجز المشروط).
@@ -77,8 +78,12 @@ function makeOutside(o) {
   const st = { DB: o.DB, ROWS: o.ROWS, TG: [], tries: {}, last: {}, tg: o.tg || {}, nextId: 1000 };
   const tgHtmlOk = t => {
     const s = String(t).replace(/<\/?(b|i|u|s|code|pre)>/g, '').replace(/<a href="[^"]*">|<\/a>/g, '');
-    return !/[<>]/.test(s) && !/&(?!(amp|lt|gt|quot|#\d+);)/.test(s);
+    return !/[<>]/.test(s) && !/&(?!(amp|lt|gt|quot|#\d+|#x[0-9a-fA-F]+);)/.test(s);
   };
+  /* اللي يشوفه الطالب: تيليغرام يشيل الوسوم ويفك الكيانات (كل الرقمية + أربعة بالاسم) */
+  const tgPlain = t => String(t).replace(/<\/?(b|i|u|s|code|pre)>/g, '').replace(/<a href="[^"]*">|<\/a>/g, '')
+    .replace(/&(lt|gt|amp|quot|#\d+|#x[0-9a-fA-F]+);/g, (m, e) => ({ lt: '<', gt: '>', amp: '&', quot: '"' })[e] ||
+      String.fromCodePoint(e[1] === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10)));
   st.server = http.createServer((req, res) => {
     const host = req.headers['x-host'];
     let body = '';
@@ -110,7 +115,7 @@ function makeOutside(o) {
           return json(429, { ok: false, error_code: 429, description: 'Too Many Requests: retry after 1',
             parameters: { retry_after: 1 } });
         st.last[chat] = now;
-        st.TG.push({ chat, text: String(b.text || ''), at: now });
+        st.TG.push({ chat, text: String(b.text || ''), plain: tgPlain(b.text || ''), at: now });
         if (cfg.delay) return setTimeout(() => json(200, { ok: true, result: { message_id: 1 } }), cfg.delay);
         return json(200, { ok: true, result: { message_id: 1 } });
       }
@@ -187,6 +192,17 @@ const SCEN = {
     t.eq(m.length, 1, '**اسم مادة فيه «&»: الرسالة وصلت** (كان تيليغرام يرفضها كلها)');
     t.ok(m[0] && m[0].text.includes('Research &amp; Design') && m[0].text.includes("O'Neil &amp; Sons"),
       'ونص الجامعة مهرّب');
+    c.kill('SIGKILL');
+  },
+  async apos(t) {
+    const DB = base(); user(DB, 1); watch(DB, 1, '30011', 'CLOSED');
+    const st = await makeOutside({ DB, ROWS: { M1: [row('30011', 'OPEN', 'Engineer&#x27;s Design', 'O&#x27;Neil, Sean')], F1: F1() } });
+    const c = instance(st); await ready(c);
+    await cycleOf(c);
+    const m = msgsTo(st, 901);
+    t.eq(m.length, 1, 'اسم فيه «&#x27;» من الجامعة: الرسالة وصلت');
+    t.ok(m[0] && m[0].plain.includes("Engineer's Design") && m[0].plain.includes("O'Neil, Sean") &&
+      !m[0].plain.includes('&#x27;'), '**«\'» المرمَّزة من الجامعة تطلع للطالب «\'»** — لا «&#x27;» كما هي');
     c.kill('SIGKILL');
   },
   async retry(t) {
