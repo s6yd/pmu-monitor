@@ -281,6 +281,30 @@ const ANTHROPIC_KEY = (process.env.ANTHROPIC_API_KEY || '').trim();
    تحمي. اللوحة تغيّره بلا نشر. */
 const AI_MODEL_ENV = (process.env.AI_MODEL || 'claude-sonnet-5-5').trim();
 
+/* ═══ حارس الطلبات الخارجية ═══
+   مهلة Node (req.setTimeout) على السكوت لا على المدة: ردّ يقطّر حرفاً كل ثانية ما ينتهي.
+   والاتصال اللي ينقطع وسط الرد ما يطلق end — ولا error إلا لو فيه من يسمعه (جرّبناه
+   على Node 22) — فالوعد يعلق للأبد. صارت في دورة المراقبة: قفلها ما ينفك، والمراقبة
+   تموت بصمت لين أول نشر. فكل طلب خارجي: حد مطلق للمدة كلها، والرد الناقص فشل.
+   req.on('error') يبقى عند صاحب الطلب وينادي g.fail — محاكي الاختبارات يحفظ مستمعاً
+   واحداً له. ونداء g.ok() أول شي في end (قبل close). */
+function outGuard(req, ms, fail) {
+  let over = false;
+  const end = e => { if (over) return; over = true; clearTimeout(t); if (e) fail(e) };
+  const t = setTimeout(() => {
+    end(new Error(`انتهت المهلة (${Math.round(ms / 1000)} ثانية)`));
+    try { req.destroy() } catch (e) {}
+  }, ms);
+  return {
+    res(res) {
+      res.on('error', e => end(e));
+      res.on('close', () => { if (!res.complete) end(new Error('انقطع الاتصال وسط الرد')) });
+    },
+    ok() { end() },
+    fail(e) { end(e) }
+  };
+}
+
 function pushover(title, message, opts) {
   if (!PUSHOVER_ON) {
     console.log('pushover: معطّل — PUSHOVER_TOKEN أو PUSHOVER_USER ناقص');
@@ -307,22 +331,26 @@ function pushover(title, message, opts) {
         fields.expire = String(o.expire || 3600);  /* يوقف بعد ساعة */
       }
       const body = new URLSearchParams(fields).toString();
+      let g;
       const req = https.request({
         hostname: 'api.pushover.net', path: '/1/messages.json', method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded',
                    'Content-Length': Buffer.byteLength(body) }
       }, res => {
+        g.res(res);
         let out = '';
         res.setEncoding('utf8');
         res.on('data', c => { if (out.length < 400) out += c; });
         res.on('end', () => {
+          g.ok();
           if (res.statusCode === 200) console.log(`pushover: تم الإرسال ✓ (أولوية ${pr})`);
           else console.log(`pushover: فشل ${res.statusCode} — ${out.slice(0, 300)}`);
           resolve(res.statusCode === 200);
         });
       });
-      req.on('error', e => { console.log('pushover: خطأ اتصال —', e.message); resolve(false) });
-      req.setTimeout(8000, () => { req.destroy(); console.log('pushover: انتهت المهلة'); resolve(false) });
+      g = outGuard(req, 15000, e => { console.log('pushover: خطأ —', e.message); resolve(false) });
+      req.on('error', e => g.fail(e));
+      req.setTimeout(8000, () => { req.destroy(); g.fail(new Error('انتهت المهلة')) });
       req.write(body); req.end();
     } catch (e) { console.log('pushover: استثناء —', e.message); resolve(false) }
   });
@@ -359,21 +387,25 @@ function sb(method, table, { query = '', body = null, prefer = '' } = {}) {
     if (prefer) headers['Prefer'] = prefer;
     if (data) headers['Content-Length'] = Buffer.byteLength(data);
 
+    let g;
     const req = https.request({
       hostname: u.hostname, path: u.pathname + u.search, method, headers
     }, res => {
+      g.res(res);
       let out = '';
       /* نص لا بايتات: الحرف العربي بايتان، والقطعة ممكن تنقطع في نصّه — فيطلع
          «م��» لو حوّلنا كل قطعة لوحدها (§٦). StringDecoder يحفظ نصف الحرف للقطعة الجاية */
       res.setEncoding('utf8');
       res.on('data', c => out += c);
       res.on('end', () => {
+        g.ok();
         try { resolve(out ? JSON.parse(out) : []); }
         catch (e) { resolve([]); }
       });
     });
-    req.on('error', reject);
-    req.setTimeout(20000, () => { req.destroy(); reject(new Error('Supabase timeout')); });
+    g = outGuard(req, 30000, reject);
+    req.on('error', e => g.fail(e));
+    req.setTimeout(20000, () => { req.destroy(); g.fail(new Error('Supabase timeout')); });
     if (data) req.write(data);
     req.end();
   });
@@ -391,12 +423,15 @@ function sbAuthUser(token) {
     if (hit && hit.until > Date.now()) return resolve(hit.user);
     let u;
     try { u = new URL(`${SB_URL}/auth/v1/user`) } catch (e) { return resolve(null) }
+    let g;
     const req = https.request({ hostname: u.hostname, path: u.pathname, method: 'GET',
       headers: { apikey: SB_SERVICE_KEY, Authorization: `Bearer ${token}` } }, res => {
+      g.res(res);
       let out = '';
       res.setEncoding('utf8');
       res.on('data', c => out += c);
       res.on('end', () => {
+        g.ok();
         let j = null; try { j = JSON.parse(out) } catch (e) {}
         /* الاسم من بيانات قوقل نفسها — نفس ما تعرضه الصفحة، بلا ما نثق بالمتصفح */
         const md = (j && j.user_metadata) || {};
@@ -409,8 +444,9 @@ function sbAuthUser(token) {
         resolve(user);
       });
     });
-    req.on('error', () => resolve(null));
-    req.setTimeout(8000, () => { req.destroy(); resolve(null) });
+    g = outGuard(req, 10000, () => resolve(null));
+    req.on('error', e => g.fail(e));
+    req.setTimeout(8000, () => { req.destroy(); g.fail(new Error('timeout')) });
     req.end();
   });
 }
@@ -692,17 +728,21 @@ function epReq(method, path, body, host) {
       headers['Content-Type'] = 'application/json';
       headers['Content-Length'] = Buffer.byteLength(data);
     }
+    let g;
     const req = https.request({ hostname: host || EP_HOST, path, method, headers }, res => {
+      g.res(res);
       let out = '';
       res.setEncoding('utf8');
       res.on('data', c => { if (out.length < 200000) out += c });
       res.on('end', () => {
+        g.ok();
         let j = null; try { j = JSON.parse(out) } catch (e) {}
         resolve({ status: res.statusCode, j, text: out.slice(0, 300) });
       });
     });
-    req.on('error', e => resolve({ status: 0, j: null, text: e.message }));
-    req.setTimeout(15000, () => { req.destroy(); resolve({ status: 0, j: null, text: 'انتهت المهلة' }) });
+    g = outGuard(req, 30000, e => resolve({ status: 0, j: null, text: e.message }));
+    req.on('error', e => g.fail(e));
+    req.setTimeout(15000, () => { req.destroy(); g.fail(new Error('انتهت المهلة')) });
     if (data) req.write(data);
     req.end();
   });
@@ -1481,16 +1521,19 @@ function poLicReq(method, p, fields) {
     };
     const body = method === 'POST' ? new URLSearchParams(fields).toString() : '';
     try {
+      let g;
       const req = https.request({ hostname: 'api.pushover.net', path: p, method,
         headers: body ? { 'Content-Type': 'application/x-www-form-urlencoded',
                           'Content-Length': Buffer.byteLength(body) } : {} }, res => {
+        g.res(res);
         let out = '';
         res.setEncoding('utf8');
         res.on('data', c => { if (out.length < 4000) out += c });
-        res.on('end', () => done(res.statusCode, out));
+        res.on('end', () => { g.ok(); done(res.statusCode, out) });
       });
-      req.on('error', e => done(0, e.message));
-      req.setTimeout(10000, () => { req.destroy(); done(0, 'انتهت المهلة') });
+      g = outGuard(req, 20000, e => done(0, e.message));
+      req.on('error', e => g.fail(e));
+      req.setTimeout(10000, () => { req.destroy(); g.fail(new Error('انتهت المهلة')) });
       if (body) req.write(body);
       req.end();
     } catch (e) { done(0, e.message) }
@@ -2516,13 +2559,16 @@ function tg(method, payload) {
     let req;
     try {
       const data = JSON.stringify(payload);
+      let g;
       req = https.request({
         hostname: 'api.telegram.org',
         path: `/bot${TELEGRAM_TOKEN}/${method}`,
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) }
-      }, res => { let o=''; res.setEncoding('utf8'); res.on('data',c=>o+=c); res.on('end',()=>{ try{resolve(JSON.parse(o))}catch(e){resolve(null)} }); });
-      req.on('error', e => resolve({ ok: false, description: e.message }));
+      }, res => { g.res(res); let o=''; res.setEncoding('utf8'); res.on('data',c=>o+=c); res.on('end',()=>{ g.ok(); try{resolve(JSON.parse(o))}catch(e){resolve(null)} }); });
+      /* كان بلا أي مهلة: تيليغرام يعلق ⇒ دورة المراقبة تعلق معه */
+      g = outGuard(req, 20000, e => resolve({ ok: false, description: e.message }));
+      req.on('error', e => g.fail(e));
       req.write(data);
       req.end();
     } catch (e) {
@@ -2901,49 +2947,57 @@ const btn = (label, data) => ({ text: label, callback_data: data });
 const kb  = rows => ({ inline_keyboard: rows });
 
 /* ============ PMU fetch ============ */
-function fetchPMUData(termList, collegeList, genderList) {
-  return new Promise((resolve, reject) => {
-    const req = https.request({
-      hostname: 'masterschedule.pmu.edu.sa', path: '/', method: 'GET',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9'
-      }
-    }, res => {
-      let data = '';
-      const cookieStr = (res.headers['set-cookie'] || []).map(c => c.split(';')[0]).join('; ');
-      res.setEncoding('utf8');
-      res.on('data', c => data += c);
-      res.on('end', () => {
-        const m = data.match(/__RequestVerificationToken[^>]+value="([^"]+)"/);
-        if (!m) return reject(new Error('Token not found'));
-        const postData = new URLSearchParams({
-          TermList: termList, CollegeList: collegeList, GenderList: genderList,
-          DataTables_Table_1_length: '10000',
-          __RequestVerificationToken: m[1], 'X-Requested-With': 'XMLHttpRequest'
-        }).toString();
+const PMU_HOST = 'masterschedule.pmu.edu.sa';
+const PMU_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+/* حد مطلق لكل طلب فوق مهلة السكوت (حارس الطلبات): السحبة الطبيعية كلها ١٣–١٨ ثانية */
+const PMU_GET_MS = 20000, PMU_POST_MS = 60000;
 
-        const p = https.request({
-          hostname: 'masterschedule.pmu.edu.sa', path: '/Home/getData', method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-            'Content-Length': Buffer.byteLength(postData),
-            'Cookie': cookieStr, 'X-Requested-With': 'XMLHttpRequest',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Referer': 'https://masterschedule.pmu.edu.sa/',
-            'Origin': 'https://masterschedule.pmu.edu.sa'
-          }
-        }, pr => { let h=''; pr.setEncoding('utf8'); pr.on('data',c=>h+=c); pr.on('end',()=>resolve(h)); });
-        p.on('error', reject);
-        p.setTimeout(20000, () => { p.destroy(); reject(new Error('PMU data timeout')); });
-        p.write(postData); p.end();
-      });
+/* طلب واحد لموقع الجامعة ⇒ { status, headers, text } */
+function pmuReq(method, path, headers, body, idleMs, maxMs) {
+  return new Promise((resolve, reject) => {
+    let g;
+    const req = https.request({ hostname: PMU_HOST, path, method, headers }, res => {
+      g.res(res);
+      let text = '';
+      res.setEncoding('utf8');
+      res.on('data', c => text += c);
+      res.on('end', () => { g.ok(); resolve({ status: res.statusCode, headers: res.headers || {}, text }) });
     });
-    req.on('error', reject);
-    req.setTimeout(15000, () => { req.destroy(); reject(new Error('PMU token timeout')); });
+    g = outGuard(req, maxMs, reject);
+    req.on('error', e => g.fail(e));
+    req.setTimeout(idleMs, () => {
+      req.destroy();
+      g.fail(new Error(method === 'GET' ? 'PMU token timeout' : 'PMU data timeout'));
+    });
+    if (body) req.write(body);
     req.end();
   });
+}
+
+/* صفحة الرمز (cookie + __RequestVerificationToken) ثم الجدول */
+async function fetchPMUData(termList, collegeList, genderList) {
+  const page = await pmuReq('GET', '/', {
+    'User-Agent': PMU_UA,
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9'
+  }, null, 15000, PMU_GET_MS);
+  const m = page.text.match(/__RequestVerificationToken[^>]+value="([^"]+)"/);
+  if (!m) throw new Error('Token not found');
+  const cookieStr = (page.headers['set-cookie'] || []).map(c => c.split(';')[0]).join('; ');
+  const postData = new URLSearchParams({
+    TermList: termList, CollegeList: collegeList, GenderList: genderList,
+    DataTables_Table_1_length: '10000',
+    __RequestVerificationToken: m[1], 'X-Requested-With': 'XMLHttpRequest'
+  }).toString();
+  const r = await pmuReq('POST', '/Home/getData', {
+    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+    'Content-Length': Buffer.byteLength(postData),
+    'Cookie': cookieStr, 'X-Requested-With': 'XMLHttpRequest',
+    'User-Agent': PMU_UA,
+    'Referer': 'https://' + PMU_HOST + '/',
+    'Origin': 'https://' + PMU_HOST
+  }, postData, 20000, PMU_POST_MS);
+  return r.text;
 }
 
 function parseHTML(html) {
@@ -2972,7 +3026,10 @@ async function inBatches(items, size, fn) {
   }
 }
 
-let cycleRunning = false;
+let cycleRunning = false, cycleStartedAt = 0, CYCLE_GEN = 0, CYCLE_SKIPS = 0;
+/* دورة أطول من هذا = علقت: نفكّ قفلها ونبدأ غيرها. حارس الطلبات يمنع أغلب التعليق،
+   وهذا للباقي — والقديمة لو صحت ما تكتب ولا ترسل (CYCLE_GEN) */
+const CYCLE_STUCK_MS = 8 * 60 * 1000;
 
 /* سجل تشغيلي — يُقرأ من لوحة التحكم. في الذاكرة فقط، يُصفّر عند إعادة النشر. */
 const OPS = {
@@ -3091,17 +3148,29 @@ async function runMonitorCycle() {
   if (!SB_URL || !SB_SERVICE_KEY || !MONITOR_ENABLED) return;
 
   /* قفل: لو الدورة السابقة ما خلصت، ما نبدأ وحدة جديدة فوقها.
-     بدونه الدورات تتراكم في الذروة وتاكل الذاكرة. */
+     بدونه الدورات تتراكم في الذروة وتاكل الذاكرة. والإنذار كان مرة وحدة طول عمر
+     السيرفر (العدّاد التراكمي === 3) — صار عن التخطّي المتتالي، وينحل لما تخلص دورة */
   if (cycleRunning) {
-    OPS.skipped++;
-    console.log('cycle still running — skipped');
-    if (OPS.skipped === 3)
-      alert('skip', 'دورات المراقبة تتراكم',
-        `تخطّت ${OPS.skipped} دورات لأن السابقة ما خلصت في وقتها.\n` +
-        `الإشعارات بتتأخر على الطلاب.`);
-    return;
+    const ranMin = Math.round((Date.now() - cycleStartedAt) / 60000);
+    if (Date.now() - cycleStartedAt < CYCLE_STUCK_MS) {
+      OPS.skipped++; CYCLE_SKIPS++;
+      console.log('cycle still running — skipped');
+      if (CYCLE_SKIPS >= 2)
+        alert('skip', 'دورات المراقبة تتراكم',
+          `تخطّت ${CYCLE_SKIPS} دورات ورا بعض لأن السابقة ما خلصت (شغّالة من ${ranMin} دقيقة).\n` +
+          `الإشعارات متأخرة على الطلاب.`);
+      return;
+    }
+    OPS.stuck = (OPS.stuck || 0) + 1;
+    console.log(`cycle stuck ${ranMin} min — releasing the lock`);
+    alert('stuck', 'دورة المراقبة علقت',
+      `آخر دورة بدأت قبل ${ranMin} دقيقة وما خلصت — فكّينا قفلها وبدأنا دورة جديدة.\n` +
+      `لو تكرر، شي يعلّق الدورة: شوف سجل Render.`);
   }
   cycleRunning = true;
+  cycleStartedAt = Date.now();
+  const gen = ++CYCLE_GEN;
+  const current = () => gen === CYCLE_GEN;   /* علقت وفكّينا قفلها؟ ما تكتب ولا ترسل */
   const t0 = Date.now();
   const stat = { at: t0, rows: 0, changed: 0, toNotify: 0, eligible: 0,
                  notified: 0, terms: 0, snapshot: 0, sec: 0, error: null };
@@ -3132,6 +3201,7 @@ async function runMonitorCycle() {
     let fetchFailed = false, partial = false;
     for (const term of terms) {
       const snap = await fetchTermSnapshot(term);
+      if (!current()) { stat.superseded = true; return }
 
       if (snap.courses) {
         const parsed = snap.courses;
@@ -3302,6 +3372,7 @@ async function runMonitorCycle() {
     stat.changed = changed.length;
     stat.toNotify = toNotify.length;
     if (!changed.length && !toNotify.length) return;
+    if (!current()) { stat.superseded = true; return }
 
     /* ── 3. تحديث الحالة بالجملة ──
        بدل PATCH لكل صف، نجمع الصفوف حسب الحالة الجديدة ونرسل طلباً واحداً
@@ -3371,6 +3442,7 @@ async function runMonitorCycle() {
     const notified = [];
     const followups = [];      /* نسأل صاحبها بعد عشر دقائق: سجّلتها؟ */
     await inBatches(sendList, 20, async ({ m, live, courseScope, isNew, closedNew, more }) => {
+      if (!current()) { stat.superseded = true; return }
       const p = profiles[m.user_id];
       /* أربع حالات، والعنوان هو الوحيد الظاهر في إشعار القفل —
          فالتمييز لازم يكون فيه لا في سطر داخلي.
@@ -3463,12 +3535,18 @@ async function runMonitorCycle() {
   } finally {
     stat.sec = Number(((Date.now() - t0) / 1000).toFixed(1));
     logCycle(stat);
-    if (stat.sec > 240)
-      alert('slow', 'دورة المراقبة بطيئة',
-        `آخر دورة أخذت ${stat.sec} ثانية (الحد 300).\n` +
-        `${stat.rows} صف · ${stat.notified} إشعار.`);
-    else if (stat.sec < 120) resolve('slow', 'دورة المراقبة بطيئة');
-    cycleRunning = false;
+    /* دورة جديدة أخذت القفل (هذي علقت وفكّيناه) — ما نفكّه عنها ولا ننذر عنها */
+    if (current()) {
+      if (stat.sec > 240)
+        alert('slow', 'دورة المراقبة بطيئة',
+          `آخر دورة أخذت ${stat.sec} ثانية (الحد 300).\n` +
+          `${stat.rows} صف · ${stat.notified} إشعار.`);
+      else if (stat.sec < 120) resolve('slow', 'دورة المراقبة بطيئة');
+      CYCLE_SKIPS = 0;
+      resolve('skip', 'دورات المراقبة تتراكم');
+      resolve('stuck', 'دورة المراقبة علقت');
+      cycleRunning = false;
+    }
   }
 }
 
@@ -4568,15 +4646,18 @@ function sbStorage(method, path, body) {
       headers['Content-Type'] = 'application/json';
       headers['Content-Length'] = Buffer.byteLength(data);
     }
+    let g;
     const rq = https.request(
       { hostname: u.hostname, path: u.pathname + u.search, method, headers },
       r => {
+        g.res(r);
         let d = '';
         r.setEncoding('utf8');
         r.on('data', c => d += c);
-        r.on('end', () => { try { resolve(JSON.parse(d)) } catch (e) { resolve(null) } });
+        r.on('end', () => { g.ok(); try { resolve(JSON.parse(d)) } catch (e) { resolve(null) } });
       });
-    rq.on('error', () => resolve(null));
+    g = outGuard(rq, 60000, () => resolve(null));
+    rq.on('error', e => g.fail(e));
     if (data) rq.write(data);
     rq.end();
   });
@@ -5775,6 +5856,7 @@ const FINALS_TTL = 6 * 60 * 60 * 1000;
 
 function fetchPage(pathname) {
   return new Promise((resolve, reject) => {
+    let g;
     const req = https.request({
       hostname: 'pmu.edu.sa', path: pathname, method: 'GET',
       headers: {
@@ -5783,13 +5865,15 @@ function fetchPage(pathname) {
         'Accept-Language': 'en-US,en;q=0.9'
       }
     }, res => {
+      g.res(res);
       let d = '';
       res.setEncoding('utf8');
       res.on('data', c => d += c);
-      res.on('end', () => resolve(d));
+      res.on('end', () => { g.ok(); resolve(d) });
     });
-    req.on('error', reject);
-    req.setTimeout(25000, () => { req.destroy(); reject(new Error('timeout')); });
+    g = outGuard(req, 40000, reject);
+    req.on('error', e => g.fail(e));
+    req.setTimeout(25000, () => { req.destroy(); g.fail(new Error('timeout')); });
     req.end();
   });
 }
@@ -9562,7 +9646,7 @@ function aiCall(payload) {
     let data;
     try { data = JSON.stringify(payload) }
     catch (e) { return resolve({ status: 0, json: null, err: 'payload' }) }
-    let done = false;
+    let done = false, g;
     const fin = r => { if (!done) { done = true; resolve(r) } };
     const req = https.request({
       hostname: AI_API_HOST, path: AI_API_PATH, method: 'POST',
@@ -9571,17 +9655,20 @@ function aiCall(payload) {
                  'content-type': 'application/json',
                  'content-length': Buffer.byteLength(data) }
     }, res => {
+      g.res(res);
       let out = '';
       /* جواب النموذج عربي: نص لا بايتات، وإلا انكسر الحرف بين قطعتين (§٦) */
       res.setEncoding('utf8');
       res.on('data', c => { if (out.length < 2e6) out += c });
       res.on('end', () => {
+        g.ok();
         let j = null; try { j = JSON.parse(out) } catch (e) {}
         fin({ status: res.statusCode, json: j });
       });
     });
-    req.on('error', e => fin({ status: 0, json: null, err: e.message }));
-    req.setTimeout(AI_CALL_MS, () => { req.destroy(); fin({ status: 0, json: null, err: 'timeout' }) });
+    g = outGuard(req, AI_CALL_MS + 30000, e => fin({ status: 0, json: null, err: e.message }));
+    req.on('error', e => g.fail(e));
+    req.setTimeout(AI_CALL_MS, () => { req.destroy(); g.fail(new Error('timeout')) });
     req.write(data); req.end();
   });
 }
