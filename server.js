@@ -2730,7 +2730,9 @@ async function saveState() {
                             ips: [...AI_GUEST.ips.entries()].slice(0, 5000) },
                  aiCaps: AI_CAPS, aiAlerted: AI_ALERTED,
                  /* رخص Pushover: مين سألناك عنه — بلا حفظه يجيك السؤال مرة ثانية مع كل نشر */
-                 poLicAsked: [...PO_LIC.asked.entries()].slice(-2000) },
+                 poLicAsked: [...PO_LIC.asked.entries()].slice(-2000),
+                 /* «الشعبة اختفت» انقالت لصاحبها — بلا حفظه تتكرر مع كل نشر */
+                 monGone: [...MON_GONE_TOLD].slice(-3000) },
       ops: { searches: OPS.searches, feedback: OPS.feedback,
              pmuFails: OPS.pmuFails, tgFails: OPS.tgFails,
              searchesCached: OPS.searchesCached, searchStale: OPS.searchStale,
@@ -2800,6 +2802,7 @@ async function restoreState() {
   if ('aiAlerted' in g) AI_ALERTED = String(g.aiAlerted || '');
   if (Array.isArray(g.poLicAsked))
     for (const [id, at] of g.poLicAsked) if (isUuid(String(id))) PO_LIC.asked.set(String(id), Number(at) || 0);
+  if (Array.isArray(g.monGone)) g.monGone.forEach(k => { if (/^\d+\|\d{3,8}$/.test(String(k))) MON_GONE_TOLD.add(String(k)) });
   if ('termOverride' in g) TERM_OVERRIDE = g.termOverride || null;
   if ('windowOverride' in g) WINDOW_OVERRIDE = g.windowOverride || null;
   if ('hoursOverride' in g) HOURS_OVERRIDE = g.hoursOverride || null;
@@ -3154,6 +3157,82 @@ async function inBatches(items, size, fn) {
   }
 }
 
+/* حصة المجاني: أقدم N مراقبات شعبة لكل طالب (PRICING.freeMonitors) — المكان الوحيد اللي تنحسب فيه */
+function freeQuota(monitors) {
+  const ok = new Set(), perUser = {};
+  monitors.forEach(m => {
+    if (m.scope !== 'course') (perUser[m.user_id] = perUser[m.user_id] || []).push(m);
+  });
+  Object.values(perUser).forEach(list => {
+    list.sort((a, b) => ((Date.parse(a.created_at) || 0) - (Date.parse(b.created_at) || 0))
+                        || (Number(a.id) - Number(b.id)));
+    list.slice(0, PRICING.freeMonitors).forEach(m => ok.add(m.id));
+  });
+  return ok;
+}
+
+/* ═══ شعبة اختفت من جدول الجامعة ═══
+   كانت تنتخطّى بصمت (`!live`): طالب يراقب شعبة انلغت وينتظر للأبد. ثلاث دورات ورا بعض بجدول كامل
+   وطازج بلا أثر لها ⇒ رسالة وحدة («غالباً انلغت — شوف شعبة ثانية»)، ومراقبتها تكمل لو رجعت.
+   العدّ في الذاكرة (نشر يصفّره — ثلاث دورات ثانية)، واللي انقال له يُحفظ مع الحالة فما يتكرر */
+const MON_GONE = new Map(), MON_GONE_TOLD = new Set(), MON_GONE_AFTER = 3;
+async function notifyGone(list, monitors) {
+  const freeOk = freeQuota(monitors);
+  const ids = [...new Set(list.map(m => m.user_id))].map(u => `"${u}"`).join(',');
+  const profs = await sb('GET', 'profiles', {
+    query: `?id=in.(${ids})&select=id,telegram_chat_id,is_pro,subscription_expires_at`
+  }).catch(() => []);
+  const byId = new Map((Array.isArray(profs) ? profs : []).map(p => [p.id, p]));
+  for (const m of list) {
+    const p = byId.get(m.user_id), k = m.id + '|' + m.crn;
+    /* بلا تلقرام أو مراقبة فوق حصة المجاني (ما تنخدم أصلاً): ما نرسل، ولا نرجع نسأل */
+    if (!p || !p.telegram_chat_id || !(hasAccess(p) || freeOk.has(m.id))) { MON_GONE_TOLD.add(k); continue }
+    const r = await sendMsg(p.telegram_chat_id,
+      `⚠️ <b>الشعبة اللي تراقبها اختفت من جدول الجامعة</b>\n\n` +
+      `<b>${escP(m.course_code || '—')}</b> — شعبة ${escP(m.section || '?')} · CRN <code>${escP(m.crn)}</code>\n` +
+      `ما لقيناها في جدول الترم ${MON_GONE_AFTER} مرات ورا بعض — غالباً الجامعة ألغتها أو غيّرت رقمها.\n\n` +
+      `بنكمل نراقبها لو رجعت، بس الأحسن تختار شعبة ثانية من الموقع.`,
+      kb([[btn('🔕 أوقف مراقبة هذي الشعبة', 'stop:' + m.id)]])).catch(() => null);
+    if (r && r.ok) MON_GONE_TOLD.add(k);
+    await new Promise(r2 => setTimeout(r2, 300));
+  }
+}
+
+/* ═══ نبض خارجي (اختياري) ═══
+   الإنذارات كلها تطلع من السيرفر نفسه — لو وقف كله (انهيار · Render · خدمة موقوفة) ما يوصلك شي.
+   HEALTHCHECK_URL (رابط فحص من healthchecks.io مثلاً) ننبضه كل ٥ دقائق وبعد كل دورة: «سليم» لو المراقبة
+   ماشية أو خارج وقتها، و«/fail» لو المفروض تشتغل وآخر دورة سليمة قبل ربع ساعة. وقف النبض = السيرفر
+   واقف ⇒ الخدمة تنبّهك هي. بلا المتغيّر ما يصير شي */
+const HEALTHCHECK_URL = (() => {
+  const u = String(process.env.HEALTHCHECK_URL || '').trim();
+  return /^https:\/\/[^\s"'<>]+$/.test(u) ? u.replace(/\/+$/, '') : '';
+})();
+let LAST_GOOD_CYCLE = Date.now(), HC_LAST = 0;   /* الإقلاع مهلة: ما نقول «فشل» قبل ربع ساعة منه */
+const HC_FAIL_AFTER = 15 * 60 * 1000;
+function hcVerdict() {
+  if (!monitorState().active) return 'ok';        /* خارج الوقت أو موقوفة: السيرفر حي وبس */
+  return Date.now() - LAST_GOOD_CYCLE > HC_FAIL_AFTER ? 'fail' : 'ok';
+}
+function heartbeat() {
+  if (!HEALTHCHECK_URL || !MONITOR_ENABLED) return Promise.resolve(null);
+  HC_LAST = Date.now();
+  const verdict = hcVerdict();
+  let u;
+  try { u = new URL(HEALTHCHECK_URL + (verdict === 'fail' ? '/fail' : '')) } catch (e) { return Promise.resolve(null) }
+  return new Promise(resolve => {
+    let g;
+    const req = https.request({ hostname: u.hostname, path: u.pathname + u.search, method: 'GET',
+      headers: { 'User-Agent': 'jadwalik-heartbeat' } }, res => {
+      g.res(res);
+      res.resume();
+      res.on('end', () => { g.ok(); resolve(verdict) });
+    });
+    g = outGuard(req, 10000, () => resolve(null));
+    req.on('error', e => g.fail(e));
+    req.end();
+  });
+}
+
 let cycleRunning = false, cycleStartedAt = 0, CYCLE_GEN = 0, CYCLE_SKIPS = 0;
 /* إشعار فشل إرساله: كم مرة حاولنا (مراقبة|CRN) — نعيده الدورة الجاية بحد ثلاث */
 const NOTIFY_FAILS = new Map(), NOTIFY_MAX_TRIES = 3;
@@ -3316,8 +3395,18 @@ async function runMonitorCycle() {
 
     /* sbAll لا sb: sb تقصّ عند ١٠٠٠ صف بلا خطأ — فالمراقبة رقم ١٠٠١ كانت
        ما تنفحص أبداً، ولا أحد يدري. الموسم الماضي ٥٧٧ صفاً، والقادم أكثر. */
-    const allMons = await sbAll('monitored_courses', { query: '?select=*' });
-    if (!Array.isArray(allMons) || !allMons.length) return;
+    /* strict: قراءة فشلت كانت ترجع [] — «ما فيه مراقبات» فترجع الدورة بصمت، والمراقبة كلها واقفة
+       بلا أحد يدري (أو صفحة وسطى تفشل فينقطع الباقي). الحين إنذار، وينحل مع أول قراءة سليمة */
+    let allMons;
+    try { allMons = await sbAll('monitored_courses', { query: '?select=*', strict: true }) }
+    catch (e) {
+      stat.error = 'db: ' + e.message;
+      alert('db', 'القاعدة ما ترد — المراقبة واقفة',
+        `ما قدرنا نقرأ قائمة المراقبة: ${escP(e.message)}\n\nولا شعبة انفحصت هالدورة. لو تكرر، شوف حالة Supabase.`);
+      return;
+    }
+    resolve('db', 'القاعدة ما ترد — المراقبة واقفة');
+    if (!allMons.length) { LAST_GOOD_CYCLE = Date.now(); return; }
 
     /* الترم النشط وحده. صف واحد بترم آخر كان يضيف سحبة كاملة من موقع
        الجامعة في كل دورة، والأخطر: في الموسم القادم كانت الدورة تسحب
@@ -3327,15 +3416,17 @@ async function runMonitorCycle() {
     const TERM = regTerm();
     const monitors = allMons.filter(m => String(m.term || '') === TERM);
     stat.otherTerm = allMons.length - monitors.length;
-    if (!monitors.length) return;
+    if (!monitors.length) { LAST_GOOD_CYCLE = Date.now(); return; }
 
     /* ── 1. سحبة واحدة، للترم النشط ── */
     const terms = [TERM];
     const snapshot = {};
     let fetchFailed = false, partial = false;
+    let gotFeed = false;
     for (const term of terms) {
       const snap = await fetchTermSnapshot(term);
       if (!current()) { stat.superseded = true; return }
+      if (snap.courses) gotFeed = true;
 
       if (snap.courses) {
         const parsed = snap.courses;
@@ -3427,6 +3518,8 @@ async function runMonitorCycle() {
     CYCLE_RETRIES = fetchFailed
       ? Math.min(CYCLE_RETRIES + 1, CYCLE_RETRY_MAX + 1)
       : 0;
+    CYCLE_DOWN = gotFeed ? 0 : CYCLE_DOWN + 1;
+    if (gotFeed) LAST_GOOD_CYCLE = Date.now();
 
     const now = new Date().toISOString();
 
@@ -3472,6 +3565,22 @@ async function runMonitorCycle() {
       }
       changed.push({ m, live });
       if (live.status === 'OPEN' && m.last_status !== 'OPEN') toNotify.push({ m, live });
+    }
+
+    /* شعبة مراقَبة ما لها أثر في جدول كامل وطازج (لا نصف ولا ناقص ولا من الكاش) — ثلاث مرات ورا بعض */
+    const gone = [];
+    if (!partial && !stat.fromCache && stat.snapshot > 0) {
+      for (const m of sectionMons) {
+        const k = m.id + '|' + m.crn;
+        if (snapshot[(m.term || '202630') + ':' + m.crn]) { MON_GONE.delete(k); continue }
+        if (MON_GONE_TOLD.has(k) || !m.crn) continue;
+        const age = m.created_at ? (Date.now() - new Date(m.created_at).getTime()) : Infinity;
+        if (age < BASELINE_GRACE) continue;
+        const n = (MON_GONE.get(k) || 0) + 1;
+        MON_GONE.set(k, n);
+        if (n >= MON_GONE_AFTER) gone.push(m);
+      }
+      if (gone.length) stat.gone = gone.length;
     }
 
     /* ── 2ب. مراقبة المادة كاملة ──
@@ -3520,7 +3629,10 @@ async function runMonitorCycle() {
 
     stat.changed = changed.length;
     stat.toNotify = toNotify.length;
-    if (!changed.length && !toNotify.length && !courseStateUpdates.length) return;
+    if (!changed.length && !toNotify.length && !courseStateUpdates.length) {
+      if (gone.length && current() && !SHUTTING_DOWN) await notifyGone(gone, monitors).catch(() => {});
+      return;
+    }
     if (!current()) { stat.superseded = true; return }
 
     /* ── 3. الحجز ثم تحديث الحالة بالجملة ──
@@ -3579,18 +3691,7 @@ async function runMonitorCycle() {
        فقط، ومراقبة «كل الشعب» للمشتركين. الباقي متوقف لا محذوف — يرجع
        يشتغل لو اشترك. والصفحة تكتب في القاعدة مباشرة، فأي أحد يتجاوز
        الحد من أدوات المتصفح — لكن الدورة ما تخدم إلا حصّته. */
-    const freeOk = new Set();
-    {
-      const perUser = {};
-      monitors.forEach(m => {
-        if (m.scope !== 'course') (perUser[m.user_id] = perUser[m.user_id] || []).push(m);
-      });
-      Object.values(perUser).forEach(list => {
-        list.sort((a, b) => ((Date.parse(a.created_at) || 0) - (Date.parse(b.created_at) || 0))
-                            || (Number(a.id) - Number(b.id)));
-        list.slice(0, PRICING.freeMonitors).forEach(m => freeOk.add(m.id));
-      });
-    }
+    const freeOk = freeQuota(monitors);
     let withheld = 0;
     let sendList = toNotify.filter(({ m }) => {
       const p = profiles[m.user_id];
@@ -3806,6 +3907,9 @@ async function runMonitorCycle() {
       }
     }
 
+    /* رسالة «اختفت» آخر شي — بعد إشعارات «فتحت» المستعجلة */
+    if (gone.length && current() && !SHUTTING_DOWN) await notifyGone(gone, monitors).catch(() => {});
+
     stat.notified = notified.length;
     console.log(`cycle: ${monitors.length} rows | ${changed.length} changed | ` +
                 `${notified.length} notified | ${((Date.now() - t0) / 1000).toFixed(1)}s`);
@@ -3827,6 +3931,7 @@ async function runMonitorCycle() {
       resolve('skip', 'دورات المراقبة تتراكم');
       resolve('stuck', 'دورة المراقبة علقت');
       cycleRunning = false;
+      if (HEALTHCHECK_URL && Date.now() - HC_LAST > 60000) heartbeat().catch(() => {});
     }
   }
 }
@@ -5950,6 +6055,12 @@ async function adminHealth() {
       intervalMin: INTERVAL_PEAK / 60000,
       intervalHotMin: INTERVAL_HOT / 60000,
       hotToday: hotDay(),
+      /* عطل طويل: كم دورة ورا بعض بلا جدول، والفاصل اللي صار (بلا تشويش) */
+      downCycles: CYCLE_DOWN,
+      backoffMin: cycleBackoffMs(hotDay()) / 60000,
+      /* النبض الخارجي: مضبوط؟ وش بيقول الحين؟ (بلا الرابط — فيه رمز الفحص) */
+      heartbeat: HEALTHCHECK_URL ? { verdict: hcVerdict(),
+        lastAgoSec: HC_LAST ? Math.round((Date.now() - HC_LAST) / 1000) : null } : null,
       jitterPct: Math.round(JITTER * 100),
       intervalMinLow: Number(((INTERVAL_PEAK * (1 - JITTER)) / 60000).toFixed(2)),
       intervalMinHigh: Number(((INTERVAL_PEAK * (1 + JITTER)) / 60000).toFixed(2)),
@@ -7491,6 +7602,15 @@ const CYCLE_CACHE_MAX  = 3 * 60 * 1000;  /* أقصى عمر نسخة نقبله�
 const CYCLE_RETRY_WAIT = 60 * 1000;      /* نعاود بعد دقيقة لا بعد الفاصل */
 const CYCLE_RETRY_MAX  = 3;              /* وبعد ثلاث محاولات نهدأ */
 let CYCLE_RETRIES = 0;
+/* عطل طويل: دورات ورا بعض بلا جدول من الجامعة. بعد المحاولات السريعة الفاصل يتضاعف لين ربع ساعة —
+   كان يرجع لفاصله (دقيقتان في أيام التسجيل) للأبد، ثلاث طلبات فاشلة كل مرة على موقع متعثّر.
+   أول جدول يوصل يرجّعه طبيعي */
+let CYCLE_DOWN = 0;
+const CYCLE_DOWN_MAX_MS = 15 * 60 * 1000;
+function cycleBackoffMs(hot) {
+  if (CYCLE_DOWN <= CYCLE_RETRY_MAX) return 0;
+  return Math.min((hot ? INTERVAL_HOT : INTERVAL_PEAK) * 2 ** (CYCLE_DOWN - CYCLE_RETRY_MAX), CYCLE_DOWN_MAX_MS);
+}
 
 const INTERVAL_PEAK = 5 * 60 * 1000;    // داخل نافذة التسجيل
 const JITTER        = 0.25;             // ±25% تفادياً لنمط منتظم تماماً
@@ -7542,6 +7662,35 @@ function nextWindow() {
 }
 const dayShift = (iso, n) =>
   new Date(Date.parse(iso + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+
+/* ═══ نوافذ المراقبة والتقويم ═══
+   النوافذ مكتوبة بيد (MONITOR_WINDOWS) والتقويم بيد (ACAD_CAL): نسيان واحد منهما = تسجيل كامل بلا
+   مراقبة، والدورة ما تشتغل أصلاً فما فيه إنذار يطلع. مرة باليوم نقارن: فترة تسجيل جاية في التقويم
+   ما تغطيها نافذة، أو ما فيه نافذة جاية أبداً ⇒ إنذار لين تنضاف */
+function windowGaps(day) {
+  const d = day || riyadhDate(), wins = windowList();
+  return ACAD_CAL.filter(x => x.t === 'reg' && (x.e || x.s) >= d &&
+      !wins.some(w => w.from <= x.s && w.to >= (x.e || x.s)))
+    .map(x => ({ term: x.term, s: x.s, e: x.e || x.s, ar: x.ar }));
+}
+let WINDOWS_CHECKED = '';
+function windowsCheck() {
+  if (!MONITOR_ENABLED) return;
+  const d = riyadhDate();
+  if (WINDOWS_CHECKED === d) return;
+  WINDOWS_CHECKED = d;
+  const gaps = windowGaps(d), manual = WINDOW_OVERRIDE ? '\n\n(فيه نافذة يدوية من اللوحة — هي وحدها الشغّالة الحين)' : '';
+  if (gaps.length)
+    return alert('windows', 'نوافذ المراقبة ناقصة',
+      'فترة تسجيل جاية في التقويم ما تغطيها نافذة مراقبة — بتمر بلا مراقبة:\n' +
+      gaps.map(g => `• ${g.ar} (${g.term}): ${g.s} → ${g.e}`).join('\n') +
+      `\n\nتنضاف في MONITOR_WINDOWS بالسيرفر (من بداية التسجيل لآخر يوم إضافة).${manual}`);
+  if (!currentWindow() && !nextWindow())
+    return alert('windows', 'نوافذ المراقبة ناقصة',
+      'آخر نافذة مراقبة انتهت وما فيه وحدة جاية — التسجيل الجاي بيمر بلا مراقبة.\n\n' +
+      `تنضاف نوافذه في MONITOR_WINDOWS وتقويمه في ACAD_CAL بالسيرفر.${manual}`);
+  resolve('windows', 'نوافذ المراقبة ناقصة');
+}
 
 /* هل نحن خلال أسبوع قبل نافذة تسجيل أو أسبوع بعدها؟
    windowList لا MONITOR_WINDOWS: كانت تقرأ التقويم المكتوب في الكود
@@ -7674,6 +7823,9 @@ function nextDelay() {
   if (st.active && CYCLE_RETRIES > 0 && CYCLE_RETRIES <= CYCLE_RETRY_MAX)
     return CYCLE_RETRY_WAIT * (1 + Math.random() * 0.3);
 
+  const back = st.active ? cycleBackoffMs(st.hot) : 0;
+  if (back) return back * (1 + Math.random() * 0.2);
+
   /* خارج الموسم: نفحص مرة كل ساعة فقط إذا بدأت نافذة جديدة */
   if (st.reason === 'offseason') return 60 * 60 * 1000 * (1 + Math.random() * 0.2);
 
@@ -7696,6 +7848,7 @@ function scheduleNextCycle() {
   NEXT_CYCLE_AT = Date.now() + delay;      /* لعرضه في اللوحة */
   console.log(`next cycle in ${(delay / 60000).toFixed(1)} min — ${st.reason}`);
   setTimeout(async () => {
+    windowsCheck();
     if (monitorState().active) {
       try { await runMonitorCycle(); } catch (e) { console.log('cycle err', e.message); }
     }
@@ -12444,7 +12597,14 @@ server.listen(PORT, () => {
     } finally {
       EVENTS_READY = true;
     }
+    /* بعد الاستعادة (النافذة اليدوية من الحالة): نوافذ المراقبة تغطي التسجيل الجاي؟ */
+    windowsCheck();
   })();
+  /* النبض الخارجي (لو HEALTHCHECK_URL مضبوط): بعد الإقلاع بنص دقيقة، ثم كل ٥ دقائق */
+  if (HEALTHCHECK_URL) {
+    setTimeout(() => { heartbeat().catch(() => {}) }, 30000);
+    setInterval(() => { heartbeat().catch(() => {}) }, 5 * 60 * 1000);
+  }
   /* حفظ العدّادات كل 5 دقائق، وعند الإغلاق النظيف */
   setInterval(() => { saveState().catch(() => {}) }, 5 * 60 * 1000);
   /* الإغلاق (Render ينشر نسخة جديدة ويمهل القديمة ٣٠ ثانية): ما نبدأ دورة، وننتظر
