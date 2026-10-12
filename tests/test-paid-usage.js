@@ -75,7 +75,8 @@ const DB = {
       gateway: 'edfapay', created_at: iso(NOW - 5 * 60e3), paid_at: null },
   ],
   monitored_courses: [], paid_usage: [], credit_ledger: [], referrals: [], app_events: [],
-  app_state: [{ key: 'runtime', value: { toggles: { pushoverMode: 'addon' } } }],
+  /* المراقبة موقوفة من اللوحة: ما تشتغل دورة مجدولة — والفحص اليدوي (برمز اللوحة) يبقى */
+  app_state: [{ key: 'runtime', value: { toggles: { pushoverMode: 'addon', monitorPaused: true } } }],
 };
 const AUTH_USERS = new Set(Object.values(U));
 let NEXT = 1000;
@@ -228,7 +229,7 @@ https.request = function (opts, cb) {
 const PORT = 49000 + (process.pid % 100);
 Object.assign(process.env, {
   PORT: String(PORT), ADMIN_TOKEN: 'admin-token-for-tests', ADMIN_CHAT_ID: '5555', SITE_ENV: 'prod',
-  ACTIVE_TERM: '203010', FREE_BETA: 'false', MONITOR_ENABLED: 'false',
+  ACTIVE_TERM: '203010', FREE_BETA: 'false',
   SB_URL: 'https://fake.supabase.co', SUPABASE_URL: 'https://fake.supabase.co',
   SB_SERVICE_KEY: 'k', SUPABASE_SERVICE_KEY: 'k', TELEGRAM_TOKEN: 'tg',
   EDFAPAY_API_KEY: '', EDFAPAY_WEBHOOK_SECRET: '',
@@ -271,7 +272,7 @@ function seedMonitors() {
 async function cycle() {
   DB.monitored_courses.forEach(m => { m.last_status = 'CLOSED'; m.notified_at = null });
   PO.length = 0;
-  await call('GET', '/api/run-check');
+  await call('GET', '/api/run-check', { admin: true });   /* الفحص اليدوي برمز اللوحة وحدها */
   for (let i = 0; i < 80; i++) {
     await wait(250);
     if (DB.monitored_courses.every(m => m.notified_at)) break;

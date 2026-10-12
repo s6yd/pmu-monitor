@@ -3087,7 +3087,8 @@ async function dropExpired() {
 }
 
 async function runMonitorCycle() {
-  if (!SB_URL || !SB_SERVICE_KEY) return;
+  /* نسخة بلا مراقبة (dev) ما تشغّل دورة من أي طريق — القاعدة مشتركة */
+  if (!SB_URL || !SB_SERVICE_KEY || !MONITOR_ENABLED) return;
 
   /* قفل: لو الدورة السابقة ما خلصت، ما نبدأ وحدة جديدة فوقها.
      بدونه الدورات تتراكم في الذروة وتاكل الذاكرة. */
@@ -6914,7 +6915,32 @@ const RESP_CACHE = new Map();   /* مفتاح → {at, raw, gz} — البايت
 const coursesCache = new Map();     // key → {at, courses}
 const inFlight     = new Map();     // key → Promise (يمنع سحبتين متزامنتين لنفس التركيبة)
 
-async function getCourses(term, college, gender, force) {
+/* ═══ حدود البحث العام ═══
+   الترم والكلية والجنس تجي من الطلب نفسه، وكل تركيبة جديدة سحبة من موقع الجامعة.
+   فالقيم من قوائم الصفحة وحدها، وسحب البحث بسقف بالدقيقة: فوقه نخدم آخر نسخة عندنا.
+   الدورة وساعة التأكيد وأدوات المساعد خارجه — لها حرّاسها، وعددها محسوب. */
+const PMU_COLLEGES = new Set(['ALL', 'EN', 'IT', 'BA', 'CS', 'CC', 'SH', 'MT', 'PR']);
+const PMU_GENDERS  = new Set(['ALL', 'M1', 'F1']);
+/* صيغة الجامعة (السنة + 10/20/30)، ومن سنتين قبل سنة ترم الدراسة لسنة بعدها —
+   قائمة الصفحة فيها ست ترمات بهذا المدى */
+function searchTermOk(t) {
+  const m = /^(20\d{2})([123]0)$/.exec(String(t || ''));
+  if (!m) return false;
+  const y = Number(String(activeTerm()).slice(0, 4)) || new Date().getUTCFullYear() + 1;
+  return Number(m[1]) >= y - 2 && Number(m[1]) <= y + 1;
+}
+const PMU_SEARCH_MAX = 20;            /* سحبات البحث بالدقيقة — كل سحبة طلبان للجامعة */
+const PMU_SEARCH_LOG = [];
+function pmuSearchTake() {
+  const now = Date.now();
+  while (PMU_SEARCH_LOG.length && now - PMU_SEARCH_LOG[0] >= 60000) PMU_SEARCH_LOG.shift();
+  if (PMU_SEARCH_LOG.length >= PMU_SEARCH_MAX) return false;
+  PMU_SEARCH_LOG.push(now);
+  return true;
+}
+
+/* opts.capped: البحث العام — يمر على سقف السحب بالدقيقة */
+async function getCourses(term, college, gender, force, opts) {
   const key = `${term}|${college}|${gender}`;
   /* التسخين وساعة التأكيد ينادياها بـforce — وهي ليست بحث طالب.
      كانت تُحسب في المقام بلا أن تدخل البسط (force يتجاوز فرع الكاش)،
@@ -6937,6 +6963,20 @@ async function getCourses(term, college, gender, force) {
     const courses = await inFlight.get(key);
     const h2 = coursesCache.get(key);
     return { courses, cached: true, age: 0, at: (h2 && h2.at) || Date.now() };
+  }
+
+  /* البحث العام فوق السقف: آخر نسخة عندنا مهما كان عمرها، وبلاها «زحمة — جرّب بعد دقيقة» */
+  if (opts && opts.capped && !pmuSearchTake()) {
+    OPS.searchCapped = (OPS.searchCapped || 0) + 1;
+    alert('search-cap', 'البحث وصل سقف السحب من الجامعة',
+      `البحث احتاج أكثر من ${PMU_SEARCH_MAX} سحبة من موقع الجامعة في دقيقة.\n\n` +
+      `خدمنا آخر نسخة محفوظة بدل ما نسحب أكثر. لو تكرر في ذروة عادية، السقف يحتاج رفع.`);
+    if (hit) {
+      OPS.searchesCached++;
+      recordSearch(true);
+      return { courses: hit.courses, cached: true, stale: true, age: Date.now() - hit.at, at: hit.at };
+    }
+    const e = new Error('busy'); e.busy = true; throw e;
   }
 
   const p = (async () => {
@@ -10515,11 +10555,25 @@ const server = http.createServer(async (req, res) => {
         });
       } else { res.writeHead(200); res.end(buf); }
     };
-    const { term = '202630', college = 'ALL', gender = 'M1' } = parsed.query;
+    const { term = activeTerm(), college = 'ALL', gender = 'M1' } = parsed.query;
+    /* قيم قوائم الصفحة وحدها (حدود البحث العام) — غيرها ما يوصل الجامعة */
+    if (!searchTermOk(term) || !PMU_COLLEGES.has(college) || !PMU_GENDERS.has(gender)) {
+      res.writeHead(400);
+      res.end(JSON.stringify({ success: false, error: 'ترم أو كلية أو جنس غير معروف' }));
+      return;
+    }
     try {
-      const r = await getCourses(term, college, gender);
+      const r = await getCourses(term, college, gender, false, { capped: true });
+      if (r.stale) res.setHeader('X-Stale', '1');
       sendCourses(r, `${term}|${college}|${gender}`);
     } catch (err) {
+      /* فوق سقف السحب وما عندنا نسخة: ما هو عطل في الجامعة — «زحمة» بلا إنذار عطل */
+      if (err && err.busy) {
+        res.setHeader('Retry-After', '60');
+        res.writeHead(503);
+        res.end(JSON.stringify({ success: false, error: 'البحث مزحوم — جرّب بعد دقيقة' }));
+        return;
+      }
       /* لو الجامعة تعطلت، نخدم آخر نسخة محفوظة بدل ما نفشل */
       OPS.lastError = { at: Date.now(), where: 'search', msg: err.message };
       alert('search', 'البحث ما يشتغل',
@@ -11635,9 +11689,19 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200); res.end(a.raw); return;
   }
 
-  /* تشغيل دورة فحص يدوياً (للاختبار) */
+  /* تشغيل دورة فحص يدوياً — برمز اللوحة، ومن نسخة المراقبة وحدها: القاعدة مشتركة
+     مع dev، فدورة منه تكتب حالات الإنتاج وترسل لطلابه */
   if (parsed.pathname === '/api/run-check') {
     res.setHeader('Content-Type', 'application/json');
+    if (!isAdmin(req)) {
+      res.writeHead(401); res.end(JSON.stringify({ started: false, error: 'unauthorized' }));
+      return;
+    }
+    if (!MONITOR_ENABLED) {
+      res.writeHead(403);
+      res.end(JSON.stringify({ started: false, error: 'المراقبة معطّلة في هذي النسخة' }));
+      return;
+    }
     runMonitorCycle();
     res.writeHead(200); res.end(JSON.stringify({ started: true }));
     return;
