@@ -2954,16 +2954,25 @@ const PMU_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
 /* حد مطلق لكل طلب فوق مهلة السكوت (حارس الطلبات): السحبة الطبيعية كلها ١٣–١٨ ثانية */
 const PMU_GET_MS = 20000, PMU_POST_MS = 60000;
 
-/* طلب واحد لموقع الجامعة ⇒ { status, headers, text } */
+/* طلب واحد لموقع الجامعة ⇒ { status, headers, text }
+   مضغوط لو يقبلون (gzip): جدول الترم كامل قرابة ميغا نص، ومضغوطاً عُشره — أسرع علينا وأخف عليهم.
+   الفك قبل النص (setEncoding على المفكوك — الحرف ما ينقسم §٦)، وعطل الفك فشل للطلب */
 function pmuReq(method, path, headers, body, idleMs, maxMs) {
   return new Promise((resolve, reject) => {
     let g;
-    const req = https.request({ hostname: PMU_HOST, path, method, headers }, res => {
+    const req = https.request({ hostname: PMU_HOST, path, method,
+      headers: Object.assign({ 'Accept-Encoding': 'gzip, deflate' }, headers) }, res => {
       g.res(res);
-      let text = '';
-      res.setEncoding('utf8');
-      res.on('data', c => text += c);
-      res.on('end', () => { g.ok(); resolve({ status: res.statusCode, headers: res.headers || {}, text }) });
+      let text = '', src = res;
+      const enc = String((res.headers && res.headers['content-encoding']) || '').trim().toLowerCase();
+      if (enc === 'gzip' || enc === 'deflate') {
+        src = res.pipe(enc === 'gzip' ? zlib.createGunzip() : zlib.createInflate());
+        src.on('error', e => g.fail(new Error('PMU ' + enc + ': ' + e.message)));
+        OPS.pmuGzip = (OPS.pmuGzip || 0) + 1;
+      }
+      src.setEncoding('utf8');
+      src.on('data', c => text += c);
+      src.on('end', () => { g.ok(); resolve({ status: res.statusCode, headers: res.headers || {}, text }) });
     });
     g = outGuard(req, maxMs, reject);
     req.on('error', e => g.fail(e));
@@ -3022,31 +3031,68 @@ function pmuCheckStatus(r, what) {
     { status: r.status, title: pmuTitle(r.text) });
 }
 
-/* صفحة الرمز (cookie + __RequestVerificationToken) ثم الجدول */
+/* ═══ جلسة الجامعة: الرمز والكوكي ═══
+   كل سحبة كانت تفتح صفحتهم الرئيسية أول عشان رمز التحقق — طلب كامل قبل كل جدول، والمتصفح نفسه
+   يفتحها مرة ويبحث مرات بنفس الرمز. نحتفظ بهما ١٠ دقائق: الدورة ثلاث طلبات لا أربعة، والبحث طلب
+   لا اثنين. ورمز قديم رجع بلا جدول (انتهى عندهم) ⇒ رمز جديد ومرة وحدة — إلا الرفض (403/429) */
+const PMU_SESSION_MS = 10 * 60 * 1000;
+let PMU_SESSION = null, PMU_SESSION_P = null;
+function pmuSession() {
+  if (PMU_SESSION && Date.now() - PMU_SESSION.at < PMU_SESSION_MS) return Promise.resolve(PMU_SESSION);
+  if (!PMU_SESSION_P) PMU_SESSION_P = (async () => {
+    try {
+      const page = await pmuReq('GET', '/', {
+        'User-Agent': PMU_UA,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9'
+      }, null, 15000, PMU_GET_MS);
+      pmuCheckStatus(page, 'GET');
+      const m = page.text.match(/__RequestVerificationToken[^>]+value="([^"]+)"/);
+      if (!m) throw pmuErr('format', 'Token not found', { title: pmuTitle(page.text) });
+      const cookie = (page.headers['set-cookie'] || []).map(c => c.split(';')[0]).join('; ');
+      return (PMU_SESSION = { token: m[1], cookie, at: Date.now(), uses: 0 });
+    } finally { PMU_SESSION_P = null }
+  })();
+  return PMU_SESSION_P;
+}
+
+/* الجدول: بجلسة محفوظة لو فيه، وإلا صفحة الرمز أول */
 async function fetchPMUData(termList, collegeList, genderList) {
   if (pmuBlocked()) throw pmuErr('block', 'PMU backoff', { status: PMU_BLOCK.status, local: true });
-  const page = await pmuReq('GET', '/', {
-    'User-Agent': PMU_UA,
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.9'
-  }, null, 15000, PMU_GET_MS);
-  pmuCheckStatus(page, 'GET');
-  const m = page.text.match(/__RequestVerificationToken[^>]+value="([^"]+)"/);
-  if (!m) throw pmuErr('format', 'Token not found', { title: pmuTitle(page.text) });
-  const cookieStr = (page.headers['set-cookie'] || []).map(c => c.split(';')[0]).join('; ');
-  const postData = new URLSearchParams({
-    TermList: termList, CollegeList: collegeList, GenderList: genderList,
-    DataTables_Table_1_length: '10000',
-    __RequestVerificationToken: m[1], 'X-Requested-With': 'XMLHttpRequest'
-  }).toString();
-  const r = await pmuReq('POST', '/Home/getData', {
-    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-    'Content-Length': Buffer.byteLength(postData),
-    'Cookie': cookieStr, 'X-Requested-With': 'XMLHttpRequest',
-    'User-Agent': PMU_UA,
-    'Referer': 'https://' + PMU_HOST + '/',
-    'Origin': 'https://' + PMU_HOST
-  }, postData, 20000, PMU_POST_MS);
+  const post = sess => {
+    sess.uses++;
+    const postData = new URLSearchParams({
+      TermList: termList, CollegeList: collegeList, GenderList: genderList,
+      DataTables_Table_1_length: '10000',
+      __RequestVerificationToken: sess.token, 'X-Requested-With': 'XMLHttpRequest'
+    }).toString();
+    return pmuReq('POST', '/Home/getData', {
+      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+      'Content-Length': Buffer.byteLength(postData),
+      'Cookie': sess.cookie, 'X-Requested-With': 'XMLHttpRequest',
+      'User-Agent': PMU_UA,
+      'Referer': 'https://' + PMU_HOST + '/',
+      'Origin': 'https://' + PMU_HOST
+    }, postData, 20000, PMU_POST_MS);
+  };
+  let s = await pmuSession();
+  const reused = s.uses > 0;
+  let r = await post(s);
+  if (reused && r.status !== 403 && r.status !== 429 && !(r.status === 200 && /<table\b/i.test(r.text))) {
+    if (PMU_SESSION === s) PMU_SESSION = null;
+    OPS.pmuSessionRenew = (OPS.pmuSessionRenew || 0) + 1;
+    s = await pmuSession();
+    r = await post(s);
+  }
+  /* كوكي جديد مع الرد (جلستهم تتجدد) ⇒ نحدّثه مثل المتصفح، بالاسم */
+  const sc = r.headers && r.headers['set-cookie'];
+  if (Array.isArray(sc) && sc.length && PMU_SESSION === s) {
+    const jar = new Map(s.cookie.split('; ').filter(Boolean).map(c => [c.split('=')[0], c]));
+    sc.forEach(c => { const kv = String(c).split(';')[0]; jar.set(kv.split('=')[0], kv) });
+    s.cookie = [...jar.values()].join('; ');
+  }
+  /* رد بلا صفوف أصلاً: الجلسة مشكوك فيها — اللي بعده يبدأ برمز جديد */
+  if (!(r.status === 200 && /<tr\b/i.test(r.text)) && PMU_SESSION === s) PMU_SESSION = null;
   pmuCheckStatus(r, 'POST');
   if (PMU_BLOCK.n) { PMU_BLOCK.n = 0; resolve('pmu-block', 'موقع الجامعة يرفض طلباتنا') }
   return r.text;
@@ -3298,6 +3344,13 @@ async function runMonitorCycle() {
            يتطابق أبداً، فتتعطّل مراقبة المادة كاملة بصمت. نوسمه هنا. */
         parsed.forEach(c => { c.term = term; snapshot[term + ':' + c.crn] = c; });
         if (snap.guessed) stat.guessedGender = true;
+        /* كل جنس وصل كاملاً يصير كاش بحثه (ترم|ALL|M1 · F1) — البحث الافتراضي بالجنس، وكان
+           يسحب من الجامعة مع أن الدورة سحبت نفس الجدول قبل دقيقة. حتى لو الثاني تعثّر */
+        for (const [g, rows] of Object.entries(snap.byG || {})) {
+          const gk = `${term}|ALL|${g}`, gp = coursesCache.get(gk);
+          coursesCache.set(gk, { at: Date.now(), lastHit: (gp && gp.lastHit) || 0, courses: rows });
+          OPS.cacheFromMonitor = (OPS.cacheFromMonitor || 0) + 1;
+        }
         if (snap.short) {
           stat.short = snap.short;
           alert('pmu-short', 'جدول الجامعة وصل ناقص',
@@ -5802,7 +5855,7 @@ async function adminHealth() {
   /* الإنذار لا يسري إلا لو المراقبة يفترض أنها شغّالة —
      الاشتكاء من غياب دورة أوقفتها بنفسك خارج ساعات العمل
      يضيء نقطة حمراء كل ليلة، فتتعوّد تجاهلها يوم يتعطل شيء حقيقي. */
-  if (last && (now - last.at) > 12 * 60 * 1000 && monitorState().active)
+  if (last && (now - last.at) > 12 * 60 * 1000 && monitorState().active && !pmuBlocked())
     add('bad', 'ما فيه دورة مراقبة منذ فترة', 'No monitor cycle recently',
         'المفروض كل 5 دقائق. تحقق من سجل Render.');
 
@@ -5895,6 +5948,8 @@ async function adminHealth() {
       riyadhTime: riyadhTime(),
       riyadhDate: riyadhDate(),
       intervalMin: INTERVAL_PEAK / 60000,
+      intervalHotMin: INTERVAL_HOT / 60000,
+      hotToday: hotDay(),
       jitterPct: Math.round(JITTER * 100),
       intervalMinLow: Number(((INTERVAL_PEAK * (1 - JITTER)) / 60000).toFixed(2)),
       intervalMinHigh: Number(((INTERVAL_PEAK * (1 + JITTER)) / 60000).toFixed(2)),
@@ -6884,13 +6939,14 @@ function pmuShort(term, g, n) {
 }
 
 async function fetchTermSnapshot(term) {
-  const parts = [], errs = [];
+  const parts = [], errs = [], byG = {};
   let short = null;
   for (const g of ['M1', 'F1']) {
     try {
       const rows = pmuRows(await fetchPMUData(term, 'ALL', g), g);
       const sh = pmuShort(term, g, rows.length);
       if (sh) short = Object.assign({ g }, sh);
+      else byG[g] = rows;                      /* جنس كامل — يصلح كاشاً لبحثه */
       parts.push(rows);
     } catch (e) {
       if (!e.local) OPS.pmuFails++;           /* مدة التوقف: ما طلع طلب أصلاً */
@@ -6900,8 +6956,8 @@ async function fetchTermSnapshot(term) {
     }
     await new Promise(r => setTimeout(r, 1500));
   }
-  if (parts.length === 2) return { courses: parts[0].concat(parts[1]), partial: !!short, short, errs };
-  if (parts.length === 1) return { courses: parts[0], partial: true, short, errs };
+  if (parts.length === 2) return { courses: parts[0].concat(parts[1]), partial: !!short, short, errs, byG };
+  if (parts.length === 1) return { courses: parts[0], partial: true, short, errs, byG };
   if (errs.some(e => e.pmu === 'block')) return { courses: null, partial: false, errs };
 
   /* سقطت الاثنتان — نجرّب الطلب الشامل مرة أخيرة. الجنس فيه مخمَّن،
@@ -7438,6 +7494,20 @@ let CYCLE_RETRIES = 0;
 
 const INTERVAL_PEAK = 5 * 60 * 1000;    // داخل نافذة التسجيل
 const JITTER        = 0.25;             // ±25% تفادياً لنمط منتظم تماماً
+/* أيام التسجيل نفسها وأول يوم إضافة: الشعب تنفتح وتنسكّر في دقائق، والفاصل دقيقتان (للجميع —
+   §٧ لا بيع للأسبقية). من التقويم (ACAD_CAL) لا تاريخ مكتوب: «reg» كاملة، وأول «add» لكل ترم.
+   والسحبة صارت أخف (جلسة محفوظة · مضغوط · كاش البحث منها) فالحمل على الجامعة ما يتضاعف */
+const INTERVAL_HOT = 2 * 60 * 1000;
+let HOT_ADD = null;
+function hotDay(d) {
+  const day = d || riyadhDate();
+  if (!HOT_ADD) {
+    HOT_ADD = new Set();
+    const seen = new Set();
+    for (const x of ACAD_CAL) if (x.t === 'add' && !seen.has(x.term)) { seen.add(x.term); HOT_ADD.add(x.s) }
+  }
+  return HOT_ADD.has(day) || ACAD_CAL.some(x => x.t === 'reg' && day >= x.s && day <= (x.e || x.s));
+}
 
 /* خارج نوافذ التسجيل المراقبة تتوقف تماماً.
    لو حبيت ترجّعها مخفّفة، حط هنا مثلاً 30*60*1000 بدل null. */
@@ -7570,9 +7640,11 @@ function monitorState() {
              window: win, intervalMin: null };
   }
   if (win) {
-    return { active: true, reason: 'peak', ar: 'مراقبة مكثفة — ' + win.ar,
-             en: 'Intensive monitoring — registration period',
-             window: win, intervalMin: INTERVAL_PEAK / 60000 };
+    const hot = hotDay();
+    return { active: true, reason: 'peak', hot,
+             ar: (hot ? 'مراقبة مكثفة (يوم تسجيل — كل دقيقتين) — ' : 'مراقبة مكثفة — ') + win.ar,
+             en: 'Intensive monitoring — registration period' + (hot ? ' (registration day: every 2 min)' : ''),
+             window: win, intervalMin: (hot ? INTERVAL_HOT : INTERVAL_PEAK) / 60000 };
   }
   if (!INTERVAL_IDLE) {
     return { active: false, reason: 'offseason',
@@ -7614,7 +7686,7 @@ function nextDelay() {
     return Math.max(60000, target - now) + Math.random() * 120000;
   }
 
-  const base = st.reason === 'peak' ? INTERVAL_PEAK : INTERVAL_IDLE;
+  const base = st.reason === 'peak' ? (st.hot ? INTERVAL_HOT : INTERVAL_PEAK) : INTERVAL_IDLE;
   return base * (1 + (Math.random() * 2 - 1) * JITTER);
 }
 
