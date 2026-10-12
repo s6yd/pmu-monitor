@@ -2708,6 +2708,7 @@ async function saveState() {
     key: STATE_KEY,
     value: {
       feedPeak: [...FEED_PEAK.entries()],
+      partPeak: [...PMU_PART_PEAK.entries()].slice(-40),
       totalUpdated: SCHED_SYNC.totalUpdated,
       runs: SCHED_SYNC.runs,
       confirmForces: CONFIRM_STAT.forces,
@@ -2749,6 +2750,7 @@ async function restoreState() {
   const v = Array.isArray(rows) && rows[0] ? rows[0].value : null;
   if (!v) { console.log('استعادة الحالة: ما فيه نسخة محفوظة بعد'); return; }
   (v.feedPeak || []).forEach(([t, n]) => FEED_PEAK.set(t, n));
+  (v.partPeak || []).forEach(([k, n]) => { if (Number(n) > 0) PMU_PART_PEAK.set(k, Number(n)) });
   SCHED_SYNC.totalUpdated = v.totalUpdated || 0;
   SCHED_SYNC.runs = v.runs || 0;
   CONFIRM_STAT.forces = v.confirmForces || 0;
@@ -2974,15 +2976,63 @@ function pmuReq(method, path, headers, body, idleMs, maxMs) {
   });
 }
 
+/* ═══ إشارات الجامعة: ما يرد · يرد بشي ما نفهمه · يرفضنا ═══
+   كان كل فشل «موقع الجامعة ما يستجيب»: صفحة بشكل جديد ورفض صريح (403/429) نفس الإنذار، والسحب
+   يكمل كل دورة على باب يرفضنا. الحين كل فشل له نوع (e.pmu):
+   • down   — شبكة · مهلة · 5xx · جدول فاضي ⇒ إنذار «ما يستجيب» كما كان.
+   • format — يرد ٢٠٠ (أو 3xx/4xx) بشي ما نفهمه: صفحة بلا رمز · جدول أعمدته تغيّرت ⇒ إنذار
+              «يرد بشكل ما نفهمه»، و**ما نكتب حالة من جدول ما نفهمه** (كانت تنكتب حالات غلط).
+   • block  — 403/429 ⇒ نوقف **كل** السحب من موقعهم مدة تتضاعف (أو Retry-After)، والبحث يخدم آخر
+              نسخة عندنا. ما نحاول نتجاوز الرفض — ننتظر. */
+const PMU_BLOCK = { until: 0, n: 0, status: 0, at: 0 };
+const pmuBlocked = () => Date.now() < PMU_BLOCK.until;
+function pmuErr(kind, msg, extra) { return Object.assign(new Error(msg), { pmu: kind }, extra || {}) }
+/* عنوان الصفحة اللي رجعت — يعرّفك وش الشي اللي ما فهمناه (صيانة؟ دخول؟ حجب؟) */
+function pmuTitle(html) {
+  const m = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(String(html || ''));
+  return m ? pmuPlain(m[1]).replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+}
+function pmuBlockHit(status, retryAfter) {
+  PMU_BLOCK.n++;
+  PMU_BLOCK.status = status; PMU_BLOCK.at = Date.now();
+  /* Retry-After بالثواني أو بتاريخ HTTP */
+  const raN = Number(retryAfter);
+  const ra = raN > 0 ? raN : Math.max(0, Math.round((Date.parse(retryAfter) - Date.now()) / 1000)) || 0;
+  const base = status === 429 ? Math.min(2 * 60e3 * 2 ** (PMU_BLOCK.n - 1), 30 * 60e3)
+                              : Math.min(15 * 60e3 * 2 ** (PMU_BLOCK.n - 1), 2 * 3600e3);
+  const wait = ra > 0 ? Math.min(ra * 1000, 2 * 3600e3) : base;
+  PMU_BLOCK.until = Date.now() + wait;
+  OPS.pmuBlocks = (OPS.pmuBlocks || 0) + 1;
+  console.log(`PMU ${status}: نوقف السحب ${Math.round(wait / 60000)} دقيقة`);
+  alert('pmu-block', `موقع الجامعة يرفض طلباتنا (${status})`,
+    `وقفنا كل السحب من موقعهم ${Math.max(1, Math.round(wait / 60000))} دقيقة` +
+    (ra > 0 ? ' (المدة اللي طلبوها).' : ' — والمدة تتضاعف لو تكرر (لين ساعتين).') +
+    `\n\nالمراقبة واقفة هالمدة، والبحث يخدم آخر نسخة عندنا.`);
+}
+function pmuCheckStatus(r, what) {
+  if (r.status === 200) return;
+  if (r.status === 403 || r.status === 429) {
+    pmuBlockHit(r.status, r.headers && r.headers['retry-after']);
+    throw pmuErr('block', `PMU ${what} ${r.status}`, { status: r.status });
+  }
+  if (!r.status || r.status >= 500) throw pmuErr('down', `PMU ${what} ${r.status}`, { status: r.status });
+  /* تحويل لصفحة ثانية أو طلب ما يقبلونه: الموقع تغيّر عن اللي نعرفه */
+  const loc = r.headers && r.headers.location ? String(r.headers.location).slice(0, 80) : '';
+  throw pmuErr('format', `PMU ${what} ${r.status}${loc ? ' → ' + loc : ''}`,
+    { status: r.status, title: pmuTitle(r.text) });
+}
+
 /* صفحة الرمز (cookie + __RequestVerificationToken) ثم الجدول */
 async function fetchPMUData(termList, collegeList, genderList) {
+  if (pmuBlocked()) throw pmuErr('block', 'PMU backoff', { status: PMU_BLOCK.status, local: true });
   const page = await pmuReq('GET', '/', {
     'User-Agent': PMU_UA,
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     'Accept-Language': 'en-US,en;q=0.9'
   }, null, 15000, PMU_GET_MS);
+  pmuCheckStatus(page, 'GET');
   const m = page.text.match(/__RequestVerificationToken[^>]+value="([^"]+)"/);
-  if (!m) throw new Error('Token not found');
+  if (!m) throw pmuErr('format', 'Token not found', { title: pmuTitle(page.text) });
   const cookieStr = (page.headers['set-cookie'] || []).map(c => c.split(';')[0]).join('; ');
   const postData = new URLSearchParams({
     TermList: termList, CollegeList: collegeList, GenderList: genderList,
@@ -2997,13 +3047,18 @@ async function fetchPMUData(termList, collegeList, genderList) {
     'Referer': 'https://' + PMU_HOST + '/',
     'Origin': 'https://' + PMU_HOST
   }, postData, 20000, PMU_POST_MS);
+  pmuCheckStatus(r, 'POST');
+  if (PMU_BLOCK.n) { PMU_BLOCK.n = 0; resolve('pmu-block', 'موقع الجامعة يرفض طلباتنا') }
   return r.text;
 }
 
+/* الوسوم بخصائص أو بحروف كبيرة تنقرأ (<tr class=…> · <TD>) — الجامعة لو زادت صنفاً على الصف كان
+   الجدول كله يطلع فاضياً. وفك النص **ما يتغيّر** (&amp; وحدها): جداول الطلاب انحفظت بهالصيغة، وأي
+   فرق يطلع «تغيّر في جدولك» كاذباً — للعرض escP/pmuPlain */
 function parseHTML(html) {
   const rows = [];
-  for (const tr of (html.match(/<tr>[\s\S]*?<\/tr>/g) || [])) {
-    const tds = tr.match(/<td>([\s\S]*?)<\/td>/g) || [];
+  for (const tr of (String(html || '').match(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi) || [])) {
+    const tds = tr.match(/<td\b[^>]*>([\s\S]*?)<\/td>/gi) || [];
     if (tds.length < 9) continue;
     const t = td => td.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').trim();
     rows.push({
@@ -3014,6 +3069,33 @@ function parseHTML(html) {
   }
   return rows;
 }
+
+/* شكل الجدول: عمود أُضيف في النص يزيح الحالة — فتنقرأ «M-CORE - G034» حالةً، وتنكتب في
+   last_status، والشعبة اللي تفتح ما تنشاف. نقيس الشكل قبل ما نصدّق الجدول: الـCRN أرقام
+   (٩٠٪)، والحالة OPEN/CLOSED لنصف الصفوف على الأقل (حالة ثالثة ما نعرفها ما تطيّحه) */
+function pmuShape(rows) {
+  const n = rows.length;
+  const crn = rows.filter(r => /^\d{4,6}$/.test(r.crn)).length;
+  const st = rows.filter(r => r.status === 'OPEN' || r.status === 'CLOSED').length;
+  return { ok: n > 0 && crn >= n * 0.9 && st >= n * 0.5, n, crn, st };
+}
+/* جدول ترم كامل من الجامعة ⇒ صفوف موثوقة أو خطأ بنوعه */
+function pmuRows(html, g) {
+  const rows = tagGender(parseHTML(html), g);
+  if (!rows.length) {
+    /* جدول بلا صفوف = ما عندهم بيانات الحين؛ صفحة بلا جدول أصلاً = شي ثاني رجع لنا */
+    if (!String(html || '').trim() || /<table\b/i.test(html)) throw pmuErr('down', 'رد بلا صفوف');
+    throw pmuErr('format', 'رد بلا جدول', { title: pmuTitle(html) });
+  }
+  const sh = pmuShape(rows);
+  if (!sh.ok) throw pmuErr('format', `شكل الجدول تغيّر (${sh.n} صف)`, { shape: sh });
+  return rows;
+}
+const pmuWhy = e => e.pmu === 'format'
+  ? (e.shape ? `وصل جدول ${e.shape.n} صف، لكن ${Math.round(100 * e.shape.crn / e.shape.n)}٪ منها رقم الشعبة ` +
+               `أرقام و${Math.round(100 * e.shape.st / e.shape.n)}٪ حالتها OPEN/CLOSED — الأعمدة تغيّرت`
+     : `${escP(e.message)}${e.title ? ` — عنوان الصفحة: «${escP(e.title)}»` : ''}`)
+  : escP(e.message);
 
 /* ============ الفحص الجماعي ============ */
 /* سحبة واحدة من الجامعة لكل ترم مطلوب، ثم توزيع على كل الطلاب */
@@ -3216,6 +3298,14 @@ async function runMonitorCycle() {
            يتطابق أبداً، فتتعطّل مراقبة المادة كاملة بصمت. نوسمه هنا. */
         parsed.forEach(c => { c.term = term; snapshot[term + ':' + c.crn] = c; });
         if (snap.guessed) stat.guessedGender = true;
+        if (snap.short) {
+          stat.short = snap.short;
+          alert('pmu-short', 'جدول الجامعة وصل ناقص',
+            `سحبة ${snap.short.g} للترم ${term}: ${snap.short.n} صف، والمعتاد ${snap.short.peak}.\n\n` +
+            `الشعبة بعينها تنراقب عادي. مراقبة المادة كاملة واقفة لين يرجع كامل — أو يثبت ` +
+            `${PMU_SHORT_ACCEPT} سحبات على الحجم الجديد فنعتمده.`);
+        } else resolve('pmu-short', 'جدول الجامعة وصل ناقص');
+        if (!snap.errs.some(e => e.pmu === 'format')) resolve('pmu-format', 'موقع الجامعة يرد بشكل ما نفهمه');
 
         if (snap.partial) {
           /* نصف جدول: يكفي لمراقبة شعبة بعينها — حضورها حقيقة مقيسة —
@@ -3261,6 +3351,15 @@ async function runMonitorCycle() {
           });
           stat.fromCache = Math.round(age / 1000);
           console.log(`cycle: نسخة من الكاش عمرها ${stat.fromCache} ثانية`);
+        } else if (snap.errs.some(e => e.pmu === 'block')) {
+          stat.blocked = true;                 /* إنذاره طلع وقت الرفض (pmuBlockHit) */
+        } else if (snap.errs.some(e => e.pmu === 'format')) {
+          stat.format = true;
+          alert('pmu-format', 'موقع الجامعة يرد بشكل ما نفهمه',
+            `سحبنا بيانات الترم ${term} ورجع لنا شي غير الجدول المعروف:\n` +
+            [...new Set(snap.errs.filter(e => e.pmu === 'format').map(pmuWhy))].map(x => '• ' + x).join('\n') +
+            `\n\nما كتبنا ولا حالة منه. المراقبة واقفة لين يرجع الشكل المعروف — ` +
+            `لو استمر، الموقع تغيّر والكود يحتاج تعديل.`);
         } else {
           alert('pmu', 'موقع الجامعة ما يستجيب',
             `فشل سحب بيانات الترم ${term} — الطلبات الثلاثة كلها.\n\n` +
@@ -5631,9 +5730,20 @@ async function adminHealth() {
     add('bad', 'بوت تيليغرام ما يرسل', 'Telegram bot cannot send',
         tgErr + ' — تأكد أن TELEGRAM_TOKEN في Render بدون مسافات.');
 
-  if (pmuOk === false)
+  /* نوع الفشل بعينه لا «فشلت» وبس (إشارات الجامعة §٦) */
+  if (pmuBlocked())
+    add('bad', `موقع الجامعة يرفض طلباتنا (${PMU_BLOCK.status})`, `University refuses our requests (${PMU_BLOCK.status})`,
+        `وقفنا كل السحب من موقعهم لين ${new Date(PMU_BLOCK.until + 3 * 3600e3).toISOString().slice(11, 16)} ` +
+        `بتوقيت الرياض — المراقبة واقفة والبحث يخدم آخر نسخة. ما نحاول نتجاوز الرفض.`);
+  else if (last && last.format)
+    add('bad', 'موقع الجامعة يرد بشكل ما نفهمه', 'University responds in a format we do not understand',
+        'السبب في إنذار تلقرام. ما نكتب ولا حالة منه — لو استمر، الكود يحتاج تعديل.');
+  else if (pmuOk === false)
     add('bad', 'آخر سحبة من الجامعة فشلت', 'Last university fetch failed',
         'موقع الجامعة قد يكون معطلاً أو حجب السيرفر. تحقق من masterschedule.pmu.edu.sa');
+  if (last && last.short)
+    add('warn', 'جدول الجامعة وصل ناقص', 'University table arrived short',
+        `${last.short.n} صف والمعتاد ${last.short.peak} — الشعبة بعينها تنراقب، ومراقبة المادة كاملة واقفة.`);
 
   if (last && last.sec > 240)
     add('bad', `الدورة أخذت ${last.sec} ثانية`, `Cycle took ${last.sec}s`,
@@ -5813,6 +5923,9 @@ async function adminHealth() {
     ttlLimits: { min: TTL_MIN_ALLOWED, max: TTL_MAX_ALLOWED },
     monitorJitterPct: Math.round(JITTER * 100),
     cycleRetries: CYCLE_RETRIES,
+    /* الجامعة رافضتنا؟ لين متى — وأحجام الجدول المعتادة لكل سحبة (للجدول الناقص) */
+    pmuBlock: pmuBlocked() ? { until: PMU_BLOCK.until, status: PMU_BLOCK.status, n: PMU_BLOCK.n } : null,
+    partPeak: Object.fromEntries(PMU_PART_PEAK),
     schedSync: {
       last: SCHED_SYNC.last,
       lastChange: SCHED_SYNC.lastChange,
@@ -6743,33 +6856,67 @@ function tagGender(courses, gender) {
      خاطئ، ويتسرّب للبحث لأن هذي السحبة تغذّي كاشه.
    نصف الجدول أخطر من لا شيء لبعض الأغراض — شعب الجنس الغائب تبدو
    مختفية ثم «جديدة» في الدورة التالية — فنرفع partial ليحترس النداء. */
+/* ═══ جدول ناقص ═══ رد سليم الشكل لكن أصغر بكثير من المعتاد (الجامعة قصّته) = الشعب الغايبة
+   تنقرأ «اختفت» ثم ترجع «نزلت جديدة» لمراقب المادة كاملة. نقيس كل سحبة (ترم|جنس) بأكبر عدد
+   شفناه لها (يُحفظ مع الحالة)، والأصغر من ٦٠٪ نعامله مثل نصف الجدول: الشعبة بعينها تمر
+   (حضورها حقيقة)، والمادة كاملة والكاش والمزامنة لا. ونزول حقيقي (الجامعة شالت شعباً) يثبت
+   ست سحبات ورا بعض بنفس الحجم (±٥٪) ⇒ نقبله ذروةً جديدة، وإلا وقفت مراقبة المادة للأبد */
+const PMU_PART_PEAK = new Map();      /* ترم|جنس → أكبر عدد صفوف */
+const PMU_SHORT = new Map();          /* ترم|جنس → {n, count} سحبات ناقصة ورا بعض */
+const PMU_SHORT_ACCEPT = 6;
+function pmuShort(term, g, n) {
+  const k = term + '|' + g, peak = PMU_PART_PEAK.get(k) || 0;
+  if (!peak || n >= peak * FEED_MIN_RATIO) {
+    PMU_SHORT.delete(k);
+    if (n > peak) PMU_PART_PEAK.set(k, n);
+    return false;
+  }
+  const prev = PMU_SHORT.get(k);
+  const same = prev && Math.abs(n - prev.n) <= prev.n * 0.05;
+  const cur = { n, count: same ? prev.count + 1 : 1 };
+  if (cur.count >= PMU_SHORT_ACCEPT) {
+    PMU_PART_PEAK.set(k, n); PMU_SHORT.delete(k);
+    console.log(`pmuShort: ${k} ثبت على ${n} صف (كان ${peak}) — ذروة جديدة`);
+    return false;
+  }
+  PMU_SHORT.set(k, cur);
+  return { n, peak };
+}
+
 async function fetchTermSnapshot(term) {
-  const parts = [];
+  const parts = [], errs = [];
+  let short = null;
   for (const g of ['M1', 'F1']) {
     try {
-      const rows = tagGender(parseHTML(await fetchPMUData(term, 'ALL', g)), g);
-      if (!rows.length) throw new Error('رد بلا صفوف');
+      const rows = pmuRows(await fetchPMUData(term, 'ALL', g), g);
+      const sh = pmuShort(term, g, rows.length);
+      if (sh) short = Object.assign({ g }, sh);
       parts.push(rows);
     } catch (e) {
-      OPS.pmuFails++;
+      if (!e.local) OPS.pmuFails++;           /* مدة التوقف: ما طلع طلب أصلاً */
+      errs.push(e);
       console.log(`fetch fail ${term} ${g}: ${e.message}`);
+      if (e.pmu === 'block') break;          /* رفضونا: ما نطرق الباب ثانية في نفس الدورة */
     }
     await new Promise(r => setTimeout(r, 1500));
   }
-  if (parts.length === 2) return { courses: parts[0].concat(parts[1]), partial: false };
-  if (parts.length === 1) return { courses: parts[0], partial: true };
+  if (parts.length === 2) return { courses: parts[0].concat(parts[1]), partial: !!short, short, errs };
+  if (parts.length === 1) return { courses: parts[0], partial: true, short, errs };
+  if (errs.some(e => e.pmu === 'block')) return { courses: null, partial: false, errs };
 
   /* سقطت الاثنتان — نجرّب الطلب الشامل مرة أخيرة. الجنس فيه مخمَّن،
      لكنه أفضل من دورة عمياء تماماً. */
   try {
-    const rows = tagGender(parseHTML(await fetchPMUData(term, 'ALL', 'ALL')), 'ALL');
-    if (rows.length) return { courses: rows, partial: false, guessed: true };
-    throw new Error('رد بلا صفوف');
+    const rows = pmuRows(await fetchPMUData(term, 'ALL', 'ALL'), 'ALL');
+    const sh = pmuShort(term, 'ALL', rows.length);
+    return { courses: rows, partial: !!sh, short: sh ? Object.assign({ g: 'ALL' }, sh) : null,
+             guessed: true, errs };
   } catch (e) {
     OPS.pmuFails++;
+    errs.push(e);
     console.log(`fetch fail ${term} ALL: ${e.message}`);
   }
-  return { courses: null, partial: false };
+  return { courses: null, partial: false, errs };
 }
 
 async function syncSchedules(term, courses, force) {
@@ -7190,6 +7337,16 @@ async function getCourses(term, college, gender, force, opts) {
     return { courses, cached: true, age: 0, at: (h2 && h2.at) || Date.now() };
   }
 
+  /* الجامعة رفضتنا (403/429): ما نطرق بابهم — آخر نسخة عندنا مهما كان عمرها، وبلاها خطأ بنوعه */
+  if (pmuBlocked()) {
+    if (hit) {
+      OPS.searchesCached++;
+      if (!force) recordSearch(true);
+      return { courses: hit.courses, cached: true, stale: true, age: Date.now() - hit.at, at: hit.at };
+    }
+    throw pmuErr('block', 'PMU backoff', { status: PMU_BLOCK.status, local: true });
+  }
+
   /* البحث العام فوق السقف: آخر نسخة عندنا مهما كان عمرها، وبلاها «زحمة — جرّب بعد دقيقة» */
   if (opts && opts.capped && !pmuSearchTake()) {
     OPS.searchCapped = (OPS.searchCapped || 0) + 1;
@@ -7209,6 +7366,12 @@ async function getCourses(term, college, gender, force, opts) {
        1xx = طلاب · 2xx = طالبات — قاعدة الجامعة الثابتة.
        أوفر من سحبتين منفصلتين، وأدق من التخمين من القاعة. */
     const courses = tagGender(parseHTML(await fetchPMUData(term, college, gender)), gender);
+    /* جدول كبير أعمدته تغيّرت ما يدخل الكاش ولا المزامنة (الصغير ما نحكم عليه — حالة ما نعرفها
+       في خمس شعب تطيّح النسبة) */
+    if (courses.length >= 50 && !pmuShape(courses).ok) {
+      const sh = pmuShape(courses);
+      throw pmuErr('format', `شكل الجدول تغيّر (${sh.n} صف)`, { shape: sh });
+    }
     coursesCache.set(key, { at: Date.now(), lastHit: (hit && hit.lastHit) || Date.now(), courses });
     resolve('search', 'البحث ما يشتغل');
     /* قائمة ALL/ALL هي الأشمل — نصحّح بها جداول الطلاب المحفوظة */
@@ -7428,6 +7591,10 @@ function nextDelay() {
   const st = monitorState();
 
   if (st.reason === 'disabled') return 60 * 60 * 1000;
+
+  /* الجامعة رفضتنا (403/429): الدورة الجاية بعد ما تخلص مدة التوقف، لا كل دقيقة على باب مقفول */
+  if (st.active && pmuBlocked())
+    return Math.max(60000, PMU_BLOCK.until - Date.now()) + Math.random() * 30000;
 
   /* بعد فشل جلب، نعاود بعد دقيقة بدل الفاصل الكامل — بحد ثلاث محاولات
      حتى لا نطرق باب الجامعة كل دقيقة وهي ساقطة. يُحسب قبل حارس
@@ -10802,10 +10969,18 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ success: false, error: 'البحث مزحوم — جرّب بعد دقيقة' }));
         return;
       }
+      /* الجامعة رافضتنا مؤقتاً وما عندنا نسخة: إنذاره طلع وقت الرفض */
+      if (err && err.pmu === 'block') {
+        res.setHeader('Retry-After', String(Math.min(3600, Math.max(60,
+          Math.ceil((PMU_BLOCK.until - Date.now()) / 1000)))));
+        res.writeHead(503);
+        res.end(JSON.stringify({ success: false, error: 'موقع الجامعة مو متاح لنا الحين — جرّب بعد شوي' }));
+        return;
+      }
       /* لو الجامعة تعطلت، نخدم آخر نسخة محفوظة بدل ما نفشل */
       OPS.lastError = { at: Date.now(), where: 'search', msg: err.message };
       alert('search', 'البحث ما يشتغل',
-        `فشل جلب المواد من موقع الجامعة.\nالسبب: ${err.message}\n\n` +
+        `فشل جلب المواد من موقع الجامعة.\nالسبب: ${escP(err.message)}\n\n` +
         (coursesCache.size ? 'نخدم النسخة المحفوظة مؤقتاً.' : 'ما فيه نسخة محفوظة — البحث معطّل.'));
       const stale = coursesCache.get(`${term}|${college}|${gender}`);
       if (stale) {
