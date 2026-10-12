@@ -2732,7 +2732,9 @@ async function saveState() {
                  /* رخص Pushover: مين سألناك عنه — بلا حفظه يجيك السؤال مرة ثانية مع كل نشر */
                  poLicAsked: [...PO_LIC.asked.entries()].slice(-2000),
                  /* «الشعبة اختفت» انقالت لصاحبها — بلا حفظه تتكرر مع كل نشر */
-                 monGone: [...MON_GONE_TOLD].slice(-3000) },
+                 monGone: [...MON_GONE_TOLD].slice(-3000),
+                 /* احتياط بانر: مفتاحه من اللوحة، ومصدر آخر دورة (رجوع الجدول بعده يسجّل بلا إشعار) */
+                 bannerOn: BANNER_ON, monSource: MON_SOURCE },
       ops: { searches: OPS.searches, feedback: OPS.feedback,
              pmuFails: OPS.pmuFails, tgFails: OPS.tgFails,
              searchesCached: OPS.searchesCached, searchStale: OPS.searchStale,
@@ -2802,6 +2804,8 @@ async function restoreState() {
   if ('aiAlerted' in g) AI_ALERTED = String(g.aiAlerted || '');
   if (Array.isArray(g.poLicAsked))
     for (const [id, at] of g.poLicAsked) if (isUuid(String(id))) PO_LIC.asked.set(String(id), Number(at) || 0);
+  if ('bannerOn' in g) BANNER_ON = !!g.bannerOn;
+  if (g.monSource === 'pmu' || g.monSource === 'banner') MON_SOURCE = g.monSource;
   if (Array.isArray(g.monGone)) g.monGone.forEach(k => { if (/^\d+\|\d{3,8}$/.test(String(k))) MON_GONE_TOLD.add(String(k)) });
   if ('termOverride' in g) TERM_OVERRIDE = g.termOverride || null;
   if ('windowOverride' in g) WINDOW_OVERRIDE = g.windowOverride || null;
@@ -2961,9 +2965,13 @@ const PMU_GET_MS = 20000, PMU_POST_MS = 60000;
    مضغوط لو يقبلون (gzip): جدول الترم كامل قرابة ميغا نص، ومضغوطاً عُشره — أسرع علينا وأخف عليهم.
    الفك قبل النص (setEncoding على المفكوك — الحرف ما ينقسم §٦)، وعطل الفك فشل للطلب */
 function pmuReq(method, path, headers, body, idleMs, maxMs) {
+  return uniReq(PMU_HOST, method, path, headers, body, idleMs, maxMs);
+}
+/* أي موقع للجامعة (الجدول · بانر) — نفس الحارس والفك */
+function uniReq(host, method, path, headers, body, idleMs, maxMs) {
   return new Promise((resolve, reject) => {
     let g;
-    const req = https.request({ hostname: PMU_HOST, path, method,
+    const req = https.request({ hostname: host, path, method,
       headers: Object.assign({ 'Accept-Encoding': 'gzip, deflate' }, headers) }, res => {
       g.res(res);
       let text = '', src = res;
@@ -3140,6 +3148,119 @@ function pmuRows(html, g) {
   if (!sh.ok) throw pmuErr('format', `شكل الجدول تغيّر (${sh.n} صف)`, { shape: sh });
   return rows;
 }
+/* ═══ احتياط المراقبة: بحث بانر العام (Browse Classes) — قرار محمد ═══
+   banreg.pmu.edu.sa — صفحة البحث العامة في بانر (بلا دخول — تأكّد منها محمد). **للمراقبة وحدها، ولما
+   موقع الجدول ما يرد أو تغيّر شكله** — لا لو رفضنا (403/429: رفض متعمّد ما نلتف عليه، ولا بانر نفسه لو
+   رفض)، ولا للبحث ولا للمزامنة: صياغتها (القاعة مثلاً) ممكن تفرق عن الجدول، فتطلع «تغيّر في جدولك»
+   كاذبة أو تنحفظ شعبة بصياغة ثانية في جدول طالب. صفوفها بشكل صفوف الجدول نفسه (الكود «ACCT 2311» ·
+   الأيام «MW» · الوقت «0800 - 0915» · الجنس من رقم الشعبة)، والحالة OPEN لو فيها مقاعد ومفتوحة.
+   ورجوع الجدول بعدها = دورة تسجّل بلا إشعار (MON_SOURCE): الجدول ممكن يتأخر عن بانر، فـ«مفتوحة» قديمة
+   منه تطلع «فتحت» كاذبة. والشكل والحجم يُفحصان مثل الجدول (pmuShape · pmuShort) */
+const BANNER_HOST = 'banreg.pmu.edu.sa', BANNER_BASE = '/StudentRegistrationSsb/ssb';
+const BANNER_PAGE = 500, BANNER_MAX = 6000;
+const BANNER_BLOCK = { until: 0, n: 0, status: 0 };
+let BANNER_ON = true, BANNER_LAST = null, BANNER_PING_AT = 0;
+const BANNER_DAYS = [['sunday', 'U'], ['monday', 'M'], ['tuesday', 'T'], ['wednesday', 'W'],
+                     ['thursday', 'R'], ['friday', 'F'], ['saturday', 'S']];
+function bannerBlockHit(status, retryAfter) {
+  BANNER_BLOCK.n++; BANNER_BLOCK.status = status;
+  const raN = Number(retryAfter);
+  const ra = raN > 0 ? raN : Math.max(0, Math.round((Date.parse(retryAfter) - Date.now()) / 1000)) || 0;
+  const wait = ra > 0 ? Math.min(ra * 1000, 2 * 3600e3) : Math.min(15 * 60e3 * 2 ** (BANNER_BLOCK.n - 1), 2 * 3600e3);
+  BANNER_BLOCK.until = Date.now() + wait;
+  alert('banner-block', `بانر يرفض طلباتنا (${status})`,
+    `وقفنا الاحتياط من بانر ${Math.max(1, Math.round(wait / 60000))} دقيقة. موقع الجدول هو الأساس — هذا الاحتياط بس.`);
+}
+/* صفوف بانر ⇒ صفوف بشكل جدول الجامعة: صف لكل اجتماع (المحاضرة والمعمل بنفس CRN صفّان، مثل الجدول) */
+function bannerRows(list) {
+  const rows = [];
+  for (const s of list || []) {
+    if (!s || typeof s !== 'object') continue;
+    const seats = Number(s.seatsAvailable);
+    const open = s.openSection === false ? false : (Number.isFinite(seats) ? seats > 0 : s.openSection === true);
+    const fac = Array.isArray(s.faculty) ? s.faculty : [];
+    const inst = (fac.find(f => f && f.primaryIndicator) || fac[0] || {}).displayName || '';
+    const base = {
+      crn: String(s.courseReferenceNumber || '').trim(),
+      courseCode: `${String(s.subject || '').trim()} ${String(s.courseNumber || '').trim()}`.trim(),
+      courseTitle: String(s.courseTitle || '').replace(/&amp;/g, '&').trim(),
+      section: String(s.sequenceNumber || '').trim(),
+      instructor: String(inst).replace(/&amp;/g, '&').trim(),
+      status: open ? 'OPEN' : 'CLOSED'
+    };
+    const meets = (Array.isArray(s.meetingsFaculty) ? s.meetingsFaculty : [])
+      .map(m => m && m.meetingTime).filter(Boolean);
+    if (!meets.length) { rows.push(Object.assign({ courseDate: '', courseTiming: '', room: '' }, base)); continue }
+    for (const mt of meets)
+      rows.push(Object.assign({
+        courseDate: BANNER_DAYS.filter(([k]) => mt[k] === true).map(([, d]) => d).join(''),
+        courseTiming: mt.beginTime && mt.endTime ? `${mt.beginTime} - ${mt.endTime}` : '',
+        room: [mt.building, mt.room].filter(Boolean).join(' - ')
+      }, base));
+  }
+  return tagGender(rows, 'ALL');
+}
+/* جدول الترم كاملاً من بانر (أو صفحة صغيرة للتجربة من اللوحة) ⇒ صفوف أو خطأ بنوعه */
+async function fetchBannerTerm(term, opts) {
+  const ping = !!(opts && opts.ping), t0 = Date.now();
+  if (Date.now() < BANNER_BLOCK.until) throw pmuErr('block', 'Banner backoff', { local: true });
+  const jar = new Map();
+  const take = r => ((r.headers && r.headers['set-cookie']) || [])
+    .forEach(c => { const kv = String(c).split(';')[0]; jar.set(kv.split('=')[0], kv) });
+  const H = extra => Object.assign({ 'User-Agent': PMU_UA, 'Accept-Language': 'en-US,en;q=0.9' },
+    jar.size ? { Cookie: [...jar.values()].join('; ') } : {}, extra);
+  const check = (r, what, redirectOk) => {
+    if (r.status === 403 || r.status === 429) {
+      bannerBlockHit(r.status, r.headers && r.headers['retry-after']);
+      throw pmuErr('block', `Banner ${what} ${r.status}`, { status: r.status });
+    }
+    if (!r.status || r.status >= 500) throw pmuErr('down', `Banner ${what} ${r.status}`, { status: r.status });
+    if (r.status !== 200 && !(redirectOk && r.status >= 300 && r.status < 400))
+      throw pmuErr('format', `Banner ${what} ${r.status}`, { status: r.status, title: pmuTitle(r.text) });
+  };
+  const sid = 'jdw' + crypto.randomBytes(5).toString('hex') + Date.now();
+  const XHR = { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json, text/javascript, */*; q=0.01' };
+  try {
+    let r = await uniReq(BANNER_HOST, 'GET', `${BANNER_BASE}/term/termSelection?mode=search`,
+      H({ Accept: 'text/html,application/xhtml+xml' }), null, 15000, 20000);
+    check(r, 'session', true); take(r);
+    const form = new URLSearchParams({ term, studyPath: '', studyPathText: '', startDatepicker: '',
+      endDatepicker: '', uniqueSessionId: sid }).toString();
+    r = await uniReq(BANNER_HOST, 'POST', `${BANNER_BASE}/term/search?mode=search`, H(Object.assign({
+      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+      'Content-Length': Buffer.byteLength(form) }, XHR)), form, 15000, 20000);
+    check(r, 'term'); take(r);
+    const all = [], size = ping ? 10 : BANNER_PAGE;
+    let total = null;
+    for (let off = 0; off < BANNER_MAX; off += size) {
+      const q = new URLSearchParams({ txt_term: term, startDatepicker: '', endDatepicker: '', uniqueSessionId: sid,
+        pageOffset: String(off), pageMaxSize: String(size), sortColumn: 'subjectDescription', sortDirection: 'asc' });
+      r = await uniReq(BANNER_HOST, 'GET', `${BANNER_BASE}/searchResults/searchResults?${q}`, H(XHR), null, 20000, 60000);
+      check(r, 'results'); take(r);
+      let j; try { j = JSON.parse(r.text) } catch (e) { throw pmuErr('format', 'Banner: الرد مو JSON', { title: pmuTitle(r.text) }) }
+      if (!j || j.success === false || !Array.isArray(j.data)) throw pmuErr('format', 'Banner: رد بلا data');
+      if (total == null && Number.isFinite(Number(j.totalCount))) total = Number(j.totalCount);
+      all.push(...j.data);
+      if (ping || j.data.length < size || (total != null && all.length >= total)) break;
+      await new Promise(x => setTimeout(x, 800));
+    }
+    const rows = bannerRows(all);
+    if (!rows.length) throw pmuErr('down', 'Banner: صفر شعب');
+    const sh = pmuShape(rows);
+    if (!sh.ok) throw pmuErr('format', `Banner: شكل الرد تغيّر (${sh.n} صف)`, { shape: sh });
+    /* ناقص عن العدد اللي قاله بانر نفسه = صفحة ضاعت: ما نصدّقه (الغايب يطلع «اختفى» ثم «جديد») */
+    if (!ping && total != null && all.length < total * 0.95)
+      throw pmuErr('down', `Banner: وصلنا ${all.length} من ${total}`);
+    if (BANNER_BLOCK.n) { BANNER_BLOCK.n = 0; resolve('banner-block', 'بانر يرفض طلباتنا') }
+    BANNER_LAST = { at: Date.now(), ok: true, sections: all.length, total, rows: rows.length, ms: Date.now() - t0, ping };
+    return { rows, total, sections: all.length };
+  } catch (e) {
+    BANNER_LAST = { at: Date.now(), ok: false, kind: e.pmu || 'down', err: String(e.message || e).slice(0, 160),
+                    ms: Date.now() - t0, ping };
+    throw e;
+  }
+}
+
 const pmuWhy = e => e.pmu === 'format'
   ? (e.shape ? `وصل جدول ${e.shape.n} صف، لكن ${Math.round(100 * e.shape.crn / e.shape.n)}٪ منها رقم الشعبة ` +
                `أرقام و${Math.round(100 * e.shape.st / e.shape.n)}٪ حالتها OPEN/CLOSED — الأعمدة تغيّرت`
@@ -3236,6 +3357,8 @@ function heartbeat() {
 let cycleRunning = false, cycleStartedAt = 0, CYCLE_GEN = 0, CYCLE_SKIPS = 0;
 /* إشعار فشل إرساله: كم مرة حاولنا (مراقبة|CRN) — نعيده الدورة الجاية بحد ثلاث */
 const NOTIFY_FAILS = new Map(), NOTIFY_MAX_TRIES = 3;
+/* مصدر آخر جدول راقبنا منه: موقع الجدول ('pmu') أو احتياط بانر ('banner') — يُحفظ مع الحالة */
+let MON_SOURCE = 'pmu';
 /* إغلاق (نشر جديد): ما نبدأ دورة، وننتظر الشغّالة تكمل إرسالها. وإرسال طويل (مئات
    الطلاب) يوقف بعد SHUTDOWN_SEND_MS ويرجّع الباقي محجوزاً للنسخة الجديدة — Render يمهل ٣٠ ثانية */
 let SHUTTING_DOWN = false, SHUTDOWN_AT = 0;
@@ -3422,11 +3545,11 @@ async function runMonitorCycle() {
     const terms = [TERM];
     const snapshot = {};
     let fetchFailed = false, partial = false;
-    let gotFeed = false;
+    let gotFeed = false, usedBanner = false, freshPmu = false;
     for (const term of terms) {
       const snap = await fetchTermSnapshot(term);
       if (!current()) { stat.superseded = true; return }
-      if (snap.courses) gotFeed = true;
+      if (snap.courses) gotFeed = freshPmu = true;
 
       if (snap.courses) {
         const parsed = snap.courses;
@@ -3495,20 +3618,43 @@ async function runMonitorCycle() {
           });
           stat.fromCache = Math.round(age / 1000);
           console.log(`cycle: نسخة من الكاش عمرها ${stat.fromCache} ثانية`);
-        } else if (snap.errs.some(e => e.pmu === 'block')) {
-          stat.blocked = true;                 /* إنذاره طلع وقت الرفض (pmuBlockHit) */
-        } else if (snap.errs.some(e => e.pmu === 'format')) {
-          stat.format = true;
-          alert('pmu-format', 'موقع الجامعة يرد بشكل ما نفهمه',
-            `سحبنا بيانات الترم ${term} ورجع لنا شي غير الجدول المعروف:\n` +
-            [...new Set(snap.errs.filter(e => e.pmu === 'format').map(pmuWhy))].map(x => '• ' + x).join('\n') +
-            `\n\nما كتبنا ولا حالة منه. المراقبة واقفة لين يرجع الشكل المعروف — ` +
-            `لو استمر، الموقع تغيّر والكود يحتاج تعديل.`);
         } else {
-          alert('pmu', 'موقع الجامعة ما يستجيب',
-            `فشل سحب بيانات الترم ${term} — الطلبات الثلاثة كلها.\n\n` +
-            `وما فيه نسخة حديثة في الذاكرة نرجع لها.\n` +
-            `المراقبة والبحث بيتأثرون. لو تكرر كثير، تحقق إذا السيرفر محجوب.`);
+          const blocked = snap.errs.some(e => e.pmu === 'block') || pmuBlocked();
+          /* الاحتياط: بحث بانر العام — للمراقبة وحدها، وإلا لو رفضونا (رفض متعمّد ما نلتف عليه) */
+          let via = '';
+          if (!blocked && BANNER_ON) {
+            try {
+              const b = await fetchBannerTerm(term);
+              if (!current()) { stat.superseded = true; return }
+              const sh = pmuShort(term, 'BANNER', b.rows.length);
+              b.rows.forEach(c => { c.term = term; snapshot[term + ':' + c.crn] = c; });
+              usedBanner = true; gotFeed = true; stat.banner = b.rows.length;
+              if (sh) { partial = true; stat.short = Object.assign({ g: 'BANNER' }, sh) }
+              via = '🛟 المراقبة مستمرة من صفحة بحث بانر العامة (احتياط) لين يرجع — والبحث للطلاب يخدم آخر نسخة عندنا.';
+              resolve('banner-down', 'احتياط بانر ما اشتغل');
+            } catch (e) {
+              stat.bannerErr = String(e.message || e).slice(0, 120);
+              if (e.pmu !== 'block')
+                alert('banner-down', 'احتياط بانر ما اشتغل',
+                  `موقع الجدول متعطّل، والاحتياط من بانر كذلك: ${escP(e.message)}\n\n` +
+                  `المراقبة واقفة لين يرجع واحد منهما.`);
+            }
+          }
+          if (blocked) {
+            stat.blocked = true;               /* إنذاره طلع وقت الرفض (pmuBlockHit) */
+          } else if (snap.errs.some(e => e.pmu === 'format')) {
+            stat.format = true;
+            alert('pmu-format', 'موقع الجامعة يرد بشكل ما نفهمه',
+              `سحبنا بيانات الترم ${term} ورجع لنا شي غير الجدول المعروف:\n` +
+              [...new Set(snap.errs.filter(e => e.pmu === 'format').map(pmuWhy))].map(x => '• ' + x).join('\n') +
+              `\n\nما كتبنا ولا حالة منه. ` + (via || `المراقبة واقفة لين يرجع الشكل المعروف — ` +
+              `لو استمر، الموقع تغيّر والكود يحتاج تعديل.`));
+          } else {
+            alert('pmu', 'موقع الجامعة ما يستجيب',
+              `فشل سحب بيانات الترم ${term} — الطلبات الثلاثة كلها.\n\n` +
+              (via || `وما فيه نسخة حديثة في الذاكرة نرجع لها.\n` +
+              `المراقبة والبحث بيتأثرون. لو تكرر كثير، تحقق إذا السيرفر محجوب.`));
+          }
         }
       }
     }
@@ -3521,13 +3667,31 @@ async function runMonitorCycle() {
     CYCLE_DOWN = gotFeed ? 0 : CYCLE_DOWN + 1;
     if (gotFeed) LAST_GOOD_CYCLE = Date.now();
 
+    /* مصدر الجدول: موقع الجدول أو احتياط بانر. رجوع الجدول بعد بانر = دورة تسجّل بلا إشعار (settle):
+       الجدول ممكن يتأخر عن بانر، فـ«مفتوحة» قديمة منه تطلع «فتحت» كاذبة. والذهاب لبانر عادي — بانر
+       أحدث، و«فتحت» منه بمقاعد فعلاً */
+    const source = usedBanner ? 'banner' : 'pmu';
+    const settle = gotFeed && source === 'pmu' && MON_SOURCE === 'banner';
+    /* أول دورة من بانر: شعبة «جديدة» عليه ممكن تكون شعبة ملغاة يعرضها والجدول يخفيها — ما نقول «نزلت
+       شعبة» من التبديل نفسه (الحالة تنكتب، والجديد فعلاً يبان الدورة الجاية) */
+    const toBanner = gotFeed && source === 'banner' && MON_SOURCE !== 'banner';
+    if (gotFeed && source !== MON_SOURCE) {
+      stat.source = `${MON_SOURCE}→${source}`;
+      MON_GONE.clear();                       /* عدّ «اختفت» من مصدر واحد بس */
+      console.log(`cycle: المصدر ${stat.source}`);
+    }
+    if (gotFeed) MON_SOURCE = source;
+
     const now = new Date().toISOString();
 
     /* ── 2. نحدد الصفوف اللي تغيّرت حالتها ── */
     stat.rows = monitors.length;
     stat.terms = terms.length;
     stat.snapshot = Object.keys(snapshot).length;
-    if (stat.snapshot > 0) resolve('pmu', 'موقع الجامعة ما يستجيب');
+    if (freshPmu) {
+      resolve('pmu', 'موقع الجامعة ما يستجيب');
+      resolve('banner-down', 'احتياط بانر ما اشتغل');
+    }
 
     /* فهرس المواد: ترم|كود → كل شعبها. نحتاجه لمراقبة المادة كاملة. */
     const normCode = s => String(s || '').trim().toUpperCase().replace(/\s+/g, ' ');
@@ -3558,9 +3722,10 @@ async function runMonitorCycle() {
       if (live.status === m.last_status) continue;
 
       const age = m.created_at ? (Date.now() - new Date(m.created_at).getTime()) : Infinity;
-      if (age < BASELINE_GRACE) {
+      if (age < BASELINE_GRACE || settle) {
         changed.push({ m, live });          /* نكتب الحالة الصحيحة */
-        stat.baselineFixed = (stat.baselineFixed || 0) + 1;
+        if (settle) stat.settled = (stat.settled || 0) + 1;
+        else stat.baselineFixed = (stat.baselineFixed || 0) + 1;
         continue;                            /* بلا إشعار */
       }
       changed.push({ m, live });
@@ -3569,7 +3734,7 @@ async function runMonitorCycle() {
 
     /* شعبة مراقَبة ما لها أثر في جدول كامل وطازج (لا نصف ولا ناقص ولا من الكاش) — ثلاث مرات ورا بعض */
     const gone = [];
-    if (!partial && !stat.fromCache && stat.snapshot > 0) {
+    if (!partial && !stat.fromCache && stat.snapshot > 0 && source === 'pmu' && !settle) {
       for (const m of sectionMons) {
         const k = m.id + '|' + m.crn;
         if (snapshot[(m.term || '202630') + ':' + m.crn]) { MON_GONE.delete(k); continue }
@@ -3610,13 +3775,14 @@ async function runMonitorCycle() {
         .map(k => k + ':' + o[k]).join('|');
       if (!prev || fp(prev) !== fp(cur))
         courseStateUpdates.push({ id: m.id, state: cur });
-      if (!prev) continue;                       /* أول دورة — تسجيل فقط */
+      if (!prev || settle) continue;             /* أول دورة (أو رجوع الجدول بعد بانر) — تسجيل فقط */
 
       const hits = [];
       for (const c of list) {
         const crn = String(c.crn);
         const was = prev[crn];
         const isNew = !(crn in prev);
+        if (isNew && toBanner) continue;
         if (c.status === 'OPEN' && was !== 'OPEN') hits.push({ c, isNew, was });
         else if (isNew) hits.push({ c, isNew, was, closedNew: true });
       }
@@ -5899,6 +6065,9 @@ async function adminHealth() {
   else if (pmuOk === false)
     add('bad', 'آخر سحبة من الجامعة فشلت', 'Last university fetch failed',
         'موقع الجامعة قد يكون معطلاً أو حجب السيرفر. تحقق من masterschedule.pmu.edu.sa');
+  if (MON_SOURCE === 'banner')
+    add('warn', 'المراقبة من بانر (احتياط)', 'Monitoring from Banner (backup)',
+        'موقع الجدول ما يرد أو تغيّر — نراقب من صفحة بحث بانر العامة لين يرجع. البحث للطلاب يخدم آخر نسخة.');
   if (last && last.short)
     add('warn', 'جدول الجامعة وصل ناقص', 'University table arrived short',
         `${last.short.n} صف والمعتاد ${last.short.peak} — الشعبة بعينها تنراقب، ومراقبة المادة كاملة واقفة.`);
@@ -6058,6 +6227,10 @@ async function adminHealth() {
       /* عطل طويل: كم دورة ورا بعض بلا جدول، والفاصل اللي صار (بلا تشويش) */
       downCycles: CYCLE_DOWN,
       backoffMin: cycleBackoffMs(hotDay()) / 60000,
+      /* احتياط بانر: مفتاحه · آخر محاولة · رفض · ومصدر آخر دورة */
+      banner: { on: BANNER_ON, last: BANNER_LAST,
+                blockedUntil: BANNER_BLOCK.until > Date.now() ? BANNER_BLOCK.until : null },
+      source: MON_SOURCE,
       /* النبض الخارجي: مضبوط؟ وش بيقول الحين؟ (بلا الرابط — فيه رمز الفحص) */
       heartbeat: HEALTHCHECK_URL ? { verdict: hcVerdict(),
         lastAgoSec: HC_LAST ? Math.round((Date.now() - HC_LAST) / 1000) : null } : null,
@@ -11774,6 +11947,27 @@ const server = http.createServer(async (req, res) => {
           return send(200, { ok: true, cleared: n });
         }
         return send(200, { size: coursesCache.size });
+      }
+
+      /* احتياط بانر: تجربة صغيرة (صفحة ١٠ شعب) — تثبت إنه شغّال قبل ما نحتاجه — ومفتاحه */
+      if (act === 'banner-ping' && req.method === 'POST') {
+        if (Date.now() - BANNER_PING_AT < 60000) return send(429, { ok: false, error: 'جرّبناه قبل أقل من دقيقة' });
+        BANNER_PING_AT = Date.now();
+        try {
+          const b = await fetchBannerTerm(regTerm(), { ping: true });
+          const x = b.rows[0] || {};
+          return send(200, { ok: true, term: regTerm(), total: b.total, ms: BANNER_LAST && BANNER_LAST.ms,
+            sample: { crn: x.crn, courseCode: x.courseCode, section: x.section, status: x.status,
+                      courseDate: x.courseDate, courseTiming: x.courseTiming } });
+        } catch (e) {
+          return send(200, { ok: false, term: regTerm(), kind: e.pmu || 'down', error: String(e.message || e) });
+        }
+      }
+      if (act === 'banner-toggle' && req.method === 'POST') {
+        const b = await readBody(req);
+        if ('on' in b) BANNER_ON = !!b.on;
+        saveState().catch(() => {});
+        return send(200, { on: BANNER_ON });
       }
 
       if (act === 'prewarm-toggle') {
