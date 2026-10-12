@@ -3027,6 +3027,12 @@ async function inBatches(items, size, fn) {
 }
 
 let cycleRunning = false, cycleStartedAt = 0, CYCLE_GEN = 0, CYCLE_SKIPS = 0;
+/* إشعار فشل إرساله: كم مرة حاولنا (مراقبة|CRN) — نعيده الدورة الجاية بحد ثلاث */
+const NOTIFY_FAILS = new Map(), NOTIFY_MAX_TRIES = 3;
+/* إغلاق (نشر جديد): ما نبدأ دورة، وننتظر الشغّالة تكمل إرسالها. وإرسال طويل (مئات
+   الطلاب) يوقف بعد SHUTDOWN_SEND_MS ويرجّع الباقي محجوزاً للنسخة الجديدة — Render يمهل ٣٠ ثانية */
+let SHUTTING_DOWN = false, SHUTDOWN_AT = 0;
+const SHUTDOWN_SEND_MS = 18000;
 /* دورة أطول من هذا = علقت: نفكّ قفلها ونبدأ غيرها. حارس الطلبات يمنع أغلب التعليق،
    وهذا للباقي — والقديمة لو صحت ما تكتب ولا ترسل (CYCLE_GEN) */
 const CYCLE_STUCK_MS = 8 * 60 * 1000;
@@ -3105,9 +3111,9 @@ async function sendFollowups() {
   let sent = 0;
   for (const m of due) {
     const p = byUser[m.user_id];
-    const label = m.scope === 'course'
+    const label = esc(m.scope === 'course'
       ? (m.course_code || 'المادة')
-      : `${m.course_code || 'المادة'}${m.crn ? ' · CRN ' + m.crn : ''}`;
+      : `${m.course_code || 'المادة'}${m.crn ? ' · CRN ' + m.crn : ''}`);
     if (p && p.telegram_chat_id) {
       const r = await sendMsg(p.telegram_chat_id,
         `⏳ <b>سجّلت ${label}؟</b>\n\n` +
@@ -3145,7 +3151,7 @@ async function dropExpired() {
 
 async function runMonitorCycle() {
   /* نسخة بلا مراقبة (dev) ما تشغّل دورة من أي طريق — القاعدة مشتركة */
-  if (!SB_URL || !SB_SERVICE_KEY || !MONITOR_ENABLED) return;
+  if (!SB_URL || !SB_SERVICE_KEY || !MONITOR_ENABLED || SHUTTING_DOWN) return;
 
   /* قفل: لو الدورة السابقة ما خلصت، ما نبدأ وحدة جديدة فوقها.
      بدونه الدورات تتراكم في الذروة وتاكل الذاكرة. والإنذار كان مرة وحدة طول عمر
@@ -3291,7 +3297,7 @@ async function runMonitorCycle() {
     stat.courseRows = courseMons.length;
 
     const changed = [];      // {m, live}
-    const toNotify = [];     // {m, live}
+    let toNotify = [];       // {m, live}
     /* ═══ تصحيح الأساس عند التفعيل ═══
        last_status يجي من القائمة المعروضة عند الطالب، وقد تكون قديمة
        بدقائق. فتنشأ حالتان خاطئتان:
@@ -3350,35 +3356,45 @@ async function runMonitorCycle() {
         const crn = String(c.crn);
         const was = prev[crn];
         const isNew = !(crn in prev);
-        if (c.status === 'OPEN' && was !== 'OPEN') hits.push({ c, isNew });
-        else if (isNew) hits.push({ c, isNew, closedNew: true });
+        if (c.status === 'OPEN' && was !== 'OPEN') hits.push({ c, isNew, was });
+        else if (isNew) hits.push({ c, isNew, was, closedNew: true });
       }
       /* سقف ثلاث شعب في الدورة الواحدة — الباقي يُذكر بالعدد */
       hits.slice(0, 3).forEach(h => toNotify.push({
-        m, live: h.c, courseScope: true, isNew: h.isNew, closedNew: h.closedNew,
+        m, live: h.c, courseScope: true, isNew: h.isNew, closedNew: h.closedNew, was: h.was,
         more: hits.length > 3 ? hits.length - 3 : 0
       }));
     }
 
-    /* حفظ حالة صفوف المادة — كل صف بحالته */
-    for (const u of courseStateUpdates) {
-      await sb('PATCH', 'monitored_courses', {
-        query: `?id=eq.${u.id}`,
-        body: { sections_state: u.state },
-        prefer: 'return=minimal'
-      }).catch(() => {});
-    }
-
     stat.changed = changed.length;
     stat.toNotify = toNotify.length;
-    if (!changed.length && !toNotify.length) return;
+    if (!changed.length && !toNotify.length && !courseStateUpdates.length) return;
     if (!current()) { stat.superseded = true; return }
 
-    /* ── 3. تحديث الحالة بالجملة ──
-       بدل PATCH لكل صف، نجمع الصفوف حسب الحالة الجديدة ونرسل طلباً واحداً
-       لكل حالة باستخدام id=in.(...). 2000 طلب تصير 2-3 طلبات. */
+    /* ── 3. الحجز ثم تحديث الحالة بالجملة ──
+       «فتحت» اللي بنرسلها **تُحجز**: تحديث مشروط (ما كانت OPEN) يرجّع الصفوف اللي
+       تغيّرت فعلاً — نسختان شغّالتان معاً (وقت النشر) كانت كل وحدة تقرأ CLOSED وترسل،
+       فيوصل الطالب الإشعار مرتين. الحين اللي حجزت ترسل، والثانية ما يرجع لها صف.
+       والإرسال اللي يفشل يرجّع الحجز تحت (فتعيده الدورة الجاية) — كانت الحالة تنكتب
+       قبل الإرسال وما ترجع، فرسالة رفضها تيليغرام مرة = إشعار ضاع للأبد.
+       الباقي (مقفلة · تصحيح الأساس) بلا شرط: نجمعها حسب الحالة، طلب لكل حالة. */
+    const claimIds = toNotify.filter(x => !x.courseScope).map(x => x.m.id);
+    const claimSet = new Set(claimIds), claimed = new Set();
+    for (let i = 0; i < claimIds.length; i += 200) {
+      const r = await sb('PATCH', 'monitored_courses', {
+        query: `?id=in.(${claimIds.slice(i, i + 200).join(',')})` +
+               '&or=(last_status.is.null,last_status.neq.OPEN)',
+        body: { last_status: 'OPEN' }, prefer: 'return=representation'
+      }).catch(() => null);
+      (Array.isArray(r) ? r : []).forEach(x => claimed.add(x.id));
+    }
+    if (claimIds.length > claimed.size) {
+      stat.claimLost = claimIds.length - claimed.size;    /* نسخة ثانية سبقتنا عليها */
+      toNotify = toNotify.filter(x => x.courseScope || claimed.has(x.m.id));
+    }
     const byStatus = {};
     changed.forEach(({ m, live }) => {
+      if (claimSet.has(m.id)) return;                     /* انكتبت بالحجز */
       (byStatus[live.status] = byStatus[live.status] || []).push(m.id);
     });
 
@@ -3394,8 +3410,6 @@ async function runMonitorCycle() {
         });
       }
     }
-
-    if (!toNotify.length) return;
 
     /* ── 4. سحب ملفات المستخدمين المعنيين دفعة واحدة ── */
     const userIds = [...new Set(toNotify.map(x => x.m.user_id))];
@@ -3426,7 +3440,7 @@ async function runMonitorCycle() {
       });
     }
     let withheld = 0;
-    const sendList = toNotify.filter(({ m }) => {
+    let sendList = toNotify.filter(({ m }) => {
       const p = profiles[m.user_id];
       if (!p || !p.telegram_chat_id) return false;
       if (hasAccess(p)) return true;
@@ -3436,13 +3450,41 @@ async function runMonitorCycle() {
     });
     if (withheld) console.log(`   الحصة المجانية: ${withheld} إشعار ما خرج (فوق الحد)`);
 
-    /* ── 6. إرسال على دفعات متوازية ──
-       تيليغرام يسمح بحوالي 30 رسالة/ثانية، فدفعات من 20 مع فاصل بسيط آمنة. */
+    /* ── 5ب. حجز المادة كاملة ──
+       حالتها JSON فما تنحجز بشرط عليها مثل الشعبة — الحجز بـnotified_at: نكتب الحالة الجديدة
+       بشرط إنه ما تغيّر من قرأناه (نسخة حجزت قبلنا = تغيّر)، واللي يقرأ بعد حجزنا يلقى الحالة
+       الجديدة فما يشوف «فتحت». نحجز اللي بنرسل له وحده: المحجوب (فوق الحصة · بلا تلقرام)
+       حالته تنكتب بلا شرط مع الباقي — notified_at له ما يتغيّر على إشعار ما راح */
+    const courseRows = new Map();
+    sendList.forEach(x => { if (x.courseScope) courseRows.set(x.m.id, x.m) });
+    const stateOf = new Map(courseStateUpdates.map(u => [u.id, u.state]));
+    const claimAt = new Date().toISOString(), courseLost = new Set();
+    for (const [id, m] of courseRows) {
+      const r = await sb('PATCH', 'monitored_courses', {
+        query: `?id=eq.${id}&notified_at=` +
+               (m.notified_at == null ? 'is.null' : 'eq.' + encodeURIComponent(m.notified_at)),
+        body: { sections_state: stateOf.get(id), notified_at: claimAt },
+        prefer: 'return=representation'
+      }).catch(() => null);
+      if (!(Array.isArray(r) && r.length)) courseLost.add(id);
+    }
+    if (courseLost.size) {
+      stat.claimLost = (stat.claimLost || 0) + courseLost.size;
+      sendList = sendList.filter(x => !courseLost.has(x.m.id));
+    }
+
+    /* ── 6. الإرسال ──
+       محادثات مختلفة على دفعات متوازية (تيليغرام ~٣٠ رسالة/ثانية)، ورسائل **نفس
+       المحادثة ورا بعض** بثانية بينها: مراقب المادة كاملة يطلع له ثلاث رسائل بنفس
+       اللحظة، وتيليغرام يحد المحادثة الوحدة — والمرفوضة كانت تضيع. وطلب «استنى»
+       (429 · retry_after) نستناه ونعيد مرة. ونصوص الجامعة تُهرَّب (esc): «&» وحدها في
+       اسم مادة كافية ليرفض تيليغرام الرسالة كلها. */
     stat.eligible = sendList.length;
     const notified = [];
     const followups = [];      /* نسأل صاحبها بعد عشر دقائق: سجّلتها؟ */
-    await inBatches(sendList, 20, async ({ m, live, courseScope, isNew, closedNew, more }) => {
-      if (!current()) { stat.superseded = true; return }
+    const sentFail = [];       /* فشلت ⇒ نرجّع الحجز وتعيدها الدورة الجاية */
+    const deferred = [];       /* نشر جديد قطع الإرسال ⇒ نرجّع الحجز بلا عدّ محاولة */
+    const sendOne = async ({ m, live, courseScope, isNew, closedNew, more }) => {
       const p = profiles[m.user_id];
       /* أربع حالات، والعنوان هو الوحيد الظاهر في إشعار القفل —
          فالتمييز لازم يكون فيه لا في سطر داخلي.
@@ -3456,28 +3498,34 @@ async function runMonitorCycle() {
       const tail = closedNew ? '📌 مقفلة حالياً — بنراقبها لك.'
                              : '⚡️ سجّل الحين قبل ما تنسكر!';
       const scopeLine = courseScope
-        ? `\n<i>وصلتك لأنك تراقب ${live.courseCode} كاملة</i>`
+        ? `\n<i>وصلتك لأنك تراقب ${esc(live.courseCode)} كاملة</i>`
         : `\n<i>وصلتك لأنك مراقب هذي الشعبة بالذات</i>`;
       const moreLine = more ? `\n<i>+ ${more} شعبة ثانية تغيّرت</i>` : '';
-      const r = await sendMsg(p.telegram_chat_id,
-        `${head}\n\n` +
-        `<b>${live.courseCode}</b> — شعبة ${live.section}\n` +
-        `${live.courseTitle}\n\n` +
-        `🔢 CRN: <code>${live.crn}</code>\n` +
-        `📅 ${live.courseDate}  ⏰ ${live.courseTiming}\n` +
-        `👤 ${live.instructor || '—'}\n` +
-        `🏛️ ${live.room || '—'}${scopeLine}${moreLine}\n\n` +
-        tail,
-        /* زر يوقف المراقبة من داخل تيليغرام — الطالب يسجّل وينسى
-           يرجع للموقع، فيظل يستقبل إشعارات ما عاد يحتاجها. */
-        kb([[btn(courseScope ? '🔕 أوقف مراقبة هذي المادة'
-                             : '🔕 أوقف مراقبة هذي الشعبة', 'stop:' + m.id)]]));
-      if (r && r.ok) { notified.push(m.id); followups.push(m.id); }
-      else OPS.tgFails++;
+      const text = `${head}\n\n` +
+        `<b>${esc(live.courseCode)}</b> — شعبة ${esc(live.section)}\n` +
+        `${esc(live.courseTitle)}\n\n` +
+        `🔢 CRN: <code>${esc(live.crn)}</code>\n` +
+        `📅 ${esc(live.courseDate)}  ⏰ ${esc(live.courseTiming)}\n` +
+        `👤 ${esc(live.instructor || '—')}\n` +
+        `🏛️ ${esc(live.room || '—')}${scopeLine}${moreLine}\n\n` +
+        tail;
+      /* زر يوقف المراقبة من داخل تيليغرام — الطالب يسجّل وينسى
+         يرجع للموقع، فيظل يستقبل إشعارات ما عاد يحتاجها. */
+      const markup = kb([[btn(courseScope ? '🔕 أوقف مراقبة هذي المادة'
+                                          : '🔕 أوقف مراقبة هذي الشعبة', 'stop:' + m.id)]]);
+      let r = await sendMsg(p.telegram_chat_id, text, markup);
+      const wait = r && !r.ok && Number(r.error_code) === 429
+        ? Number(r.parameters && r.parameters.retry_after) || 1 : 0;
+      if (wait && wait <= 10) {
+        await new Promise(r2 => setTimeout(r2, wait * 1000 + 250));
+        r = await sendMsg(p.telegram_chat_id, text, markup);
+      }
+      if (!(r && r.ok)) { OPS.tgFails++; return false }
+      notified.push(m.id); followups.push(m.id);
       /* إشعار من مراقبة فوق حصة المجاني وصل = ميزة مدفوعة استُعملت (الشروط §٤) —
          يمسك مراقبات انضافت قبل الدفع (الفترة المجانية) واشتغلت به: مشغّل القاعدة
          يسجّل الإضافة وحدها فما يشوفها */
-      if (r && r.ok && (m.scope === 'course' || !freeOk.has(m.id)))
+      if (m.scope === 'course' || !freeOk.has(m.id))
         usageLog(p, 'alert', m.scope === 'course' ? 'course' : 'section');
 
       /* Pushover: لك أنت دائماً، ولأي طالب سجّل مفتاحه في ملفه.
@@ -3498,8 +3546,89 @@ async function runMonitorCycle() {
           /* وصل لمفتاح الطالب نفسه = «وصول تنبيه طارئ» (الشروط §٤) */
           .then(sent => { if (sent && poKey) usageLog(p, 'pushover') }).catch(() => {});
       }
+      return true;
+    };
+    const byChat = new Map();
+    for (const x of sendList) {
+      const cid = String(profiles[x.m.user_id].telegram_chat_id);
+      if (!byChat.has(cid)) byChat.set(cid, []);
+      byChat.get(cid).push(x);
+    }
+    await inBatches([...byChat.values()], 20, async items => {
+      for (let i = 0; i < items.length; i++) {
+        if (!current()) { stat.superseded = true; return }
+        if (SHUTTING_DOWN && Date.now() - SHUTDOWN_AT > SHUTDOWN_SEND_MS) {
+          deferred.push(...items.slice(i)); return;
+        }
+        if (i) await new Promise(r2 => setTimeout(r2, 1100));   /* رسالة بالثانية للمحادثة */
+        const x = items[i], k = x.m.id + '|' + x.live.crn;
+        if (await sendOne(x)) NOTIFY_FAILS.delete(k); else sentFail.push(x);
+      }
       await new Promise(r2 => setTimeout(r2, 700));   // تهدئة بين الدفعات
     });
+    if (!current()) { stat.superseded = true; return }
+
+    /* ── 6ب. اللي فشل إرساله يرجع للدورة الجاية — بحد ثلاث محاولات ──
+       الشعبة: نرجّع last_status لقيمته قبل الحجز (لو ما تغيّرت بعده). والمادة كاملة:
+       الشعبة نفسها ترجع بحالتها القديمة في sections_state (أو تنشال لو كانت جديدة).
+       بعد ثلاث محاولات نوقف: رسالة يرفضها تيليغرام دائماً ما نعيدها كل دورة للأبد. */
+    const revert = new Map(), courseBack = new Map();
+    const back = x => {
+      if (x.courseScope) {
+        if (!courseBack.has(x.m.id)) courseBack.set(x.m.id, []);
+        courseBack.get(x.m.id).push(x);
+      } else {
+        const was = x.m.last_status == null ? '' : String(x.m.last_status);
+        if (!revert.has(was)) revert.set(was, []);
+        revert.get(was).push(x.m.id);
+      }
+    };
+    for (const x of sentFail) {
+      const k = x.m.id + '|' + x.live.crn, n = (NOTIFY_FAILS.get(k) || 0) + 1;
+      if (n >= NOTIFY_MAX_TRIES) {
+        NOTIFY_FAILS.delete(k);
+        stat.gaveUp = (stat.gaveUp || 0) + 1;
+        console.log(`notify: أوقفنا إعادة ${k} بعد ${n} محاولات`);
+        continue;
+      }
+      NOTIFY_FAILS.set(k, n);
+      back(x);
+    }
+    deferred.forEach(back);
+    if (deferred.length) stat.deferred = deferred.length;
+    for (const [was, ids] of revert)
+      for (let i = 0; i < ids.length; i += 200)
+        await sb('PATCH', 'monitored_courses', {
+          query: `?id=in.(${ids.slice(i, i + 200).join(',')})&last_status=eq.OPEN`,
+          body: { last_status: was || null }, prefer: 'return=minimal'
+        }).catch(() => {});
+    stat.retryNext = sentFail.length - (stat.gaveUp || 0) + deferred.length;
+
+    /* الفاشل من المادة كاملة يرجع لحاله القديم في sections_state (أو ينشال لو جديد) —
+       بشرط حجزنا: نسخة حجزت بعدنا كتبت أحدث منه. وما وصل منها شي ⇒ notified_at يرجع */
+    const sentIds = new Set(notified);
+    for (const [id, xs] of courseBack) {
+      const st = Object.assign({}, stateOf.get(id));
+      for (const x of xs) {
+        const crn = String(x.live.crn);
+        if (x.isNew) delete st[crn]; else st[crn] = x.was;
+      }
+      const body = { sections_state: st };
+      if (!sentIds.has(id)) body.notified_at = courseRows.get(id).notified_at || null;
+      await sb('PATCH', 'monitored_courses', {
+        query: `?id=eq.${id}&notified_at=eq.${encodeURIComponent(claimAt)}`,
+        body, prefer: 'return=minimal'
+      }).catch(() => {});
+    }
+    /* وحالة باقي صفوف المادة (تغيّرت بلا إشعار يطلع منّا — قفلت · محجوب) بلا شرط */
+    for (const u of courseStateUpdates) {
+      if (courseRows.has(u.id)) continue;      /* انكتبت مع الحجز — أو حجزتها نسخة ثانية */
+      await sb('PATCH', 'monitored_courses', {
+        query: `?id=eq.${u.id}`,
+        body: { sections_state: u.state },
+        prefer: 'return=minimal'
+      }).catch(() => {});
+    }
 
     /* ── 7. تعليم المُشعَرين بالجملة ── */
     for (let i = 0; i < notified.length; i += 200) {
@@ -12059,8 +12188,16 @@ server.listen(PORT, () => {
   })();
   /* حفظ العدّادات كل 5 دقائق، وعند الإغلاق النظيف */
   setInterval(() => { saveState().catch(() => {}) }, 5 * 60 * 1000);
+  /* الإغلاق (Render ينشر نسخة جديدة ويمهل القديمة ٣٠ ثانية): ما نبدأ دورة، وننتظر
+     الشغّالة تكمل إرسالها حتى ٢٥ ثانية — كانت تنقطع وسط الإرسال فيضيع إشعار الباقين */
   for (const sig of ['SIGTERM', 'SIGINT'])
-    process.on(sig, () => { saveState().catch(() => {}).finally(() => process.exit(0)); });
+    process.on(sig, async () => {
+      if (SHUTTING_DOWN) return;
+      SHUTTING_DOWN = true; SHUTDOWN_AT = Date.now();
+      const t = Date.now();
+      while (cycleRunning && Date.now() - t < 25000) await new Promise(r => setTimeout(r, 200));
+      saveState().catch(() => {}).finally(() => process.exit(0));
+    });
   const st = monitorState();
   console.log(`env=${SITE_ENV} | state=${STATE_KEY} | freeBeta=${FREE_BETA} | ترم المزامنة=${activeTerm()}` +
               ` | monitor: ${st.reason} — ${st.ar}`);

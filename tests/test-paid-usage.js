@@ -377,7 +377,9 @@ const recentOf = (d, id) => (d.recent || []).find(x => x.id === id) || {};
   );
   d = await adminPay();
   const u1 = (recentOf(d, 101).usage || {}).used || [];
-  eq(u1.map(x => x.kind), ['monitor', 'schedule', 'ai', 'alert', 'pushover', 'pushover_test'],
+  /* رسائل الطالب الواحد صارت ورا بعض (ثانية بينها — حد تيليغرام للمحادثة): تنبيه شعبته
+     الأولى الطارئ يوصل قبل إشعار الثالثة (فوق حصة المجاني = «alert»). كانت تنرسل معاً */
+  eq(u1.map(x => x.kind), ['monitor', 'schedule', 'ai', 'pushover', 'alert', 'pushover_test'],
      '**طلب الترم + التنبيه الطارئ: كل ميزة مرة، بترتيب أول استخدام**');
   const k = n => u1.find(x => x.kind === n) || {};
   eq([k('monitor').n, k('schedule').n, k('ai').detail], [3, 3, 'my_day'],
