@@ -98,6 +98,7 @@ function makeOutside(o) {
   const st = { DB: o.DB, pmu: Object.assign({ hits: [], mode: 'ok', M1: [], F1: [] }, o.pmu),
     ban: Object.assign({ hits: [], mode: 'ok', data: [], sessions: new Map() }, o.ban), TG: [], nextId: 1000 };
   st.server = http.createServer((req, res) => {
+    st.reqs = (st.reqs || 0) + 1;
     const host = req.headers['x-host'];
     let body = '';
     req.setEncoding('utf8');
@@ -184,7 +185,7 @@ function makeOutside(o) {
   return new Promise(r => st.server.listen(0, '127.0.0.1', () => { st.port = st.server.address().port; r(st) }));
 }
 
-let PORTN = 48900 + (process.pid % 40);
+let PORTN = 23900 + (process.pid % 40);
 function instance(st) {
   const port = PORTN++;
   const c = fork(__filename, [SRV, '--child', String(st.port), String(port)], { silent: true });
@@ -200,13 +201,37 @@ function instance(st) {
   const A = { 'X-Admin-Token': ADMIN };
   c.check = () => call('/api/run-check', 'GET', A).then(r => r.status);
   c.health = () => call('/api/admin/health', 'GET', A).then(r => r.j || {});
+  c.run = () => call('/api/run-check', 'GET', A).then(r => r.j);
+  c.st = st;
   c.ping = () => call('/api/admin/banner-ping', 'POST', A, {});
   c.toggle = on => call('/api/admin/banner-toggle', 'POST', A, { on });
   c.search = g => call(`/api/courses?term=202710&college=ALL&gender=${g || 'M1'}`);
   return c;
 }
-const ready = async c => { for (let i = 0; i < 50; i++) { if (await c.check() === 200) return true; await wait(200) } return false };
-const cycleOf = async (c, ms = 5000) => { await c.check(); await wait(ms) };
+/* جاهز = الإقلاع خلص (الاستعادة) — بلا ما نطلب دورة. كانت ready تطلب الدورة الأولى نفسها، فطلب الدورة اللي
+   بعدها يلقاها شغّالة ويتخطّى والوقت الثابت يغطّي — وتحت الحمل ما يغطّي (طاحت في run-all بلا علاقة بالكود) */
+const ready = async c => {
+  for (let i = 0; i < 150; i++) {
+    const h = await c.health();
+    if (h.booted || (h.uptimeHours !== undefined && !('booted' in h))) return true;   /* نسخة قبل booted: ترد وبس */
+    await wait(100);
+  }
+  return false;
+};
+/* «الخارج» هدأ: ولا طلب جديد ٣٠٠ م.ث — الإنذارات تنرسل بلا await، فتوصل بعد ما تنسجّل الدورة */
+const settle = async st => { let n = -1; for (const t0 = Date.now(); Date.now() - t0 < 8000 && st.reqs !== n;) { n = st.reqs; await wait(300) } };
+/* دورة كاملة: نطلبها ونستنى لين **تخلص فعلاً** (lastCycle.gen في الصحة) ثم يهدأ «الخارج» — لا وقت ثابت يسبقها
+   تحت الحمل. والطلب والسابقة شغّالة يتخطّى (ran:false): نستنى السابقة ونطلب ثانية. نسخة قبل gen: وقت ثابت كما كان */
+const cycleOf = async (c, ms = 5000) => {
+  const t0 = Date.now();
+  for (;;) {
+    const r = await c.run();
+    if (!r || r.gen === undefined) { await wait(ms); return }
+    while (Date.now() - t0 < 60000 && (((await c.health()).lastCycle || {}).gen || 0) < r.gen) await wait(100);
+    if (r.ran || Date.now() - t0 >= 60000) break;
+  }
+  await settle(c.st);
+};
 
 /* ═══ البيانات ═══ */
 const row = (crn, st, sec) => [crn, 'MEEN 3311', 'Thermodynamics', sec || '101', 'MW', '0800 - 0915',

@@ -226,7 +226,7 @@ https.request = function (opts, cb) {
   return req;
 };
 
-const PORT = 49000 + (process.pid % 100);
+const PORT = 24000 + (process.pid % 100);
 Object.assign(process.env, {
   PORT: String(PORT), ADMIN_TOKEN: 'admin-token-for-tests', ADMIN_CHAT_ID: '5555', SITE_ENV: 'prod',
   ACTIVE_TERM: '203010', FREE_BETA: 'false',

@@ -147,7 +147,7 @@ function makeOutside(o) {
   return new Promise(r => st.server.listen(0, '127.0.0.1', () => { st.port = st.server.address().port; r(st) }));
 }
 
-let PORTN = 49600 + (process.pid % 40);
+let PORTN = 24600 + (process.pid % 40);
 function instance(st) {
   const port = PORTN++;
   /* الملف أول وسيط: النسخة تحمّل السيرفر اللي نختبره لا الحالي (إثبات الفشل على القديم) */

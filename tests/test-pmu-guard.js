@@ -122,7 +122,7 @@ https.request = function (opts, cb) {
   return req;
 };
 
-const BASES = { prod: 47200, dev: 49400, cap: 49500 };
+const BASES = { prod: 22200, dev: 24400, cap: 24500 };
 const PORT = BASES[MODE] + (process.pid % 100), ADMIN = 'admin-token-for-pmu-guard';
 Object.assign(process.env, {
   PORT: String(PORT), ADMIN_TOKEN: ADMIN, SITE_ENV: MODE === 'dev' ? 'dev' : 'prod', ACTIVE_TERM: '202710',

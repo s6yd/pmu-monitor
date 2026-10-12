@@ -3508,7 +3508,7 @@ async function runMonitorCycle() {
   const gen = ++CYCLE_GEN;
   const current = () => gen === CYCLE_GEN;   /* علقت وفكّينا قفلها؟ ما تكتب ولا ترسل */
   const t0 = Date.now();
-  const stat = { at: t0, rows: 0, changed: 0, toNotify: 0, eligible: 0,
+  const stat = { at: t0, gen, rows: 0, changed: 0, toNotify: 0, eligible: 0,
                  notified: 0, terms: 0, snapshot: 0, sec: 0, error: null };
 
   try {
@@ -6164,6 +6164,7 @@ async function adminHealth() {
 
     /* التشغيل */
     uptimeHours: Number(((now - OPS.bootedAt) / 3600000).toFixed(1)),
+    booted: EVENTS_READY,                 /* الاستعادة عند الإقلاع خلصت */
     memMB: Math.round(mem.rss / 1048576),
     memPct: Math.round(memPct * 100),
 
@@ -12571,8 +12572,11 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ started: false, error: 'المراقبة معطّلة في هذي النسخة' }));
       return;
     }
+    /* ran: بدأت دورة جديدة (لا = السابقة شغّالة فتخطّينا) · gen: رقمها، ونهايتها lastCycle.gen في الصحة —
+       الاختبارات تستنى نهايتها بها بدل وقت ثابت يسبقها تحت الحمل */
+    const g0 = CYCLE_GEN;
     runMonitorCycle();
-    res.writeHead(200); res.end(JSON.stringify({ started: true }));
+    res.writeHead(200); res.end(JSON.stringify({ started: true, ran: CYCLE_GEN !== g0, gen: CYCLE_GEN }));
     return;
   }
 

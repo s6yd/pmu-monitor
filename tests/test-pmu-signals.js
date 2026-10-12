@@ -23,6 +23,11 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 /* ═══ نسخة سيرفر: عملية مستقلة، وكل طلب خارجي يروح لخادم «الخارج» في الأب ═══ */
 if (process.argv.includes('--child')) {
   const [outPort, port] = process.argv.slice(-2).map(Number);
+  /* ساعة السيرفر تتقدّم برسالة من الأب ({warp: ms}) — مدة الرفض بلا انتظارها فعلاً */
+  let shift = 0;
+  const now = Date.now.bind(Date);
+  Date.now = () => now() + shift;
+  process.on('message', m => { if (m && m.warp) shift += m.warp });
   const https = require('https');
   https.request = (opts, cb) => http.request({ hostname: '127.0.0.1', port: outPort, path: opts.path,
     method: opts.method, headers: Object.assign({}, opts.headers, { 'x-host': opts.hostname }) }, cb);
@@ -85,6 +90,7 @@ function table(rows, mode) {
 function makeOutside(o) {
   const st = { DB: o.DB, pmu: Object.assign({ mode: 'ok', hits: [] }, o.pmu), TG: [], nextId: 1000 };
   st.server = http.createServer((req, res) => {
+    st.reqs = (st.reqs || 0) + 1;
     const host = req.headers['x-host'];
     let body = '';
     req.setEncoding('utf8');
@@ -146,7 +152,7 @@ function makeOutside(o) {
   return new Promise(r => st.server.listen(0, '127.0.0.1', () => { st.port = st.server.address().port; r(st) }));
 }
 
-let PORTN = 49700 + (process.pid % 40);
+let PORTN = 24700 + (process.pid % 40);
 function instance(st) {
   const port = PORTN++;
   const c = fork(__filename, [SRV, '--child', String(st.port), String(port)], { silent: true });
@@ -160,14 +166,39 @@ function instance(st) {
   c.check = () => get('/api/run-check', { 'X-Admin-Token': ADMIN }).then(r => r.status);
   c.search = (g = 'M1') => get(`/api/courses?term=202710&college=ALL&gender=${g}`);
   /* تحذيرات اللوحة (تبويب الصحة) — نصوصها */
+  c.run = () => get('/api/run-check', { 'X-Admin-Token': ADMIN }).then(r => { try { return JSON.parse(r.body) } catch (e) { return null } });
+  c.health = () => get('/api/admin/health', { 'X-Admin-Token': ADMIN }).then(r => { try { return JSON.parse(r.body) } catch (e) { return {} } });
+  c.warp = ms => c.send({ warp: ms });
+  c.st = st;
   c.warnings = () => get('/api/admin/health', { 'X-Admin-Token': ADMIN }).then(r => {
     try { return (JSON.parse(r.body).warnings || []).map(w => w.ar).join(' | ') } catch (e) { return '' }
   });
   return c;
 }
-const ready = async c => { for (let i = 0; i < 50; i++) { if (await c.check() === 200) return true; await wait(200) } return false };
-/* دورة كاملة: سحبتان من الجامعة بينهما ١٫٥ ثانية، ثم المعالجة والإرسال */
-const cycleOf = async (c, ms = 5000) => { await c.check(); await wait(ms) };
+/* جاهز = الإقلاع خلص (الاستعادة) — بلا ما نطلب دورة. كانت ready تطلب الدورة الأولى نفسها، فطلب الدورة اللي
+   بعدها يلقاها شغّالة ويتخطّى والوقت الثابت يغطّي — وتحت الحمل ما يغطّي (طاحت في run-all بلا علاقة بالكود) */
+const ready = async c => {
+  for (let i = 0; i < 150; i++) {
+    const h = await c.health();
+    if (h.booted || (h.uptimeHours !== undefined && !('booted' in h))) return true;   /* نسخة قبل booted: ترد وبس */
+    await wait(100);
+  }
+  return false;
+};
+/* «الخارج» هدأ: ولا طلب جديد ٣٠٠ م.ث — الإنذارات تنرسل بلا await، فتوصل بعد ما تنسجّل الدورة */
+const settle = async st => { let n = -1; for (const t0 = Date.now(); Date.now() - t0 < 8000 && st.reqs !== n;) { n = st.reqs; await wait(300) } };
+/* دورة كاملة: نطلبها ونستنى لين **تخلص فعلاً** (lastCycle.gen في الصحة) ثم يهدأ «الخارج» — لا وقت ثابت يسبقها
+   تحت الحمل. والطلب والسابقة شغّالة يتخطّى (ran:false): نستنى السابقة ونطلب ثانية. نسخة قبل gen: وقت ثابت كما كان */
+const cycleOf = async (c, ms = 5000) => {
+  const t0 = Date.now();
+  for (;;) {
+    const r = await c.run();
+    if (!r || r.gen === undefined) { await wait(ms); return }
+    while (Date.now() - t0 < 60000 && (((await c.health()).lastCycle || {}).gen || 0) < r.gen) await wait(100);
+    if (r.ran || Date.now() - t0 >= 60000) break;
+  }
+  await settle(c.st);
+};
 
 /* ═══ البيانات — بصيغة الجامعة حرفاً بحرف ═══ */
 const row = (crn, st, sec) => [crn, 'MEEN 3311', 'Thermodynamics', sec || '101', 'UT', '0930 - 1045',
@@ -259,7 +290,8 @@ const SCEN = {
   },
   async slow(t) {
     const DB = base(); user(DB, 1); watch(DB, 1, '30011', 'CLOSED');
-    const st = await makeOutside({ DB, pmu: { mode: '429', retryAfter: 4, M1: [row('30011', 'OPEN')], F1: F1() } });
+    /* دقيقة لا ٤ ثوانٍ: تحت الحمل الدورة الثانية كانت توصل بعد المدة فتطرق بحق. وبعدها نقدّم ساعة السيرفر */
+    const st = await makeOutside({ DB, pmu: { mode: '429', retryAfter: 60, M1: [row('30011', 'OPEN')], F1: F1() } });
     const c = instance(st); await ready(c);
     await cycleOf(c, 1500);
     t.ok(adminSays(st, /يرفض طلباتنا \(429\)/) && adminSays(st, /المدة اللي طلبوها/),
@@ -268,7 +300,8 @@ const SCEN = {
     await cycleOf(c, 1000);
     t.eq(st.pmu.hits.length, n, '**داخل المدة: ولا طلب** (كان نطرق فوراً)');
     st.pmu.mode = 'ok';
-    await wait(2500);
+    c.warp(61 * 1000);
+    await wait(300);
     await cycleOf(c);
     t.eq(msgsTo(st, 901).length, 1, 'بعد المدة: رجعنا نسحب، والطالب وصله «فتحت»');
     t.ok(adminSays(st, /رجع طبيعي: موقع الجامعة يرفض طلباتنا/), 'والإدارة يوصلها «رجع طبيعي»');

@@ -151,7 +151,7 @@ const outside = http.createServer((req, res) => {
   });
 });
 
-const PORT = 47250 + (process.pid % 50), ADMIN = 'admin-token-for-hang-guard';
+const PORT = 22250 + (process.pid % 50), ADMIN = 'admin-token-for-hang-guard';
 const https = require('https');
 https.request = function (opts, cb) {
   return http.request({ hostname: '127.0.0.1', port: outside.address().port, path: opts.path,

@@ -98,7 +98,7 @@ https.request = function (opts, cb) {
 /* المنفذ يتغيّر مع كل تشغيل: منفذ ثابت يبقى محجوزاً بعد انتهاء
    العملية (TIME_WAIT أو بقايا جلسة)، فيفشل التشغيل التالي بـEADDRINUSE
    والاختبار يطلع أحمر بلا علاقة بالكود. النطاق ١٠٠ لكل ملف فما يتصادمان. */
-const PORT = 46500 + (process.pid % 100);
+const PORT = 21500 + (process.pid % 100);
 Object.assign(process.env, {
   PORT: String(PORT), ADMIN_TOKEN: 'admin-token-for-tests', SITE_ENV: 'dev', ACTIVE_TERM: '202710',
   SB_URL: 'https://fake.supabase.co', SUPABASE_URL: 'https://fake.supabase.co',

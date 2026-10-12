@@ -270,7 +270,7 @@ https.request = function (opts, cb) {
   return req;
 };
 
-const BASES = { prod: 47500, dev: 47600, nokeys: 47700, badkey: 47800, devhost: 48400, devhint: 48500 };
+const BASES = { prod: 22500, dev: 22600, nokeys: 22700, badkey: 22800, devhost: 23400, devhint: 23500 };
 const PORT = BASES[MODE] + (process.pid % 100);
 const HOOK_SECRET = 'ep-hook-secret-for-tests-5c1e';
 const KEYS = {
