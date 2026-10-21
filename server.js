@@ -5470,9 +5470,12 @@ async function adminUsers() {
     name: p.name || '—',
     email: p.email || '—',
     major: p.major || '—',
-    /* نسخة الخطة — نعرضها فقط للتخصصات اللي لها نسختان، والافتراضي
-       الجديدة لمن ما بدّل. مهمة عشان تفهم شكوى الطالب من خطته. */
-    planVer: (p.plan_ver === 'old') ? 'old' : 'new',
+    /* نسخة الخطة — نعرضها فقط للتخصصات اللي لها نسختان (planAlt)، والافتراضي
+       لمن ما بدّل من shared/plans.js (planDef — الكيميكال القديمة). مهمة عشان
+       تفهم شكوى الطالب من خطته. */
+    planVer: PLANS_DATA.planVerOf(p.major, p.plan_ver),
+    planAlt: PLANS_DATA.hasAltPlan(p.major),
+    planDef: PLANS_DATA.planVerDefault(p.major),
     isPro: !!p.is_pro,
     active: isActive(p),
     expires: p.subscription_expires_at || null,
@@ -6386,7 +6389,8 @@ async function adminUserDetail(userId) {
     ok: true,
     user: {
       id: p.id, name: p.name || '—', email: p.email || '—', major: p.major || '—',
-      planVer: (p.plan_ver === 'old') ? 'old' : 'new',
+      planVer: PLANS_DATA.planVerOf(p.major, p.plan_ver),
+      planAlt: PLANS_DATA.hasAltPlan(p.major), planDef: PLANS_DATA.planVerDefault(p.major),
       isPro: !!p.is_pro, active: isActive(p),
       expires: p.subscription_expires_at || null,
       pushoverUntil: p.pushover_until || null,
@@ -8208,7 +8212,9 @@ async function aiStudentCtx(userId) {
      الخطة ترفض حتى يختار. */
   const majorSet = !!(p && p.major);
   const major = (p && p.major) || 'MEEN';
-  const planVer = (p && p.plan_ver === 'old') ? 'old' : 'new';
+  /* النسخة من shared/plans.js لا من 'old'/'new' هنا: الكيميكال افتراضه القديمة،
+     و'new' المحفوظة له ما تعني إنه اختارها (الصفحة كانت تكتبها لكل طالب) */
+  const planVer = PLANS_DATA.planVerOf(major, p && p.plan_ver);
 
   return {
     userId: String(userId),
