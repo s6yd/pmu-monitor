@@ -1331,14 +1331,16 @@ function renderOver(){
 }
 
 /* ══════════ المستخدمين ══════════ */
-/* نسخة الخطة — تُعرض فقط للتخصصات اللي لها نسختان، وإلا صارت ضجيجاً
-   في كل بطاقة. القديمة ملوّنة عشان تلفت النظر عند قراءة شكوى طالب. */
-const PLAN_ALT_MAJORS=['MEEN'];
+/* نسخة الخطة — تُعرض فقط للتخصصات اللي لها نسختان (planAlt من السيرفر)، وإلا
+   صارت ضجيجاً في كل بطاقة. **غير الافتراضية** ملوّنة عشان تلفت النظر عند قراءة
+   شكوى طالب: القديمة للميكانيكال، والجديدة للكيميكال (افتراضه القديمة — planDef).
+   كانت قائمة تخصصات هنا فيها الميكانيكال وحده، فالكيميكال ما يبان. */
 function planVerTag(u){
-  if(!u||!PLAN_ALT_MAJORS.includes(u.major))return '';
-  return u.planVer==='old'
-    ? '<span>الخطة <b style="color:var(--warn)">القديمة</b></span>'
-    : '<span>الخطة <b>الجديدة</b></span>';
+  if(!u||!u.planAlt)return '';
+  const name=u.planVer==='old'?'القديمة':'الجديدة';
+  return u.planVer!==u.planDef
+    ? `<span>الخطة <b style="color:var(--warn)">${name}</b></span>`
+    : `<span>الخطة <b>${name}</b></span>`;
 }
 
 function renderUsers(){

@@ -85,6 +85,12 @@ const DB = { profiles: [], subscriptions: [], credit_ledger: [], monitored_cours
              app_state: [], app_events: [] };
 let nextId = 1;
 DB.profiles.push({ id: 'u1', name: 'سالم', email: 's@x', is_pro: false, subscription_expires_at: null });
+/* نسخة الخطة في اللوحة — الكيميكال افتراضه القديمة (قرار محمد ٢١ أكتوبر ٢٠٢٦):
+   «new» في ملفه انكتبت لكل طالب فما تعني إنه اختار الجديدة، والجديدة بختمها */
+DB.profiles.push(
+  { id: 'u-chen', name: 'ريم', email: 'r@x', major: 'CHEN', plan_ver: 'new', is_pro: false },
+  { id: 'u-chen2', name: 'نورة', email: 'n@x', major: 'CHEN', plan_ver: 'CHEN:new', is_pro: false },
+  { id: 'u-meen', name: 'فهد', email: 'f@x', major: 'MEEN', plan_ver: 'old', is_pro: false });
 
 function supabase(method, urlPath, body, prefer) {
   const [p, raw = ''] = urlPath.split('?');
@@ -246,6 +252,16 @@ function call(p, method, payload) {
     r = await call('users', 'GET');
     const u = (r.j.users || []).find(x => x.id === 'u1');
     ok(u && u.creditHalalas === 200, 'قائمة الطلاب تعرض الرصيد');
+    const pv = id => { const x = (r.j.users || []).find(y => y.id === id) || {};
+      return JSON.stringify([x.planVer, x.planAlt, x.planDef]) };
+    ok(pv('u-chen') === '["old",true,"old"]', '**اللوحة: طالب كيميكال ملفه «new» ⇒ القديمة (افتراضه)** — ' + pv('u-chen'));
+    ok(pv('u-chen2') === '["new",true,"old"]', 'واللي اختار الجديدة (CHEN:new) ⇒ الجديدة — ' + pv('u-chen2'));
+    ok(pv('u-meen') === '["old",true,"new"]', 'والميكانيكال كما كان: «old» ⇒ القديمة، وافتراضه الجديدة — ' + pv('u-meen'));
+    ok(pv('u1') === '["new",false,"new"]', 'وتخصص بلا نسختين: بلا شارة — ' + pv('u1'));
+    r = await call('user?id=u-chen', 'GET');
+    const du = r.j.user || {};
+    ok(du.planVer === 'old' && du.planDef === 'old' && du.planAlt === true,
+      'ودرج الطالب بنفس الحكم — ' + JSON.stringify([du.planVer, du.planAlt, du.planDef]));
 
     r = await call('user?id=u1', 'GET');
     ok(r.j.subscriptions && r.j.subscriptions.length === 1, 'درج الطالب فيه اشتراكاته');

@@ -2119,6 +2119,9 @@ if (!window.PlanLogic) {
     FAIL_GRADES: [], FAIL_GRADES_C: [], WITHDRAW_GRADES: [],
     GRADE_POINTS: {}, GRADE_SKIP: [], INTERN_MIN_CREDITS: 0,
     hasAltPlan: _f, planKey: function (c) { return c }, planOf: _n,
+    planVerDefault: function () { return 'new' }, planVerParse: _n,
+    planVerOf: function () { return 'new' },
+    planVerStore: function (m, v) { return v === 'old' ? 'old' : 'new' },
     prepSems: _e, semesters: _e,
     ctxOf: function (o) {
       return Object.assign({ sems: [], tech: {}, completed: [], grades: {} }, o || {});
@@ -2189,8 +2192,11 @@ if(!PLANS[MAJOR])MAJOR='MEEN';
    فالتبديل لا يحذف شيئاً أبداً. */
 /* PLAN_ALT — تخصص ← مفتاح خطته القديمة انتقلت لـshared/plans.js وتُحمَّل من /plans.js —
    مصدر واحد للصفحة والسيرفر. لا تعرّفها هنا مرة ثانية. */
-let PLAN_VER=load('pmu_plan_ver','new');       /* 'new' أو 'old' */
-if(PLAN_VER!=='old')PLAN_VER='new';
+/* PLAN_VER_RAW المحفوظ كما هو ('new' · 'old' · 'CHEN:new' …)، وPLAN_VER النسخة الفعلية
+   للتخصص المعروض منه — تنحسب من جديد مع كل تخصص (applyMajor). الكيميكال افتراضه
+   القديمة (قرار محمد)، والقاعدة كلها في PlanLogic.planVerOf — لا تكتبها هنا ثانية. */
+let PLAN_VER_RAW=load('pmu_plan_ver',null);
+let PLAN_VER=PlanLogic.planVerOf(MAJOR,PLAN_VER_RAW);    /* 'new' أو 'old' */
 function hasAltPlan(code){ return PlanLogic.hasAltPlan(code) }
 function planKey(code){ return PlanLogic.planKey(code,PLAN_VER) }
 function planOf(code){ return PlanLogic.planOf(code,PLAN_VER) }
@@ -2223,6 +2229,7 @@ function setPlanTitle(){
 function applyMajor(code,silent,persist){
   if(!PLANS[code])return;
   MAJOR=code;
+  PLAN_VER=PlanLogic.planVerOf(code,PLAN_VER_RAW);   /* النسخة تتبع التخصص — قبل اشتقاق الخطة */
   const _p=planOf(code);
   PLAN=prepOn()?prepSems().concat(_p.sems):_p.sems;
   TECH_ELECTIVES=_p.tech||{};
@@ -2936,10 +2943,14 @@ function hidePlanVer(){
 function planVerHTML(inSettings){
   const ar=LANG==='ar';
   const isOld=PLAN_VER==='old';
+  /* الجملة تقول وش يبدّل له: غير الافتراضية — القديمة للميكانيكال، والجديدة للكيميكال */
+  const defOld=PlanLogic.planVerDefault(MAJOR)==='old';
   return `<div class="pv-head">
-      <span class="pv-t">${ar
-        ?'الجامعة عدّلت خطة هذا التخصص. لو كنت على الخطة القديمة بدّلها من هنا.'
-        :'The plan for this major was revised. Switch if you follow the older one.'}</span>
+      <span class="pv-t">${defOld
+        ?(ar?'الجامعة عدّلت خطة هذا التخصص. لو كنت على الخطة الجديدة بدّلها من هنا.'
+            :'The plan for this major was revised. Switch if you follow the new one.')
+        :(ar?'الجامعة عدّلت خطة هذا التخصص. لو كنت على الخطة القديمة بدّلها من هنا.'
+            :'The plan for this major was revised. Switch if you follow the older one.')}</span>
       ${inSettings?'':`<button class="pv-x" title="${ar?'انقلها للإعدادات':'Move to Settings'}"
         onclick="hidePlanVer()">✕</button>`}
     </div>
@@ -3002,7 +3013,8 @@ function setPlanVer(v){
   if(next===PLAN_VER)return;
   stashPlanData(PLAN_VER);          /* نودع بيانات النسخة الحالية */
   PLAN_VER=next;
-  save('pmu_plan_ver',PLAN_VER);
+  PLAN_VER_RAW=PlanLogic.planVerStore(MAJOR,next);   /* الكيميكال مختومة: 'CHEN:new' */
+  save('pmu_plan_ver',PLAN_VER_RAW);
   applyMajor(MAJOR,true,false);     /* الخطة الجديدة لازم تُشتق أولاً */
   restorePlanData(next);            /* ثم نستدعي بيانات النسخة الجديدة */
   if(USER){ pushCompleted&&pushCompleted(); pushProfile&&pushProfile(); }
@@ -9100,10 +9112,15 @@ async function pullCloud(){
     PROFILE=prof||null;
 
     /* نسخة الخطة قبل التخصص: applyMajor تشتق الخطة من PLAN_VER،
-       فلو ضبطناها بعده اشتُقّت الخطة الغلط ثم صُحّحت — ووميض في الواجهة. */
-    if(prof&&(prof.plan_ver==='old'||prof.plan_ver==='new')&&prof.plan_ver!==PLAN_VER){
-      PLAN_VER=prof.plan_ver; save('pmu_plan_ver',PLAN_VER);
-    }
+       فلو ضبطناها بعده اشتُقّت الخطة الغلط ثم صُحّحت — ووميض في الواجهة.
+       المحفوظ في الحساب يغلب — إلا اختياراً مختوماً عندنا ('CHEN:new') لتخصص حسابه والحساب
+       فيه قيمة بلا ختم: هذي انكتبت افتراضياً أو ما وصلها ختمنا، فنرفع اختيارنا بدلها. */
+    { const pv=prof?prof.plan_ver:null;
+      const pc=PlanLogic.planVerParse(pv), pl=PlanLogic.planVerParse(PLAN_VER_RAW);
+      const mine=pl&&pl.major&&pl.major===((prof&&prof.major)||MAJOR);
+      if(mine&&!(pc&&pc.major)){ if(prof&&pv!==PLAN_VER_RAW)pushPlanVer(); }
+      else if(pc&&pv!==PLAN_VER_RAW){ PLAN_VER_RAW=pv; save('pmu_plan_ver',PLAN_VER_RAW); }
+      PLAN_VER=PlanLogic.planVerOf(MAJOR,PLAN_VER_RAW); }
 
     /* ═══ التحضيري من السحابة ═══
        كان في تخزين المتصفح وحده، فيضيع لو مسح تخزينه أو دخل من جهاز
@@ -9200,9 +9217,21 @@ async function pullCloud(){
 async function pushProfile(){
   if(!USER)return;
   /* التحضيري معها: تفضيل طالب مثل التخصص ونسخة الخطة، لا عمود فوترة —
-     فالحارس guard_profile_billing ما يمسّه (يعيد خمسة أعمدة بالاسم فقط). */
-  try{ await sb.from('profiles').update({major:MAJOR,plan_ver:PLAN_VER,prep:prepOn()}).eq('id',USER.id); }
+     فالحارس guard_profile_billing ما يمسّه (يعيد خمسة أعمدة بالاسم فقط).
+     ونسخة الخطة معها **بلا ختم** كما كانت ('new' لمن ما اختار)، والمختومة ('CHEN:new')
+     بطلبها لحالها: لو رفضها قيد في القاعدة ما يوقف رفع التخصص والتحضيري. */
+  const pl=PlanLogic.planVerParse(PLAN_VER_RAW), stamped=!!(pl&&pl.major);
+  const pv=stamped?{}:{plan_ver:pl?PLAN_VER_RAW:'new'};
+  try{ await sb.from('profiles').update({major:MAJOR,prep:prepOn(),...pv}).eq('id',USER.id); }
   catch(e){ console.log('major sync',e); }
+  if(stamped)pushPlanVer();
+}
+
+/* نسخة الخطة المختومة للحساب — طلب مستقل مثل pushSlot، والمساعد يقرأها منه */
+async function pushPlanVer(){
+  if(!USER||!PlanLogic.planVerParse(PLAN_VER_RAW))return;
+  try{ await sb.from('profiles').update({plan_ver:PLAN_VER_RAW}).eq('id',USER.id); }
+  catch(e){ console.log('plan ver sync',e); }
 }
 
 /* الجدول النشط للحساب — طلب مستقل عن pushProfile عمداً: لو العمود ما
