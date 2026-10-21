@@ -1613,6 +1613,43 @@ function fakeModel(ctx) {
     eq(USAGE, [['u-pro', 'ai', 'gpa']], 'وأداة الخطة الشخصية تنسجّل كذلك');
   }
 
+  /* ── نسخة خطة الكيميكال: القديمة افتراضية — قرار محمد (٢١ أكتوبر ٢٠٢٦) ──
+     «نخليه عالقديمة افتراضي عشان ما ياثر على احد». و'new' المحفوظة ما تعني إنه
+     اختار الجديدة: الصفحة كانت تكتبها لكل طالب مع تخصصه. الجديدة بختمها 'CHEN:new'
+     وحده (يضغط «الجديدة» في خطتي). والميكانيكال كما كان: 'old' قديمة وغيرها جديدة. */
+  {
+    const cases = [
+      ['u-chen-def', { major: 'CHEN', plan_ver: 'new' }, 'old',
+        '**طالب كيميكال و«new» المكتوبة لكل طالب ⇒ الخطة القديمة**'],
+      ['u-chen-nul', { major: 'CHEN' }, 'old', 'وبلا قيمة ⇒ القديمة'],
+      ['u-chen-old', { major: 'CHEN', plan_ver: 'old' }, 'old', 'و«old» ⇒ القديمة'],
+      ['u-chen-new', { major: 'CHEN', plan_ver: 'CHEN:new' }, 'new',
+        '**واللي اختار الجديدة من البطاقة (CHEN:new) ⇒ الجديدة**'],
+      ['u-chen-bak', { major: 'CHEN', plan_ver: 'CHEN:old' }, 'old', 'ورجع للقديمة (CHEN:old) ⇒ القديمة'],
+      ['u-meen-def', { major: 'MEEN', plan_ver: 'new' }, 'new', 'والميكانيكال كما كان: «new» ⇒ الجديدة'],
+      ['u-meen-old', { major: 'MEEN', plan_ver: 'old' }, 'old', 'و«old» ⇒ القديمة'],
+      ['u-meen-chn', { major: 'MEEN', plan_ver: 'CHEN:new' }, 'new',
+        'وختم الكيميكال ما يغيّر خطة الميكانيكال (بدّل تخصصه بعده)'],
+    ];
+    for (const [id, p, want, msg] of cases) {
+      DB.profiles[id] = Object.assign({ id, is_pro: true, prep: false }, p);
+      const cx = await aiStudentCtx(id);
+      eq(cx.plan && cx.plan.planVer, want, msg);
+    }
+    /* والأداة تقرأ الخطة نفسها: القديمة فيها ALIS 1211، والجديدة ISLM 1221 مكانها */
+    const run = async (id, t, a) => fakeModel(await aiStudentCtx(id))(t, a);
+    eq((await run('u-chen-def', 'plan_overview', '{}')).planVersion, 'old',
+      'plan_overview لطالب الكيميكال الافتراضي: القديمة');
+    eq([(await run('u-chen-def', 'course_info', '{"code":"ALIS 1211"}')).known,
+        (await run('u-chen-def', 'course_info', '{"code":"ISLM 1221"}')).known], [true, false],
+      '**المساعد يجاوب الكيميكال الافتراضي من القديمة** (ALIS 1211 فيها · ISLM 1221 لا)');
+    eq([(await run('u-chen-new', 'course_info', '{"code":"ISLM 1221"}')).known,
+        (await run('u-chen-new', 'course_info', '{"code":"ALIS 1211"}')).known], [true, false],
+      'واللي اختار الجديدة من الجديدة');
+    eq((await run('u-chen-def', 'course_info', '{"code":"CHEN 4396"}')).prereqs, ['CHEN 3301', 'CHEN 3494'],
+      'متطلبات Senior Design I للقديمة: التدريب وCHEN 3494');
+  }
+
   console.log(`\n${pass} نجحت · ${fail} فشلت`);
   process.exit(fail ? 1 : 0);
 })().catch(e => {

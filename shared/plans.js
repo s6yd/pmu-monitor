@@ -1566,6 +1566,10 @@ LAWB:{name:'Law',ar:'القانون',total:138,tech:{},sems:[
 /* ═══ نسخة الخطة: تخصص → مفتاح خطته القديمة ═══
    PLAN_VER (اختيار الطالب) يبقى في الصفحة — هذا بيانات، وذاك حالة. */
 const PLAN_ALT={MEEN:'MEEN_OLD',CHEN:'CHEN_OLD'};              /* تخصص → مفتاح خطته القديمة */
+/* تخصصات افتراضها الخطة القديمة، والجديدة يختارها طالبها من «خطتي».
+   الكيميكال — قرار محمد (٢١ أكتوبر ٢٠٢٦): «نخليه عالقديمة افتراضي عشان ما ياثر على احد».
+   (الميكانيكال افتراضه الجديدة كما كان.) */
+const PLAN_OLD_DEFAULT=['CHEN'];
 
 /* ═══════════ تواريخ التسجيل حسب المستوى ═══════════
    من تقويم التسجيل المعتمد للترم الأول ٢٠٢٦–٢٠٢٧.
@@ -1749,6 +1753,33 @@ function planKey(code,planVer){
   return (planVer==='old'&&hasAltPlan(code))?PLAN_ALT[code]:code;
 }
 function planOf(code,planVer){ return PLANS[planKey(code,planVer)]||PLANS[code] }
+
+/* ═══ النسخة الافتراضية واختيار الطالب ═══
+   القيمة المحفوظة (profiles.plan_ver · pmu_plan_ver) نوعان:
+   • 'new' / 'old' بلا ختم — القديمة. الصفحة كانت تكتب 'new' لكل طالب ما اختار
+     (pushProfile مع التخصص)، فـ'new' هنا ما تعني «اختار الجديدة». تُحترم كما كانت
+     لتخصص افتراضه الجديدة (الميكانيكال)، وتُتجاهل لتخصص افتراضه القديمة.
+   • 'CHEN:new' / 'CHEN:old' مختومة بالتخصص — اختيار فعلي من البطاقة لتخصص افتراضه
+     القديمة. تُحترم لتخصصها وحده.
+   وأي شي غيرها ← الافتراضي. */
+function planVerDefault(major){
+  return (PLAN_OLD_DEFAULT.includes(major)&&hasAltPlan(major))?'old':'new';
+}
+function planVerParse(s){
+  const m=/^(?:([A-Z]{4}):)?(new|old)$/.exec(typeof s==='string'?s:'');
+  return m?{major:m[1]||null,ver:m[2]}:null;
+}
+function planVerOf(major,stored){
+  const d=planVerDefault(major), p=planVerParse(stored);
+  if(!p)return d;
+  if(p.major)return p.major===major?p.ver:d;
+  return d==='new'?p.ver:d;
+}
+/* اختيار الطالب ← القيمة اللي تنحفظ: مختومة لتخصص افتراضه القديمة، وإلا كما كانت */
+function planVerStore(major,ver){
+  const v=ver==='old'?'old':'new';
+  return PLAN_OLD_DEFAULT.includes(major)?major+':'+v:v;
+}
 
 /* مستويات التحضيري — مادة الرياضيات تتغيّر حسب التخصص */
 function prepSems(major){
@@ -2295,6 +2326,7 @@ const LOGIC = {
   FAIL_GRADES, FAIL_GRADES_C, WITHDRAW_GRADES, GRADE_POINTS, GRADE_SKIP,
   INTERN_MIN_CREDITS,
   hasAltPlan, planKey, planOf, prepSems, semesters, ctxOf, gradPlan,
+  planVerDefault, planVerParse, planVerOf, planVerStore,
   allPlanCourses, findPlanCourse, failGrades, isFailed, isWithdrawn,
   isDone, isPassed, doneCredits, level, prepGate, prepLevelLock,
   prereqCheck, creditsOf, unlocksCount, unlockedBy, isInternship,
