@@ -55,6 +55,7 @@ run test-static-pages   "$S"
 run test-legal          .
 run test-plans          "$S" "$F"
 run test-plan-logic     "$S" "$F"
+run test-chen-plan      "$S" "$F"
 run test-sched-builder  "$S"
 run test-ai-tools       "$S"
 run test-ai-chat        "$S"

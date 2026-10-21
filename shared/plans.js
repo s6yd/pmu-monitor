@@ -650,7 +650,13 @@ CVEN:{name:'Civil Engineering',ar:'الهندسة المدنية',total:139,tech
 {c:'CVEN E3',n:'Social Science Elective',h:3,p:[],el:1}]}
 ]},
 
-CHEN:{name:'Chemical Engineering',ar:'الهندسة الكيميائية',total:139,tech:{},sems:[
+/* ═══ الخطة القديمة للكيميكال (قبل خطة Spring 2026) ═══
+   خطة CHEN قبل التحديث حرفاً بحرف — طلاب الخطة القديمة يختارونها من «خطتي».
+   الفرق عن الجديدة ١٢ مادة مقابل ١٢، و٣٧ مشتركة:
+     ALIS 1211/1212/2211/2212  ←→  ISLM 1221 + UNIV 1221/2221/2222
+     COMM 1311/1312/2311/2312  ←→  COMM 1321/1322/2321/2322
+     MEEN 2311 · MEEN 3333 · MEEN 3111 · CVEN 4344  ←→  CHEN 2312 · CHEN 3333 · CHEN 3111 · CHEN 3343 */
+CHEN_OLD:{name:'Chemical Engineering',ar:'الهندسة الكيميائية',total:139,tech:{},sems:[
 {id:'F1',hrs:19,courses:[
 {c:'COMM 1311',n:'Written Communication',h:3,p:[]},
 {c:'UNIV 1211',n:'Prof. Development and Competencies',h:2,p:[]},
@@ -716,6 +722,93 @@ CHEN:{name:'Chemical Engineering',ar:'الهندسة الكيميائية',total
 {c:'CHEN 4422',n:'Plant Design',h:4,p:['CHEN 4320']},
 {c:'CHEN 4397',n:'Chemical Eng. Senior Design II',h:3,p:['CHEN 4396']},
 {c:'GEEN 4311',n:'Engineering Economy',h:3,p:[]},
+{c:'CHEN E3',n:'Chem Technical Elective II',h:3,p:[],el:1}]}
+]},
+
+/* ═══ خطة الكيميكال الجديدة — «Chemical Engineering Study Plan» (Revised: Spring 2026) ═══
+   منقولة من PDF الخطة (Aug 2026) مادة مادة. مواد التحضيري واللغة (PRPM 0022 · PREE 0061 ·
+   IELTS/APTIS) ما تنكتب متطلبات — التحضيري له مستوياته ومواد البوابة (PREP_GATE_*).
+   ملاحظتان على PDF:
+   • CHEN 4493 متطلبه فيه مكتوب «CHEN 3394» وما فيه مادة بهالرقم في الخطة — المقصود
+     CHEN 3494 (Separation Process)، مثل الخطة القديمة.
+   • CHEN 3111 متطلبه GEEN 3311 وCHEN 3333، والثانية بنفس ترمه (مصاحب) — الخطة ما تعرف
+     المصاحب، فنكتفي بـGEEN 3311 مثل MEEN 3111 في الميكانيكال. */
+CHEN:{name:'Chemical Engineering',ar:'الهندسة الكيميائية',total:139,
+tech:{
+'CHEN 4312':['CHEN 3494','CHEN 3333'],
+'CHEN 4315':['CHEN 3494','CHEN 3333'],
+'CHEN 4332':['CHEN 3494','CHEN 3333'],
+'CHEN 4344':['CHEN 2312','CHEN 3333'],
+'CHEN 4351':['CHEN 3494','CHEN 3333'],
+'CHEN 4352':['CHEN 3494','CHEN 3333'],
+'CHEN 4355':['CHEN 3494','CHEN 3333'],
+'CHEN 4360':['CHEN 3494','CHEN 3333']},
+sems:[
+{id:'F1',label:'Freshman — الترم الأول',hrs:18,courses:[
+{c:'COMM 1321',n:'Oral Communication',h:3,p:[]},
+{c:'UNIV 1211',n:'Professional Development & Competencies',h:2,p:[]},
+{c:'MATH 1422',n:'Calculus I',h:4,p:[]},
+{c:'CHEM 1421',n:'Chemistry for Engineers I',h:4,p:[]},
+{c:'PHYS 1421',n:'Physics for Engineers I',h:4,p:[]},
+{c:'PHED 1111',n:'Active Living Lifestyle',h:1,p:[]}]},
+
+{id:'F2',label:'Freshman — الترم الثاني',hrs:18,courses:[
+{c:'ISLM 1221',n:'Islamic Culture, Values & Society',h:2,p:[]},
+{c:'COMM 1322',n:'Written Communication',h:3,p:['COMM 1321']},
+{c:'GEEN 1211',n:'Intro to Engineering',h:2,p:[]},
+{c:'UNIV 1212',n:'Critical Thinking & Problem Solving',h:2,p:['UNIV 1211']},
+{c:'MATH 1423',n:'Calculus II',h:4,p:['MATH 1422']},
+{c:'CHEM 1422',n:'Chemistry for Engineers II',h:4,p:['CHEM 1421']},
+{c:'PHED 1112',n:'Healthy Behaviors & Management',h:1,p:['PHED 1111']}]},
+
+{id:'S1',label:'Sophomore — الترم الأول',hrs:17,courses:[
+{c:'COMM 2321',n:'Technical & Professional Comm.',h:3,p:['COMM 1322']},
+{c:'UNIV 1213',n:'Leadership & Teamwork',h:2,p:['UNIV 1212']},
+{c:'MATH 1324',n:'Calculus III',h:3,p:['MATH 1423']},
+{c:'CHEN 2391',n:'Organic Chemistry',h:3,p:['CHEM 1421']},
+{c:'GEEN 2211',n:'Engineering Computing',h:2,p:['MATH 1423','GEEN 1211']},
+{c:'ASSE 2111',n:'Learning Outcome Assessment I',h:1,p:[],min:30},
+{c:'CHEN 2311',n:'Principles of Chemical Engineering',h:3,p:['MATH 1422','PHYS 1421']}]},
+
+{id:'S2',label:'Sophomore — الترم الثاني',hrs:18,courses:[
+{c:'CHEN 2312',n:'Materials Engineering',h:3,p:['CHEM 1421']},
+{c:'GEEN 2313',n:'Thermodynamics I',h:3,p:['MATH 1423','CHEM 1421']},
+{c:'MATH 2332',n:'Differential Equations',h:3,p:['MATH 1324']},
+{c:'PHYS 1422',n:'Physics for Engineers II',h:4,p:['PHYS 1421','MATH 1422']},
+{c:'COMM 2322',n:'Writing & Research',h:3,p:['COMM 2321']},
+{c:'UNIV 1221',n:'Generative AI Prompt Eng. Basics',h:2,p:['UNIV 1211']}]},
+
+{id:'J1',label:'Junior — الترم الأول',hrs:16,courses:[
+{c:'ASSE 3211',n:'Learning Outcome Assessment II',h:2,p:['ASSE 2111'],min:60},
+{c:'GEEN 3311',n:'Intro to Fluid Mechanics',h:3,p:['GEEN 2313']},
+{c:'GEEN 3314',n:'Electric Circuits & Electronics',h:3,p:['PHYS 1422'],min:60},
+{c:'UNIV 2221',n:'Future Skills',h:2,p:['UNIV 1221']},
+{c:'CHEN 3313',n:'Biology',h:3,p:['CHEN 2391']},
+{c:'CHEN 3315',n:'Physical Chemistry',h:3,p:['CHEM 1422']}]},
+
+{id:'J2',label:'Junior — الترم الثاني',hrs:17,courses:[
+{c:'CHEN 3494',n:'Separation Process',h:4,p:['GEEN 3311','CHEN 3315','CHEN 2311']},
+{c:'CHEN 3333',n:'Heat Transfer',h:3,p:['GEEN 3311']},
+{c:'CHEN 3343',n:'Probability & Statistics',h:3,p:['MATH 1324']},
+{c:'CHEN 3322',n:'Chemical Engineering Thermodynamics II',h:3,p:['CHEN 3315','GEEN 3311']},
+{c:'CHEN 3111',n:'Thermofluids & Energy Lab',h:1,p:['GEEN 3311']},
+{c:'CHEN E1',n:'Social Science Elective',h:3,p:[],el:1}]},
+
+{id:'SU',label:'Summer — التدريب',hrs:3,courses:[
+{c:'CHEN 3301',n:'Internship',h:3,p:[],min:90}]},
+
+{id:'R1',label:'Senior — الترم الأول',hrs:17,courses:[
+{c:'CHEN 4493',n:'Reaction Engineering',h:4,p:['CHEN 3494','CHEN 3322']},
+{c:'CHEN 4492',n:'Process Control',h:4,p:['CHEN 3494','CHEN 3333']},
+{c:'CHEN 4320',n:'Process Simulation',h:3,p:['CHEN 3494','CHEN 3333']},
+{c:'CHEN 4396',n:'Chemical Eng. Senior Design I',h:3,p:['CHEN 3494','CHEN 3322']},
+{c:'CHEN E2',n:'Chem Technical Elective I',h:3,p:[],el:1}]},
+
+{id:'R2',label:'Senior — الترم الثاني',hrs:15,courses:[
+{c:'UNIV 2222',n:'Systems Thinking for Future Innovations',h:2,p:['UNIV 2221']},
+{c:'CHEN 4422',n:'Plant Design',h:4,p:['CHEN 4320']},
+{c:'CHEN 4397',n:'Chemical Eng. Senior Design II',h:3,p:['CHEN 4396']},
+{c:'GEEN 4311',n:'Engineering Economy',h:3,p:['CHEN 4396']},
 {c:'CHEN E3',n:'Chem Technical Elective II',h:3,p:[],el:1}]}
 ]},
 
@@ -1472,7 +1565,7 @@ LAWB:{name:'Law',ar:'القانون',total:138,tech:{},sems:[
 
 /* ═══ نسخة الخطة: تخصص → مفتاح خطته القديمة ═══
    PLAN_VER (اختيار الطالب) يبقى في الصفحة — هذا بيانات، وذاك حالة. */
-const PLAN_ALT={MEEN:'MEEN_OLD'};              /* تخصص → مفتاح خطته القديمة */
+const PLAN_ALT={MEEN:'MEEN_OLD',CHEN:'CHEN_OLD'};              /* تخصص → مفتاح خطته القديمة */
 
 /* ═══════════ تواريخ التسجيل حسب المستوى ═══════════
    من تقويم التسجيل المعتمد للترم الأول ٢٠٢٦–٢٠٢٧.
