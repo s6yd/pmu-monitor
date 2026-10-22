@@ -295,9 +295,12 @@ display:flex;align-items:center;justify-content:space-between}
 
 .suggest-card{background:linear-gradient(160deg,rgba(61,111,255,.12),var(--card));border:1px solid var(--accent);
 border-radius:16px;padding:17px;margin-bottom:15px}
-.suggest-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.suggest-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
 .suggest-head h3{font-size:14px;font-weight:600}
-.suggest-hrs{font-family:var(--mono);font-size:12px;color:var(--accent2);background:rgba(61,111,255,.15);padding:3px 10px;border-radius:20px}
+/* لأي ترم المقترح — تحت العنوان */
+.sug-for{font-size:11.5px;color:var(--text2);margin-top:3px;line-height:1.5}
+/* ما ينكسر سطرين لما يطول سطر الترم جنبه */
+.suggest-hrs{font-family:var(--mono);font-size:12px;color:var(--accent2);background:rgba(61,111,255,.15);padding:3px 10px;border-radius:20px;white-space:nowrap;flex-shrink:0}
 /* الصف يلتف: مع شارتين («يفتح مواد» + «آخر فرصة») ما تكفي المساحة
    على شاشة الجوال فتفيض الشارة خارج البطاقة. */
 .sug-item{display:flex;align-items:flex-start;gap:10px;padding:9px 0;
@@ -1868,7 +1871,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 
   <div class="suggest-card">
     <div class="suggest-head">
-      <h3 data-i18n="suggestTitle">💡 المقترح للترم الجاي</h3>
+      <div><h3 data-i18n="suggestTitle">💡 المقترح للترم الجاي</h3><div class="sug-for" id="sugFor"></div></div>
       <span class="suggest-hrs" id="sugHours">0 ساعة</span>
     </div>
     <div id="sugList"></div>
@@ -2142,7 +2145,7 @@ if (!window.PlanLogic) {
     calcProjected: function () { return { gpa: null, hrs: 0, n: 0 } },
     OFFER_MAJORS: [], NOT_OFFERED: {}, OFFER_ONLY: {},
     nextTermCode: function (c) { return c }, offerKnown: _f, notOfferedIn: _f,
-    skipAhead: _0, nextOffered: _n, offerWarn: _n,
+    skipAhead: _0, nextOffered: _n, offerWarn: _n, withTaking: function (c) { return c },
     suggestNext: function () {
       return { crit: [], opt: [], hours: 0, internAvailable: false,
                admOnly: false, prepSem: null };
@@ -2211,12 +2214,35 @@ function planOf(code){ return PlanLogic.planOf(code,PLAN_VER) }
    الفعليتين لا نعيد حسابهما — applyMajor هي من تبنيهما، فنضمن إن
    الحساب يجري على نفس ما يُرسم بالضبط. */
 function planCtx(){
-  /* activeTermCode تقرأ قائمة الترم من الصفحة — تبقى هنا، وقيمتها
-     تدخل السياق. المنطق المشترك ما يلمس DOM أبداً. */
+  /* ترم التخطيط من حالة السيرفر (planTermCode) — يبقى هنا، وقيمته تدخل
+     السياق. المنطق المشترك ما يلمس DOM ولا حالة الصفحة أبداً. */
   return PlanLogic.ctxOf({major:MAJOR,planVer:PLAN_VER,prep:prepOn(),
     completed,grades,sems:PLAN,tech:TECH_ELECTIVES,total:TOTAL_CR,
-    term:(typeof activeTermCode==='function')?activeTermCode():undefined});
+    term:(typeof planTermCode==='function')?planTermCode():undefined});
 }
+/* حالة السيرفر بلا انهيار لو انقرأت قبل سطر تعريفها (MON_STATE بـlet تحت) */
+function monStateSafe(){ try{ return MON_STATE||{} }catch(e){ return {} } }
+/* ترم «المقترح للترم الجاي» وسطور الطرح في «خطتي»: الترم اللي يسجّل فيه الطالب
+   الجاي — nextRegTerm من السيرفر (وقت التسجيل ترم النافذة، وبعده ترم النافذة الجاية)،
+   نفس «الترم الجاي» عند المساعد. قرار محمد (٢٢ أكتوبر ٢٠٢٦): «المفروض الحين يقترح
+   مواد للترم الجاي الي هو الربيع لان هذا الترم الحالي … ما تقدر تسجل فيه». كان ترم
+   البحث، وافتراضه خارج التسجيل الترم الحالي — فيُخطَّط لترم انقفل تسجيله. */
+function planTermCode(){
+  const st=monStateSafe();
+  return st.nextRegTerm||st.regTerm||st.term||'202710';
+}
+/* مواد جدوله يدرسها الحين: ترم التخطيط بعد ترم الدراسة ⇒ بيخلّصها قبله، فتنحسب
+   منجزة (withTaking — نفس المساعد). الجدول عندنا جدول ترم الدراسة (inSchedule على
+   نفس الافتراض). بلاها مقترح الربيع يرجّع مواد الخريف اللي يدرسها. */
+function planTaking(){
+  if(!(Number(planTermCode())>Number(monStateSafe().term||'202710')))return [];
+  const rows=Array.isArray(schedule)?schedule:[];
+  return [...new Set(rows.map(s=>s&&s.courseCode).filter(Boolean))]
+    .filter(c=>findPlanCourse(c)&&!isPassed(c));
+}
+/* سياق ترم التخطيط: مواد جدوله منجزة — للمقترح وسطور الطرح (المادة اللي يدرسها
+   الحين ما يهم متى تُطرح، مثل المنتهية) */
+function planCtxNext(tk){ return PlanLogic.withTaking(planCtx(),tk===undefined?planTaking():tk) }
 /* لو غابت الخطط نكمل بقوائم فاضية — العرض يتكفّل بالرسالة، لا انهيار هنا */
 let PLAN=(planOf(MAJOR)||{}).sems||[];
 let TECH_ELECTIVES=(planOf(MAJOR)||{}).tech||{};
@@ -2350,8 +2376,9 @@ function notOfferedIn(code,c){return PlanLogic.notOfferedIn(code,c)}
    نتخطى الصيف في العدّ: الجامعة ما تطرح مواد التخصص فيه عملياً،
    وما ذُكر في الوثيقة أصلاً — فعدّه «ترماً متاحاً» يعطي الطالب
    انطباعاً كاذباً بأن الفرصة قريبة. */
-function skipAhead(courseCode){return PlanLogic.skipAhead(planCtx(),courseCode)}
-/* الترم المعروض حالياً في البحث — هو مرجع الطالب للتخطيط */
+function skipAhead(courseCode){return PlanLogic.skipAhead(planCtxNext(),courseCode)}
+/* الترم المعروض حالياً في البحث — للغياب والمواعيد ووسم «في جدولك». «خطتي» على
+   planTermCode (ترم التسجيل الجاي) لا عليه */
 function activeTermCode(){
   const el=document.getElementById('term');
   return (el&&el.value)||'202710';
@@ -2383,34 +2410,39 @@ function termLabel(code){
   return (LANG==='ar'?name:en)+' '+start+'/'+(start+1);
 }
 /* أول ترم قادم تُطرح فيه المادة */
-function nextOffered(courseCode){return PlanLogic.nextOffered(planCtx(),courseCode)}
+function nextOffered(courseCode){return PlanLogic.nextOffered(planCtxNext(),courseCode)}
 /* تحذير جاهز للعرض، أو فراغ */
-function offerWarn(courseCode){return PlanLogic.offerWarn(planCtx(),courseCode)}
+function offerWarn(courseCode){return PlanLogic.offerWarn(planCtxNext(),courseCode)}
+/* الترم العادي بعد ترم (الصيفي متخطّى — مثل skipAhead): وين «آخر فرصة» ما تُطرح */
+function nextRegularTerm(code){ let c=nextTermCode(code); if(String(c).slice(4)==='30')c=nextTermCode(c); return c }
 
 /* شارة صغيرة داخل صف المقترح */
 function offerBadge(code){
   const w=offerWarn(code);
-  /* ما يُطرح هالترم ما يوصل المقترح أصلاً (offeredOnly — يُذكر تحته)، فالشارة لـ«آخر فرصة» */
+  /* ما يُطرح في ترم التخطيط ما يوصل المقترح أصلاً (offeredOnly — يُذكر تحته)، فالشارة لـ«آخر فرصة» */
   if(!w||w.kind!=='last')return '';
   /* «آخر فرصة» تصف الحالة ولا تفسّرها — الطالب ما يعرف ليش.
-     السبب نفسه أوضح، ويقنعه بلا شرح إضافي. */
+     السبب نفسه أوضح، ويقنعه بلا شرح إضافي. والترم باسمه: المقترح صار للترم
+     الجاي، فـ«ما تُطرح الترم الجاي» تلخبط — أي جاي؟ */
+  const nx=termLabel(nextRegularTerm(planTermCode()));
   return `<span class="sug-badge offer">⚠️ ${LANG==='ar'
-    ?'ما تُطرح الترم الجاي'
-    :'not offered next term'}</span>`;
+    ?'ما تُطرح في '+nx
+    :'not offered in '+nx}</span>`;
 }
 
 /* سطر كامل في بطاقة الخطة */
 function offerLine(code){
   const w=offerWarn(code);
   if(!w)return '';
-  const nx=w.next?termLabel(w.next):null;
+  /* الترمان باسميهما: ترم التخطيط (الجاي) غير «هذا الترم» اللي يدرسه */
+  const pt=termLabel(planTermCode()), nx=w.next?termLabel(w.next):null;
   if(w.kind==='none')
     return `<div class="pc-off none">${LANG==='ar'
-      ?`🚫 ما تُطرح هذا الترم${nx?` — ترجع ${nx}`:''}`
-      :`🚫 Not offered this term${nx?` — returns ${nx}`:''}`}</div>`;
+      ?`🚫 ما تُطرح في ${pt}${nx?` — ترجع ${nx}`:''}`
+      :`🚫 Not offered in ${pt}${nx?` — returns ${nx}`:''}`}</div>`;
   return `<div class="pc-off last">${LANG==='ar'
-    ?`⚠️ آخر فرصة — ما تُطرح الترم الجاي${nx?`، وترجع ${nx}`:''}`
-    :`⚠️ Last chance — not offered next term${nx?`, returns ${nx}`:''}`}</div>`;
+    ?`⚠️ آخر فرصة: ${pt}${nx?` — وبعده ما ترجع إلا ${nx}`:''}`
+    :`⚠️ Last chance: ${pt}${nx?` — then not until ${nx}`:''}`}</div>`;
 }
 
 function suggestNext(){
@@ -2418,10 +2450,12 @@ function suggestNext(){
      وما يُطرح في الترم المعروض ما ينحط في المقترح (offeredOnly) — مكانه مادة
      تُطرح، وهو يُذكر تحته (notOffered). قرار محمد (٢٢ أكتوبر ٢٠٢٦): «ما تفتح
      هالترم مفروض تشوف شي بدالها مقترح» — كانت تبقى بشارة «🚫 ما تُطرح هذا
-     الترم» وتاخذ ساعات المقترح من مادة يقدر ياخذها فعلاً. */
-  const r=PlanLogic.suggestNext(Object.assign(planCtx(),{offeredOnly:true}));
-  if(r.internOnly)return r;
-  return Object.assign({},r,{prepLevel:r.prepSem
+     الترم» وتاخذ ساعات المقترح من مادة يقدر ياخذها فعلاً. والترم ترم التخطيط
+     (planTermCode)، ومواد جدوله الحالي منجزة لو كان بعد ترم دراسته (taking). */
+  const tk=planTaking();
+  const r=PlanLogic.suggestNext(Object.assign(planCtxNext(tk),{offeredOnly:true}));
+  if(r.internOnly)return Object.assign({},r,{taking:tk});
+  return Object.assign({},r,{taking:tk,prepLevel:r.prepSem
     ?(t('sem')[r.prepSem.id]||r.prepSem.label):null});
 }
 
@@ -4893,6 +4927,8 @@ async function loadMonitorState(){
   try{ if(CUR_TAB==='set')renderPushover() }catch(e){}
   try{ syncTermSelect() }catch(e){}
   try{ syncPlanHint() }catch(e){}
+  /* ترم «المقترح للترم الجاي» من هالحالة (planTermCode) — «خطتي» المفتوحة قبل وصولها رُسمت على الاحتياط */
+  try{ if(CUR_TAB==='plan')renderPlan() }catch(e){}
   /* أول قراءة تثبّت بصمة النسخة المحمّلة، وما بعدها يقارن بها */
   try{ checkBuild(MON_STATE) }catch(e){}
   /* الفترة المجانية والباقات توصل هنا — وقبلها الجداول الثلاثة مفتوحة
@@ -5678,6 +5714,15 @@ function renderPlan(){
 
   const sug=suggestNext();
   document.getElementById('sugHours').textContent=sug.hours+' '+t('hrsUnit');
+  /* لأي ترم المقترح — «الترم الجاي» وحدها ما تقول، والطالب في نص ترم. ومواد جدوله
+     اللي حسبناها منجزة نقولها، وإلا يدوّر عليها في المقترح */
+  const sf=document.getElementById('sugFor');
+  if(sf){
+    const n=(sug.taking||[]).length;
+    sf.textContent=termLabel(planTermCode())+(n?(LANG==='ar'
+      ?` · حسبنا مواد جدولك الحالي (${n}) كأنك خلّصتها`
+      :` · your ${n} current course${n>1?'s':''} counted as done`):'');
+  }
   const row=(c,crit)=>`<div class="sug-item${c.el?'':' tappable'}"${
       c.el?'':` onclick="searchSuggested('${c.c}')"`}>
     <span class="sug-code">${c.c}</span>
@@ -5710,8 +5755,8 @@ function renderPlan(){
     const back={};
     sug.notOffered.forEach(code=>{const k=nextOffered(code)||'';(back[k]=back[k]||[]).push(code)});
     html+=`<div class="sug-note off">${LANG==='ar'
-      ?'🚫 تقدر تاخذها، بس ما تُطرح هذا الترم'
-      :'🚫 You can take these, but they are not offered this term'}${
+      ?'🚫 تقدر تاخذها، بس ما تُطرح في '+termLabel(planTermCode())
+      :'🚫 You can take these, but they are not offered in '+termLabel(planTermCode())}${
       Object.keys(back).map(k=>(k?`<div class="sug-off-when">${LANG==='ar'
         ?`ترجع ${termLabel(k)}:`:`Back in ${termLabel(k)}:`}</div>`:'')+back[k].map(code=>{
           const pc=findPlanCourse(code);
