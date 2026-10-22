@@ -8921,7 +8921,8 @@ const AI_TOOLS = {
   course_offering: {
     tier: 'free',
     description: 'هل تُطرح المادة في ترم التسجيل الجاي (term · termName في الرد — '
-      + 'سمّه للطالب باسمه)، ومتى ترجع. جدول الطرح معلن للهندسة الميكانيكية فقط.',
+      + 'سمّه للطالب باسمه)، ومتى ترجع. جدول الطرح معروف للهندسة الميكانيكية (وثيقة الجامعة) '
+      + 'والكيميائية (مادة CHEN تُطرح في ترمها من الخطة وحده) فقط.',
     input_schema: { type: 'object', properties: {
       code: { type: 'string', description: 'كود المادة' } },
       required: ['code'] },

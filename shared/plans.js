@@ -2199,7 +2199,8 @@ function calcProjected(ctx,whatIf){
    والصحيح 2311 للمواد و2313 للصلبة. صُحّح هنا.
 
    الترميز: آخر رقمين من كود الترم — 10 خريف · 20 ربيع · 30 صيف. */
-const OFFER_MAJORS=['MEEN','MEEN_OLD'];   /* الجدول يخص الميكانيكال وحده */
+/* تخصصات لها جدول طرح: الميكانيكال (الوثيقة تحت) والكيميكال (OFFER_ONLY) */
+const OFFER_MAJORS=['MEEN','MEEN_OLD','CHEN','CHEN_OLD'];
 
 /* ترم → المواد التي لا تُطرح فيه */
 const NOT_OFFERED={
@@ -2212,6 +2213,23 @@ const NOT_OFFERED={
   '202910':['MEEN 2311','MEEN 2313','MEEN 3432','MEEN 3333','MEEN 3395','MEEN 3111']
 };
 
+/* ═══ جدول الطرح — الكيميكال: مادة CHEN تُطرح في ترمها من الخطة وحده ═══
+   طالب كيميكال لمحمد (٢١ أكتوبر ٢٠٢٦): «المواد اللي تحت مسمى CHEN تنزل بالترم حقها —
+   أورقانك كمستري بالخطة موجودة بالترم الأول، ما تقدر تنزلها إلا بالترم الأول».
+   فمادة CHEN مرة في السنة: الترم الأول من سنتها في الخطة = الخريف، والثاني = الربيع،
+   وولا شي منها في الصيف. والخطتان (القديمة والجديدة) تتفقان على ترم كل مادة مشتركة.
+   **ما يدخل هنا:** التدريب CHEN 3301 (مكانه الصيف وله قاعدته في gradPlan) · الاختياريات
+   التقنية (ما لها ترم في الخطة — ما نخترع) · ومواد غير CHEN (ما قالها الطالب؛ ومواد MEEN
+   في الخطة القديمة يغطّيها جدول الميكانيكال فوق — نفس المادة).
+   مادة ← الترم الوحيد اللي تُطرح فيه: '10' خريف · '20' ربيع. وبلا سنة: القاعدة كل سنة. */
+const OFFER_ONLY={
+  'CHEN 2311':'10','CHEN 2391':'10','CHEN 3313':'10','CHEN 3315':'10',
+  'CHEN 4320':'10','CHEN 4396':'10','CHEN 4492':'10','CHEN 4493':'10',
+  'CHEN 2312':'20','CHEN 3111':'20','CHEN 3322':'20','CHEN 3333':'20',
+  'CHEN 3343':'20','CHEN 3494':'20','CHEN 4397':'20','CHEN 4422':'20'
+};
+const offerOnly=c=>Object.prototype.hasOwnProperty.call(OFFER_ONLY,c);
+
 /* الترم الذي يليه مباشرة — للسؤال: هل تُطرح المرة القادمة؟ */
 function nextTermCode(code){
   const y=String(code).slice(0,4), k=String(code).slice(4);
@@ -2219,8 +2237,14 @@ function nextTermCode(code){
   if(k==='20')return y+'30';                    /* ربيع ← صيف */
   return (parseInt(y,10)+1)+'10';               /* صيف ← خريف السنة الجاية */
 }
-function offerKnown(code){ return Object.prototype.hasOwnProperty.call(NOT_OFFERED,String(code)) }
-function notOfferedIn(code,c){ return (NOT_OFFERED[String(code)]||[]).includes(c) }
+/* معروف لهالترم؟ ترم في الوثيقة، أو مادة لها ترم وحيد (تُعرف في أي ترم) */
+function offerKnown(code,c){
+  return Object.prototype.hasOwnProperty.call(NOT_OFFERED,String(code))||(c!==undefined&&offerOnly(c));
+}
+function notOfferedIn(code,c){
+  if(offerOnly(c))return OFFER_ONLY[c]!==String(code).slice(4);   /* غير ترمها — والصيف منه */
+  return (NOT_OFFERED[String(code)]||[]).includes(c);
+}
 
 /* متى تُطرح المادة مرة أخرى؟
    نتخطى الصيف في العدّ: الجامعة ما تطرح مواد التخصص فيه عملياً،
@@ -2231,7 +2255,7 @@ function skipAhead(ctx,courseCode){
   let code=nextTermCode(ctx.term), n=0;
   while(n<6){
     if(String(code).slice(4)==='30'){ code=nextTermCode(code); continue; }  /* نتجاوز الصيف */
-    if(!offerKnown(code) || !notOfferedIn(code,courseCode))break;
+    if(!offerKnown(code,courseCode) || !notOfferedIn(code,courseCode))break;
     n++; code=nextTermCode(code);
   }
   return n;
@@ -2242,7 +2266,7 @@ function nextOffered(ctx,courseCode){
   let code=nextTermCode(ctx.term);
   for(let i=0;i<8;i++){
     if(String(code).slice(4)!=='30' &&
-       (!offerKnown(code) || !notOfferedIn(code,courseCode))) return code;
+       (!offerKnown(code,courseCode) || !notOfferedIn(code,courseCode))) return code;
     code=nextTermCode(code);
   }
   return null;
@@ -2331,7 +2355,7 @@ const LOGIC = {
   isDone, isPassed, doneCredits, level, prepGate, prepLevelLock,
   prereqCheck, creditsOf, unlocksCount, unlockedBy, isInternship,
   currentPrepSem, retakeList, calcGPA, calcProjected,
-  OFFER_MAJORS, NOT_OFFERED, nextTermCode, offerKnown, notOfferedIn,
+  OFFER_MAJORS, NOT_OFFERED, OFFER_ONLY, nextTermCode, offerKnown, notOfferedIn,
   skipAhead, nextOffered, offerWarn, suggestNext,
 };
 

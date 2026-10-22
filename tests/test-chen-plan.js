@@ -180,6 +180,69 @@ if (L && typeof L.planVerOf === 'function') {
   }
 }
 
+/* ═══ ٣-د. جدول الطرح — مادة CHEN تُطرح في ترمها من الخطة وحده ═══
+   طالب كيميكال لمحمد (٢١ أكتوبر ٢٠٢٦): «المواد اللي تحت مسمى CHEN تنزل بالترم حقها —
+   أورقانك كمستري بالخطة موجودة بالترم الأول، ما تقدر تنزلها إلا بالترم الأول».
+   الترم الأول من السنة في الخطة = الخريف (10)، والثاني = الربيع (20). */
+const OFFER_FALL = ['CHEN 2311', 'CHEN 2391', 'CHEN 3313', 'CHEN 3315', 'CHEN 4320', 'CHEN 4396', 'CHEN 4492', 'CHEN 4493'];
+const OFFER_SPRING = ['CHEN 2312', 'CHEN 3111', 'CHEN 3322', 'CHEN 3333', 'CHEN 3343', 'CHEN 3494', 'CHEN 4397', 'CHEN 4422'];
+if (L && typeof L.offerWarn === 'function') {
+  const O = L.OFFER_ONLY || {};
+  const want = {};
+  OFFER_FALL.forEach(c => { want[c] = '10' }); OFFER_SPRING.forEach(c => { want[c] = '20' });
+  eq(O, want, '**جدول طرح الكيميكال: ٨ مواد خريف وحده و٨ ربيع وحده**');
+  /* الجدول = ترم كل مادة CHEN في الخطتين — لو انقلت مادة في خطة، يطيح هنا */
+  const bad = [];
+  for (const k of ['CHEN', 'CHEN_OLD']) for (const s of (P[k] || { sems: [] }).sems)
+    for (const c of s.courses) {
+      if (!/^CHEN \d/.test(c.c) || L.isInternship(c)) continue;
+      const par = /1$/.test(s.id) ? '10' : /2$/.test(s.id) ? '20' : '?';
+      if (O[c.c] !== par) bad.push(`${k} ${s.id} ${c.c}: ${O[c.c]}`);
+    }
+  eq(bad, [], '**كل مادة CHEN في الخطتين بترمها في الجدول** (الأول خريف · الثاني ربيع)');
+  ok((L.OFFER_MAJORS || []).includes('CHEN'), 'الكيميكال من التخصصات اللي لها جدول طرح');
+
+  const C = (term, v, done) => L.ctxOf({ major: 'CHEN', planVer: v || 'old', prep: false,
+    completed: done || [], grades: {}, term });
+  for (const v of ['old', 'new']) {
+    eq(L.offerWarn(C('202710', v), 'CHEN 2391'), { kind: 'last', n: 1, next: '202810' },
+      `[${v}] **Organic Chemistry في الخريف: آخر فرصة — ترجع الخريف الجاي**`);
+    eq(L.offerWarn(C('202720', v), 'CHEN 2391'), { kind: 'none', next: '202810' },
+      `[${v}] **وفي الربيع: ما تُطرح — ترجع الخريف**`);
+    eq(L.offerWarn(C('202710', v), 'CHEN 3494'), { kind: 'none', next: '202720' },
+      `[${v}] ومادة ربيع (CHEN 3494) ما تُطرح الخريف`);
+    eq(L.offerWarn(C('202730', v), 'CHEN 2391'), { kind: 'none', next: '202810' },
+      `[${v}] وولا مادة CHEN في الصيف`);
+  }
+  eq(L.offerWarn(C('203010'), 'CHEN 2391'), { kind: 'last', n: 1, next: '203110' },
+    'والقاعدة كل سنة — حتى بعد آخر ترم في جدول الميكانيكال');
+  eq([L.offerWarn(C('202720'), 'MATH 1324'), L.offerWarn(C('202720'), 'CHEN 3301'),
+      L.offerWarn(C('202720', 'new'), 'CHEN 4344')], [null, null, null],
+    'وما ندّعي عن غيرها: مادة غير CHEN · التدريب · الاختياري التقني');
+  eq(L.offerWarn(C('202720', 'old', ['CHEM 1421', 'CHEM 1422', 'CHEN 2391']), 'CHEN 2391'), null,
+    'والمنتهية بلا تحذير');
+
+  /* المحاكاة (توقّع التخرج والمقترح في المساعد) تحترمه، ومقترح الصفحة يبقى كما هو بشارته */
+  /* طالب خلّص السنة الأولى (الجديدة) وجاه الربيع: CHEN 2391 وCHEN 2311 مفتوحة له، والاثنتين خريف */
+  const yr1 = NEW.sems.filter(s => s.id === 'F1' || s.id === 'F2').flatMap(s => s.courses).map(c => c.c);
+  const st = C('202720', 'new', yr1);
+  const page = L.suggestNext(st), sim = L.suggestNext(Object.assign({}, st, { offeredOnly: true }));
+  const codes = r => r.crit.concat(r.opt).map(c => c.c);
+  ok(codes(page).includes('CHEN 2391'), 'مقترح الصفحة في الربيع: CHEN 2391 فيه كما كان (وبشارة «ما تُطرح» — تحت)');
+  ok(!codes(sim).includes('CHEN 2391') && !codes(sim).includes('CHEN 2311')
+    && ['CHEN 2391', 'CHEN 2311'].every(c => (sim.notOffered || []).includes(c)),
+    '**المحاكاة في الربيع: مواد الخريف ما تنحط، وتُذكر في notOffered** — ' + JSON.stringify(sim.notOffered));
+  const viol = [];
+  for (const v of ['new', 'old']) for (const t of ['202710', '202720']) {
+    const g = L.gradPlan(C(t, v), {});
+    ok(g.done && !g.stuck, `[${v} من ${t}] توقّع التخرج يخلص`);
+    g.terms.forEach(x => x.courses.forEach(c => { if (L.notOfferedIn(x.term, c.code)) viol.push(`${v}:${x.term}:${c.code}`) }));
+  }
+  eq(viol, [], '**ولا مادة في توقّع التخرج بغير ترمها** (ومواد MEEN في القديمة بجدول الميكانيكال)');
+  eq(L.gradPlan(C('202710', 'new'), {}).lastTerm, '203020',
+    '**طالب جديد من خريف 2026/2027 يتخرج ربيع 2029/2030 — ٨ ترمات مثل الخطة** (كان خريف 2029/2030 قبل الجدول: مواد ربيع تنحط في خريف)');
+} else ok(false, 'منطق الطرح ما يُقرأ');
+
 /* ═══ ٤. الصفحة ═══ */
 const SUPA = 'window.supabase={createClient:()=>({auth:{getSession:async()=>({data:{session:null}}),' +
   'onAuthStateChange:()=>({data:{subscription:{unsubscribe(){}}}})},' +
@@ -265,7 +328,7 @@ const SNAP = () => {
       contentType: 'application/javascript', body: row ? SUPA_USER(row) : SUPA }));
     await pg.addInitScript(([t, m, l]) => { try {
       if (localStorage.getItem('pmu_major')) return;
-      localStorage.setItem('theme', t); localStorage.setItem('guideSeen', '1');
+      localStorage.setItem('theme', t); localStorage.setItem('pmu_seen_guide', 'true');   /* دليل أول زيارة ما يغطّي الضغطات */
       localStorage.setItem('pmu_major', JSON.stringify(m));
       if (l !== null) localStorage.setItem('pmu_plan_ver', JSON.stringify(l));
     } catch (e) {} }, [theme, major, local === undefined ? null : local]);
@@ -380,6 +443,42 @@ const SNAP = () => {
       'و«الجديدة» ترفع «new» مع التخصص كما كانت — ' + JSON.stringify(v.writes));
     ok(o.errs.length === 0, 'الميكانيكال المسجّل بلا أخطاء JS: ' + o.errs.slice(0, 2).join(' | '));
     await o.ctx.close();
+  }
+
+  /* ── (د) جدول الطرح في «خطتي»: طالب كيميكال خلّص السنة الأولى (القديمة — افتراضه) ── */
+  {
+    const { ctx, pg, errs } = await open({});
+    const yr1Old = P.CHEN_OLD.sems.filter(s => s.id === 'F1' || s.id === 'F2')
+      .flatMap(s => s.courses).map(c => c.c);
+    const at = term => pg.evaluate(([t, done]) => {
+      completed = done.slice(); save('pmu_completed', completed);
+      const sel = document.getElementById('term'); if (sel) sel.value = t;
+      switchTab('plan'); renderPlan();
+      const card = code => [...document.querySelectorAll('#planSemesters .pc')]
+        .find(el => ((el.querySelector('.pc-code') || {}).textContent || '').startsWith(code));
+      const off = code => { const c = card(code), o = c && c.querySelector('.pc-off');
+        return o ? o.textContent.trim() : '' };
+      const sug = code => { const r = [...document.querySelectorAll('#sugList .sug-item')]
+          .find(el => ((el.querySelector('.sug-code') || {}).textContent || '').trim() === code);
+        if (!r) return null;
+        const b = r.querySelector('.sug-badge.offer'); return b ? b.textContent.trim() : '' };
+      return { term: activeTermCode(), o2391: off('CHEN 2391'), o3494: off('CHEN 3494'),
+               oMath: off('MATH 1324'), s2391: sug('CHEN 2391') };
+    }, [term, yr1Old]);
+    let v = await at('202720');
+    ok(v.term === '202720' && /ما تُطرح هذا الترم/.test(v.o2391) && /خريف 2027\/2028/.test(v.o2391),
+      `**«خطتي» في الربيع: Organic Chemistry «🚫 ما تُطرح هذا الترم — ترجع خريف 2027/2028»** — «${v.o2391}»`);
+    eq(v.oMath, '', 'ومادة غير CHEN بلا سطر طرح');
+    ok(v.s2391 !== null && /ما تُطرح هذا الترم/.test(v.s2391),
+      `**والمقترح يبيّنها بشارة «🚫 ما تُطرح هذا الترم»** (كانت بلا أي تنبيه) — ${JSON.stringify(v.s2391)}`);
+    v = await at('202710');
+    ok(/آخر فرصة/.test(v.o2391) && /خريف 2027\/2028/.test(v.o2391),
+      `وفي الخريف: «⚠️ آخر فرصة — ما تُطرح الترم الجاي، وترجع خريف 2027/2028» — «${v.o2391}»`);
+    ok(/ما تُطرح الترم الجاي/.test(v.s2391 || ''), `وشارة المقترح «⚠️ ما تُطرح الترم الجاي» — ${JSON.stringify(v.s2391)}`);
+    ok(/ما تُطرح هذا الترم/.test(v.o3494) && /ربيع 2026\/2027/.test(v.o3494),
+      `ومادة الربيع (CHEN 3494) في الخريف: ما تُطرح — ترجع ربيع 2026/2027 — «${v.o3494}»`);
+    ok(errs.length === 0, 'جدول الطرح بلا أخطاء JS: ' + errs.slice(0, 2).join(' | '));
+    await ctx.close();
   }
   await browser.close();
   server.close();
