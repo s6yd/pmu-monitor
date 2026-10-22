@@ -415,20 +415,20 @@ eq(L.level(200), 'Senior', 'level(200)');
   eq(dup, 0, '**ولا مادة تنقترح مرتين** — آخر فرصة كانت تنزل أساسية واختيارية معاً');
   eq(badH, 0, 'والساعات = مجموع المعروض، ما تنحسب مادة مرتين');
 
-  /* المحاكاة وحدها تتخطّى ما لا يُطرح (offeredOnly) — الصفحة تعرضه بشارته كما كانت */
+  /* offeredOnly يتخطّى ما لا يُطرح (المحاكاة، ومقترح «خطتي» — قرار محمد ٢٢ أكتوبر ٢٠٢٦)، وبلاه ما يتخطّى شي */
   {
     const st = { completed: all.map(c => c.c).slice(0, 30), term: '202720' };
-    const page = L.suggestNext(M(st));
+    const plain = L.suggestNext(M(st));
     const sim = L.suggestNext(M(Object.assign({ offeredOnly: true }, st)));
     const blocked = L.NOT_OFFERED['202720'];
-    ok(page.crit.concat(page.opt).some(c => blocked.includes(c.c)),
-       'الصفحة: المادة اللي ما تُطرح تبقى في المقترح بشارتها');
+    ok(plain.crit.concat(plain.opt).some(c => blocked.includes(c.c)),
+       'بلا الخيار (الافتراضي): المادة اللي ما تُطرح تبقى');
     ok(!sim.crit.concat(sim.opt).some(c => blocked.includes(c.c)),
-       'المحاكاة: ما تنحط في ترم ما تُطرح فيه');
+       'بالخيار: ما تنحط في ترم ما تُطرح فيه');
     const skipped = sim.notOffered || [];
     ok(skipped.length > 0 && skipped.every(c => blocked.includes(c)),
        'وتُذكر في notOffered — ' + skipped);
-    eq(page.notOffered || [], [], 'وبلا الخيار ما يتخطّى شي');
+    eq(plain.notOffered || [], [], 'وبلا الخيار ما يتخطّى شي');
   }
 }
 

@@ -308,6 +308,11 @@ border:1px solid rgba(244,63,94,.3)}
 .sug-note{font-size:11.5px;color:var(--warn);background:var(--warn-bg);
 border:1px solid rgba(245,158,11,.28);border-radius:10px;
 padding:9px 11px;margin:9px 0;line-height:1.7}
+/* ما يُطرح هالترم: برّا المقترح، فبلون هادئ لا بلون التنبيه */
+.sug-note.off{color:var(--text2);background:var(--bg);border-color:var(--border)}
+.sug-off-when{margin-top:6px;font-weight:600}
+.sug-off{margin-top:2px}
+.sug-off-code{font-family:var(--mono);color:var(--accent2)}
 .sug-item.tappable{cursor:pointer}
 .sug-item.tappable:active{background:var(--bg);border-radius:8px}
 .sug-item.tappable .sug-code::after{content:' ›';color:var(--text3);font-weight:700}
@@ -2385,12 +2390,8 @@ function offerWarn(courseCode){return PlanLogic.offerWarn(planCtx(),courseCode)}
 /* شارة صغيرة داخل صف المقترح */
 function offerBadge(code){
   const w=offerWarn(code);
-  if(!w)return '';
-  /* المقترح للصفحة يبقى فيه اللي ما يُطرح هالترم (suggestNext ما يتغيّر)، فيبان بشارته —
-     كانت للـ«آخر فرصة» وحدها، ومادة الكيميكال بترم غير ترمها تطلع بلا أي تنبيه */
-  if(w.kind==='none')return `<span class="sug-badge offer">🚫 ${LANG==='ar'
-    ?'ما تُطرح هذا الترم'
-    :'not offered this term'}</span>`;
+  /* ما يُطرح هالترم ما يوصل المقترح أصلاً (offeredOnly — يُذكر تحته)، فالشارة لـ«آخر فرصة» */
+  if(!w||w.kind!=='last')return '';
   /* «آخر فرصة» تصف الحالة ولا تفسّرها — الطالب ما يعرف ليش.
      السبب نفسه أوضح، ويقنعه بلا شرح إضافي. */
   return `<span class="sug-badge offer">⚠️ ${LANG==='ar'
@@ -2413,8 +2414,12 @@ function offerLine(code){
 }
 
 function suggestNext(){
-  /* المشترك يرجع معرّف مستوى التحضيري؛ الترجمة هنا لأنها نص يُعرض */
-  const r=PlanLogic.suggestNext(planCtx());
+  /* المشترك يرجع معرّف مستوى التحضيري؛ الترجمة هنا لأنها نص يُعرض.
+     وما يُطرح في الترم المعروض ما ينحط في المقترح (offeredOnly) — مكانه مادة
+     تُطرح، وهو يُذكر تحته (notOffered). قرار محمد (٢٢ أكتوبر ٢٠٢٦): «ما تفتح
+     هالترم مفروض تشوف شي بدالها مقترح» — كانت تبقى بشارة «🚫 ما تُطرح هذا
+     الترم» وتاخذ ساعات المقترح من مادة يقدر ياخذها فعلاً. */
+  const r=PlanLogic.suggestNext(Object.assign(planCtx(),{offeredOnly:true}));
   if(r.internOnly)return r;
   return Object.assign({},r,{prepLevel:r.prepSem
     ?(t('sem')[r.prepSem.id]||r.prepSem.label):null});
@@ -5698,6 +5703,22 @@ function renderPlan(){
       :`🎓 Major course suggestions start once you finish the whole prep program — remaining: <b>${sug.prepLevel}</b>.`}</div>`;
   if(sug.crit.length)html+=`<div class="sug-group crit">${critLbl}</div>`+sug.crit.map(c=>row(c,1)).join('');
   if(sug.opt.length)html+=`<div class="sug-group">${optLbl}</div>`+sug.opt.map(c=>row(c,0)).join('');
+  /* اللي يقدر ياخذه وما يُطرح هالترم ما دخل المقترح — نسمّيه ومتى يرجع، وإلا
+     يظن الطالب إن المقترح نساه (وفيها مواد تفتح غيرها) */
+  if(sug.notOffered&&sug.notOffered.length){
+    /* بترم رجوعها — غالباً كلها ترجع الترم الجاي، فسطر «ترجع …» واحد فوقها */
+    const back={};
+    sug.notOffered.forEach(code=>{const k=nextOffered(code)||'';(back[k]=back[k]||[]).push(code)});
+    html+=`<div class="sug-note off">${LANG==='ar'
+      ?'🚫 تقدر تاخذها، بس ما تُطرح هذا الترم'
+      :'🚫 You can take these, but they are not offered this term'}${
+      Object.keys(back).map(k=>(k?`<div class="sug-off-when">${LANG==='ar'
+        ?`ترجع ${termLabel(k)}:`:`Back in ${termLabel(k)}:`}</div>`:'')+back[k].map(code=>{
+          const pc=findPlanCourse(code);
+          return `<div class="sug-off"><span dir="ltr"><span class="sug-off-code">${code}</span>${
+            pc?' '+pc.n:''}</span></div>`;
+        }).join('')).join('')}</div>`;
+  }
   if(sug.internAvailable&&!sug.internOnly)
     html+=`<div class="sug-note">${t('internSoon')}</div>`;
   document.getElementById('sugList').innerHTML=html||`<div style="font-size:12.5px;color:var(--text2);padding:6px 0">${t('sugEmpty')}</div>`;
