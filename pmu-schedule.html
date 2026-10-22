@@ -2135,7 +2135,7 @@ if (!window.PlanLogic) {
     currentPrepSem: _n, retakeList: _e,
     calcGPA: function () { return { gpa: null, hrs: 0, n: 0, pts: 0 } },
     calcProjected: function () { return { gpa: null, hrs: 0, n: 0 } },
-    OFFER_MAJORS: [], NOT_OFFERED: {},
+    OFFER_MAJORS: [], NOT_OFFERED: {}, OFFER_ONLY: {},
     nextTermCode: function (c) { return c }, offerKnown: _f, notOfferedIn: _f,
     skipAhead: _0, nextOffered: _n, offerWarn: _n,
     suggestNext: function () {
@@ -2338,7 +2338,7 @@ function currentPrepSem(){return PlanLogic.currentPrepSem(planCtx())}
 
 /* الترم الذي يليه مباشرة — للسؤال: هل تُطرح المرة القادمة؟ */
 function nextTermCode(code){return PlanLogic.nextTermCode(code)}
-function offerKnown(code){return PlanLogic.offerKnown(code)}
+function offerKnown(code,c){return PlanLogic.offerKnown(code,c)}
 function notOfferedIn(code,c){return PlanLogic.notOfferedIn(code,c)}
 
 /* متى تُطرح المادة مرة أخرى؟
@@ -2385,7 +2385,12 @@ function offerWarn(courseCode){return PlanLogic.offerWarn(planCtx(),courseCode)}
 /* شارة صغيرة داخل صف المقترح */
 function offerBadge(code){
   const w=offerWarn(code);
-  if(!w||w.kind!=='last')return '';
+  if(!w)return '';
+  /* المقترح للصفحة يبقى فيه اللي ما يُطرح هالترم (suggestNext ما يتغيّر)، فيبان بشارته —
+     كانت للـ«آخر فرصة» وحدها، ومادة الكيميكال بترم غير ترمها تطلع بلا أي تنبيه */
+  if(w.kind==='none')return `<span class="sug-badge offer">🚫 ${LANG==='ar'
+    ?'ما تُطرح هذا الترم'
+    :'not offered this term'}</span>`;
   /* «آخر فرصة» تصف الحالة ولا تفسّرها — الطالب ما يعرف ليش.
      السبب نفسه أوضح، ويقنعه بلا شرح إضافي. */
   return `<span class="sug-badge offer">⚠️ ${LANG==='ar'
