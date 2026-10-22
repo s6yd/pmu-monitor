@@ -135,6 +135,7 @@ const SRV_ABS = {};
   if (out) {
     ok(out.st.term === '202720', 'ترم الدراسة: الثاني — ' + out.st.term);
     ok(out.st.regTerm === '202730', 'ترم التسجيل: الصيفي — ' + out.st.regTerm);
+    ok(out.st.nextRegTerm === '202730', 'و«الترم الجاي» لـ«خطتي» (nextRegTerm): الصيفي — ' + out.st.nextRegTerm);
     ok(out.st.canWatch === true, 'الجرس مفتوح في نافذة أبريل');
     ok(out.cal.code === 200, '/calendar.js يرد ٢٠٠');
     ok(/^window\.ACAD_CAL=\[/.test(out.cal.body), 'ويعرّف window.ACAD_CAL');
@@ -148,6 +149,26 @@ const SRV_ABS = {};
   try { out2 = JSON.parse((r2.stdout || '').trim().split('\n').pop()) } catch (e) {}
   ok(out2 && out2.st.regTerm === '202720' && out2.st.canWatch === false,
      'بعد نافذة أبريل: ترم التسجيل يرجع لترم الدراسة والجرس مقفول');
+  ok(out2 && out2.st.nextRegTerm === '202730',
+     'و«الترم الجاي» الصيفي (تأكيده في يونيو) — ' + (out2 && out2.st.nextRegTerm));
+
+  /* «خطتي» تقترح للترم اللي يسجّل فيه الطالب الجاي — قرار محمد (٢٢ أكتوبر ٢٠٢٦): «المفروض
+     الحين يقترح مواد للترم الجاي الي هو الربيع لان هذا الترم الحالي … ما تقدر تسجل فيه».
+     السيرفر يقوله (nextRegTerm) والصفحة ترسم منه — نفس «الترم الجاي» عند المساعد */
+  const at = (iso, active) => {
+    const r = spawnSync(process.execPath, [__filename, '--child', SRV, iso, active],
+                        { encoding: 'utf8', timeout: 20000 });
+    try { return JSON.parse((r.stdout || '').trim().split('\n').pop()).st } catch (e) { return null }
+  };
+  const oct = at('2026-10-22T09:00:00Z', '202710');
+  ok(oct && oct.term === '202710' && oct.regTerm === '202710' && oct.nextRegTerm === '202720',
+     '**٢٢ أكتوبر (نص الخريف): «الترم الجاي» الربيع** — ' + JSON.stringify(oct && [oct.term, oct.regTerm, oct.nextRegTerm]));
+  const jan = at('2027-01-12T09:00:00Z', '202710');
+  ok(jan && jan.regTerm === '202720' && jan.nextRegTerm === '202720',
+     'وفي تسجيل الربيع (١٢ يناير): الربيع — ' + JSON.stringify(jan && [jan.regTerm, jan.nextRegTerm]));
+  const aug = at('2026-08-24T09:00:00Z', '202710');
+  ok(aug && aug.nextRegTerm === '202710',
+     'وفي تسجيل الخريف (٢٤ أغسطس): الخريف — ' + (aug && aug.nextRegTerm));
 }
 
 /* ── ٥) الصفحة: نفس الحد، وترم التسجيل في البحث والجرس ── */
