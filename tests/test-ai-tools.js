@@ -1650,6 +1650,42 @@ function fakeModel(ctx) {
       'متطلبات Senior Design I للقديمة: التدريب وCHEN 3494');
   }
 
+  /* ── جدول طرح الكيميكال: مادة CHEN تُطرح في ترمها من الخطة وحده ──
+     طالب كيميكال لمحمد: «أورقانك كمستري بالخطة موجودة بالترم الأول، ما تقدر تنزلها إلا
+     بالترم الأول». طالب خلّص السنة الأولى (القديمة — افتراضه) فـCHEN 2391 وCHEN 2311
+     مفتوحة له، والاثنتين خريف وحده. */
+  {
+    const yr1 = PLANS_DATA.PLANS.CHEN_OLD.sems.filter(s => s.id === 'F1' || s.id === 'F2')
+      .flatMap(s => s.courses).map(c => ({ course_code: c.c, grade: 'B' }));
+    DB.profiles['u-chen-off'] = { id: 'u-chen-off', major: 'CHEN', plan_ver: 'new', is_pro: true, prep: false };
+    DB.completed['u-chen-off'] = yr1;
+    const run = async (t, a) => fakeModel(await aiStudentCtx('u-chen-off'))(t, a);
+
+    NEXT_REG = '202720';                 /* التسجيل الجاي ربيع */
+    let co = await run('course_offering', '{"code":"CHEN 2391"}');
+    eq([co.status, co.returnsTerm, co.returnsTermName], ['not_offered_now', '202810', 'خريف 2027/2028'],
+      '**Organic Chemistry (CHEN 2391) ما تُطرح الربيع — ترجع الخريف** — ' + JSON.stringify(co));
+    const sug = await run('next_term_suggestion', '{}');
+    const picks = (sug.critical || []).concat(sug.optional || []).map(c => c.code);
+    ok(!picks.includes('CHEN 2391') && !picks.includes('CHEN 2311'),
+      '**ومقترح الربيع ما فيه مواد الخريف** — ' + picks.join(' · '));
+    ok(['CHEN 2391', 'CHEN 2311'].every(c => (sug.notOfferedThatTerm || []).includes(c)),
+      'ويقول إنها ما تُطرح ذاك الترم — ' + JSON.stringify(sug.notOfferedThatTerm));
+    const g = await run('graduation_forecast', '{}');
+    const wrong = (g.plan || []).flatMap(t => (t.courses || [])
+      .filter(c => PLANS_DATA.notOfferedIn(t.term, c.code)).map(c => t.term + ':' + c.code));
+    eq(wrong, [], '**وتوقّع التخرج ما يحط مادة في غير ترمها** (ومواد MEEN في القديمة بجدول الميكانيكال)');
+
+    NEXT_REG = '202710';                 /* التسجيل الجاي خريف */
+    co = await run('course_offering', '{"code":"CHEN 2391"}');
+    eq([co.status, co.skipsTerms, co.returnsTerm], ['last_chance', 1, '202810'],
+      '**وفي الخريف: آخر فرصة — ما تُطرح الترم الجاي** — ' + JSON.stringify(co));
+    co = await run('course_offering', '{"code":"MATH 1324"}');
+    eq(co.status, 'ok', 'ومادة غير CHEN ما ندّعي عنها شي (الطالب قال مواد CHEN)');
+    co = await run('course_offering', '{"code":"CHEN 3301"}');
+    eq(co.status, 'ok', 'والتدريب له قاعدته (مكانه الصيف) — بلا تحذير طرح');
+  }
+
   console.log(`\n${pass} نجحت · ${fail} فشلت`);
   process.exit(fail ? 1 : 0);
 })().catch(e => {
