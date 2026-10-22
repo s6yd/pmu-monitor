@@ -222,16 +222,16 @@ if (L && typeof L.offerWarn === 'function') {
   eq(L.offerWarn(C('202720', 'old', ['CHEM 1421', 'CHEM 1422', 'CHEN 2391']), 'CHEN 2391'), null,
     'والمنتهية بلا تحذير');
 
-  /* المحاكاة (توقّع التخرج والمقترح في المساعد) تحترمه، ومقترح الصفحة يبقى كما هو بشارته */
+  /* بجدول الطرح (offeredOnly — المحاكاة ومقترح «خطتي») ما تنحط، وبلاه (الافتراضي) ما يتخطّى شي */
   /* طالب خلّص السنة الأولى (الجديدة) وجاه الربيع: CHEN 2391 وCHEN 2311 مفتوحة له، والاثنتين خريف */
   const yr1 = NEW.sems.filter(s => s.id === 'F1' || s.id === 'F2').flatMap(s => s.courses).map(c => c.c);
   const st = C('202720', 'new', yr1);
-  const page = L.suggestNext(st), sim = L.suggestNext(Object.assign({}, st, { offeredOnly: true }));
+  const plain = L.suggestNext(st), sim = L.suggestNext(Object.assign({}, st, { offeredOnly: true }));
   const codes = r => r.crit.concat(r.opt).map(c => c.c);
-  ok(codes(page).includes('CHEN 2391'), 'مقترح الصفحة في الربيع: CHEN 2391 فيه كما كان (وبشارة «ما تُطرح» — تحت)');
+  ok(codes(plain).includes('CHEN 2391'), 'بلا الخيار (الافتراضي) في الربيع: CHEN 2391 فيه — الخيار هو اللي يتخطّى');
   ok(!codes(sim).includes('CHEN 2391') && !codes(sim).includes('CHEN 2311')
     && ['CHEN 2391', 'CHEN 2311'].every(c => (sim.notOffered || []).includes(c)),
-    '**المحاكاة في الربيع: مواد الخريف ما تنحط، وتُذكر في notOffered** — ' + JSON.stringify(sim.notOffered));
+    '**بالخيار في الربيع (المحاكاة و«خطتي»): مواد الخريف ما تنحط، وتُذكر في notOffered** — ' + JSON.stringify(sim.notOffered));
   const viol = [];
   for (const v of ['new', 'old']) for (const t of ['202710', '202720']) {
     const g = L.gradPlan(C(t, v), {});
@@ -332,6 +332,18 @@ const SNAP = () => {
       localStorage.setItem('pmu_major', JSON.stringify(m));
       if (l !== null) localStorage.setItem('pmu_plan_ver', JSON.stringify(l));
     } catch (e) {} }, [theme, major, local === undefined ? null : local]);
+    /* المقترح كما يشوفه الطالب: أكواده · سطر «ما تُطرح هذا الترم» تحته · شارة 🚫 فيه؟ · ساعاته */
+    await pg.addInitScript(() => { window.SUG = () => {
+      const list = document.getElementById('sugList');
+      const note = list && list.querySelector('.sug-note.off');
+      return {
+        codes: list ? [...list.querySelectorAll('.sug-item .sug-code')].map(e => e.textContent.trim()) : [],
+        off: note ? note.textContent.replace(/\s+/g, ' ').trim() : '',
+        none: !!list && [...list.querySelectorAll('.sug-badge')]
+          .some(b => /ما تُطرح هذا الترم|not offered this term/.test(b.textContent)),
+        hrs: parseInt(((document.getElementById('sugHours') || {}).textContent || ''), 10)
+      };
+    } });
     await pg.goto(BASE, { waitUntil: 'load' });
     await ready(pg, !!row);
     return { ctx, pg, errs };
@@ -463,21 +475,89 @@ const SNAP = () => {
         if (!r) return null;
         const b = r.querySelector('.sug-badge.offer'); return b ? b.textContent.trim() : '' };
       return { term: activeTermCode(), o2391: off('CHEN 2391'), o3494: off('CHEN 3494'),
-               oMath: off('MATH 1324'), s2391: sug('CHEN 2391') };
+               oMath: off('MATH 1324'), s2391: sug('CHEN 2391'), ...SUG() };
     }, [term, yr1Old]);
     let v = await at('202720');
     ok(v.term === '202720' && /ما تُطرح هذا الترم/.test(v.o2391) && /خريف 2027\/2028/.test(v.o2391),
       `**«خطتي» في الربيع: Organic Chemistry «🚫 ما تُطرح هذا الترم — ترجع خريف 2027/2028»** — «${v.o2391}»`);
     eq(v.oMath, '', 'ومادة غير CHEN بلا سطر طرح');
-    ok(v.s2391 !== null && /ما تُطرح هذا الترم/.test(v.s2391),
-      `**والمقترح يبيّنها بشارة «🚫 ما تُطرح هذا الترم»** (كانت بلا أي تنبيه) — ${JSON.stringify(v.s2391)}`);
+    /* قرار محمد (٢٢ أكتوبر ٢٠٢٦): «ما تفتح هالترم مفروض تشوف شي بدالها مقترح» — كانت
+       تبقى في المقترح بشارة «🚫 ما تُطرح هذا الترم» (وهذا كان توقّع الاختبار هنا) */
+    ok(v.s2391 === null && !v.codes.includes('CHEN 2311') && !v.codes.includes('CHEN 3315'),
+      `**والمقترح في الربيع ما فيه مواد الخريف** (CHEN 2391 · 2311 · 3315 — كانت تبقى بشارة «🚫») — ${v.codes.join(', ')}`);
+    ok(['PHYS 1422', 'UNIV 1213', 'GEEN 2211', 'ALIS 1212'].every(c => v.codes.includes(c)),
+      `**ومكانها مواد تُطرح** (Physics II وغيرها دخلت) — ${v.codes.join(', ')}`);
+    ok(['CHEN 2391', 'CHEN 2311', 'CHEN 3315'].every(c => v.off.includes(c)) && /ترجع خريف 2027\/2028/.test(v.off),
+      `**وسطر تحت المقترح يسمّيها ومتى ترجع** — «${v.off}»`);
+    ok(!v.none, 'وما بقت شارة «🚫 ما تُطرح هذا الترم» في المقترح');
     v = await at('202710');
     ok(/آخر فرصة/.test(v.o2391) && /خريف 2027\/2028/.test(v.o2391),
       `وفي الخريف: «⚠️ آخر فرصة — ما تُطرح الترم الجاي، وترجع خريف 2027/2028» — «${v.o2391}»`);
     ok(/ما تُطرح الترم الجاي/.test(v.s2391 || ''), `وشارة المقترح «⚠️ ما تُطرح الترم الجاي» — ${JSON.stringify(v.s2391)}`);
+    ok(!v.off.includes('CHEN 2391'), `وفي الخريف ما تنذكر تحت المقترح (تُطرح) — «${v.off}»`);
     ok(/ما تُطرح هذا الترم/.test(v.o3494) && /ربيع 2026\/2027/.test(v.o3494),
       `ومادة الربيع (CHEN 3494) في الخريف: ما تُطرح — ترجع ربيع 2026/2027 — «${v.o3494}»`);
     ok(errs.length === 0, 'جدول الطرح بلا أخطاء JS: ' + errs.slice(0, 2).join(' | '));
+    await ctx.close();
+  }
+
+  /* ── (هـ) حالة محمد (٢٢ أكتوبر ٢٠٢٦): الكيميكال الجديدة في الخريف — Heat Transfer (CHEN 3333:
+     ربيع وحده، وتفتح مادتين) كانت في المقترح بشارة «🚫 ما تُطرح هذا الترم». قال: «ما تفتح
+     هالترم مفروض تشوف شي بدالها مقترح». بالثيمين على ٣٩٠ ── */
+  const mDone = ['CHEM 1421', 'MATH 1422', 'PHYS 1421', 'UNIV 1211', 'MATH 1423', 'GEEN 1211', 'GEEN 2313', 'GEEN 3311'];
+  const mWant = L.suggestNext(L.ctxOf({ major: 'CHEN', planVer: 'new', prep: false, completed: mDone,
+    grades: {}, term: '202710', offeredOnly: true }));
+  for (const theme of ['dark', 'light']) {
+    const { ctx, pg, errs } = await open({ theme, local: 'CHEN:new' });
+    const v = await pg.evaluate(done => {
+      completed = done.slice(); save('pmu_completed', completed);
+      const sel = document.getElementById('term'); if (sel) sel.value = '202710';
+      switchTab('plan'); renderPlan();
+      const card = document.querySelector('.suggest-card'), note = document.querySelector('#sugList .sug-note.off');
+      const r = card && card.getBoundingClientRect(), n = note && note.getBoundingClientRect();
+      return { ver: PLAN_VER, ...SUG(),
+        over: document.documentElement.scrollWidth - innerWidth,
+        inside: !!(r && n && n.left >= r.left - 1 && n.right <= r.right + 1) };
+    }, mDone);
+    ok(v.ver === 'new' && !v.codes.includes('CHEN 3333'),
+      `[${theme}] **Heat Transfer (CHEN 3333) ما تنحط في مقترح الخريف** — ${v.codes.join(', ')}`);
+    ok(v.codes.includes('CHEM 1422'),
+      `[${theme}] **ومكانها مادة تُطرح: Chemistry for Engineers II (CHEM 1422)** — ${v.codes.join(', ')}`);
+    eq(v.codes, mWant.crit.concat(mWant.opt).map(c => c.c), `[${theme}] والمقترح = منطق الخطة بجدول الطرح، بترتيبه`);
+    eq(v.hrs, mWant.hours, `[${theme}] وساعاته من نفس الحسبة`);
+    ok(/CHEN 3333/.test(v.off) && /Heat Transfer/.test(v.off) && /ترجع ربيع 2026\/2027/.test(v.off),
+      `[${theme}] **وتحت المقترح: «ترجع ربيع 2026/2027: CHEN 3333 Heat Transfer»** — «${v.off}»`);
+    ok(mWant.notOffered.length > 0 && mWant.notOffered.every(c => v.off.includes(c)),
+      `[${theme}] وكل اللي انشال مذكور (${mWant.notOffered.join(' · ')}) — «${v.off}»`);
+    ok(!v.none, `[${theme}] وما بقت شارة «🚫 ما تُطرح هذا الترم» في المقترح`);
+    ok(v.over <= 0 && v.inside, `[${theme}] والسطر داخل البطاقة بلا تمرير أفقي على ٣٩٠ — ${v.over}px`);
+    if (shots) {
+      await pg.evaluate(() => { const s = document.getElementById('sugList');
+        if (s) { s.scrollIntoView({ block: 'start' }); scrollBy(0, -120) } });
+      await pg.screenshot({ path: path.join(shots, `offer-swap-${theme}.png`) });
+    }
+    ok(errs.length === 0, `[${theme}] بلا أخطاء JS: ` + errs.slice(0, 2).join(' | '));
+    await ctx.close();
+  }
+
+  /* ── (و) والميكانيكال بنفس القاعدة: في ربيع 2026/2027 وثيقة الجامعة تقول MEEN 3391 وMEEN 3101 ما تُطرح ── */
+  {
+    const eDone = P.MEEN.sems.flatMap(s => s.courses).map(c => c.c).slice(0, 30);
+    const want = L.suggestNext(L.ctxOf({ major: 'MEEN', planVer: 'new', prep: false, completed: eDone,
+      grades: {}, term: '202720', offeredOnly: true }));
+    const { ctx, pg, errs } = await open({ major: 'MEEN' });
+    const v = await pg.evaluate(done => {
+      completed = done.slice(); save('pmu_completed', completed);
+      const sel = document.getElementById('term'); if (sel) sel.value = '202720';
+      switchTab('plan'); renderPlan();
+      return SUG();
+    }, eDone);
+    const blocked = L.NOT_OFFERED['202720'] || [];
+    ok(!v.codes.some(c => blocked.includes(c)) && v.codes.includes('ASSE 3211'),
+      `**الميكانيكال في الربيع: MEEN 3391 وMEEN 3101 برّا المقترح، ومكانها ASSE 3211** — ${v.codes.join(', ')}`);
+    eq(v.codes, want.crit.concat(want.opt).map(c => c.c), 'والمقترح = منطق الخطة بجدول الطرح');
+    ok(want.notOffered.length > 0 && want.notOffered.every(c => v.off.includes(c)), `وتحته يُذكران — «${v.off}»`);
+    ok(errs.length === 0, 'الميكانيكال بلا أخطاء JS: ' + errs.slice(0, 2).join(' | '));
     await ctx.close();
   }
   await browser.close();
