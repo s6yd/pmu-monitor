@@ -318,12 +318,15 @@ const SNAP = () => {
 
   /* يفتح الصفحة لطالب: major · local = pmu_plan_ver في متصفحه قبل الفتح (undefined = ما فيه) ·
      row = صف ملفه لو مسجّل. القيم تنكتب مرة لكل سياق — إعادة التحميل تختبر إن الاختيار بقي. */
-  const open = async ({ theme = 'dark', major = 'CHEN', local, row } = {}) => {
+  const open = async ({ theme = 'dark', major = 'CHEN', local, row, status } = {}) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: theme });
     const pg = await ctx.newPage();
     const errs = [];
     pg.on('pageerror', e => errs.push(String(e).slice(0, 160)));
     await pg.route('**/fonts.googleapis.com/**', r => r.fulfill({ status: 200, contentType: 'text/css', body: '' }));
+    /* status: حالة السيرفر كما يرجّعها /api/monitor-status في يوم بعينه */
+    if (status) await pg.route('**/api/monitor-status', r => r.fulfill({ status: 200,
+      contentType: 'application/json', body: JSON.stringify(status) }));
     await pg.route('**/cdn.jsdelivr.net/**', r => r.fulfill({ status: 200,
       contentType: 'application/javascript', body: row ? SUPA_USER(row) : SUPA }));
     await pg.addInitScript(([t, m, l]) => { try {
@@ -332,16 +335,17 @@ const SNAP = () => {
       localStorage.setItem('pmu_major', JSON.stringify(m));
       if (l !== null) localStorage.setItem('pmu_plan_ver', JSON.stringify(l));
     } catch (e) {} }, [theme, major, local === undefined ? null : local]);
-    /* المقترح كما يشوفه الطالب: أكواده · سطر «ما تُطرح هذا الترم» تحته · شارة 🚫 فيه؟ · ساعاته */
+    /* المقترح كما يشوفه الطالب: أكواده · سطر «ما تُطرح في …» تحته · شارة 🚫 فيه؟ · ساعاته ·
+       ولأي ترم (#sugFor) */
     await pg.addInitScript(() => { window.SUG = () => {
       const list = document.getElementById('sugList');
       const note = list && list.querySelector('.sug-note.off');
       return {
         codes: list ? [...list.querySelectorAll('.sug-item .sug-code')].map(e => e.textContent.trim()) : [],
         off: note ? note.textContent.replace(/\s+/g, ' ').trim() : '',
-        none: !!list && [...list.querySelectorAll('.sug-badge')]
-          .some(b => /ما تُطرح هذا الترم|not offered this term/.test(b.textContent)),
-        hrs: parseInt(((document.getElementById('sugHours') || {}).textContent || ''), 10)
+        none: !!list && [...list.querySelectorAll('.sug-badge')].some(b => /🚫/.test(b.textContent)),
+        hrs: parseInt(((document.getElementById('sugHours') || {}).textContent || ''), 10),
+        forT: ((document.getElementById('sugFor') || {}).textContent || '').trim()
       };
     } });
     await pg.goto(BASE, { waitUntil: 'load' });
@@ -457,14 +461,15 @@ const SNAP = () => {
     await o.ctx.close();
   }
 
-  /* ── (د) جدول الطرح في «خطتي»: طالب كيميكال خلّص السنة الأولى (القديمة — افتراضه) ── */
+  /* ── (د) جدول الطرح في «خطتي»: طالب كيميكال خلّص السنة الأولى (القديمة — افتراضه).
+     ترم «خطتي» = ترم التسجيل الجاي من السيرفر (nextRegTerm) — كان قائمة البحث ── */
   {
     const { ctx, pg, errs } = await open({});
     const yr1Old = P.CHEN_OLD.sems.filter(s => s.id === 'F1' || s.id === 'F2')
       .flatMap(s => s.courses).map(c => c.c);
     const at = term => pg.evaluate(([t, done]) => {
       completed = done.slice(); save('pmu_completed', completed);
-      const sel = document.getElementById('term'); if (sel) sel.value = t;
+      MON_STATE = Object.assign({}, MON_STATE, { nextRegTerm: t });
       switchTab('plan'); renderPlan();
       const card = code => [...document.querySelectorAll('#planSemesters .pc')]
         .find(el => ((el.querySelector('.pc-code') || {}).textContent || '').startsWith(code));
@@ -474,12 +479,14 @@ const SNAP = () => {
           .find(el => ((el.querySelector('.sug-code') || {}).textContent || '').trim() === code);
         if (!r) return null;
         const b = r.querySelector('.sug-badge.offer'); return b ? b.textContent.trim() : '' };
-      return { term: activeTermCode(), o2391: off('CHEN 2391'), o3494: off('CHEN 3494'),
+      return { term: typeof planTermCode === 'function' ? planTermCode() : null, o2391: off('CHEN 2391'), o3494: off('CHEN 3494'),
                oMath: off('MATH 1324'), s2391: sug('CHEN 2391'), ...SUG() };
     }, [term, yr1Old]);
     let v = await at('202720');
-    ok(v.term === '202720' && /ما تُطرح هذا الترم/.test(v.o2391) && /خريف 2027\/2028/.test(v.o2391),
-      `**«خطتي» في الربيع: Organic Chemistry «🚫 ما تُطرح هذا الترم — ترجع خريف 2027/2028»** — «${v.o2391}»`);
+    /* النص يسمّي الترم (كان «ما تُطرح هذا الترم»): ترم «خطتي» صار الجاي، غير «هذا الترم» اللي يدرسه */
+    ok(v.term === '202720' && /ما تُطرح في ربيع 2026\/2027/.test(v.o2391) && /ترجع خريف 2027\/2028/.test(v.o2391),
+      `**«خطتي» للربيع: Organic Chemistry «🚫 ما تُطرح في ربيع 2026/2027 — ترجع خريف 2027/2028»** — «${v.o2391}»`);
+    ok(/^ربيع 2026\/2027/.test(v.forT), `وتحت عنوان المقترح: «ربيع 2026/2027» — «${v.forT}»`);
     eq(v.oMath, '', 'ومادة غير CHEN بلا سطر طرح');
     /* قرار محمد (٢٢ أكتوبر ٢٠٢٦): «ما تفتح هالترم مفروض تشوف شي بدالها مقترح» — كانت
        تبقى في المقترح بشارة «🚫 ما تُطرح هذا الترم» (وهذا كان توقّع الاختبار هنا) */
@@ -487,16 +494,18 @@ const SNAP = () => {
       `**والمقترح في الربيع ما فيه مواد الخريف** (CHEN 2391 · 2311 · 3315 — كانت تبقى بشارة «🚫») — ${v.codes.join(', ')}`);
     ok(['PHYS 1422', 'UNIV 1213', 'GEEN 2211', 'ALIS 1212'].every(c => v.codes.includes(c)),
       `**ومكانها مواد تُطرح** (Physics II وغيرها دخلت) — ${v.codes.join(', ')}`);
-    ok(['CHEN 2391', 'CHEN 2311', 'CHEN 3315'].every(c => v.off.includes(c)) && /ترجع خريف 2027\/2028/.test(v.off),
+    ok(['CHEN 2391', 'CHEN 2311', 'CHEN 3315'].every(c => v.off.includes(c)) && /ترجع خريف 2027\/2028/.test(v.off)
+      && /ما تُطرح في ربيع 2026\/2027/.test(v.off),
       `**وسطر تحت المقترح يسمّيها ومتى ترجع** — «${v.off}»`);
     ok(!v.none, 'وما بقت شارة «🚫 ما تُطرح هذا الترم» في المقترح');
     v = await at('202710');
-    ok(/آخر فرصة/.test(v.o2391) && /خريف 2027\/2028/.test(v.o2391),
-      `وفي الخريف: «⚠️ آخر فرصة — ما تُطرح الترم الجاي، وترجع خريف 2027/2028» — «${v.o2391}»`);
-    ok(/ما تُطرح الترم الجاي/.test(v.s2391 || ''), `وشارة المقترح «⚠️ ما تُطرح الترم الجاي» — ${JSON.stringify(v.s2391)}`);
+    ok(/آخر فرصة: خريف 2026\/2027/.test(v.o2391) && /ما ترجع إلا خريف 2027\/2028/.test(v.o2391),
+      `وللخريف: «⚠️ آخر فرصة: خريف 2026/2027 — وبعده ما ترجع إلا خريف 2027/2028» — «${v.o2391}»`);
+    ok(/ما تُطرح في ربيع 2026\/2027/.test(v.s2391 || ''),
+      `وشارة المقترح تسمّي الترم: «⚠️ ما تُطرح في ربيع 2026/2027» (كانت «الترم الجاي») — ${JSON.stringify(v.s2391)}`);
     ok(!v.off.includes('CHEN 2391'), `وفي الخريف ما تنذكر تحت المقترح (تُطرح) — «${v.off}»`);
-    ok(/ما تُطرح هذا الترم/.test(v.o3494) && /ربيع 2026\/2027/.test(v.o3494),
-      `ومادة الربيع (CHEN 3494) في الخريف: ما تُطرح — ترجع ربيع 2026/2027 — «${v.o3494}»`);
+    ok(/ما تُطرح في خريف 2026\/2027/.test(v.o3494) && /ترجع ربيع 2026\/2027/.test(v.o3494),
+      `ومادة الربيع (CHEN 3494) للخريف: ما تُطرح — ترجع ربيع 2026/2027 — «${v.o3494}»`);
     ok(errs.length === 0, 'جدول الطرح بلا أخطاء JS: ' + errs.slice(0, 2).join(' | '));
     await ctx.close();
   }
@@ -511,7 +520,7 @@ const SNAP = () => {
     const { ctx, pg, errs } = await open({ theme, local: 'CHEN:new' });
     const v = await pg.evaluate(done => {
       completed = done.slice(); save('pmu_completed', completed);
-      const sel = document.getElementById('term'); if (sel) sel.value = '202710';
+      MON_STATE = Object.assign({}, MON_STATE, { nextRegTerm: '202710' });   /* تسجيل الخريف */
       switchTab('plan'); renderPlan();
       const card = document.querySelector('.suggest-card'), note = document.querySelector('#sugList .sug-note.off');
       const r = card && card.getBoundingClientRect(), n = note && note.getBoundingClientRect();
@@ -548,7 +557,7 @@ const SNAP = () => {
     const { ctx, pg, errs } = await open({ major: 'MEEN' });
     const v = await pg.evaluate(done => {
       completed = done.slice(); save('pmu_completed', completed);
-      const sel = document.getElementById('term'); if (sel) sel.value = '202720';
+      MON_STATE = Object.assign({}, MON_STATE, { nextRegTerm: '202720' });
       switchTab('plan'); renderPlan();
       return SUG();
     }, eDone);
@@ -558,6 +567,63 @@ const SNAP = () => {
     eq(v.codes, want.crit.concat(want.opt).map(c => c.c), 'والمقترح = منطق الخطة بجدول الطرح');
     ok(want.notOffered.length > 0 && want.notOffered.every(c => v.off.includes(c)), `وتحته يُذكران — «${v.off}»`);
     ok(errs.length === 0, 'الميكانيكال بلا أخطاء JS: ' + errs.slice(0, 2).join(' | '));
+    await ctx.close();
+  }
+  /* ── (ز) حالة محمد الثانية (٢٢ أكتوبر ٢٠٢٦): «المفروض الحين يقترح مواد للترم الجاي الي هو
+     الربيع لان هذا الترم الحالي … ما تقدر تسجل فيه … احنا الحين في نصف الترم الاول». السيرفر
+     في نص الخريف يقول الترم الجاي الربيع (nextRegTerm)، وقائمة البحث على الخريف (الحالي) —
+     كان «خطتي» يقترح منها للخريف. ومواد جدوله (يدرسها الحين) منجزة للربيع. بالثيمين على ٣٩٠ ── */
+  const OCT = { term: '202710', regTerm: '202710', nextRegTerm: '202720', window: null,
+    canWatch: false, build: '"x"' };
+  const zDone = ['CHEM 1421', 'MATH 1422', 'PHYS 1421', 'UNIV 1211', 'MATH 1423', 'GEEN 1211',
+    'MATH 1324', 'GEEN 2313', 'GEEN 3311', 'UNIV 1212'];
+  const zTaking = ['UNIV 1213', 'CHEN 2391'];
+  /* المتوقّع بلا withTaking (ما لها درجات): جدوله الحالي ضمن المنجز — يشتغل على الكود القديم كذلك */
+  const zWant = L.suggestNext(L.ctxOf({ major: 'CHEN', planVer: 'new', prep: false,
+    completed: zDone.concat(zTaking), grades: {}, term: '202720', offeredOnly: true }));
+  for (const theme of ['dark', 'light']) {
+    const { ctx, pg, errs } = await open({ theme, local: 'CHEN:new', status: OCT });
+    const v = await pg.evaluate(([done, taking]) => {
+      completed = done.slice(); save('pmu_completed', completed);
+      schedule = taking.map((c, i) => ({ crn: String(50001 + i), courseCode: c, courseTitle: c,
+        section: '101', courseDate: 'MW', courseTiming: '0800 - 0915', room: 'M-CORE - F155',
+        instructor: 'A', status: 'OPEN' }));
+      switchTab('plan'); renderPlan();
+      const card = code => [...document.querySelectorAll('#planSemesters .pc')]
+        .find(el => ((el.querySelector('.pc-code') || {}).textContent || '').startsWith(code));
+      const off = code => { const c = card(code), o = c && c.querySelector('.pc-off');
+        return o ? o.textContent.trim() : '' };
+      return { search: (document.getElementById('term') || {}).value, ...SUG(),
+        o2391: off('CHEN 2391'), o2311: off('CHEN 2311'),
+        over: document.documentElement.scrollWidth - innerWidth };
+    }, [zDone, zTaking]);
+    ok(v.search === '202710', `[${theme}] قائمة البحث على الخريف (الترم الحالي) — ${v.search}`);
+    ok(/^ربيع 2026\/2027/.test(v.forT),
+      `[${theme}] **المقترح للربيع: «ربيع 2026/2027» تحت العنوان** (كان للخريف) — «${v.forT}»`);
+    ok(v.codes.includes('CHEN 3333'),
+      `[${theme}] **Heat Transfer (ربيع) في مقترح الربيع** — ${v.codes.join(', ')}`);
+    ok(!v.codes.includes('UNIV 1213') && !v.codes.includes('CHEN 2391'),
+      `[${theme}] **ومواد جدوله الحالي (UNIV 1213 · CHEN 2391) ما تنقترح للربيع** — ${v.codes.join(', ')}`);
+    ok(/حسبنا مواد جدولك الحالي \(2\)/.test(v.forT), `[${theme}] ويقول إنه حسبها منجزة — «${v.forT}»`);
+    eq(v.codes, zWant.crit.concat(zWant.opt).map(c => c.c),
+      `[${theme}] والمقترح = منطق الخطة للربيع، بجدول الطرح ومواد جدوله منجزة`);
+    eq(v.hrs, zWant.hours, `[${theme}] وساعاته من نفس الحسبة`);
+    ok(/ما تُطرح في ربيع 2026\/2027/.test(v.off) && ['CHEN 2311', 'CHEN 3313'].every(c => v.off.includes(c))
+      && /ترجع خريف 2027\/2028/.test(v.off),
+      `[${theme}] وتحت: مواد الخريف (وCHEN 3313 اللي فتحتها Organic) ما تُطرح في الربيع — «${v.off}»`);
+    eq(v.o2391, '', `[${theme}] وبطاقة Organic Chemistry (يدرسها الحين) بلا سطر طرح`);
+    ok(/ما تُطرح في ربيع 2026\/2027/.test(v.o2311) && /ترجع خريف 2027\/2028/.test(v.o2311),
+      `[${theme}] وبطاقة CHEN 2311: «🚫 ما تُطرح في ربيع 2026/2027 — ترجع خريف 2027/2028» — «${v.o2311}»`);
+    ok(v.over <= 0, `[${theme}] بلا تمرير أفقي على ٣٩٠ — ${v.over}px`);
+    if (shots) {
+      await pg.evaluate(() => { const c = document.querySelector('.suggest-card');
+        if (c) { c.scrollIntoView({ block: 'start' }); scrollBy(0, -70) } });
+      await pg.screenshot({ path: path.join(shots, `next-term-${theme}.png`) });
+      await pg.evaluate(() => { const s = document.querySelector('#sugList .sug-note.off');
+        if (s) { s.scrollIntoView({ block: 'end' }); scrollBy(0, 60) } });
+      await pg.screenshot({ path: path.join(shots, `next-term-note-${theme}.png`) });
+    }
+    ok(errs.length === 0, `[${theme}] بلا أخطاء JS: ` + errs.slice(0, 2).join(' | '));
     await ctx.close();
   }
   await browser.close();

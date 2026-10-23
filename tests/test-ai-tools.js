@@ -191,6 +191,8 @@ let PO_READY = 'off';   /* pushoverReady الحقيقية خارج المنطق�
 let PULLED = [];        /* كل نداء يسحب من الجامعة يُسجَّل هنا */
 /* ترم التسجيل الجاي (nextRegTerm): داخل النافذة = regTerm، وخارجها الترم الجاي */
 let NEXT_REG = '202710';
+/* ترم التسجيل (regTerm) — باني الجداول يبني له. متغيّر عشان حالة «يبني لترم بعد ترم الدراسة» */
+let REG_TERM = '202710';
 
 const ctxObj = {
   console: { log() {} }, Promise, JSON, Object, Array, String, Number, Math, Date,
@@ -199,7 +201,7 @@ const ctxObj = {
   PLANS_DATA, ACAD_CAL,
   FREE_BETA: false,
   SITE_ENV: 'prod',   /* أداة التذكير تختم البيئة في الاقتراح */
-  regTerm: () => '202710',
+  regTerm: () => REG_TERM,
   nextRegTerm: () => NEXT_REG,
   riyadhNow: () => new Date('2099-01-01T09:00:00Z'),
   /* schedDays و schedTime تُقتطعان من السيرفر لا تُنسخان هنا: النسخة
@@ -1684,6 +1686,48 @@ function fakeModel(ctx) {
     eq(co.status, 'ok', 'ومادة غير CHEN ما ندّعي عنها شي (الطالب قال مواد CHEN)');
     co = await run('course_offering', '{"code":"CHEN 3301"}');
     eq(co.status, 'ok', 'والتدريب له قاعدته (مكانه الصيف) — بلا تحذير طرح');
+
+    /* ── باني الجداول بلا مواد — طلب محمد «اي صلحه» (٢٢ أكتوبر ٢٠٢٦) ──
+       كان يبني من suggestNext(ctx.plan): بلا جدول الطرح وبترم «الجاي» لا ترم البناء، فمادة
+       ما لها شعب في الترم تاخذ خانة وتطلع «ما لها شعب». صار مقترح ترم البناء نفسه بالطرح —
+       مثل «خطتي» — ومواد جدوله منجزة لو يبني لترم بعد ترم دراسته. */
+    const SEC = (crn, code, title, section, d, t) => ({ crn, courseCode: code, courseTitle: title,
+      section, courseDate: d, courseTiming: t, room: 'M-CORE - F155', instructor: 'A', status: 'OPEN' });
+    ctxObj.coursesCache.set('202710|ALL|M1', { at: Date.now(), courses: [
+      SEC('31001', 'CHEN 2391', 'Organic Chemistry', '101', 'MW', '0800 - 0915'),
+      SEC('31002', 'MATH 1324', 'Calculus III', '101', 'UT', '1000 - 1115') ] });
+    ctxObj.coursesCache.set('202720|ALL|M1', { at: Date.now(), courses: [
+      SEC('32001', 'MATH 2332', 'Differential Equations', '101', 'MW', '0800 - 0915'),
+      SEC('32002', 'GEEN 2313', 'Statics', '101', 'UT', '1000 - 1115') ] });
+    const fall = PLANS_DATA.suggestNext(PLANS_DATA.ctxOf({ major: 'CHEN', planVer: 'old',
+      completed: yr1.map(r => r.course_code), term: '202710', offeredOnly: true }));
+    NEXT_REG = '202720'; REG_TERM = '202710';     /* أكتوبر: يبني لترم التسجيل (الخريف هنا) */
+    let b = await run('build_schedule', '{}');
+    eq(b.term, '202710', 'يبني لترم التسجيل');
+    ok(!(b.requested || []).includes('MEEN 2311'),
+      '**Materials Engineering (MEEN 2311) ما تُطرح الخريف (وثيقة الميكانيكال) — ما ياخذ خانة** — '
+      + (b.requested || []).join(' · '));
+    eq(b.requested, fall.crit.concat(fall.opt).map(c => c.c).slice(0, 8),
+      '**والمواد = مقترح ترم البناء بجدول الطرح، بترتيبه**');
+
+    /* يبني لترم بعد ترم دراسته (التسجيل المبكر للصيفي، أو الربيع قبل ما يتبدّل ترم الدراسة):
+       اللي يدرسه الحين بيخلّصه قبله — ما نبني عليه ثانية، ونفتح اللي بعده */
+    DB.schedule['u-chen-off'] = ['CHEN 2391', 'CHEN 2311', 'MATH 1324', 'COMM 2311', 'ASSE 2111']
+      .map((c, i) => ({ user_id: 'u-chen-off', slot: 1, crn: String(40001 + i), course_code: c,
+        course_title: c, section: '101', course_date: 'MW', course_timing: '0800 - 0915',
+        room: 'M-CORE - F155', instructor: 'A', term: '202710' }));
+    REG_TERM = '202720';
+    b = await run('build_schedule', '{}');
+    eq(b.term, '202720', 'يبني للربيع');
+    const req = b.requested || [];
+    ok(!['CHEN 2391', 'CHEN 2311', 'MATH 1324', 'COMM 2311', 'ASSE 2111'].some(c => req.includes(c)),
+      '**مواد جدوله الحالي ما تنبني ثانية** — ' + req.join(' · '));
+    ok(req.includes('MATH 2332') && req.includes('GEEN 2313'),
+      '**واللي يفتحها Calculus III (MATH 2332 · GEEN 2313) داخلة** — ' + req.join(' · '));
+    ok(req.every(c => !PLANS_DATA.notOfferedIn('202720', c)), 'وكلها تُطرح في الربيع');
+    REG_TERM = '202710'; NEXT_REG = '202710';
+    DB.schedule['u-chen-off'] = [];
+    ctxObj.coursesCache.clear();
   }
 
   console.log(`\n${pass} نجحت · ${fail} فشلت`);

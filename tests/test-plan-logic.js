@@ -506,10 +506,15 @@ eq(L.level(200), 'Senior', 'level(200)');
     ok(lit.test(shared), `جدول الطرح: مفتاح ${term} في المشترك`);
   }
 
-  /* السياق يحمل الترم المعروض — بدونه الطرح يُحسب على ترم غلط */
+  /* السياق يحمل ترم التخطيط — بدونه الطرح يُحسب على ترم غلط. ومصدره ترم التسجيل الجاي من
+     السيرفر (planTermCode ← nextRegTerm) لا قائمة البحث — قرار محمد (٢٢ أكتوبر ٢٠٢٦): «المفروض
+     الحين يقترح مواد للترم الجاي الي هو الربيع». كان activeTermCode (وهذا كان الفحص هنا) */
   const pc = (/function planCtx\(\)[\s\S]*?\n\}/.exec(page) || [''])[0];
-  ok(/term\s*:/.test(pc), 'planCtx يمرّر الترم المعروض للسياق');
-  ok(/activeTermCode/.test(pc), 'ومصدره activeTermCode في الصفحة لا في المشترك');
+  ok(/term\s*:/.test(pc), 'planCtx يمرّر ترم التخطيط للسياق');
+  ok(/planTermCode/.test(pc) && !/activeTermCode/.test(pc),
+     'ومصدره planTermCode في الصفحة (لا قائمة البحث، ولا في المشترك)');
+  const pt = (/function planTermCode\(\)[\s\S]*?\n\}/.exec(page) || [''])[0];
+  ok(/nextRegTerm/.test(pt), 'وplanTermCode من nextRegTerm في حالة السيرفر — نفس «الترم الجاي» عند المساعد');
   /* نفحص الاستعمال الفعلي لا ذكر الاسم — التعليقات تشرح القاعدة نفسها */
   const code = shared.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   ok(!/\bdocument\s*\./.test(code) && !/getElementById/.test(code),

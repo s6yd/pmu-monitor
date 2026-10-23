@@ -9368,8 +9368,18 @@ const AI_TOOLS = {
       let codes = (Array.isArray(a.codes) ? a.codes : []).map(String)
         .map(x => x.trim()).filter(Boolean);
       let source = 'مواد طلبها الطالب';
+      const mine = await aiSchedule(ctx);
       if (!codes.length) {
-        const s = PLANS_DATA.suggestNext(ctx.plan);
+        /* مقترح الترم اللي نبني له (c.term) بجدول الطرح: ما يُطرح فيه ما ينحط، ومكانه
+           مادة تُطرح — مثل «خطتي» (قرار محمد). كان بلا طرح، فمادة ما لها شعب في الترم
+           تاخذ خانة. ومواد جدوله منجزة لو نبني لترم بعد ترم دراسته (التسجيل المبكر
+           للصيفي): يدرسها الحين وبيخلّصها قبله. */
+        const taking = c.term > activeTerm()
+          ? [...new Set(mine.map(r => aiCodeNorm(r.course_code)).filter(Boolean))]
+            .filter(x => PLANS_DATA.findPlanCourse(ctx.plan, x) && !PLANS_DATA.isPassed(ctx.plan, x))
+          : [];
+        const s = PLANS_DATA.suggestNext(PLANS_DATA.withTaking(
+          Object.assign({}, ctx.plan, { term: c.term, offeredOnly: true }), taking));
         codes = s.crit.concat(s.opt).map(x => x.c);
         source = 'مقترح الترم الجاي من خطته';
         if (!codes.length) return { error: AI_UNKNOWN + ' — حدّد المواد اللي تبغاها' };
@@ -9378,7 +9388,6 @@ const AI_TOOLS = {
       const over = codes.length > 8;
       if (over) codes = codes.slice(0, 8);
 
-      const mine = await aiSchedule(ctx);
       const r = buildSchedules(c.courses, {
         codes,
         gender: aiGender(mine),
@@ -12435,6 +12444,9 @@ const server = http.createServer(async (req, res) => {
          يُقفل بانتهاء نافذة التسجيل فقط، أو بإيقافك اليدوي. */
       term: activeTerm(),
       regTerm: regTerm(),
+      /* ترم التسجيل الجاي — «المقترح للترم الجاي» في «خطتي» يُحسب له، نفس «الترم الجاي»
+         عند المساعد (قرار محمد: الترم الحالي بعد ما ينقفل تسجيله ما يُخطَّط له) */
+      nextRegTerm: nextRegTerm(),
       /* ما تحتاجه ورقة الباقات وحدود المجاني. الشراء لتسجيل قدّام الطالب:
          ترم النافذة المفتوحة، وبعد ما تنقفل الترم الجاي (payTermNow) */
       plans: {

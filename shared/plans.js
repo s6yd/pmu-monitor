@@ -1836,8 +1836,8 @@ function ctxOf(o){
     sems: Array.isArray(o.sems)?o.sems:semesters(major,planVer,prep),
     tech: (o.tech&&typeof o.tech==='object')?o.tech:(p.tech||{}),
     total: o.total!==undefined?o.total:p.total,
-    /* الترم المعروض في البحث — مرجع الطالب للتخطيط. الصفحة تقرأه من
-       قائمة الترم وتمرّره؛ الافتراضي نفس افتراضي activeTermCode. */
+    /* ترم التخطيط: الصفحة تمرّر ترم التسجيل الجاي (planTermCode)، والمساعد
+       nextRegTerm — الترم الحالي بعد ما ينقفل تسجيله ما يُخطَّط له. */
     term: o.term || '202710',
     /* المقترح يتخطّى ما لا يُطرح هالترم (suggestNext) — المحاكاة ومقترح «خطتي» */
     offeredOnly: !!o.offeredOnly,
@@ -2287,6 +2287,18 @@ function offerWarn(ctx,courseCode){
   return n?{kind:'last',n,next:nextOffered(ctx,courseCode)}:null;
 }
 
+/* مواد جدوله الحالي منجزة — للتخطيط لترم بعد الترم اللي يدرسها فيه (مقترح «خطتي»
+   وباني الجداول). نفس قاعدة gradPlan: المسجّل الآن يُحسب منجزاً وتُحذف درجته (من
+   يعيد مادة هالترم بيخلّصها). بلاها مقترح الربيع في أكتوبر يرجّع مواد الخريف
+   اللي يدرسها الحين، وما يفتح اللي بعدها. */
+function withTaking(ctx,taking){
+  const t=(Array.isArray(taking)?taking:[]).filter(Boolean);
+  if(!t.length)return ctx;
+  const completed=ctx.completed.slice(), grades=Object.assign({},ctx.grades);
+  t.forEach(c=>{ if(!completed.includes(c))completed.push(c); delete grades[c] });
+  return Object.assign({},ctx,{completed,grades});
+}
+
 /* ═══ المقترح للترم الجاي ═══
    يرجع بيانات لا نصاً: prepSem معرّف الترم واسمه الخام، والصفحة
    تترجمه. أي تغيير في الترتيب هنا يغيّر ما يراه كل طالب.
@@ -2356,7 +2368,7 @@ const LOGIC = {
   prereqCheck, creditsOf, unlocksCount, unlockedBy, isInternship,
   currentPrepSem, retakeList, calcGPA, calcProjected,
   OFFER_MAJORS, NOT_OFFERED, OFFER_ONLY, nextTermCode, offerKnown, notOfferedIn,
-  skipAhead, nextOffered, offerWarn, suggestNext,
+  skipAhead, nextOffered, offerWarn, withTaking, suggestNext,
 };
 
 const DATA = Object.assign({ PLANS, PLAN_ALT, REG_CAL, GUIDE }, LOGIC);
