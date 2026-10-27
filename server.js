@@ -3329,6 +3329,9 @@ const HEALTHCHECK_URL = (() => {
   return /^https:\/\/[^\s"'<>]+$/.test(u) ? u.replace(/\/+$/, '') : '';
 })();
 let LAST_GOOD_CYCLE = Date.now(), HC_LAST = 0;   /* الإقلاع مهلة: ما نقول «فشل» قبل ربع ساعة منه */
+/* آخر مرة قرأت الدورة حالة الشعب فعلاً (جدول الجامعة أو احتياط بانر) — بطاقة «مراقبتك» تقول للطالب
+   «آخر فحص قبل X د». غير LAST_GOOD_CYCLE: ذاك يبدأ بوقت الإقلاع مهلةً، وهذا صفر لين أول فحص حقيقي */
+let LAST_CHECK = 0;
 const HC_FAIL_AFTER = 15 * 60 * 1000;
 function hcVerdict() {
   if (!monitorState().active) return 'ok';        /* خارج الوقت أو موقوفة: السيرفر حي وبس */
@@ -3666,7 +3669,7 @@ async function runMonitorCycle() {
       ? Math.min(CYCLE_RETRIES + 1, CYCLE_RETRY_MAX + 1)
       : 0;
     CYCLE_DOWN = gotFeed ? 0 : CYCLE_DOWN + 1;
-    if (gotFeed) LAST_GOOD_CYCLE = Date.now();
+    if (gotFeed) LAST_GOOD_CYCLE = LAST_CHECK = Date.now();
 
     /* مصدر الجدول: موقع الجدول أو احتياط بانر. رجوع الجدول بعد بانر = دورة تسجّل بلا إشعار (settle):
        الجدول ممكن يتأخر عن بانر، فـ«مفتوحة» قديمة منه تطلع «فتحت» كاذبة. والذهاب لبانر عادي — بانر
@@ -12434,7 +12437,7 @@ const server = http.createServer(async (req, res) => {
   if (parsed.pathname === '/api/monitor-status') {
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Cache-Control', 'public, max-age=120');
-    const st = monitorState();
+    const st = monitorState(), nowMs = Date.now();
     res.writeHead(200);
     res.end(JSON.stringify({
       active: st.active, reason: st.reason,
@@ -12447,6 +12450,13 @@ const server = http.createServer(async (req, res) => {
       /* ترم التسجيل الجاي — «المقترح للترم الجاي» في «خطتي» يُحسب له، نفس «الترم الجاي»
          عند المساعد (قرار محمد: الترم الحالي بعد ما ينقفل تسجيله ما يُخطَّط له) */
       nextRegTerm: nextRegTerm(),
+      /* بطاقة «مراقبتك» في البحث: آخر فحص حقيقي للشعب · الفحص الجاي لو المراقبة تدور الحين · الدورة
+         شغّالة الحين؟ أوقات مطلقة — الصفحة تعدّ منها، فالرد المخزّن دقيقتين ما يخرّب العدّ. و«now» تصحّح
+         ساعة الجوال (البطاقة تسأل بلا تخزين) */
+      lastCheck: LAST_CHECK ? new Date(LAST_CHECK).toISOString() : null,
+      nextCheck: st.active && NEXT_CYCLE_AT > nowMs ? new Date(NEXT_CYCLE_AT).toISOString() : null,
+      checking: !!(st.active && cycleRunning),
+      now: new Date(nowMs).toISOString(),
       /* ما تحتاجه ورقة الباقات وحدود المجاني. الشراء لتسجيل قدّام الطالب:
          ترم النافذة المفتوحة، وبعد ما تنقفل الترم الجاي (payTermNow) */
       plans: {
@@ -12896,11 +12906,14 @@ server.listen(PORT, () => {
   const st = monitorState();
   console.log(`env=${SITE_ENV} | state=${STATE_KEY} | freeBeta=${FREE_BETA} | ترم المزامنة=${activeTerm()}` +
               ` | monitor: ${st.reason} — ${st.ar}`);
-  /* أول دورة بعد 20-60 ثانية عشوائياً، ثم جدولة ذكية */
+  /* أول دورة بعد 20-60 ثانية عشوائياً، ثم جدولة ذكية. وموعدها معروف من الحين — «الفحص الجاي» في
+     بطاقة الطالب واللوحة كان «—» أول دقيقة بعد كل نشر */
+  const firstIn = 20000 + Math.random() * 40000;
+  NEXT_CYCLE_AT = Date.now() + firstIn;
   setTimeout(async () => {
     if (monitorState().active) {
       try { await runMonitorCycle(); } catch (e) { console.log('cycle err', e.message); }
     }
     scheduleNextCycle();
-  }, 20000 + Math.random() * 40000);
+  }, firstIn);
 });

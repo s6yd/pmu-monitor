@@ -154,6 +154,66 @@ align-items:center;justify-content:center;gap:3px}
 .page{display:none}.page.active{display:block}
 
 .search-card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:17px;margin-bottom:16px}
+/* ── «مراقبتك»: المراقبة الحيّة فوق البحث — وقت التسجيل وحده، ولمن عنده مراقبة ── */
+.mon-live{background:var(--card);border:1px solid var(--border);border-radius:18px;margin-bottom:14px;overflow:hidden}
+.mon-live.live{border-color:var(--open-border);background:linear-gradient(180deg,var(--open-bg),transparent 120px),var(--card)}
+.mon-live.warn{border-color:rgba(245,158,11,.42);background:linear-gradient(180deg,var(--warn-bg),transparent 120px),var(--card)}
+.ml-demo{display:flex;align-items:center;gap:8px;padding:8px 10px 8px 14px;font-size:11.5px;line-height:1.6;color:var(--accent2);background:rgba(61,111,255,.1);border-bottom:1px solid var(--border)}
+.ml-demo span{flex:1;min-width:0}
+.ml-demo button{background:none;border:0;color:var(--text2);font-size:15px;line-height:1;padding:4px 6px;cursor:pointer;font-family:inherit}
+.ml-head{display:flex;align-items:flex-start;gap:11px;padding:14px 15px 11px}
+.ml-dot{position:relative;width:10px;height:10px;margin-top:6px;border-radius:50%;background:var(--text3);flex-shrink:0}
+.mon-live.live .ml-dot{background:var(--open)}
+.mon-live.warn .ml-dot{background:var(--warn)}
+.mon-live.live .ml-dot::after,.mon-live.warn .ml-dot::after{content:'';position:absolute;inset:0;border-radius:50%;background:inherit;animation:mlPulse 1.9s ease-out infinite}
+@keyframes mlPulse{0%{transform:scale(1);opacity:.6}100%{transform:scale(3.2);opacity:0}}
+.ml-hd{flex:1;min-width:0}
+.ml-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:14.5px;font-weight:700}
+.ml-pill{font-size:10.5px;font-weight:600;padding:2px 9px;border-radius:20px;background:var(--bg);color:var(--text2);border:1px solid var(--border)}
+.mon-live.live .ml-pill{background:var(--open-bg);color:var(--open);border-color:var(--open-border)}
+.mon-live.warn .ml-pill{background:var(--warn-bg);color:var(--warn);border-color:rgba(245,158,11,.38)}
+.ml-sub{font-size:11.5px;color:var(--text2);margin-top:4px;line-height:1.7}
+.ml-sub b{font-weight:600;color:var(--text)}
+.ml-sub .go{color:var(--open);font-weight:600}
+.ml-stats{display:grid;grid-template-columns:1fr 1fr 1.3fr;gap:8px;padding:0 15px 13px}
+.ml-stat{background:var(--bg);border:1px solid var(--border);border-radius:13px;padding:10px 6px 9px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-width:0}
+.ml-num{font-family:var(--mono);font-size:21px;font-weight:500;line-height:1}
+.ml-lbl{font-size:10.5px;color:var(--text2);white-space:nowrap}
+.ml-stat.hot{border-color:var(--open-border);background:var(--open-bg)}
+.ml-stat.hot .ml-num{color:var(--open)}
+.ml-clock{display:flex;align-items:center;gap:7px;height:21px}
+.ml-ring{width:22px;height:22px;flex-shrink:0;transform:rotate(-90deg)}
+.ml-ring circle{fill:none;stroke-width:3.4}
+.ml-ring .bg{stroke:var(--border2)}
+.ml-ring .fg{stroke:var(--open);stroke-linecap:round;transition:stroke-dashoffset .9s linear}
+.mon-live.warn .ml-ring .fg{stroke:var(--warn)}
+.mon-live.idle .ml-ring .fg{stroke:var(--text3)}
+.ml-ring.spin{animation:mlSpin 1s linear infinite}
+.ml-ring.spin .fg{stroke-dashoffset:44!important;transition:none}
+@keyframes mlSpin{from{transform:rotate(-90deg)}to{transform:rotate(270deg)}}
+.ml-time{font-family:var(--mono);font-size:16px;font-weight:500;line-height:1;direction:ltr;unicode-bidi:isolate}
+.ml-foot{display:flex;align-items:center;gap:7px;padding:10px 15px 12px;border-top:1px solid var(--border)}
+.ml-chs{display:flex;gap:6px;flex-wrap:wrap;min-width:0}
+.ml-ch{font-family:inherit;font-size:11.5px;line-height:1.4;padding:5px 10px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;white-space:nowrap}
+.ml-ch.ok{color:var(--open);border-color:var(--open-border);background:var(--open-bg)}
+.ml-ch.need{color:var(--warn);border-color:rgba(245,158,11,.42);background:var(--warn-bg);font-weight:600}
+.ml-more{margin-inline-start:auto;font-family:inherit;font-size:12px;font-weight:600;color:var(--accent2);background:none;border:0;padding:6px 2px;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.ml-list{border-top:1px solid var(--border)}
+.ml-row{display:flex;align-items:center;gap:10px;padding:11px 15px;border-bottom:1px solid var(--border)}
+.ml-row:last-child{border-bottom:0}
+.ml-info{flex:1;min-width:0}
+.ml-code{font-family:var(--mono);font-size:13px;color:var(--text);background:none;border:0;padding:0;cursor:pointer;text-align:start}
+.ml-code small{font-family:var(--sans);color:var(--text3);font-size:11px;margin-inline-start:4px}
+.ml-st{font-size:12px;margin-top:3px;color:var(--text2);line-height:1.6}
+.ml-row.open .ml-st{color:var(--open);font-weight:600}
+.ml-row.paused .ml-st{color:var(--warn)}
+.ml-st .lnk{font-family:inherit;font-size:11.5px;font-weight:600;color:var(--accent2);background:none;border:0;padding:0;margin-inline-start:6px;cursor:pointer}
+.ml-meta{font-size:10.5px;color:var(--text3);margin-top:2px}
+.ml-stop{font-family:inherit;font-size:12px;padding:7px 12px;border-radius:10px;border:1px solid var(--border2);background:transparent;color:var(--text2);cursor:pointer;flex-shrink:0;min-width:66px}
+.ml-stop.arm{border-color:var(--close-border);background:var(--close-bg);color:var(--close);font-weight:700}
+.mon-live.fresh .ml-head{animation:mlFresh 1.4s ease-out}
+@keyframes mlFresh{0%{background:var(--open-bg)}100%{background:transparent}}
+@media (prefers-reduced-motion:reduce){.ml-dot::after,.ml-ring.spin,.mon-live.fresh .ml-head{animation:none!important}}
 .sc-title{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:13px}
 .fields{display:flex;flex-direction:column;gap:11px}
 .field-label{font-size:12px;color:var(--text2);margin-bottom:5px;display:block}
@@ -1658,6 +1718,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 </div>
 
 <div class="page active" id="pageSearch">
+  <div class="mon-live" id="monLive" hidden></div>
   <div class="search-card">
     <div class="sc-title" data-i18n="searchTitle">البحث عن المواد</div>
     <div class="fields">
@@ -4917,6 +4978,11 @@ function stopTodayTick(){ if(TODAY_TICK){clearInterval(TODAY_TICK);TODAY_TICK=nu
 
 /* حالة المراقبة تُجلب للتحقق من نسخة الاختبار فقط */
 let MON_STATE=null;
+/* بطاقة «مراقبتك» (renderMonLive): حالتها في الذاكرة. ومعاينتها ‎?monpreview=1‎ تُقرأ عند تحميل
+   السكربت — initAuth تمسح الرابط أول ما تلقى جلسة */
+let MONLIVE={tick:null,skew:0,at:0,busy:false,n:0,arm:null,seen:null,kind:'',open:null,demo:null,dst:null,subH:null,html:'',inRender:false};
+const MONLIVE_RING=62.83;          /* محيط دائرة العدّ (r=10) */
+let MONLIVE_PREVIEW=/[?&]monpreview=1(?:&|$)/.test(location.search);
 async function loadMonitorState(){
   try{ MON_STATE=await (await fetch(API_BASE+'/api/monitor-status')).json(); }
   catch(e){ MON_STATE=null; }
@@ -4931,6 +4997,8 @@ async function loadMonitorState(){
   try{ if(CUR_TAB==='plan')renderPlan() }catch(e){}
   /* أول قراءة تثبّت بصمة النسخة المحمّلة، وما بعدها يقارن بها */
   try{ checkBuild(MON_STATE) }catch(e){}
+  /* بطاقة «مراقبتك» تبان وقت التسجيل — والنافذة توصل هنا */
+  try{ renderMonLive() }catch(e){}
   /* الفترة المجانية والباقات توصل هنا — وقبلها الجداول الثلاثة مفتوحة
      احتياطاً. فجدول صار مقفولاً يرجع للأول **الحين** لا بعد أول ضغطة،
      والحساب ينصحّح معه (وإلا البوت يقرأ جدولاً الصفحة ما تعرضه). */
@@ -7015,8 +7083,10 @@ async function refreshProfile(){
 /* ---- monitored courses ---- */
 async function loadMonitored(){
   if(!USER){monitored=[];return}
-  const {data}=await sb.from('monitored_courses').select('*');
-  monitored=data||[];
+  const {data,error}=await sb.from('monitored_courses').select('*');
+  /* قراءة فشلت (شبكة لحظة) ما تمسح القائمة: كانت تصير [] فتختفي الأجراس وبطاقة «مراقبتك» لين القراءة الجاية */
+  if(error||!Array.isArray(data))return;
+  monitored=data;
 }
 
 /* شريط ثابت أعلى كل الصفحات — حالتان يستحيل اجتماعهما،
@@ -7590,6 +7660,8 @@ function renderTgAndMon(ar){
   }
 
   renderMyReviews();
+  /* بطاقة «مراقبتك» فوق البحث: كل تغيير في المراقبات يمر من هنا (إضافة · إيقاف · رجوع للتطبيق · اللغة) */
+  try{ renderMonLive() }catch(e){}
 
   /* account */
   document.getElementById('accEmail').textContent=USER?USER.email:(ar?'غير مسجل':'Not signed in');
@@ -7605,6 +7677,323 @@ function renderTgAndMon(ar){
 
 
 
+
+/* ═══ «مراقبتك» — بطاقة المراقبة الحيّة فوق البحث (طلب محمد، ٢٧ أكتوبر ٢٠٢٦) ═══
+   «يطلع زي عدادات وحالة مراقبة المواد لكل طالب لحاله… ويقدر منه يلغي المراقبة على طول ويعلمه حالة
+   اشعارات بوش اوفر… ويحسس الطالب ان الاداة شغاله تراقبله… اهم شي ما تكون بمكان مزعج».
+   تبان وقت التسجيل وحده (MON_STATE.window) ولمن عنده مراقبة في ترم التسجيل — غير كذا ولا بكسل.
+   مطوية: الحالة والعدّادات وقنوات التنبيه، وتنفتح على موادها وإيقافها — بضغطتين (ضغطة غلط وقت التسجيل
+   تكلّف شعبة). ما تقرّر شي: الحالة من السيرفر (lastCheck · nextCheck · checking)، والصفوف monitored،
+   والإيقاف removeMonitor، والحصة pausedMonitorIds، والتنبيه الطارئ poState.
+   العدّ كل ثانية يلمس نصوصاً بس (استبدال زر تحت الإصبع يضيّع الضغطة)، والسؤال من السيرفر بعد موعد الفحص
+   لا بمؤقت أعمى. ‎?monpreview=1‎ معاينة ببيانات تجريبية موسومة (dev ما يراقب، والنافذة الجاية يناير) —
+   والإيقاف فيها ما يلمس الحساب. */
+function monLiveRows(){
+  if(MONLIVE_PREVIEW)return MONLIVE.demo||(MONLIVE.demo=monLiveDemoRows());
+  if(!USER||!Array.isArray(monitored))return [];
+  const t=String(regTermCode());
+  return monitored.filter(m=>String(m.term||'')===t);
+}
+function monLiveDemoRows(){
+  const now=Date.now(), term=String(regTermCode()), at=ms=>new Date(now-ms).toISOString();
+  return [
+    {id:-1,scope:'section',course_code:'MEEN 3311',section:'101',crn:'30011',term,last_status:'OPEN',notified_at:at(4*60e3),created_at:at(2*864e5)},
+    {id:-2,scope:'section',course_code:'CHEN 3333',section:'102',crn:'30512',term,last_status:'CLOSED',notified_at:null,created_at:at(5*36e5)},
+    {id:-3,scope:'course',course_code:'PHYS 1422',section:null,crn:null,term,last_status:null,notified_at:null,created_at:at(26*36e5)}
+  ];
+}
+/* المعاينة تمثّل دورة كل ٥ دقائق: العدّ ينتهي ⇒ «نفحص الحين» ٤ ثوانٍ ⇒ «آخر فحص الحين» */
+function monLiveDemoState(){
+  const now=Date.now();
+  const D=MONLIVE.dst||(MONLIVE.dst={last:now-70e3,next:now+230e3,chk:0});
+  if(D.chk&&now>=D.chk){ D.last=now; D.next=now+5*60e3; D.chk=0 }
+  else if(!D.chk&&now>=D.next)D.chk=now+4000;
+  return {env:'prod',reason:'peak',active:true,intervalMin:5,activeHours:[7,24],
+    lastCheck:new Date(D.last).toISOString(),nextCheck:D.chk?null:new Date(D.next).toISOString(),checking:!!D.chk};
+}
+/* حالة البطاقة الحين — live · notg (تيليغرام مو مربوط) · stale (ما فحصنا من مدة) · sleep · paused · test · off */
+function monLiveState(){
+  const demo=MONLIVE_PREVIEW;
+  const st=demo?monLiveDemoState():(MON_STATE||{});
+  const now=Date.now()+(demo?0:MONLIVE.skew);
+  const iv=Number(st.intervalMin)>0?Number(st.intervalMin):5;
+  const last=Date.parse(st.lastCheck||''), next=Date.parse(st.nextCheck||'');
+  let kind='off';
+  if(!demo&&st.env&&st.env!=='prod')kind='test';
+  else if(st.reason==='paused')kind='paused';
+  else if(st.reason==='hours')kind='sleep';
+  else if(st.active){
+    if(!((demo&&!USER)||tgLinked()))kind='notg';
+    else if(Number.isFinite(last)&&now-last>Math.max(3*iv,15)*60000)kind='stale';
+    else kind='live';
+  }
+  const running=kind==='live'||kind==='stale'||kind==='notg';
+  return {demo,st,now,iv,last,next,kind,running,
+    checking:running&&(!!st.checking||(Number.isFinite(next)&&next<=now))};
+}
+/* مدة قصيرة: «4 د» · «2 س» · «يومين» */
+function monDur(ms){
+  const ar=LANG==='ar', m=Math.max(0,Math.round(ms/60000));
+  if(m<60)return ar?`${m} د`:`${m} min`;
+  const h=Math.round(m/60);
+  if(h<24)return ar?`${h} س`:`${h} h`;
+  const d=Math.round(h/24);
+  return ar?(d===1?'يوم':d===2?'يومين':d<=10?`${d} أيام`:`${d} يوم`):`${d} d`;
+}
+function monAgo(ms){ const ar=LANG==='ar'; return ms<60000?(ar?'الحين':'just now'):(ar?'قبل '+monDur(ms):monDur(ms)+' ago') }
+function monLiveMeta(at,k){
+  const ar=LANG==='ar', ms=Date.now()-at;
+  if(k==='n')return ar?'نبّهناك '+monAgo(ms):'Alerted you '+monAgo(ms);
+  return ms<60000?(ar?'بدأت مراقبتها الحين':'Watching since just now')
+                 :(ar?'تراقبها من '+monDur(ms):'Watching for '+monDur(ms));
+}
+function monEvery(iv){
+  const ar=LANG==='ar';
+  if(!ar)return `Checking every ${iv} min`;
+  return 'نفحص لك كل '+(iv===1?'دقيقة':iv===2?'دقيقتين':iv<=10?`${iv} دقائق`:`${iv} دقيقة`);
+}
+function monFrom(S){ const h=Number((S.st.activeHours||[])[0]); return Number.isFinite(h)?h:7 }
+function monLiveSubHtml(S,open){
+  const ar=LANG==='ar';
+  const last=Number.isFinite(S.last)?(ar?'آخر فحص ':'Last check ')+monAgo(S.now-S.last)
+                                    :(ar?'أول فحص خلال دقيقة':'First check within a minute');
+  if(S.kind==='notg')return ar?'<b>تيليغرام مو مربوط</b> — نفحص لك، بس التنبيه ما يوصلك لين تربطه'
+                              :'<b>Telegram not linked</b> — we check, but alerts can’t reach you until you link it';
+  if(S.kind==='stale')return ar?`آخر فحص ناجح ${monAgo(S.now-S.last)} — نعيد المحاولة تلقائياً`
+                               :`Last successful check ${monAgo(S.now-S.last)} — retrying automatically`;
+  if(S.kind==='sleep'){ const h=monFrom(S);
+    return ar?`نرجع نفحص الساعة <b dir="ltr">${h}:00</b>${h<12?' الصبح':''} · مراقباتك محفوظة`
+             :`Checks resume at <b>${h}:00</b> · your watches are kept` }
+  if(S.kind==='paused')return ar?'وقّفنا الفحص مؤقتاً من عندنا · مراقباتك محفوظة وترجع تشتغل'
+                                :'Checks are paused on our side for now · your watches are kept';
+  if(S.kind==='test')return ar?'نسخة تجربة — هنا ما نفحص شي. المراقبة الحقيقية في jadwalik.com'
+                              :'Test build — nothing is checked here. Real monitoring runs on jadwalik.com';
+  if(S.kind==='off')return ar?'المراقبة متوقفة الحين · مراقباتك محفوظة':'Monitoring is off right now · your watches are kept';
+  let go='';
+  if(open.length===1){ const m=open[0];
+    go=`<span class="go">🟢 <bdi>${escapeHtml(m.course_code||'')}${m.section?' §'+escapeHtml(m.section):''}</bdi> ${
+      ar?'مفتوحة الحين — روح سجّلها':'is open now — go register'}</span><br>` }
+  else if(open.length>1)
+    go=`<span class="go">🟢 ${ar?`${open.length} من شعبك مفتوحة الحين — روح سجّلها`:`${open.length} of your sections are open now — go register`}</span><br>`;
+  return go+monEvery(S.iv)+' · '+last;
+}
+function monLivePill(kind){
+  const ar=LANG==='ar';
+  return ({live:ar?'شغّالة':'Live',notg:ar?'ما يوصلك تنبيه':'Alerts off',stale:ar?'الفحص متأخر':'Delayed',
+    sleep:ar?'ترتاح بالليل':'Resting',paused:ar?'موقوفة مؤقتاً':'Paused',test:ar?'نسخة تجربة':'Test build'})[kind]
+    ||(ar?'متوقفة':'Off');
+}
+function monLiveTgInfo(){ showToast(LANG==='ar'?'تيليغرام مربوط — التنبيه يوصلك هناك':'Telegram linked — alerts arrive there','ok') }
+/* قنوات التنبيه: تيليغرام (الوحيدة الإلزامية) والتنبيه الطارئ بحالته من poState — مخفي = ما نعرضه */
+function monLiveChips(S){
+  const ar=LANG==='ar', out=[];
+  out.push(((S.demo&&!USER)||tgLinked())
+    ?`<button class="ml-ch ok" onclick="monLiveTgInfo()">✈️ ${ar?'تيليغرام':'Telegram'} ✓</button>`
+    :`<button class="ml-ch need" onclick="linkTelegram()">✈️ ${ar?'اربط تيليغرام':'Link Telegram'}</button>`);
+  let po='hidden';
+  try{ po=poState() }catch(e){}
+  if(po==='hidden'&&S.demo)po='demo';
+  if(po==='locked')
+    out.push(`<button class="ml-ch" onclick="openPlans('pushover')">🚨 ${ar?'أضف التنبيه الطارئ':'Add urgent alert'}</button>`);
+  else if(po==='demo')
+    out.push(`<button class="ml-ch ok">🚨 ${ar?'التنبيه الطارئ':'Urgent alert'} ✓</button>`);
+  else if(po==='open')
+    out.push(PROFILE&&PROFILE.pushover_key
+      ?`<button class="ml-ch ok" onclick="poGo()">🚨 ${ar?'التنبيه الطارئ':'Urgent alert'} ✓</button>`
+      :`<button class="ml-ch need" onclick="poGo()">🚨 ${ar?'فعّل التنبيه الطارئ':'Enable urgent alert'}</button>`);
+  return out.join('');
+}
+function monLiveRowHtml(m,paused){
+  const ar=LANG==='ar', id=Number(m.id), all=m.scope==='course';
+  let cls, st;
+  if(paused){
+    cls='paused';
+    st=(all?(ar?'⏸️ مراقبة كل الشعب للمشتركين':'⏸️ All-sections watching is for subscribers')
+           :(ar?'⏸️ متوقفة — فوق حد المجاني':'⏸️ Paused — over the free limit'))+
+       `<button class="lnk" onclick="openPlans('${all?'course':'monitors'}')">${ar?'فعّلها':'Resume'}</button>`;
+  }else if(all){ cls='all'; st=ar?'📡 أي شعبة تفتح أو تنزل يوصلك':'📡 Any section that opens or appears' }
+  else if(m.last_status==='OPEN'){ cls='open'; st=ar?'🟢 مفتوحة الحين — روح سجّلها':'🟢 Open now — go register' }
+  else if(m.last_status==='CLOSED'){ cls='closed'; st=ar?'🔴 مقفلة — ننتظرها تفتح':'🔴 Closed — waiting for it to open' }
+  else { cls='wait'; st=ar?'⏳ ننتظر أول فحص':'⏳ Waiting for the first check' }
+  const n=Date.parse(m.notified_at||''), c=Date.parse(m.created_at||'');
+  const meta=Number.isFinite(n)?{at:n,k:'n'}:Number.isFinite(c)?{at:c,k:'c'}:null;
+  return `<div class="ml-row ${cls}" data-id="${id}">
+    <div class="ml-info">
+      <button class="ml-code" onclick="monLiveSearch(${id})"><bdi>${escapeHtml(m.course_code||'')}</bdi><small>${
+        all?(ar?'كل الشعب':'all sections'):(m.section?'<bdi>§'+escapeHtml(m.section)+'</bdi>':'')}</small></button>
+      <div class="ml-st">${st}</div>
+      ${meta?`<div class="ml-meta" data-at="${meta.at}" data-k="${meta.k}"></div>`:''}
+    </div>
+    <button class="ml-stop" data-stop="${id}" onclick="monLiveStop(${id},this)">${ar?'إيقاف':'Stop'}</button>
+  </div>`;
+}
+function monLiveIsOpen(){
+  if(MONLIVE.open!=null)return MONLIVE.open;
+  try{ return localStorage.getItem('pmu_monlive_open')==='1' }catch(e){ return false }
+}
+function monLiveToggle(){
+  MONLIVE.open=!monLiveIsOpen();
+  try{ localStorage.setItem('pmu_monlive_open',MONLIVE.open?'1':'0') }catch(e){}
+  renderMonLive();
+}
+function monLiveEndPreview(){ MONLIVE_PREVIEW=false; MONLIVE.demo=null; MONLIVE.dst=null; renderMonLive() }
+function monLiveSearch(id){
+  const m=monLiveRows().find(x=>Number(x.id)===Number(id));
+  if(m&&m.course_code)searchIn(m.course_code);
+}
+/* تُنادى كثير (كل renderSettings) — والـHTML نفسه ما ينكتب ثانية: النصوص اللي تتغيّر مع الوقت تملاها
+   monLivePaint، فرسم بلا تغيير في البيانات ما يستبدل زراً تحت إصبع الطالب */
+function renderMonLive(){
+  const box=document.getElementById('monLive');
+  if(!box||MONLIVE.inRender)return;
+  MONLIVE.inRender=true;
+  try{
+    const rows=monLiveRows();
+    const show=MONLIVE_PREVIEW||(!!USER&&!!(MON_STATE&&MON_STATE.window)&&rows.length>0);
+    if(!show){ box.hidden=true; box.innerHTML=''; MONLIVE.html=''; monLiveTickStop(); return }
+    const ar=LANG==='ar', S=monLiveState();
+    const paused=MONLIVE_PREVIEW?new Set():pausedMonitorIds();
+    const active=rows.filter(m=>!paused.has(m.id));
+    const open=active.filter(m=>m.scope!=='course'&&m.last_status==='OPEN');
+    const rank=m=>paused.has(m.id)?4:m.scope==='course'?3:m.last_status==='OPEN'?0:m.last_status==='CLOSED'?1:2;
+    const list=rows.slice().sort((a,b)=>(rank(a)-rank(b))||((Date.parse(a.created_at)||0)-(Date.parse(b.created_at)||0)));
+    const isOpen=monLiveIsOpen();
+    MONLIVE.kind=S.kind;
+    box.className='mon-live '+(S.kind==='live'?'live':(S.kind==='notg'||S.kind==='stale')?'warn':'idle')+
+      (box.classList.contains('fresh')?' fresh':'');
+    const html=
+      (S.demo?`<div class="ml-demo"><span>👀 ${ar?'معاينة — بيانات تجريبية، مو مراقبتك الحقيقية':'Preview — demo data, not your real watches'}</span>`+
+              `<button onclick="monLiveEndPreview()" aria-label="${ar?'إغلاق المعاينة':'Close preview'}">✕</button></div>`:'')+
+      `<div class="ml-head"><span class="ml-dot"></span><div class="ml-hd">
+        <div class="ml-title">${ar?'مراقبتك':'Your watches'} <span class="ml-pill">${monLivePill(S.kind)}</span></div>
+        <div class="ml-sub" id="mlSub"></div></div></div>
+      <div class="ml-stats">
+        <div class="ml-stat" id="mlCount"><span class="ml-num">${active.length}</span><span class="ml-lbl">${ar?'تراقبها':'Watching'}</span></div>
+        <div class="ml-stat${open.length?' hot':''}" id="mlOpen"><span class="ml-num">${open.length}</span><span class="ml-lbl">${ar?'مفتوحة الحين':'Open now'}</span></div>
+        <div class="ml-stat"><div class="ml-clock"><svg class="ml-ring" id="mlRing" viewBox="0 0 26 26" aria-hidden="true">`+
+          `<circle class="bg" cx="13" cy="13" r="10"/><circle class="fg" id="mlFg" cx="13" cy="13" r="10" stroke-dasharray="${MONLIVE_RING}" style="stroke-dashoffset:${MONLIVE_RING}"/></svg>`+
+          `<span class="ml-time" id="mlTime">—</span></div><span class="ml-lbl" id="mlClockLbl">${ar?'الفحص الجاي':'Next check'}</span></div>
+      </div>`+
+      (isOpen?`<div class="ml-list" id="mlList">${list.map(m=>monLiveRowHtml(m,paused.has(m.id))).join('')}</div>`:'')+
+      `<div class="ml-foot"><div class="ml-chs">${monLiveChips(S)}</div>
+        <button class="ml-more" id="mlMore" aria-expanded="${isOpen}" onclick="monLiveToggle()">${
+          isOpen?(ar?'إخفاء ▴':'Hide ▴'):(ar?'موادك ▾':'Your courses ▾')}</button></div>`;
+    if(html!==MONLIVE.html||box.hidden){ MONLIVE.html=html; MONLIVE.subH=null; box.innerHTML=html }
+    box.hidden=false;
+    MONLIVE.inRender=false;
+    monLivePaint();
+    monLiveTickStart();
+  }catch(e){}
+  finally{ MONLIVE.inRender=false }
+}
+/* كل ثانية: نصوص وقياسات بس — العدّ والدائرة و«قبل X د» — بلا ما نستبدل زر */
+function monLivePaint(){
+  const box=document.getElementById('monLive');
+  if(!box||box.hidden)return;
+  const S=monLiveState();
+  if(S.kind!==MONLIVE.kind){ if(!MONLIVE.inRender)renderMonLive(); return }
+  const ar=LANG==='ar';
+  if(Number.isFinite(S.last)){
+    if(MONLIVE.seen!=null&&S.last>MONLIVE.seen){ box.classList.remove('fresh'); void box.offsetWidth; box.classList.add('fresh') }
+    MONLIVE.seen=S.last;
+  }
+  const sub=document.getElementById('mlSub');
+  if(sub){
+    const paused=MONLIVE_PREVIEW?new Set():pausedMonitorIds();
+    const h=monLiveSubHtml(S,monLiveRows().filter(m=>!paused.has(m.id)&&m.scope!=='course'&&m.last_status==='OPEN'));
+    if(h!==MONLIVE.subH){ MONLIVE.subH=h; sub.innerHTML=h }
+  }
+  let time='—', lbl=ar?'الفحص الجاي':'Next check', prog=0, spin=false;
+  if(S.checking){ spin=true; time='…'; lbl=ar?'نفحص الحين':'Checking now' }
+  else if(S.running&&Number.isFinite(S.next)){
+    const left=S.next-S.now, s=Math.max(0,Math.ceil(left/1000));
+    time=Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
+    prog=Math.min(1,Math.max(0,1-left/(S.iv*60000)));
+  }else if(S.kind==='sleep'){ time=monFrom(S)+':00'; lbl=ar?'نرجع نفحص':'Resumes at' }
+  const tm=document.getElementById('mlTime'), lb=document.getElementById('mlClockLbl');
+  const ring=document.getElementById('mlRing'), fg=document.getElementById('mlFg');
+  if(tm&&tm.textContent!==time)tm.textContent=time;
+  if(lb&&lb.textContent!==lbl)lb.textContent=lbl;
+  if(ring)ring.classList.toggle('spin',spin);
+  if(fg)fg.style.strokeDashoffset=String(MONLIVE_RING*(1-prog));
+  box.querySelectorAll('.ml-meta[data-at]').forEach(el=>{
+    const v=monLiveMeta(Number(el.dataset.at),el.dataset.k);
+    if(el.textContent!==v)el.textContent=v;
+  });
+  /* «متأكد؟» هنا لا في الـHTML: الرسم بعد الضغطة الأولى ما يبدّل الزر */
+  const a=MONLIVE.arm, live=!!(a&&Date.now()<a.until);
+  if(a&&!live)MONLIVE.arm=null;
+  box.querySelectorAll('.ml-stop[data-stop]').forEach(b=>{
+    const on=live&&a.id===Number(b.dataset.stop), v=on?(ar?'متأكد؟':'Sure?'):(ar?'إيقاف':'Stop');
+    b.classList.toggle('arm',on);
+    if(b.textContent!==v)b.textContent=v;
+  });
+}
+function monLiveTickStart(){ if(!MONLIVE.tick)MONLIVE.tick=setInterval(monLiveTick,1000) }
+function monLiveTickStop(){ if(MONLIVE.tick){ clearInterval(MONLIVE.tick); MONLIVE.tick=null } }
+/* نسأل السيرفر بعد موعد الفحص (وكل ١٥ ثانية تتباعد لين دقيقة ما دام «نفحص الحين»)، وبلا موعد كل دقيقتين ونص */
+function monLiveTick(){
+  try{
+    if(document.hidden||CUR_TAB!=='search')return;
+    monLivePaint();
+    if(MONLIVE_PREVIEW)return;
+    const S=monLiveState(), since=Date.now()-MONLIVE.at;
+    const gap=S.checking?Math.min(60000,15000*(1+MONLIVE.n))
+             :S.running?(Number.isFinite(S.next)?Infinity:150000):300000;
+    if(since>=gap)monLiveRefresh();
+  }catch(e){}
+}
+async function monLiveRefresh(){
+  if(MONLIVE.busy||!USER)return;
+  MONLIVE.busy=true; MONLIVE.at=Date.now();
+  const ids=()=>monLiveRows().map(m=>m.id).join(',');
+  const before=ids();
+  try{
+    const t0=Date.now();
+    /* بلا تخزين: الرد العادي مخزّن دقيقتين، وموعد الفحص ما يستنى */
+    const st=await (await fetch(API_BASE+'/api/monitor-status',{cache:'no-store'})).json();
+    const t1=Date.now();
+    if(st&&typeof st==='object'){
+      const sn=Date.parse(st.now||'');
+      if(Number.isFinite(sn))MONLIVE.skew=sn-(t0+t1)/2;          /* ساعة الجوال مو دائماً مضبوطة */
+      MON_STATE=st;
+      try{ checkBuild(st) }catch(e){}
+    }
+    await loadMonitored();
+  }catch(e){}
+  finally{
+    MONLIVE.busy=false;
+    MONLIVE.n=monLiveState().checking?MONLIVE.n+1:0;
+    renderMonLive();
+    /* مراقبة انشالت من البوت («سجّلتها؟») — الأجراس في النتائج تتبعها */
+    if(ids()!==before){ try{ renderResults() }catch(e){} }
+  }
+}
+document.addEventListener('visibilitychange',()=>{
+  try{ if(!document.hidden&&MONLIVE.tick&&!MONLIVE_PREVIEW&&Date.now()-MONLIVE.at>60000)monLiveRefresh() }catch(e){}
+});
+/* الإيقاف بضغطتين: الأولى «متأكد؟» ثلاث ثوانٍ ونص، والثانية توقف — removeMonitor نفسها */
+async function monLiveStop(id,btn){
+  const ar=LANG==='ar', now=Date.now(), a=MONLIVE.arm;
+  if(!a||a.id!==id||now>a.until){
+    MONLIVE.arm={id,until:now+3500};
+    monLivePaint();
+    setTimeout(()=>{ try{ monLivePaint() }catch(e){} },3600);
+    return;
+  }
+  MONLIVE.arm=null;
+  const rows=monLiveRows(), m=rows.find(x=>Number(x.id)===Number(id));
+  const code=m?m.course_code:'';
+  if(MONLIVE_PREVIEW){
+    MONLIVE.demo=rows.filter(x=>Number(x.id)!==Number(id));
+    renderMonLive();
+    showToast(ar?'معاينة — ما وقّفنا شي حقيقي':'Preview — nothing real was stopped');
+    return;
+  }
+  if(btn)btn.disabled=true;
+  await removeMonitor(id);
+  showToast(ar?`وقفنا مراقبة ${code}`:`Stopped watching ${code}`,'ok');
+}
 
 /* ================= فلتر الألفاظ ================= */
 /* قائمة مختصرة — تُوسّع لاحقاً حسب الحاجة */
