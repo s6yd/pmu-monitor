@@ -1604,7 +1604,7 @@ sections:[
 {ic:'🚀',name:'ابدأ من هنا',open:1,items:[
  {t:'اختر تخصصك',d:'من <b>⚙️ الإعدادات</b> اختر تخصصك — <b>٢٠ تخصص</b>، كل كليات الجامعة. الخطة والساعات والمتطلبات تتغيّر معك تلقائياً.'},
  {t:'علّم اللي خلصته',d:'في <b>📋 خطتي</b> اضغط المربّع جنب كل مادة درستها. المواد اللي متطلبها ناقص تظهر <b>مقفلة</b>، وتنفتح أول ما تعلّم متطلبها.'},
- {t:'ابحث وابنِ جدولك',d:'في <b>🔍 البحث</b> اختر الترم واضغط ابحث. الفلتر يقبل <b>كود المادة</b> أو <b>CRN</b> أو <b>اسم المادة</b> أو <b>اسم الدكتور</b>. اضغط <b>➕</b> على أي شعبة تضيفها.'}]},
+ {t:'ابحث وابنِ جدولك',d:'في <b>🔍 البحث</b> اختر الترم واضغط ابحث. الفلتر يقبل <b>كود المادة</b> أو <b>CRN</b> أو <b>اسم المادة</b> أو <b>اسم الدكتور</b>. اضغط المادة تنفتح شعبها، و<b>+ أضف</b> على الشعبة اللي تبيها.'}]},
 
 {ic:'☀️',name:'يومك',isNew:1,items:[
  {t:'وين أنت من يومك',isNew:1,d:'تبويب <b>اليوم</b> يرتّب محاضراتك بالترتيب: الجارية تتلوّن أخضر ومعها شريط يمشي، و<b>خط «الآن»</b> يتحرك بينها مع الساعة، واللي خلص يبهت لحاله.'},
@@ -1648,7 +1648,7 @@ sections:[
 {ic:'🚀',name:'Start here',open:1,items:[
  {t:'Pick your major',d:'In <b>⚙️ Settings</b> choose your major — <b>20 programs</b>, every college. Your plan, credits and prerequisites switch automatically.'},
  {t:'Mark what you finished',d:'In <b>📋 My Plan</b> tick the box next to each course you passed. Courses missing a prerequisite show as <b>locked</b> and open the moment you tick it.'},
- {t:'Search and build',d:'In <b>🔍 Search</b> pick the term and hit search. The filter accepts a <b>course code</b>, <b>CRN</b>, <b>course title</b> or <b>instructor name</b>. Tap <b>➕</b> on any section to add it.'}]},
+ {t:'Search and build',d:'In <b>🔍 Search</b> pick the term and hit search. The filter accepts a <b>course code</b>, <b>CRN</b>, <b>course title</b> or <b>instructor name</b>. Tap a course to open its sections, then <b>+ Add</b> on the one you want.'}]},
 
 {ic:'☀️',name:'Your day',isNew:1,items:[
  {t:'Where you are in your day',isNew:1,d:'The <b>Today</b> tab lays out your lectures in order: the running one turns green with a bar that moves, a <b>“now” line</b> travels between them with the clock, and finished ones fade on their own.'},

@@ -271,10 +271,17 @@ padding:12px 15px;font-size:13px;font-weight:600;font-family:var(--sans);cursor:
 
 .stats-bar{display:none;grid-template-columns:1fr 1fr 1fr;gap:9px;margin-bottom:13px}
 .stats-bar.visible{display:grid}
-.stat-box{background:var(--card);border:1px solid var(--border);border-radius:13px;padding:12px;text-align:center}
-.stat-num{font-family:var(--mono);font-size:20px;line-height:1}
+/* العدّادات هي الفلتر (طلب محمد ٢٧ أكتوبر ٢٠٢٦): «مفتوح» تطلع المفتوحة بس، وضغطة ثانية (أو «إجمالي») ترجّع الكل */
+.stat-box{background:var(--card);border:1px solid var(--border);border-radius:13px;padding:12px;text-align:center;
+font-family:var(--sans);color:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;
+transition:transform .12s ease,border-color .2s,background-color .2s}
+.stat-box.on{border-color:var(--accent);background:rgba(61,111,255,.08)}
+.stat-box.o.on{border-color:var(--open);background:var(--open-bg)}
+.stat-box.c.on{border-color:var(--close);background:var(--close-bg)}
+.stat-num{display:block;font-family:var(--mono);font-size:20px;line-height:1}
 .stat-num.open-color{color:var(--open)}.stat-num.close-color{color:var(--close)}
-.stat-label{font-size:11px;color:var(--text3);margin-top:5px}
+.stat-label{display:block;font-size:11px;color:var(--text3);margin-top:5px}
+.stat-box.on .stat-label{color:var(--text2);font-weight:600}
 
 .monitor-banner{display:none;align-items:center;gap:13px;background:var(--open-bg);border:1px solid var(--open-border);
 border-radius:13px;padding:13px 15px;margin-bottom:13px}
@@ -282,14 +289,6 @@ border-radius:13px;padding:13px 15px;margin-bottom:13px}
 .mb-icon{font-size:22px}
 .mb-text h3{font-size:13px;font-weight:600;color:var(--open)}
 .mb-text p{font-size:12px;color:var(--text2);margin-top:2px}
-
-.filter-bar{display:none;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
-.filter-bar.visible{display:flex}
-.filter-label{font-size:12px;color:var(--text2)}
-.ftab{font-size:12px;padding:5px 12px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;font-family:var(--sans)}
-.ftab.active{background:var(--accent);border-color:var(--accent);color:#fff}
-.ftab.open-tab.active{background:var(--open);border-color:var(--open)}
-.ftab.close-tab.active{background:var(--close);border-color:var(--close)}
 
 .results-header{display:none;align-items:center;justify-content:space-between;margin-bottom:11px}
 .results-header.visible{display:flex}
@@ -302,26 +301,81 @@ border-radius:13px;padding:13px 15px;margin-bottom:13px}
 .stale-note.show{display:block}
 .results-list{display:flex;flex-direction:column;gap:8px}
 
-.course-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:13px 15px}
-.course-card.is-open{border-right:3px solid var(--open)}
-.course-card.is-close{border-right:3px solid var(--border2)}
-.course-card.in-schedule{border-color:var(--accent);background:rgba(61,111,255,.06)}
-.cc-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:9px}
-.cc-code{font-size:14px;font-weight:600}
-.cc-title{font-size:12px;color:var(--text2);margin-top:2px}
-.cc-right{display:flex;flex-direction:column;align-items:flex-end;gap:7px;flex-shrink:0}
+/* ═══ نتائج البحث: بطاقة لكل مادة، وتنفتح على شعبها (طلب محمد ٢٧ أكتوبر ٢٠٢٦) ═══ */
+.course-card{background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+.cg-head{display:flex;align-items:center;gap:10px;width:100%;padding:13px 15px;background:none;border:0;color:inherit;
+font-family:var(--sans);text-align:start;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background-color .15s}
+.cg-head:active{transform:none;background:rgba(127,140,170,.1)}
+.cg-l{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.cg-code{font-size:14.5px;font-weight:700;font-family:var(--mono)}
+.cg-title{font-size:12px;color:var(--text2);overflow-wrap:break-word}
+.cg-sums{display:flex;flex-wrap:wrap;gap:3px 14px;margin-top:5px}
+.cg-sum{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--text2)}
+.cg-dot{width:7px;height:7px;border-radius:50%;background:var(--close);flex-shrink:0}
+.cg-dot.on{background:var(--open);box-shadow:0 0 0 3px var(--open-bg)}
+.cg-chev{flex-shrink:0;width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;
+color:var(--text3);transition:transform .25s ease,background-color .2s}
+.course-card.open .cg-chev{transform:rotate(180deg);background:var(--bg);color:var(--text2)}
+.cg-notes{display:flex;flex-wrap:wrap;gap:6px;padding:0 15px 11px;margin-top:-3px}
+.cg-note{font-size:11px;padding:3px 9px;border-radius:20px;line-height:1.5}
+.cg-note.mine{color:var(--accent2);border:1px solid rgba(61,111,255,.35);background:rgba(61,111,255,.08)}
+.cg-note.watch{color:var(--warn);border:1px solid rgba(245,158,11,.35);background:var(--warn-bg)}
+.cg-tags{padding:0 15px 11px;margin-top:-8px}
+.cg-body{display:none;flex-direction:column;gap:7px;padding:0 10px 10px}
+.course-card.open .cg-body{display:flex}
+.course-card.cg-anim .cg-body{animation:cgIn .22s ease-out}
+@keyframes cgIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+/* الشعبة سطر خفيف: الحالة بلون طرفه، وسطر لكل اجتماع (المحاضرة والمعمل بنفس CRN شعبة وحدة — §٦) */
+.sec-row{background:var(--bg);border:1px solid var(--border);border-inline-start:3px solid var(--close);border-radius:11px;padding:9px 11px}
+.sec-row.is-open{border-inline-start-color:var(--open)}
+.sec-row.in-schedule{border-color:rgba(61,111,255,.45);background:rgba(61,111,255,.08)}
+.sec-row.in-schedule.is-open{border-inline-start-color:var(--open)}
+.sec-row.in-schedule.is-close{border-inline-start-color:var(--close)}
+.sr-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.sr-id{display:flex;align-items:center;flex-wrap:wrap;gap:6px;min-width:0}
+.sr-sec{font-family:var(--mono);font-size:13px;font-weight:700}
+.sr-lab{font-size:9.5px;font-weight:600;padding:2px 8px;border-radius:20px;white-space:nowrap;
+background:rgba(139,92,246,.14);color:#a78bfa;border:1px solid rgba(139,92,246,.3)}
+html.light .sr-lab{color:#6d28d9}
+.sr-when{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;margin-top:6px;font-size:12.5px}
+.sr-days{font-weight:600}
+.sr-time{font-family:var(--mono);font-size:12px}
+.sr-room{font-size:11px;color:var(--text3)}
+.sr-doc{display:flex;align-items:center;flex-wrap:wrap;gap:4px 6px;margin-top:5px;font-size:11.5px;color:var(--text2)}
+.sr-sep{color:var(--text3)}
+.sec-row .tag{margin-top:6px}
+.sr-bot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px}
+.sr-crn{font-family:var(--mono);font-size:11px;color:var(--text3);white-space:nowrap}
+.sr-crn b{color:var(--accent2);font-weight:600}
+.sr-acts{display:flex;gap:6px;flex-shrink:0}
+.sr-btn{height:32px;padding:0 12px;border-radius:9px;border:1px solid var(--accent);background:transparent;color:var(--accent2);
+font-size:12.5px;font-weight:600;font-family:var(--sans);cursor:pointer;white-space:nowrap}
+.sr-btn[hidden]{display:none}
+.sr-btn.added{background:var(--accent);color:#fff}
+.sr-btn.blocked{border-color:var(--warn);color:var(--warn)}
+.sr-btn.locked{border-color:var(--close-border);color:var(--close)}
+.sr-btn.bell{border-color:var(--border2);color:var(--text2)}
+.sr-btn.bell.on{border-color:var(--warn);color:var(--warn);background:var(--warn-bg)}
+.sr-btn.bell.locked{opacity:.5}
+.cg-foot{display:flex;justify-content:center;padding-top:1px}
+.cg-all{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 14px;border-radius:10px;border:1px dashed var(--border2);
+background:transparent;color:var(--text2);font-size:12.5px;font-weight:600;font-family:var(--sans);cursor:pointer}
+.cg-all.on{border-style:solid;border-color:var(--accent);color:var(--accent2);background:rgba(61,111,255,.1)}
+.cg-all.locked{opacity:.6}
+/* أضفت الشعبة: سطرها ينبض بلون الجدول، ورقم «جدولي» ينط */
+.sec-row.just-added{animation:addPop .55s ease-out}
+@keyframes addPop{0%{transform:scale(.98);box-shadow:0 0 0 0 rgba(61,111,255,.55)}55%{transform:scale(1.01)}
+100%{transform:none;box-shadow:0 0 0 10px rgba(61,111,255,0)}}
+.tab-badge.bump{animation:bump .45s ease-out}
+@keyframes bump{0%{transform:scale(1)}35%{transform:scale(1.45)}100%{transform:scale(1)}}
+/* «تقليل الحركة» بعد قواعدها لا قبلها: نفس الأولوية والأخيرة تغلب */
+@media (prefers-reduced-motion:reduce){
+  .course-card.cg-anim .cg-body,.sec-row.just-added,.tab-badge.bump{animation:none}
+  .cg-chev,.cg-head{transition:none}
+}
 .badge{font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;font-family:var(--mono)}
 .badge.open{background:var(--open-bg);color:var(--open);border:1px solid var(--open-border)}
 .badge.close{background:var(--close-bg);color:var(--close);border:1px solid var(--close-border)}
-.btn-add{width:34px;height:34px;border-radius:10px;border:1px solid var(--accent);background:transparent;
-color:var(--accent2);font-size:19px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:var(--sans)}
-.btn-add.added{background:var(--accent);color:#fff}
-.btn-add.blocked{border-color:var(--warn);color:var(--warn)}
-.btn-add.locked{border-color:var(--close);color:var(--close)}
-.cc-meta{display:grid;grid-template-columns:1fr 1fr;gap:5px 14px}
-.cc-meta-item{font-size:11px;color:var(--text3)}
-.cc-meta-item span{color:var(--text2)}
-.cc-crn{font-family:var(--mono);font-size:11px;color:var(--accent2);margin-top:7px}
 .tag{margin-top:8px;font-size:11.5px;border-radius:9px;padding:7px 10px;line-height:1.55}
 .tag.warn{color:var(--warn);background:var(--warn-bg);border:1px solid rgba(245,158,11,.3)}
 .tag.err{color:var(--close);background:var(--close-bg);border:1px solid var(--close-border)}
@@ -485,7 +539,7 @@ outline:none;flex-shrink:0;max-width:78px}
 .pc-wi.set{border-style:solid;border-color:var(--accent);color:var(--accent2)}
 /* تحذير جدول الطرح — المادة ما تُطرح كل ترم */
 /* وميض خفيف على البطاقة التي تغيّرت حالتها بلا إعادة رسم */
-.course-card.just-changed{animation:flash 1.2s ease-out 2}
+.course-card.just-changed,.sec-row.just-changed{animation:flash 1.2s ease-out 2}
 @keyframes flash{0%{box-shadow:0 0 0 0 rgba(245,158,11,.55)}
 100%{box-shadow:0 0 0 10px rgba(245,158,11,0)}}
 .pc-pre{font-size:11px;margin-top:4px;line-height:1.6;color:var(--text3)}
@@ -622,12 +676,6 @@ padding:11px;text-align:center;margin-top:10px}
 
 .pay-line b{font-family:var(--mono);color:var(--accent2)}
 
-/* monitor toggle on course card */
-.btn-bell{width:34px;height:34px;border-radius:10px;border:1px solid var(--border2);
-background:transparent;color:var(--text3);font-size:15px;cursor:pointer;
-display:flex;align-items:center;justify-content:center}
-.btn-bell.on{border-color:var(--warn);color:var(--warn);background:var(--warn-bg)}
-.btn-bell.locked{opacity:.45}
 /* ═══ ورقة الباقات — مكوّن واحد لكل لحظات الجدار ═══ */
 .ps-overlay{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.45);
   display:flex;align-items:flex-end;justify-content:center;opacity:0;transition:opacity .2s}
@@ -722,9 +770,6 @@ display:flex;align-items:center;justify-content:center}
 .ps-rc[hidden]{display:none}
 .ps-rc .btn-sm{flex:none;white-space:nowrap}
 .mon-paused{opacity:.6}
-.btn-bell.all{font-size:13px}
-.btn-bell.all.on{border-color:var(--accent);color:var(--accent);
-background:rgba(61,111,255,.12)}
 
 .my-rev{background:var(--bg);border:1px solid var(--border);border-radius:12px;
 padding:12px 14px;margin-bottom:8px}
@@ -1817,22 +1862,16 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     </div>
   </div>
 
+  <!-- العدّادات هي الفلتر: تحسب شعباً (CRN) لا صفوفاً — المحاضرة والمعمل بنفس CRN شعبة وحدة -->
   <div class="stats-bar" id="statsBar">
-    <div class="stat-box"><div class="stat-num" id="statTotal">—</div><div class="stat-label" data-i18n="total">إجمالي</div></div>
-    <div class="stat-box"><div class="stat-num open-color" id="statOpen">—</div><div class="stat-label" data-i18n="open">مفتوح</div></div>
-    <div class="stat-box"><div class="stat-num close-color" id="statClose">—</div><div class="stat-label" data-i18n="closed">مغلق</div></div>
-  </div>
-
-  <div class="filter-bar" id="filterBar">
-    <div class="filter-label" data-i18n="show">عرض:</div>
-    <button class="ftab active" onclick="setFilter('all',this)" data-i18n="all">الكل</button>
-    <button class="ftab open-tab" onclick="setFilter('open',this)" data-i18n="onlyOpen">مفتوح فقط</button>
-    <button class="ftab close-tab" onclick="setFilter('close',this)" data-i18n="onlyClosed">مغلق فقط</button>
+    <button type="button" class="stat-box on" data-f="all" aria-pressed="true" onclick="setFilter('all')"><span class="stat-num" id="statTotal">—</span><span class="stat-label" data-i18n="total">إجمالي</span></button>
+    <button type="button" class="stat-box o" data-f="open" aria-pressed="false" onclick="setFilter('open')"><span class="stat-num open-color" id="statOpen">—</span><span class="stat-label" data-i18n="open">مفتوح</span></button>
+    <button type="button" class="stat-box c" data-f="close" aria-pressed="false" onclick="setFilter('close')"><span class="stat-num close-color" id="statClose">—</span><span class="stat-label" data-i18n="closed">مغلق</span></button>
   </div>
 
   <div class="stale-note" id="staleNote"></div>
   <div class="results-header" id="resultsHeader">
-    <div class="results-count"><span id="visibleCount">0</span> <span data-i18n="courseUnit">مادة</span></div>
+    <div class="results-count"><span id="visibleCount">0</span> <span data-i18n="courseUnit">مادة</span> · <span id="visibleSecs">0</span> <span data-i18n="secUnit">شعبة</span></div>
     <div class="results-time" id="lastUpdate">—</div>
   </div>
 
@@ -1867,7 +1906,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
   <div class="crn-panel" id="crnPanel"></div>
   <div class="state-box visible" id="schedEmpty">
     <div class="state-icon">📅</div><div class="state-title">جدولك فاضي</div>
-    <div class="state-sub">روح لصفحة البحث واضغط ➕ على أي مادة</div>
+    <div class="state-sub">روح لصفحة البحث واضغط «+ أضف» على الشعبة اللي تبيها</div>
     <a class="state-link" href="/guide" target="_blank" rel="noopener" data-i18n="guideLink">📖 شوف الدليل بالصور</a>
   </div>
   <div class="slot-bar" id="slotBar"></div>
@@ -2732,7 +2771,7 @@ async function doSearch(){
     const r=await fetch(`${API}?term=${term}&college=${college}&gender=${gender}&filter=${encodeURIComponent(filter)}${kq}`);
     const d=await r.json();
     if(!d.success){ const er=new Error(d.error); er.fromServer=!!d.error; throw er }
-    allCourses=d.courses;RES_ANIM=true;renderResults();setStatus(`${d.count} ${t('courseUnit')}`);
+    allCourses=d.courses;RES_ANIM=true;RES_EXP.clear();renderResults();setStatus(`${d.count} ${t('courseUnit')}`);
     dataAge(r);
   }catch(e){
     showLoading(false);setStatus(LANG==='ar'?'خطأ':'Error');
@@ -2821,26 +2860,38 @@ async function quietRefresh(){
   });
   if(!flips)return;
 
-  /* نحدّث البطاقات في مكانها. البطاقة ما تحمل crn في سمة، فنستخرجه
-     من زر الإضافة — toggleCourse('CRN'). */
-  document.querySelectorAll('.course-card').forEach(el=>{
-    const btn=el.querySelector('.btn-add');
-    const mm=btn&&/toggleCourse\('([^']+)'\)/.exec(btn.getAttribute('onclick')||'');
-    if(!mm)return;
-    const c=byCrn.get(mm[1]);
+  /* نحدّث الشعب في مكانها: طرفها وحالتها وزر المراقبة، وملخّص مادتها والعدّادات — بلا إعادة رسم.
+     السطر يحمل CRN في data-crn */
+  const hitGroups=new Set();
+  document.querySelectorAll('#resultsList .sec-row[data-crn]').forEach(el=>{
+    const c=byCrn.get(el.dataset.crn);
     if(!c)return;
-    const badge=el.querySelector('.badge');
-    if(!badge)return;
     const open=statusOf(c)==='OPEN';
     if(el.classList.contains('is-open')===open)return;
     el.classList.toggle('is-open',open);
     el.classList.toggle('is-close',!open);
-    badge.classList.toggle('open',open);
-    badge.classList.toggle('close',!open);
-    badge.textContent=c.status;
+    const badge=el.querySelector('.badge');
+    if(badge){ badge.classList.toggle('open',open); badge.classList.toggle('close',!open); badge.textContent=c.status }
+    const bell=el.querySelector('.sr-btn.bell');
+    if(bell)bell.hidden=open&&!isMonitored(el.dataset.crn);
     el.classList.add('just-changed');
     setTimeout(()=>el.classList.remove('just-changed'),4000);
+    const g=el.closest('.course-card');
+    if(g)hitGroups.add(g);
   });
+  if(hitGroups.size){
+    const rowsBy=new Map();
+    allCourses.forEach(c=>{ const k=String(c.crn); if(!rowsBy.has(k))rowsBy.set(k,[]); rowsBy.get(k).push(c) });
+    hitGroups.forEach(g=>{
+      const secs=(g.dataset.crns||'').split(',').filter(k=>rowsBy.has(k)).map(k=>({crn:k,row:rowsBy.get(k)[0],rows:rowsBy.get(k)}));
+      const box=g.querySelector('.cg-sums');
+      if(box)box.innerHTML=resSumsHtml(secs);
+      /* مطوية: الوميض على المادة — ملخّصها هو اللي تغيّر قدامه */
+      if(!g.classList.contains('open')){ g.classList.add('just-changed'); setTimeout(()=>g.classList.remove('just-changed'),4000) }
+    });
+  }
+  const all=resSections(resBase());
+  resStatsPaint(all.length,all.filter(secOpen).length);
 
   /* بلا تنبيه إطلاقاً: أي صياغة توحي بأن شيئاً تغيّر أمام الطالب،
      فيبحث عمّا لم يتغيّر — والتغيير قد يكون خارج فلتره أصلاً.
@@ -2854,78 +2905,183 @@ function startQuietRefresh(){
   QUIET_ON=true;
 }
 
+/* ═══ نتائج البحث: بطاقة لكل مادة، وتنفتح على شعبها — طلب محمد (٢٧ أكتوبر ٢٠٢٦) ═══
+   كانت كل شعبة بطاقة طويلة (٧ شعب ≈ ٣ شاشات تمرير). صارت المادة بطاقة («٤ شعب · وحدة مفتوحة») والشعبة
+   سطراً خفيفاً: الحالة بلون طرفه، وسطر لكل اجتماع — **المحاضرة والمعمل بنفس CRN شعبة وحدة** (§٦) — و«+ أضف»
+   و«🔕 راقب» بكلمة، و«📡 راقب كل الشعب» مرة تحت المادة. مطوية لو المواد كثيرة، ومفتوحة لو قليلة (بحث بكود أو
+   دكتور)، وضغطة الطالب تنحفظ لين بحث جديد. والعدّادات فوق هي الفلتر، وتعدّ شعباً لا صفوفاً */
+const RES_EXP=new Map();      /* مادة ⇐ مفتوحة؟ — ضغطة الطالب تغلب الافتراض */
+let RES_FLASH=null;           /* CRN انضاف الحين ⇐ سطره ينبض */
+const RES_CHEV='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+function resKey(code){ return String(code||'').trim().toUpperCase().replace(/\s+/g,' ') }
+/* الفلتر النصي على الشعبة كلها: طابق اجتماعاً منها (دكتور المعمل مثلاً) ⇒ تجي باجتماعاتها كلها */
+function resBase(){
+  const f=norm(((document.getElementById('courseFilter')||{}).value||'').trim());
+  if(!f)return allCourses;
+  const hit=new Set();
+  allCourses.forEach(c=>{
+    if(norm(c.courseCode).includes(f)||norm(c.courseTitle).includes(f)||norm(c.crn).includes(f)||
+       norm(c.section).includes(f)||norm(c.instructor).includes(f))hit.add(String(c.crn));
+  });
+  return allCourses.filter(c=>hit.has(String(c.crn)));
+}
+/* صفوف الجامعة ⇒ شعب بترتيب ظهورها (صفّان بنفس CRN شعبة وحدة) */
+function resSections(rows){
+  const m=new Map();
+  rows.forEach(c=>{ const k=String(c.crn), x=m.get(k); if(x)x.rows.push(c); else m.set(k,{crn:k,row:c,rows:[c]}) });
+  return [...m.values()];
+}
+function secOpen(s){ return s.rows.some(r=>statusOf(r)==='OPEN') }
+/* «٤ شعب · وحدة مفتوحة». والمعامل (شعب مستقلة بـCRN خاص) لحالها: الطالب يحتاج محاضرة مفتوحة ومعملاً مفتوحاً */
+function resSumTxt(n,op,lab){
+  if(LANG!=='ar'){
+    const w=lab?(n===1?'lab':'labs'):(n===1?'section':'sections');
+    return `${n} ${w} · ${op===0?(n===1?'closed':'all closed'):op===n?(n===1?'open':'all open'):op+' open'}`;
+  }
+  const cnt=lab?(n===1?'معمل واحد':n===2?'معملين':n<=10?`${n} معامل`:`${n} معمل`)
+               :(n===1?'شعبة وحدة':n===2?'شعبتين':n<=10?`${n} شعب`:`${n} شعبة`);
+  const st=op===0?(n===1?(lab?'مقفل':'مقفلة'):'كلها مقفلة')
+          :op===n?(n===1?(lab?'مفتوح':'مفتوحة'):'كلها مفتوحة')
+          :op===1?(lab?'واحد مفتوح':'وحدة مفتوحة'):`${op} مفتوحة`;
+  return `${cnt} · ${st}`;
+}
+function resSumsHtml(secs){
+  const lec=secs.filter(s=>!isLabSection(s.row)), lab=secs.filter(s=>isLabSection(s.row));
+  return [[lec,false],[lab,true]].filter(x=>x[0].length).map(([a,isLab])=>{
+    const op=a.filter(secOpen).length;
+    return `<span class="cg-sum"><i class="cg-dot${op?' on':''}"></i>${resSumTxt(a.length,op,isLab)}</span>`;
+  }).join('');
+}
+/* «اثنين · أربعاء» و«08:00–09:15» من صيغة الجامعة («MW» · «0800 - 0915»). غيرها (TBA) كما هو */
+function resDays(x){
+  const raw=String(x||'').trim();
+  if(!/^[UMTWRFS]+$/i.test(raw.replace(/\s+/g,'')))return raw;
+  const n=t('daysShort')||{};
+  return parseDays(raw).map(k=>n[k]||k).join(' · ');
+}
+function resTime(x){ const p=parseTime(x); return p?fmtTime(p.start)+'–'+fmtTime(p.end):String(x||'').trim() }
+/* «+ أضف» و«🔕 راقب» بكلمة بدل أيقونات صغيرة. الـCRN من سطرها (data-crn) لا نص داخل onclick */
+function secActsHtml(s,inSch,lock,clash){
+  const ar=LANG==='ar', on=isMonitored(s.crn);
+  const add=`<button type="button" class="sr-btn add${inSch?' added':lock?' locked':clash?' blocked':''}" onclick="toggleCourse(this.closest('.sec-row').dataset.crn)">${
+    inSch?(ar?'✓ في جدولك':'✓ Added'):lock?(ar?'🔒 أضف':'🔒 Add'):(ar?'+ أضف':'+ Add')}</button>`;
+  /* المراقبة للمقفلة — والمراقَبة تبقى ظاهرة ولو فتحت، يوقفها من هنا */
+  const bell=`<button type="button" class="sr-btn bell${on?' on':''}${(!on&&monCapReached())?' locked':''}" onclick="toggleMonitorCourse(this.closest('.sec-row').dataset.crn)"${
+    (secOpen(s)&&!on)?' hidden':''} title="${ar?'مراقبة هذي الشعبة':'Watch this section'}">${on?(ar?'🔔 تراقبها':'🔔 Watching'):(ar?'🔕 راقب':'🔕 Watch')}</button>`;
+  return add+bell;
+}
+function resRowHtml(s,lock,flash){
+  const ar=LANG==='ar', c=s.row, crn=s.crn, open=secOpen(s);
+  const inSch=schedule.some(x=>String(x.crn)===crn);
+  /* التعارض لكل اجتماعاتها: المعمل ممكن يتعارض والمحاضرة لا */
+  const seen=new Set(), clash=[];
+  if(!inSch)s.rows.forEach(r=>findConflicts(r,schedule).forEach(x=>{
+    const k=String(x.crn); if(!seen.has(k)){ seen.add(k); clash.push(x) } }));
+  const mk=new Set(), meets=s.rows.filter(r=>{ const k=(r.courseDate||'')+'|'+(r.courseTiming||''); if(mk.has(k))return false; mk.add(k); return true });
+  const docs=[...new Set(s.rows.map(r=>String(r.instructor||'').trim()).filter(Boolean))];
+  let tag='';
+  if(clash.length)tag=`<div class="tag warn">${t('clashWith')} ${clash.map(x=>escapeHtml(x.courseCode+' §'+x.section)).join('، ')}</div>`;
+  else if(!inSch&&schedule.length&&s.rows.some(r=>parseTime(r.courseTiming)))tag=`<div class="tag ok">${t('noClash')}</div>`;
+  return `<div class="sec-row ${open?'is-open':'is-close'}${inSch?' in-schedule':''}${flash===crn?' just-added':''}" data-crn="${escapeHtml(crn)}">
+      <div class="sr-top"><span class="sr-id"><span class="sr-sec">${ar?'شعبة':'Sec'} ${escapeHtml(c.section)}</span>${
+        isLabSection(c)?`<span class="sr-lab">${ar?'معمل':'Lab'}</span>`:''}${genderChip(c)}</span>
+        <span class="badge ${open?'open':'close'}">${open?'OPEN':escapeHtml(c.status||'—')}</span></div>
+      ${meets.map(r=>`<div class="sr-when"><span class="sr-days">${escapeHtml(resDays(r.courseDate))||'—'}</span><span class="sr-time" dir="ltr">${
+        escapeHtml(resTime(r.courseTiming))||'—'}</span>${r.room?`<span class="sr-room">${escapeHtml(r.room)}</span>`:''}</div>`).join('')}
+      <div class="sr-doc">👤 ${docs.length?docs.map(n=>`${docChip(n)}<span>${escapeHtml(n)}</span>`).join('<span class="sr-sep">·</span>'):'<span>—</span>'}</div>
+      ${tag}<div class="sr-bot"><span class="sr-crn">CRN <b>${escapeHtml(crn)}</b></span><span class="sr-acts">${secActsHtml(s,inSch,lock,clash.length>0)}</span></div>
+    </div>`;
+}
+/* all: شعب المادة بعد الفلتر النصي (ملخّصها) — g.secs: المعروضة بعد فلتر الحالة */
+function resGroupHtml(g,all,expDef,ai,flash){
+  const ar=LANG==='ar';
+  g.secs.sort((a,b)=>String(a.row.section).localeCompare(String(b.row.section),'en',{numeric:true}));
+  /* العنوان من محاضرتها ولو الفلتر ما جاب إلا المعمل («مفتوح» والمفتوح معمل بس) */
+  const head=(all.find(s=>!isLabSection(s.row))||g.secs[0]).row, code=head.courseCode;
+  const exp=RES_EXP.has(g.key)?RES_EXP.get(g.key):expDef;
+  const pre=prereqCheck(code), lock=pre.known&&!pre.ok;
+  let tags='';
+  if(lock){
+    let msg=t('prereqMiss')+' ';
+    if(pre.missing.length)msg+=pre.missing.join('، ');
+    if(pre.needCr)msg+=(pre.missing.length?' + ':'')+`${pre.needCr} ${t('needHrs')} ${pre.haveCr})`;
+    tags+=`<div class="tag err">${escapeHtml(msg)}</div>`;
+  }else if(pre.known&&isPassed(code))tags+=`<div class="tag ok">${t('alreadyDone')}</div>`;
+  /* وش له فيها: شعب في جدوله، وشعب يراقبها، ومراقبة كل الشعب — تبان والمادة مطوية */
+  const term=(document.getElementById('term')||{}).value;
+  const bySec=(a,b)=>a.localeCompare(b,'en',{numeric:true});
+  const mine=[...new Set(schedule.filter(x=>resKey(x.courseCode)===g.key).map(x=>String(x.section)))].sort(bySec);
+  const watch=[...new Set(monitored.filter(m=>m.scope!=='course'&&m.term===term&&resKey(m.course_code)===g.key)
+    .map(m=>String(m.section||m.crn)))].sort(bySec);
+  const allOn=isCourseMonitored(code);
+  /* «شعبة 101» لا «§101»: الرمز وسط العربي ينقلب بعد الرقم («101§») */
+  const secs=l=>escapeHtml(ar?`${l.length>1?'الشعب':'شعبة'} ${l.join(' · ')}`:l.map(x=>'§'+x).join(' · '));
+  const notes=(mine.length?`<span class="cg-note mine">✓ ${ar?'في جدولك':'In your schedule'}: ${secs(mine)}</span>`:'')
+    +(watch.length?`<span class="cg-note watch">🔔 ${ar?'تراقب':'Watching'}: ${secs(watch)}</span>`:'')
+    +(allOn?`<span class="cg-note watch">📡 ${ar?'تراقب كل الشعب':'Watching all sections'}</span>`:'');
+  return `<div class="course-card cg${exp?' open':''}${ai>=0?' in':''}" data-code="${escapeHtml(g.key)}" data-cc="${escapeHtml(code)}" data-crns="${
+      escapeHtml(all.map(s=>s.crn).join(','))}"${ai>=0?` style="--i:${ai}"`:''}>
+    <button type="button" class="cg-head" aria-expanded="${exp?'true':'false'}" onclick="resToggle(this)">
+      <span class="cg-l"><span class="cg-code">${escapeHtml(code)}</span><span class="cg-title">${escapeHtml(head.courseTitle)}</span>
+        <span class="cg-sums">${resSumsHtml(all)}</span></span>
+      <span class="cg-chev" aria-hidden="true">${RES_CHEV}</span>
+    </button>${notes?`<div class="cg-notes">${notes}</div>`:''}${tags?`<div class="cg-tags">${tags}</div>`:''}
+    <div class="cg-body">${g.secs.map(s=>resRowHtml(s,lock,flash)).join('')}
+      <div class="cg-foot"><button type="button" class="cg-all${allOn?' on':''}${isPro()?'':' locked'}" onclick="toggleMonitorAll(this.closest('.course-card').dataset.cc)"
+        title="${allOn?(ar?'توقف مراقبة كل شعب المادة':'Stop watching all sections'):(ar?'راقب كل شعب هذي المادة':'Watch every section of this course')}">📡 ${
+        allOn?(ar?'تراقب كل الشعب':'Watching all sections'):(ar?'راقب كل الشعب':'Watch all sections')}</button></div>
+    </div>
+  </div>`;
+}
+function resToggle(btn){
+  const g=btn&&btn.closest('.course-card');
+  if(!g)return;
+  const open=!g.classList.contains('open');
+  g.classList.toggle('open',open);
+  btn.setAttribute('aria-expanded',open?'true':'false');
+  RES_EXP.set(g.dataset.code,open);
+  g.classList.remove('cg-anim');
+  if(open&&!countReduce()){ void g.offsetWidth; g.classList.add('cg-anim') }
+}
+function resStatsPaint(total,op){
+  countTo(document.getElementById('statTotal'),total);
+  countTo(document.getElementById('statOpen'),op);
+  countTo(document.getElementById('statClose'),total-op);
+  document.querySelectorAll('#statsBar .stat-box').forEach(b=>{
+    const on=b.dataset.f===filterMode;
+    b.classList.toggle('on',on);
+    b.setAttribute('aria-pressed',on?'true':'false');
+  });
+}
 function renderResults(){
   if(allCourses.length&&!QUIET_ON)startQuietRefresh();
-  const raw=document.getElementById('courseFilter').value.trim();
-  const f=norm(raw);
-  let cs=allCourses;
-  if(f)cs=cs.filter(c=>
-    norm(c.courseCode).includes(f)||
-    norm(c.courseTitle).includes(f)||
-    norm(c.crn).includes(f)||
-    norm(c.section).includes(f)||
-    norm(c.instructor).includes(f));
-  const base=cs;
-  if(filterMode==='open')cs=cs.filter(c=>c.status==='OPEN');
-  if(filterMode==='close')cs=cs.filter(c=>c.status==='CLOSE');
-  const op=base.filter(c=>c.status==='OPEN').length;
+  const all=resSections(resBase());
+  const op=all.filter(secOpen).length;
+  const secs=filterMode==='open'?all.filter(secOpen):filterMode==='close'?all.filter(s=>!secOpen(s)):all;
 
   showLoading(false);
   document.getElementById('initialBox').classList.remove('visible');
   document.getElementById('statsBar').classList.add('visible');
-  document.getElementById('filterBar').classList.add('visible');
   document.getElementById('resultsHeader').classList.add('visible');
   /* بعد ما يبان الشريط — والشريط مخفي ينكتب الرقم على طول بلا عدّ (أول بحث كان كذا) */
-  countTo(document.getElementById('statTotal'),base.length);
-  countTo(document.getElementById('statOpen'),op);
-  countTo(document.getElementById('statClose'),base.length-op);
-  document.getElementById('visibleCount').textContent=cs.length;
+  resStatsPaint(all.length,op);
 
-  const list=document.getElementById('resultsList');
-  const anim=RES_ANIM; RES_ANIM=false;
-  if(!cs.length){document.getElementById('emptyBox').classList.add('visible');list.innerHTML='';return}
+  const byKey=new Map(), groups=new Map();
+  all.forEach(s=>{ const k=resKey(s.row.courseCode); if(!byKey.has(k))byKey.set(k,[]); byKey.get(k).push(s) });
+  secs.forEach(s=>{ const k=resKey(s.row.courseCode); if(!groups.has(k))groups.set(k,{key:k,secs:[]}); groups.get(k).secs.push(s) });
+  const list=[...groups.values()];
+  document.getElementById('visibleCount').textContent=list.length;
+  const vs=document.getElementById('visibleSecs');
+  if(vs)vs.textContent=secs.length;
+
+  const el=document.getElementById('resultsList');
+  const anim=RES_ANIM, flash=RES_FLASH; RES_ANIM=false; RES_FLASH=null;
+  if(!list.length){document.getElementById('emptyBox').classList.add('visible');el.innerHTML='';return}
   document.getElementById('emptyBox').classList.remove('visible');
-
-  list.innerHTML=cs.map((c,i)=>{
-    const inSch=schedule.some(s=>s.crn===c.crn);
-    const clash=inSch?[]:findConflicts(c,schedule);
-    const pre=prereqCheck(c.courseCode);
-    let tags='';
-    if(pre.known&&!pre.ok){
-      let msg=t('prereqMiss')+' ';
-      if(pre.missing.length)msg+=pre.missing.join('، ');
-      if(pre.needCr)msg+=(pre.missing.length?' + ':'')+`${pre.needCr} ${t('needHrs')} ${pre.haveCr})`;
-      tags+=`<div class="tag err">${msg}</div>`;
-    }
-    if(inSch)tags+=`<div class="tag ok">${t('inSchedule')}</div>`;
-    else if(clash.length)tags+=`<div class="tag warn">${t('clashWith')} ${clash.map(x=>x.courseCode+' §'+x.section).join('، ')}</div>`;
-    else if(schedule.length&&parseTime(c.courseTiming))tags+=`<div class="tag ok">${t('noClash')}</div>`;
-    if(pre.known&&pre.ok&&isPassed(c.courseCode))tags+=`<div class="tag ok">${t('alreadyDone')}</div>`;
-
-    const lock=pre.known&&!pre.ok;
-    const a=anim&&i<12;
-    return `<div class="course-card ${c.status==='OPEN'?'is-open':'is-close'} ${inSch?'in-schedule':''}${a?' in':''}"${a?` style="--i:${i}"`:''}>
-      <div class="cc-top">
-        <div><div class="cc-code">${c.courseCode} <span style="color:var(--text2);font-weight:400">— Sec ${c.section}</span></div>
-        <div class="cc-title">${c.courseTitle}</div></div>
-        <div class="cc-right">
-          ${genderChip(c)}
-          <span class="badge ${c.status==='OPEN'?'open':'close'}">${c.status}</span>
-          <button class="btn-add ${inSch?'added':''} ${lock?'locked':clash.length?'blocked':''}" onclick="toggleCourse('${c.crn}')">${inSch?'✓':'+'}</button>
-          ${c.status==='CLOSE'?`<button class="btn-bell ${isMonitored(c.crn)?'on':''} ${(!isMonitored(c.crn)&&monCapReached())?'locked':''}" onclick="toggleMonitorCourse('${c.crn}')" title="مراقبة هذي الشعبة">${isMonitored(c.crn)?'🔔':'🔕'}</button>`:''}
-          <button class="btn-bell all ${isCourseMonitored(c.courseCode)?'on':''} ${isPro()?'':'locked'}"
-            onclick="toggleMonitorAll('${escapeHtml(c.courseCode)}')"
-            title="${isCourseMonitored(c.courseCode)?'توقف مراقبة كل شعب المادة':'راقب كل شعب هذي المادة'}">📡</button>
-        </div>
-      </div>
-      <div class="cc-meta">
-        <div class="cc-meta-item">📅 <span>${c.courseDate||'—'}</span></div>
-        <div class="cc-meta-item">⏰ <span>${c.courseTiming||'—'}</span></div>
-        <div class="cc-meta-item">👤 ${docChip(c.instructor)}<span>${c.instructor||'—'}</span></div>
-        <div class="cc-meta-item">🏛️ <span>${c.room||'—'}</span></div>
-      </div>
-      <div class="cc-crn">CRN: ${c.crn}</div>${tags}</div>`;
-  }).join('');
+  /* مفتوحة لو المواد قليلة (بحث بكود) أو الفلتر جاب شعباً قليلة (دكتور) — وإلا مطوية */
+  const hasF=!!((document.getElementById('courseFilter')||{}).value||'').trim();
+  const expDef=list.length<=3||(hasF&&secs.length<=10);
+  el.innerHTML=list.map((g,i)=>resGroupHtml(g,byKey.get(g.key)||g.secs,expDef,anim&&i<12?i:-1,flash)).join('');
 }
 
 /* ===== Schedule ===== */
@@ -2972,7 +3128,8 @@ function addSessionsDirect(sess){
   }
   const clash=findConflicts(c,schedule);
   sess.forEach(s=>schedule.push(s));
-  saveSchedules();pushSchedule();updateBadge();renderResults();
+  RES_FLASH=String(c.crn);     /* سطرها ينبض بعد الرسم، ورقم «جدولي» ينط */
+  saveSchedules();pushSchedule();updateBadge(true);renderResults();
   if(clash.length)showToast(`${t('addedButClash')} ${clash[0].courseCode}`,'warn');
   else showToast(`${t('addedTo')} ${c.courseCode} ${t('toSchedule')}`);
   return true;
@@ -3119,19 +3276,22 @@ function renderSlots(){
     </button>`).join('');
 }
 
-function updateBadge(){document.getElementById('schedBadge').textContent=schedule.length}
+/* رقم «جدولي» شعب لا صفوف: المحاضرة والمعمل بنفس CRN صفّان (§٦) — كان يزيد ٢ مع شعبة وحدة.
+   ومع إضافة من البحث ينط (bump) */
+function updateBadge(bump){
+  const b=document.getElementById('schedBadge');
+  if(!b)return;
+  const n=new Set(schedule.map(s=>String(s.crn))).size, was=Number(b.textContent)||0;
+  b.textContent=n;
+  if(bump&&n>was&&!countReduce()){ b.classList.remove('bump'); void b.offsetWidth; b.classList.add('bump') }
+}
 
-/* هل هذي الشعبة معمل؟ نعتمد على بيانات الجامعة نفسها فقط:
-   اسم الشعبة فيه LAB، أو كودها فيه L (مثل PHYS 1101L).
-   ما نخمّن من رقم الشعبة — مواد كثيرة شعبها تتجاوز 110 وهي محاضرات. */
+/* هل هذي الشعبة معمل؟ من عنوان الجامعة وحده: ينتهي بـ« LAB» (CLAUDE.md §٦ — «Chemistry for Engineers I LAB»،
+   و«Thermofluids & Energy Lab» بحروف صغيرة). ما نخمّن من رقم الشعبة — مواد كثيرة شعبها تتجاوز 110 وهي محاضرات.
+   كانت تعدّ الكود المنتهي بـL معملاً (PHYS 1101L) — وما فيه كود كذا في بيانات الطلاب، بس فيه PRPL وBIOL (ومثلها ENGL):
+   مواد عادية طلعت «معمل» في بطاقات البحث. و«LEC/LAB» شعبة وحدة محاضرة (قبل LAB شرطة لا مسافة) */
 function isLabSection(c){
-  const sec=String(c.section||'').trim();
-  const code=(c.courseCode||'').toUpperCase();
-  const name=(c.courseTitle||'').toUpperCase();
-  if(/L/i.test(sec))return true;
-  if(/L\b/.test(code)||/L\s/.test(code))return true;
-  if(/\bLABS?\b|\bLABORATORY\b/.test(name))return true;
-  return false;
+  return /\sLAB$/i.test(String(c&&c.courseTitle||'').trim());
 }
 
 /* ينبّه لو المادة لها معمل في نتائج البحث وما أضافه، أو العكس */
@@ -6032,7 +6192,8 @@ function renderPlan(){
 }
 
 /* ===== Filters / Monitor / Utils ===== */
-function setFilter(m,el){filterMode=m;document.querySelectorAll('.ftab').forEach(t=>t.classList.remove('active'));el.classList.add('active');renderResults()}
+/* العدّادات هي الفلتر: «مفتوح» تطلع المفتوحة بس، وضغطة ثانية عليها (أو «إجمالي») ترجّع الكل */
+function setFilter(m){filterMode=(m===filterMode&&m!=='all')?'all':m;if(allCourses.length)renderResults()}
 function clearFilter(){document.getElementById('courseFilter').value='';document.getElementById('clearFilter').style.display='none';if(allCourses.length)renderResults()}
 document.getElementById('courseFilter').addEventListener('input',function(){
   document.getElementById('clearFilter').style.display=this.value?'block':'none';
@@ -8533,6 +8694,7 @@ function searchIn(query, note){
     document.getElementById('clearFilter').style.display='block';
   }
 
+  RES_EXP.clear();   /* مادة طواها قبل تنفتح لو جاها من الخطة أو الدكتور */
   /* لو تغيّر الترم لازم نعيد السحب — النتائج القديمة لترم ثانٍ */
   if(changed || !allCourses.length){
     showToast(LANG==='ar'?'جاري جلب مواد الترم القادم...':'Fetching next term courses...');
@@ -8978,11 +9140,11 @@ print:'🖨️ اطبع',clearAll:'🗑️ امسح الكل',crnBtn:'🔢 أر�
 gpaLabel:'المعدل التراكمي',countedHrs:'ساعات محسوبة',
 suggestTitle:'💡 المقترح للترم الجاي',planTitle:'الخطة الدراسية',
 uni:'الجامعة',major:'التخصص',login:'دخول',tabDocs:'👨‍🏫 دكاترة',myReviews:'تقييماتي',docsTitle:'تقييمات الدكاترة',uniTitle:'جامعتك وتخصصك',docPh:'ابحث عن دكتور...',
-guideLink:'📖 شوف الدليل بالصور',schedEmptyT:'جدولك فاضي',schedEmptyS:'روح لصفحة البحث واضغط ➕ على أي مادة',
+guideLink:'📖 شوف الدليل بالصور',schedEmptyT:'جدولك فاضي',schedEmptyS:'روح لصفحة البحث واضغط «+ أضف» على الشعبة اللي تبيها',
 initT:'ابدأ البحث',initS:'اختار السيمستر والكلية واضغط ابحث',
 loadT:'جاري البحث...',loadS:'يجيب البيانات من موقع الجامعة',
 emptyT:'ما في نتائج',emptyS:'جرب تغير الفلتر أو البحث',
-noClass:'ما في محاضرات ✓',lecture:'محاضرة',hrsUnit:'ساعة',courseUnit:'مادة',
+noClass:'ما في محاضرات ✓',lecture:'محاضرة',hrsUnit:'ساعة',courseUnit:'مادة',secUnit:'شعبة',
 syncOut:'سجّل دخول عشان تنحفظ خطتك وجدولك ويجونك من أي جهاز',
 syncIn:'محفوظ في حسابك',syncIn2:'— بيجيك من أي جهاز تسجل فيه',
 gpaHintEmpty:'حط درجة أي مادة خلصتها تحت — والمواد بدون درجة أو بتقدير P / TR / W ما تدخل الحساب',
@@ -9036,6 +9198,7 @@ clearedSched:'مسحت الجدول',markedAnyway:'سجّلتها كمكتملة
 errConn:'خطأ في الاتصال',errConnSub:'السيرفر قد يكون نايم — انتظر 30 ثانية وجرب مرة ثانية',
 crn:'CRN',sec:'شعبة',
 days:{U:'الأحد',M:'الاثنين',T:'الثلاثاء',W:'الأربعاء',R:'الخميس',F:'الجمعة',S:'السبت'},
+daysShort:{U:'أحد',M:'اثنين',T:'ثلاثاء',W:'أربعاء',R:'خميس',F:'جمعة',S:'سبت'},
 sem:{F1:'السنة الأولى — الترم الأول',F2:'السنة الأولى — الترم الثاني',
 S1:'السنة الثانية — الترم الأول',S2:'السنة الثانية — الترم الثاني',
 J1:'السنة الثالثة — الترم الأول',J2:'السنة الثالثة — الترم الثاني',
@@ -9149,11 +9312,11 @@ print:'🖨️ Print',clearAll:'🗑️ Clear all',crnBtn:'🔢 CRN numbers',
 gpaLabel:'Cumulative GPA',countedHrs:'Counted hours',
 suggestTitle:'💡 Suggested next term',planTitle:'Study Plan',
 uni:'University',major:'Major',login:'Sign in',tabDocs:'👨‍🏫 Faculty',myReviews:'My reviews',docsTitle:'Instructor reviews',uniTitle:'Your university & major',docPh:'Search for an instructor...',
-guideLink:'📖 Visual guide',schedEmptyT:'Your schedule is empty',schedEmptyS:'Go to Search and tap ➕ on any course',
+guideLink:'📖 Visual guide',schedEmptyT:'Your schedule is empty',schedEmptyS:'Go to Search and tap “+ Add” on the section you want',
 initT:'Start searching',initS:'Pick a semester and college, then tap Search',
 loadT:'Searching...',loadS:'Fetching data from the university site',
 emptyT:'No results',emptyS:'Try changing the filter or search',
-noClass:'No classes ✓',lecture:'class',hrsUnit:'hrs',courseUnit:'courses',
+noClass:'No classes ✓',lecture:'class',hrsUnit:'hrs',courseUnit:'courses',secUnit:'sections',
 syncOut:'Sign in to save your plan and schedule across devices',
 syncIn:'Saved to your account',syncIn2:'— available on any device you sign in from',
 gpaHintEmpty:'Add a grade to any completed course below — courses without a grade or marked P / TR / W are excluded',
@@ -9207,6 +9370,7 @@ clearedSched:'Schedule cleared',markedAnyway:'Marked complete although a prerequ
 errConn:'Connection error',errConnSub:'The server may be asleep — wait 30 seconds and try again',
 crn:'CRN',sec:'Sec',
 days:{U:'Sunday',M:'Monday',T:'Tuesday',W:'Wednesday',R:'Thursday',F:'Friday',S:'Saturday'},
+daysShort:{U:'Sun',M:'Mon',T:'Tue',W:'Wed',R:'Thu',F:'Fri',S:'Sat'},
 sem:{PP1:'Pre-Beginner Level',PP2:'Beginner Level',PP3:'Intermediate Level',PP4:'Advanced Level',F1:'Freshman — 1st Term',F2:'Freshman — 2nd Term',
 S1:'Sophomore — 1st Term',S2:'Sophomore — 2nd Term',
 J1:'Junior — 1st Term',J2:'Junior — 2nd Term',
