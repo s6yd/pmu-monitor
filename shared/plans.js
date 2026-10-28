@@ -1619,7 +1619,7 @@ sections:[
 {ic:'📅',name:'جدولك',items:[
  {t:'ثلاثة جداول تجرّب فيها',d:'<b>جدول ١ · ٢ · ٣</b> — جرّب توزيعات مختلفة قبل ما تقرر، وبدّل بينها بضغطة.'},
  {t:'التعارض ينبّهك',d:'لو أضفت شعبة تتعارض مع مادة عندك، الموقع يقول لك قبل ما تسجّل — لا بعدها.'},
- {t:'الشبكة واضغط أي مادة',isNew:1,d:'حوّل لـ<b>شبكة</b> تشوف أسبوعك كجدول، بثلاثة أحجام. والاسم مقطوع؟ اضغط المادة تطلع لك بطاقة فيها الاسم والقاعة والدكتور كاملة، وتختفي بأي لمسة.'},
+ {t:'الشبكة واضغط أي مادة',isNew:1,d:'حوّل لـ<b>شبكة</b> تشوف أسبوعك كجدول ملوّن، كل مادة بلونها، بثلاثة أحجام. اضغط أي مادة تطلع لك بطاقتها من تحت: الاسم والقاعة والدكتور كاملة، ومواعيدها وغيابك فيها.'},
  {t:'اطبع جدولك',d:'<b>🖨️ اطبع</b> يطلع ورقة واحدة منظّمة — شبكة أسبوعية ملوّنة تبيّن فراغاتك، ومعها اختباراتك النهائية.'},
  {t:'اختباراتك النهائية',d:'اضغط <b>اعرض</b> تحت «اختباراتك النهائية» — موعد وقاعة كل اختبار، وتنبيه لو صار اختبارين بنفس الوقت.'},
  {t:'مواعيد تهمك',d:'أقرب المواعيد بعدّاد أيام: التسجيل، بداية الدراسة، <b>آخر يوم انسحاب</b>، والاختبارات. القريبة تتلوّن تنبيهاً.'}]},
@@ -1663,7 +1663,7 @@ sections:[
 {ic:'📅',name:'Your schedule',items:[
  {t:'Three schedules to try',d:'<b>Schedule 1 · 2 · 3</b> — try different arrangements before you commit, and switch with one tap.'},
  {t:'Clashes warn you',d:'If a section you add clashes with a course you already have, you are told before you register — not after.'},
- {t:'Grid view, and tap any course',isNew:1,d:'Switch to <b>Grid</b> to see your week as a timetable, in three sizes. Name cut off? Tap the course and a card shows the full name, room and instructor — it disappears at any touch.'},
+ {t:'Grid view, and tap any course',isNew:1,d:'Switch to <b>Grid</b> to see your week as a color-coded timetable, each course in its own color, in three sizes. Tap any course and its card slides up: full name, room and instructor, plus its dates and your absences.'},
  {t:'Print your schedule',d:'<b>🖨️ Print</b> gives you one clean page — a colour-coded weekly grid showing your gaps, with your final exams underneath.'},
  {t:'Your final exams',d:'Tap <b>Show</b> under “Your final exams” — the date and room for every exam, and a warning if two collide.'},
  {t:'Dates that matter',d:'Upcoming dates with a countdown: registration, first day of class, <b>the withdrawal deadline</b>, and finals. Near dates turn amber.'}]},
