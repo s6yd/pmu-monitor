@@ -180,9 +180,9 @@ const SUPA = 'window.supabase={createClient:()=>({auth:{getSession:async()=>({da
     await pg.waitForFunction(() => document.querySelectorAll('#resultsList .course-card').length > 0, null, { timeout: 8000 }).catch(() => {});
     const cards = await run(pg, () => [...document.querySelectorAll('#resultsList .course-card')].map(c =>
       ({ in: c.classList.contains('in'), i: c.style.getPropertyValue('--i'), an: getComputedStyle(c).animationName })));
-    ok(cards.length === 18 && cards.slice(0, 12).every((c, i) => c.in && c.i === String(i) && c.an === 'cardIn')
-      && cards.slice(12).every(c => !c.in),
-      `[${theme}] **النتائج تظهر وحدة ورا الثانية** (أول ١٢ بتأخير متدرّج، والباقي على طول) — ${JSON.stringify(cards.slice(0, 2))} … ${JSON.stringify(cards[12])}`);
+    /* بطاقة لكل مادة (test-search-cards): الـ١٨ شعبة في مادتين ⇒ بطاقتان — وحدّ الـ١٢ هناك بمواد أكثر */
+    ok(cards.length === 2 && cards.every((c, i) => c.in && c.i === String(i) && c.an === 'cardIn'),
+      `[${theme}] **النتائج تظهر وحدة ورا الثانية** (بتأخير متدرّج) — ${JSON.stringify(cards)}`);
     await pg.waitForTimeout(700);
     let R1 = await run(pg, GOT);
     ok(counted(R1['#statTotal'], '18'), `[${theme}] **عدّاد «إجمالي» يعدّ لـ18** (كان يطلع مرة وحدة) — ${JSON.stringify((R1['#statTotal'] || {}).vals)}`);
