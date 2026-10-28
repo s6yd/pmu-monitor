@@ -10,6 +10,8 @@
    ٧) short   — جدول ناقص (الجامعة قصّته) ⇒ الشعبة بعينها تنراقب، و«نزلت شعبة جديدة» ما تطلع كاذبة.
    ٨) accept  — نزول حقيقي يثبت ست سحبات ⇒ نعتمده ومراقبة المادة كاملة ترجع تشتغل.
    ٩) search  — البحث بجدول أعمدته تغيّرت ما يرجّع حالات غلط.
+   ١٠) real   — الجامعة تكتب المقفلة CLOSE لا CLOSED (الدليل: «OPEN مفتوحة، CLOSE مسكّرة»). وقت التسجيل
+                أغلب الشعب مقفلة: كان الجدول يطلع «شكله تغيّر» — المراقبة توقف والبحث يفشل.
 
    node tests/test-pmu-signals.js [server.js] */
 const path = require('path');
@@ -345,6 +347,26 @@ const SCEN = {
     await cycleOf(c);
     t.ok(msgsTo(st, 901).some(x => /نزلت شعبة جديدة ومفتوحة/.test(x.text)),
       'نزول حقيقي ثبت ست سحبات: اعتمدناه، ومراقبة المادة كاملة رجعت — شعبة جديدة وصلت');
+    c.kill('SIGKILL');
+  },
+  async real(t) {
+    /* جدول ترم وقت التسجيل بصيغة الجامعة: ٦٠ شعبة، أربع من كل خمس CLOSE */
+    const DB = base(); user(DB, 1); watch(DB, 1, '30011', 'CLOSE');
+    const M1 = [row('30011', 'CLOSE')];
+    for (let i = 2; i <= 60; i++) M1.push(row(String(30000 + i), i % 5 ? 'CLOSE' : 'OPEN', String(100 + i)));
+    const st = await makeOutside({ DB, pmu: { M1, F1: [frow('40011', 'CLOSE')] } });
+    const c = instance(st); await ready(c);
+    const s = await c.search('M1');
+    let cs = []; try { cs = JSON.parse(s.body).courses || [] } catch (e) {}
+    t.eq([s.status, cs.length, cs.filter(x => x.status === 'CLOSE').length], [200, 60, 48],
+      '**البحث بجدول أغلبه CLOSE يرجع طبيعي** (كان «شكل الجدول تغيّر» والطالب ما يلقى شي وقت التسجيل)');
+    await cycleOf(c);
+    t.ok(!adminSays(st, /ما نفهمه|ما يستجيب/),
+      '**والدورة تقبله: بلا «يرد بشكل ما نفهمه»** (كانت المراقبة كلها توقف لما أغلب الشعب مقفلة)');
+    st.pmu.M1 = M1.map(r => r[0] === '30011' ? row('30011', 'OPEN') : r);
+    await cycleOf(c);
+    t.eq(msgsTo(st, 901).length, 1, '**وشعبته فتحت: وصله «فتحت»**');
+    t.eq(statusOf(DB, '30011'), 'OPEN', 'والحالة انكتبت');
     c.kill('SIGKILL');
   },
   async search(t) {

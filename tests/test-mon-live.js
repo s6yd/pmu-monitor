@@ -199,8 +199,8 @@ const iso = v => typeof v === 'string' && Number.isFinite(Date.parse(v));
 const SCEN = {
   /* ١) آخر فحص: صفر لين أول فحص حقيقي، ووقت الفحص بعده، والجامعة متعطّلة ما تقدّمه */
   async lastCheck(t) {
-    const DB = base(); user(DB, 1); watch(DB, 1, '30011', 'CLOSED');
-    const st = await makeOutside({ DB, pmu: { M1: [row('30011', 'CLOSED')], F1: [frow('40011', 'CLOSED')] } });
+    const DB = base(); user(DB, 1); watch(DB, 1, '30011', 'CLOSE');
+    const st = await makeOutside({ DB, pmu: { M1: [row('30011', 'CLOSE')], F1: [frow('40011', 'CLOSE')] } });
     const c = instance(st); await ready(c);
     let s = await c.status();
     t.ok('lastCheck' in s, '**/api/monitor-status فيه lastCheck** (البطاقة تقول «آخر فحص قبل X د»)');
@@ -231,9 +231,9 @@ const SCEN = {
 
   /* ٢) وقت التسجيل (١١ يناير ٢٠٢٧ ١٠ الصبح): الفحص الجاي معروف من أول دقيقة، و«نفحص الحين» وقت الدورة */
   async nextCheck(t) {
-    const DB = base(false); user(DB, 1); watch(DB, 1, '30011', 'CLOSED');
+    const DB = base(false); user(DB, 1); watch(DB, 1, '30011', 'CLOSE');
     DB.monitored_courses[0].term = '202720';
-    const st = await makeOutside({ DB, pmu: { M1: [row('30011', 'CLOSED')], F1: [frow('40011', 'CLOSED')] } });
+    const st = await makeOutside({ DB, pmu: { M1: [row('30011', 'CLOSE')], F1: [frow('40011', 'CLOSE')] } });
     const AT = '2027-01-11T07:00:00Z';
     const c = instance(st, ['--at=' + AT]); await ready(c);
     let s = await c.status();
@@ -281,16 +281,16 @@ const OFF = o => WIN(Object.assign({ active: false, reason: 'offseason', canWatc
 const PROF = o => Object.assign({ id: 'u1', email: 'm@x.com', major: 'MEEN', plan_ver: 'new', prep: false,
   telegram_chat_id: '901', telegram_link_code: 'ABC123', is_pro: true, subscription_expires_at: null,
   pushover_key: null, pushover_until: null }, o || {});
-/* مراقبات الطالب بصيغة monitored_courses — وواحدة من ترم قديم ما تنعدّ */
+/* مراقبات الطالب بصيغة monitored_courses — وواحدة من ترم قديم ما تنعدّ. الحالة بصيغة الجامعة: OPEN · CLOSE (لا CLOSED) */
 const MONS = () => [
   { id: 11, user_id: 'u1', scope: 'section', course_code: 'MEEN 3311', section: '101', crn: '30011', term: '202720',
     last_status: 'OPEN', notified_at: ago(4 * 60e3), created_at: ago(2 * 864e5) },
   { id: 12, user_id: 'u1', scope: 'section', course_code: 'MATH 2301', section: '102', crn: '30012', term: '202720',
-    last_status: 'CLOSED', notified_at: null, created_at: ago(5 * 36e5) },
+    last_status: 'CLOSE', notified_at: null, created_at: ago(5 * 36e5) },
   { id: 13, user_id: 'u1', scope: 'course', course_code: 'PHYS 1422', section: null, crn: null, term: '202720',
-    last_status: null, sections_state: { 30101: 'CLOSED', 30102: 'CLOSED' }, notified_at: null, created_at: ago(864e5) },
+    last_status: null, sections_state: { 30101: 'CLOSE', 30102: 'CLOSE' }, notified_at: null, created_at: ago(864e5) },
   { id: 9, user_id: 'u1', scope: 'section', course_code: 'CHEM 1311', section: '101', crn: '20009', term: '202710',
-    last_status: 'CLOSED', notified_at: null, created_at: ago(60 * 864e5) }
+    last_status: 'CLOSE', notified_at: null, created_at: ago(60 * 864e5) }
 ];
 /* Supabase: ملفه في __ROW، ومراقباته في __MON، وكل حذف منها في __DELS. __MON_ERR = القراءة تفشل */
 const SUPA_USER = (prof, mons) => `
@@ -544,6 +544,8 @@ async function pagePart() {
     t.eq((v.chips[1] || {}).t, '🚨 التنبيه الطارئ ✓', '**التنبيه الطارئ مفعّل: «التنبيه الطارئ ✓»**');
     v = await as(WIN({ pushover: null }));
     t.eq(v.chips.length, 1, 'والتنبيه الطارئ مطفأ من اللوحة: ما نعرضه أبداً');
+    t.eq(await run(pg, () => [monClosed('CLOSE'), monClosed('CLOSED'), monClosed('OPEN'), monClosed(null)]),
+      [true, true, false, false], '**المقفلة: CLOSE (صيغة الجامعة) — وCLOSED القديمة من احتياط بانر كذلك**');
     await run(pg, () => { LANG = 'en'; renderMonLive() });
     v = await snap(pg);
     t.ok(/^Your watches/.test(v.title) && v.pill === 'Live' && /Checking every 5 min/.test(v.sub),
@@ -555,7 +557,7 @@ async function pagePart() {
   /* ── (د) المجاني فوق حدّه: المتوقفة تبان بسببها، والتنبيه الطارئ «أضفه» ── */
   {
     const mons = MONS().concat([{ id: 14, user_id: 'u1', scope: 'section', course_code: 'MEEN 3411', section: '101',
-      crn: '30014', term: '202720', last_status: 'CLOSED', notified_at: null, created_at: ago(60e3) }]);
+      crn: '30014', term: '202720', last_status: 'CLOSE', notified_at: null, created_at: ago(60e3) }]);
     const { ctx, pg, errs } = await open({ status: () => WIN(), user: [PROF({ is_pro: false }), mons], seen: '1' });
     const v = await snap(pg);
     const p = v.rows.filter(r => /paused/.test(r.cls));
