@@ -343,7 +343,7 @@ const SUPA = 'window.supabase={createClient:()=>({auth:{getSession:async()=>({da
 
     /* ── ٨) الإضافة: السطر ينبض، ورقم «جدولي» ينط ويزيد ١ ── */
     let b0 = await run(pg, () => document.getElementById('schedBadge').textContent);
-    eq(b0, '3', `[${theme}] رقم «جدولي» = شعب الجدول (٣)`);
+    eq(b0, '3', `[${theme}] رقم «جدولي» = مواد الجدول (٣)`);
     await setOpen(pg, 'PHYS 1421', true);
     await run(pg, () => document.querySelector('.sec-row[data-crn="30032"] .sr-btn.add').click());
     await pg.waitForTimeout(60);
@@ -359,13 +359,14 @@ const SUPA = 'window.supabase={createClient:()=>({auth:{getSession:async()=>({da
     await run(pg, () => document.querySelector('.sec-row[data-crn="30031"] .sr-btn.add').click());
     ad = await run(pg, () => ({ rows: schedule.filter(s => s.crn === '30031').length, badge: document.getElementById('schedBadge').textContent,
       note: [...document.querySelector('#resultsList .course-card[data-code="PHYS 1421"]').querySelectorAll('.cg-note')].map(x => x.textContent.trim()) }));
-    eq(ad, { rows: 2, badge: '5', note: ['✓ في جدولك: الشعب 101 · 102'] },
-      `[${theme}] **شعبة بصفّين (محاضرة ومعمل بنفس CRN): الجدول ياخذ الاثنين والرقم يزيد ١ لا ٢** (كان يعدّ صفوفاً)`);
+    /* الرقم عدد المواد (مثل «مادة» في ملخّص جدولي — test-sched-look): شعبة ثانية لنفس المادة ما تزيده */
+    eq(ad, { rows: 2, badge: '4', note: ['✓ في جدولك: الشعب 101 · 102'] },
+      `[${theme}] **شعبة بصفّين (محاضرة ومعمل بنفس CRN): الجدول ياخذ الاثنين، والرقم ما يزيد — نفس المادة** (كان يعدّ صفوفاً)`);
     await run(pg, () => document.querySelector('.sec-row[data-crn="30032"] .sr-btn.add').click());
     ad = await run(pg, () => { const b = document.getElementById('schedBadge'); const r = document.querySelector('.sec-row[data-crn="30032"]');
       return { inSch: schedule.some(s => s.crn === '30032'), badge: b.textContent, row: r.className, btn: r.querySelector('.sr-btn.add').textContent.trim() } });
     ok(!ad.inSch && ad.badge === '4' && !/in-schedule|just-added/.test(ad.row) && ad.btn === '+ أضف',
-      `[${theme}] **وضغطة على «✓ في جدولك» تشيلها** (4) — ${JSON.stringify(ad)}`);
+      `[${theme}] **وضغطة على «✓ في جدولك» تشيلها** (والرقم 4: الفيزياء باقية بشعبتها الثانية — صفّيها مادة وحدة) — ${JSON.stringify(ad)}`);
     const lk = await run(pg, () => { const n = schedule.length; document.querySelector('.sec-row[data-crn="30013"] .sr-btn.add').click();
       return { same: schedule.length === n, toast: (document.getElementById('toast') || {}).textContent || '' } });
     ok(lk.same && /MEEN 2311|ما تقدر|تقدر/.test(lk.toast), `[${theme}] **«🔒 أضف» ما يضيف** ويقول ليش — ${JSON.stringify(lk)}`);

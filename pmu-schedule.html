@@ -418,6 +418,7 @@ display:flex;align-items:center;justify-content:space-between}
 .day-body{padding:10px 12px;display:flex;flex-direction:column;gap:7px}
 .slot{background:var(--bg);border-radius:10px;padding:10px 12px;display:flex;align-items:center;gap:11px;border-right:3px solid var(--accent)}
 .slot.clash{border-right-color:var(--warn);background:rgba(245,158,11,.06)}
+#schedDays .slot:not(.clash){border-right-color:var(--cc,var(--accent))}
 /* حالات تبويب اليوم: الماضي باهت لكنه يبقى قابلاً للضغط */
 .slot.past{opacity:.45}
 .slot.now{border-right-color:var(--open);background:rgba(34,197,94,.07)}
@@ -1238,8 +1239,9 @@ font-size:9.5px;color:var(--text3);transform:translateY(-4px)}
 .gr-dh{height:30px;display:flex;align-items:center;justify-content:center;
 font-size:11.5px;font-weight:700;color:var(--text2);border-bottom:1px solid var(--border)}
 .gr-body{position:relative}
-.gr-item{position:absolute;inset-inline:3px;background:rgba(77,124,254,.16);
-border-inline-start:2px solid var(--accent);border-radius:7px;padding:4px 5px;
+/* كل مادة بلونها (--cc · --cc-bg من courseColors — الفكرة ١٠)، والتعارض يغلبه بلون التحذير */
+.gr-item{position:absolute;inset-inline:3px;background:var(--cc-bg,rgba(77,124,254,.16));
+border-inline-start:3px solid var(--cc,var(--accent));border-radius:7px;padding:4px 5px;
 overflow:hidden;display:flex;flex-direction:column;gap:1px}
 .gr-item.clash{background:rgba(245,158,11,.16);border-inline-start-color:var(--warn)}
 /* الصفحة RTL: بلا تثبيت الاتجاه يقتطع المتصفح أول الاسم لا آخره،
@@ -1255,21 +1257,10 @@ font-family:var(--sans);font-size:11.5px;font-weight:700;padding:6px 14px;
 border-radius:9px;cursor:pointer}
 .gr-zoom button.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .gr-hint{font-size:11px;color:var(--text3);text-align:center;margin-top:9px}
-/* ── اللوحة السريعة على الشبكة ── */
-.gr-item{cursor:pointer}
-.gr-item.peeking{outline:2px solid var(--accent);outline-offset:-1px}
-#gridPeek{position:fixed;z-index:400;width:min(272px,calc(100vw - 16px));
-background:var(--card);border:1px solid var(--border2);border-radius:14px;
-padding:12px 14px;box-shadow:0 12px 34px var(--shadow),0 2px 8px rgba(0,0,0,.18);
-pointer-events:none;opacity:0;transform:translateY(4px);
-transition:opacity .13s ease,transform .13s ease}
-#gridPeek.in{opacity:1;transform:none}
-.pk-h{font-family:var(--mono);font-size:11px;color:var(--text3);font-weight:700}
-.pk-t{font-size:13.5px;font-weight:700;line-height:1.45;margin:3px 0 9px}
-.pk-r{display:flex;align-items:baseline;justify-content:space-between;gap:12px;
-font-size:12px;padding:3px 0}
-.pk-r span{color:var(--text3);flex-shrink:0}
-.pk-r b{font-weight:600;text-align:end;min-width:0;overflow-wrap:anywhere}
+/* ضغطة على مادة في الشبكة تفتح بطاقتها من تحت (openCourse — نفس بطاقة «اليوم») */
+.gr-item{cursor:pointer;-webkit-tap-highlight-color:transparent;transition:transform .12s ease}
+.gr-item:active{transform:scale(.96)}
+@media (prefers-reduced-motion:reduce){ .gr-item:active{transform:none} }
 /* ── مواعيد الزملاء ── */
 .sg-row{display:flex;gap:10px;align-items:flex-start;background:var(--bg);
 border-radius:12px;padding:11px 12px;margin-top:9px}
@@ -1652,7 +1643,7 @@ margin:0!important;padding:0!important;min-height:0!important}
 .topbar,.tabs,.sched-actions,.slot-remove,.conflict-alert,.sched-summary,.lab-warn,
 .guide-fab,.ai-ask,.guide-overlay,.toast,.state-box,.sync-note,.next-check,.reg-card,.crn-panel,
 .slot-bar,#slotBar,
-.vw-switch,#schedView,#schedGrid,.gr-zoom,.gr-hint,#gridPeek,
+.vw-switch,#schedView,#schedGrid,.gr-zoom,.gr-hint,
 .env-bar,.tg-bar,.pick-hint,#schedPickHint,
 #schedDays,.modal,.overlay,.finals-card,.cal-card,.legal-foot{display:none!important}
 .page{display:none!important}
@@ -2795,6 +2786,9 @@ function baseCourseCode(code){
   return k.trim();
 }
 
+/* كم مادة في الجدول: بالكود الأم مثل الساعات — المحاضرة والمعمل والشعب البديلة (الجدول مخطِّط) مادة وحدة.
+   كانت «مادة» في الملخّص تعدّ صفوفاً: شعبة بمحاضرة ومعمل بنفس CRN تطلع «2 مادة» */
+function schedCourses(){ return new Set(schedule.map(c=>baseCourseCode(c.courseCode))).size }
 function scheduleCredits(){
   const seen=new Set(); let t=0;
   schedule.forEach(c=>{
@@ -3321,12 +3315,12 @@ function renderSlots(){
     </button>`).join('');
 }
 
-/* رقم «جدولي» شعب لا صفوف: المحاضرة والمعمل بنفس CRN صفّان (§٦) — كان يزيد ٢ مع شعبة وحدة.
-   ومع إضافة من البحث ينط (bump) */
+/* رقم «جدولي» = عدد المواد، مثل «مادة» في ملخّص جدولي (schedCourses): المحاضرة والمعمل والشعب البديلة مادة
+   وحدة — كان يعدّ صفوفاً (المحاضرة والمعمل بنفس CRN صفّان §٦). ومع إضافة مادة جديدة من البحث ينط (bump) */
 function updateBadge(bump){
   const b=document.getElementById('schedBadge');
   if(!b)return;
-  const n=new Set(schedule.map(s=>String(s.crn))).size, was=Number(b.textContent)||0;
+  const n=schedCourses(), was=Number(b.textContent)||0;
   b.textContent=n;
   if(bump&&n>was&&!countReduce()){ b.classList.remove('bump'); void b.offsetWidth; b.classList.add('bump') }
 }
@@ -3566,7 +3560,8 @@ function renderLabWarn(){
    بطاقاتها صغيرة، وأزرار الحذف فيها تعني ضغطاً بالغلط.
    خمسة أيام في عرض جوال تعني 70 بكسل لليوم، فالشبكة تُمرَّر أفقياً
    والرمز يُختصر: «4322 §102» بدل «MEEN 4322 §102». */
-let SCHED_VIEW='list';
+/* القائمة أو الشبكة — اختيار الطالب ينحفظ (كان يرجع «قائمة» مع كل فتح) */
+let SCHED_VIEW=load('pmu_sched_view','list')==='grid'?'grid':'list';
 /* ثلاثة مستويات بدل التكبير باللمس: الأخير يتعارض مع تمرير الصفحة على الجوال.
    الضيق يُدخل الأيام الخمسة في عرض الجوال بلا سحب. */
 const GRID_Z=[['w',108,54,'grWide'],['m',82,44,'grMed'],['s',62,36,'grNarrow']];
@@ -3574,12 +3569,38 @@ let GRID_ZOOM=load('pmu_grid_zoom','w');
 function setGridZoom(z){ GRID_ZOOM=z; save('pmu_grid_zoom',z); renderGrid() }
 function zoomCfg(){ return GRID_Z.find(x=>x[0]===GRID_ZOOM)||GRID_Z[0] }
 function setSchedView(v){
-  SCHED_VIEW=v;
-  document.getElementById('svList').classList.toggle('on',v==='list');
-  document.getElementById('svGrid').classList.toggle('on',v==='grid');
-  document.getElementById('schedDays').style.display=v==='list'?'':'none';
-  document.getElementById('schedGrid').style.display=v==='grid'?'':'none';
-  if(v==='grid')renderGrid();
+  SCHED_VIEW=v==='grid'?'grid':'list';
+  save('pmu_sched_view',SCHED_VIEW);
+  applySchedView();
+  if(SCHED_VIEW==='grid')renderGrid();
+}
+function applySchedView(){
+  const v=SCHED_VIEW, set=(id,f)=>{ const e=document.getElementById(id); if(e)f(e) };
+  set('svList',e=>e.classList.toggle('on',v==='list'));
+  set('svGrid',e=>e.classList.toggle('on',v==='grid'));
+  set('schedDays',e=>{ e.style.display=v==='list'?'':'none' });
+  set('schedGrid',e=>{ e.style.display=v==='grid'?'':'none' });
+}
+/* ═══ لون لكل مادة — طلب محمد (٢٧ أكتوبر ٢٠٢٦، الفكرة ١٠: «الأسبوع شبكة ملوّنة، كل مادة بلون») ═══
+   من كود المادة الأم (المحاضرة والمعمل لون واحد)، ومن بصمة الكود فلون المادة غالباً ما يتغيّر لما تضيف غيرها
+   (إلا لو الجديدة أخذت خانته — ما نحفظ الألوان). ومادتان في الجدول ما يتشاركان لوناً لين تخلص الألوان العشرة.
+   **بلا كهرماني ولا برتقالي**: الكهرماني لون التعارض نفسه (--warn) فمادة سليمة كانت تطلع «متعارضة» */
+const COURSE_HUES=['#3d6fff','#10b981','#ec4899','#8b5cf6','#06b6d4','#84cc16','#64748b','#d946ef','#6366f1','#14b8a6'];
+function courseColors(list){
+  const codes=[...new Set((list||[]).map(c=>baseCourseCode(c.courseCode)))].sort();
+  const used=new Set(), map={};
+  codes.forEach(k=>{
+    let h=0; for(const ch of k)h=(h*31+ch.charCodeAt(0))>>>0;
+    let i=h%COURSE_HUES.length;
+    for(let n=0;n<COURSE_HUES.length&&used.has(i);n++)i=(i+1)%COURSE_HUES.length;
+    used.add(i); map[k]=COURSE_HUES[i];
+  });
+  return map;
+}
+function ccStyle(c,map){
+  const col=map[baseCourseCode(c.courseCode)]||COURSE_HUES[0];
+  const n=parseInt(col.slice(1),16);
+  return `--cc:${col};--cc-bg:rgba(${n>>16},${(n>>8)&255},${n&255},.17)`;
 }
 /* الاسم أوضح من الرقم. لو ما اتسع يُقتطع من آخره لا من أوله — والصفحة RTL
    فبلا تثبيت الاتجاه يعرض المتصفح «…Methods» بدل «…Computational». */
@@ -3589,9 +3610,8 @@ function gridLabel(c){
 function renderGrid(){
   const box=document.getElementById('schedGrid');
   if(!box)return;
-  /* البطاقة المرتبطة راح تُحذف مع إعادة الرسم — نغلق اللوحة أولاً */
-  try{ closePeek() }catch(e){}
   const [,COLW,GRID_H]=zoomCfg();
+  const cmap=courseColors(schedule);
   const items=schedule.map(c=>({c,t:parseTime(c.courseTiming)})).filter(x=>x.t);
   if(!items.length){ box.innerHTML=''; return }
   /* من أول محاضرة لآخرها لا من الصباح الباكر — وإلا صار نصفها فاضياً */
@@ -3613,9 +3633,9 @@ function renderGrid(){
           const top=(x.t.start-lo*60)/60*GRID_H;
           const h=Math.max(26,(x.t.end-x.t.start)/60*GRID_H-3);
           return `<div class="gr-item${cl.has(x.c.crn)?' clash':''}"
-            style="top:${top}px;height:${h}px" title="${escapeHtml(c2t(x.c))}"
+            style="top:${top}px;height:${h}px;${ccStyle(x.c,cmap)}" title="${escapeHtml(c2t(x.c))}"
             data-crn="${escapeHtml(x.c.crn)}" data-start="${x.t.start}"
-            onclick="gridPeek(event,this)">
+            onclick="openCourse(this.dataset.crn,+this.dataset.start)">
             <b>${escapeHtml(gridLabel(x.c))}</b>
             <i>${fmtTime(x.t.start)} §${escapeHtml(x.c.section||'')}</i>
             ${h>GRID_H?`<u>${escapeHtml(x.c.room||'')}</u>`:''}
@@ -3637,87 +3657,10 @@ function renderGrid(){
 }
 function c2t(c){ return `${c.courseCode} §${c.section} · ${c.courseTitle||''}` }
 
-/* ═══ لوحة سريعة على بطاقة الشبكة ═══
-   البطاقة ضيقة فالاسم والقاعة مقطوعان. ضغطة تُظهر بطاقة عائمة صغيرة
-   بالمعلومات كاملة، وتختفي بأي تمرير أو ضغطة ثانية — لا تعلّق الصفحة
-   ولا تحتاج زر إغلاق. `pointer-events:none` عليها: أي ضغطة تمرّ للصفحة
-   وتغلقها في الوقت نفسه، فما تصير حاجزاً بين الطالب وجدوله. */
-let PEEK_OFF=null, PEEK_SKIP=false;
-function closePeek(){
-  const el=document.getElementById('gridPeek');
-  if(el)el.remove();
-  document.querySelectorAll('.gr-item.peeking')
-    .forEach(e=>e.classList.remove('peeking'));
-  if(PEEK_OFF){ PEEK_OFF(); PEEK_OFF=null; }
-}
-function gridPeek(ev,el){
-  if(ev)ev.stopPropagation();
-  /* pointerdown يسبق click دائماً، فاللوحة تُغلق قبل وصولنا هنا.
-     PEEK_SKIP يُرفع فقط لو كانت الضغطة على البطاقة المفتوحة نفسها،
-     فتكون النتيجة إغلاقاً لا إعادة فتح — أما الإغلاق بالتمرير فلا
-     يرفعه، عشان الضغط بعده يفتح فوراً. */
-  const skip=PEEK_SKIP; PEEK_SKIP=false;
-  closePeek();
-  if(skip)return;
-
-  const c=(schedule||[]).find(x=>String(x.crn)===el.dataset.crn);
-  if(!c)return;
-  const tm=parseTime(c.courseTiming);
-  const rows=[
-    [t('csTime'), tm?`${fmtTime(tm.start)}–${fmtTime(tm.end)}`:'—', true],
-    [t('csDays'), (parseDays(c.courseDate)||[]).map(d=>t('days')[d]).join(' · ')||'—', false],
-    [t('csRoom'), c.room||'—', true],
-    [t('csDoc'),  c.instructor||'—', true]
-  ];
-  const box=document.createElement('div');
-  box.id='gridPeek';
-  box.innerHTML=`<div class="pk-h ltr">${escapeHtml(c.courseCode||'')} §${
-      escapeHtml(c.section||'')}</div>
-    <div class="pk-t">${escapeHtml(c.courseTitle||'')}</div>
-    ${rows.map(([k,v,ltr])=>`<div class="pk-r"><span>${k}</span>
-      <b${ltr?' class="ltr"':''}>${escapeHtml(v)}</b></div>`).join('')}`;
-  document.body.appendChild(box);
-  el.classList.add('peeking');
-
-  /* الموضع: فوق البطاقة إن وُجد مكان، وإلا تحتها، ومحصور داخل الشاشة */
-  const r=el.getBoundingClientRect();
-  const w=box.offsetWidth, h=box.offsetHeight;
-  const vw=document.documentElement.clientWidth;
-  const vh=document.documentElement.clientHeight;
-  let left=r.left+r.width/2-w/2;
-  left=Math.max(8,Math.min(left,vw-w-8));
-  let top=r.top-h-8;
-  if(top<8)top=Math.min(r.bottom+8,vh-h-8);
-  box.style.left=left+'px';
-  box.style.top=Math.max(8,top)+'px';
-  box.classList.add('in');
-
-  /* الإغلاق: أي تمرير أو ضغطة أو تغيير حجم أو زر Esc */
-  const bye=()=>closePeek();
-  const esc=e=>{ if(e.key==='Escape')closePeek(); };
-  const down=e=>{
-    const hit=e.target&&e.target.closest?e.target.closest('.gr-item'):null;
-    PEEK_SKIP=(hit===el);
-    if(PEEK_SKIP)setTimeout(()=>{PEEK_SKIP=false},400);  /* لو ما تبعها click */
-    closePeek();
-  };
-  /* التمرير يُلتقط في مرحلة الالتقاط عشان يشمل تمرير الشبكة الأفقي */
-  window.addEventListener('scroll',bye,{capture:true,passive:true});
-  window.addEventListener('resize',bye);
-  document.addEventListener('pointerdown',down);
-  document.addEventListener('keydown',esc);
-  PEEK_OFF=()=>{
-    window.removeEventListener('scroll',bye,{capture:true});
-    window.removeEventListener('resize',bye);
-    document.removeEventListener('pointerdown',down);
-    document.removeEventListener('keydown',esc);
-  };
-}
-
 function renderSchedule(){
   renderCrn();   /* لو اللوحة مفتوحة، تتحدث مع كل إضافة أو حذف */
   const empty=document.getElementById('schedEmpty'),wrap=document.getElementById('schedDays');
-  countTo(document.getElementById('sumCourses'),schedule.length);
+  countTo(document.getElementById('sumCourses'),schedCourses());
   countTo(document.getElementById('sumHours'),scheduleCredits());
   const pairs=[];
   for(let i=0;i<schedule.length;i++)for(let j=i+1;j<schedule.length;j++)
@@ -3741,12 +3684,13 @@ function renderSchedule(){
   buildPrintSheet(cl);
   refreshFinalsIfOpen();
 
+  const cmap=courseColors(schedule);
   wrap.innerHTML=DAY_KEYS.map(day=>{
     const items=schedule.filter(c=>parseDays(c.courseDate).includes(day))
       .map(c=>({c,t:parseTime(c.courseTiming)}))
       .sort((a,b)=>(a.t?a.t.start:0)-(b.t?b.t.start:0));
     const body=items.length?`<div class="day-body">${items.map(({c,t})=>`
-      <div class="slot ${cl.has(c.crn)?'clash':''}">
+      <div class="slot ${cl.has(c.crn)?'clash':''}" style="${ccStyle(c,cmap)}">
         <div class="slot-time">${t?fmtTime(t.start)+'–'+fmtTime(t.end):'—'}</div>
         <div class="slot-info tap" data-code="${escapeHtml(c.courseCode)}"
           onclick="searchIn(this.dataset.code)"><div class="slot-name">${c.courseCode} §${c.section}</div>
@@ -3757,6 +3701,7 @@ function renderSchedule(){
     return `<div class="day-block"><div class="day-head"><span>${t('days')[day]}</span>
       <span class="cnt">${items.length} ${t('lecture')}</span></div>${body}</div>`;
   }).join('');
+  applySchedView();
   if(SCHED_VIEW==='grid')renderGrid();
 }
 
@@ -4881,7 +4826,7 @@ function shareBlock(c){
 }
 
 /* ═══ لوح تفاصيل المادة ═══
-   يُفتح من تبويب اليوم فقط. الحذف والبحث موجودان في «جدولي» فما نكرّرهما هنا —
+   يُفتح من تبويب اليوم ومن شبكة «جدولي» (الفكرة ١٠). الحذف والبحث في قائمة «جدولي» فما نكرّرهما هنا —
    هذا اللوح مخصّص لما لا مكان له غيره: الغياب والأحداث لاحقاً.
    نفتح على الجلسة المضغوطة تحديداً لا على المادة كاملة، لأن الغياب يُحسب
    على الجلسة، وقد يخصّ الحدث المعمل وحده. */

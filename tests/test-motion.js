@@ -205,8 +205,9 @@ const SUPA = 'window.supabase={createClient:()=>({auth:{getSession:async()=>({da
     await pg.waitForTimeout(800);
     R1 = await run(pg, GOT);
     const s2 = await run(pg, () => ['sumCourses', 'sumHours', 'sumClashes'].map(id => document.getElementById(id).textContent));
-    ok(counted(R1['#sumCourses'], '4'), `[${theme}] **جدولي: «مادة» تعدّ من صفر أول ما يبان التبويب** (انكتبت وهو مخفي) — ${JSON.stringify((R1['#sumCourses'] || {}).vals)}`);
-    eq(s2[0], '4', `[${theme}] ويوصل 4 مواد`);
+    /* «مادة» تعدّ مواد لا شعباً (test-sched-look): الأربع شعب هنا من مادتين — MEEN 3311 · MATH 2301 */
+    ok(counted(R1['#sumCourses'], '2'), `[${theme}] **جدولي: «مادة» تعدّ من صفر أول ما يبان التبويب** (انكتبت وهو مخفي) — ${JSON.stringify((R1['#sumCourses'] || {}).vals)}`);
+    eq(s2[0], '2', `[${theme}] ويوصل 2 (مادتين)`);
     ok(Number(s2[2]) >= 1 && (R1['#sumClashes'] || {}).cv === s2[2],
       `[${theme}] **وسط العدّ، ورقة الطباعة تقرأ التعارضات النهائية** (cntVal لا النص) — ${JSON.stringify(R1['#sumClashes'])}`);
     await run(pg, REC, ['#progDone', '#progPct', '#gpaVal']);
