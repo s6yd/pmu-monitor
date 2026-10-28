@@ -433,14 +433,22 @@ display:flex;align-items:center;justify-content:space-between}
 .empty-day{padding:9px 15px 12px;font-size:12px;color:var(--text3);font-style:italic}
 
 /* PLAN */
-.progress-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:17px;margin-bottom:15px}
-.prog-top{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px}
-.prog-num{font-family:var(--mono);font-size:26px;font-weight:500}
+/* «خطتي» (طلب محمد ٢٧ أكتوبر ٢٠٢٦ — الفكرة ٩): دائرة تقدّم كبيرة بدل الشريط الرفيع */
+.progress-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:17px;margin-bottom:15px;
+display:flex;align-items:center;gap:18px}
+.prog-ring{position:relative;width:112px;height:112px;flex-shrink:0}
+.prog-ring svg{display:block;width:100%;height:100%}
+.pr-track{fill:none;stroke:var(--bg);stroke-width:11}
+/* الحلقة بـstroke-dashoffset: رسم SVG صغير بلا إعادة تخطيط (CLAUDE.md «الحركة») */
+.pr-fill{fill:none;stroke:url(#prGrad);stroke-width:11;stroke-linecap:round;stroke-dasharray:326.73;stroke-dashoffset:326.73;
+transform:rotate(-90deg);transform-origin:60px 60px;transition:stroke-dashoffset .9s cubic-bezier(.2,.8,.2,1)}
+.pr-fill.zero{opacity:0}
+.prog-ring .prog-pct{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+font-family:var(--mono);font-size:21px;font-weight:600;color:var(--text)}
+.prog-info{flex:1;min-width:0}
+.prog-num{font-family:var(--mono);font-size:26px;font-weight:500;line-height:1.25}
 .prog-num small{font-size:14px;color:var(--text3)}
-.prog-pct{font-family:var(--mono);font-size:15px;color:var(--accent2)}
-.prog-bar{height:9px;background:var(--bg);border-radius:20px;overflow:hidden;margin-bottom:11px}
-.prog-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--open));border-radius:20px;transition:width .4s}
-.prog-meta{display:flex;justify-content:space-between;font-size:12px;color:var(--text2)}
+.prog-meta{display:flex;flex-direction:column;gap:4px;margin-top:8px;font-size:12px;color:var(--text2)}
 
 .suggest-card{background:linear-gradient(160deg,rgba(61,111,255,.12),var(--card));border:1px solid var(--accent);
 border-radius:16px;padding:17px;margin-bottom:15px}
@@ -500,6 +508,31 @@ min-width:26px;text-align:end;flex-shrink:0;padding-top:2px}
 .pc-check{width:22px;height:22px;border-radius:7px;border:1.5px solid var(--border2);background:transparent;
 cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:13px;color:transparent;padding:0}
 .pc.done .pc-check{background:var(--open);border-color:var(--open);color:#fff}
+/* كل ترم يمتلي مع موادك: طبقة خضراء بقدر اللي خلّصته، من بداية السطر (transform) */
+.sem-head{position:relative}
+.sem-head::before,.sem-head::after{content:'';position:absolute;inset-inline:0;pointer-events:none;
+transform:scaleX(var(--p,0));transform-origin:100% 50%;transition:transform .6s cubic-bezier(.2,.8,.2,1)}
+html[dir="ltr"] .sem-head::before,html[dir="ltr"] .sem-head::after{transform-origin:0 50%}
+.sem-head::before{top:0;bottom:0;background:var(--open-bg)}
+.sem-head::after{bottom:0;height:2px;background:var(--open)}
+.sem-head>*{position:relative}
+/* علّمت مادة: ✓ تنط والسطر ينبض أخضر */
+.pc.just-done .pc-check{animation:chkPop .45s cubic-bezier(.3,1.6,.5,1)}
+@keyframes chkPop{0%{transform:scale(.55)}60%{transform:scale(1.2)}100%{transform:scale(1)}}
+.pc.just-done{animation:pcDone .7s ease-out}
+@keyframes pcDone{from{box-shadow:0 0 0 0 rgba(16,185,129,.45)}to{box-shadow:0 0 0 8px rgba(16,185,129,0)}}
+/* خلّصت ترماً: قصاصات ملوّنة من بطاقته (في body — عنصر ثابت) */
+.confetti{position:fixed;z-index:9500;width:0;height:0;pointer-events:none}
+.confetti i{position:absolute;left:-4px;top:-5px;width:8px;height:10px;border-radius:2px;opacity:0;
+animation:conf 1.15s cubic-bezier(.15,.7,.3,1) forwards}
+@keyframes conf{0%{opacity:1;transform:translate(0,0) rotate(0)}75%{opacity:1}
+100%{opacity:0;transform:translate(var(--dx),var(--dy)) rotate(var(--r))}}
+/* «تقليل الحركة» بعد قواعدها (نفس الأولوية والأخيرة تغلب) */
+@media (prefers-reduced-motion:reduce){
+  .pr-fill,.sem-head::before,.sem-head::after{transition:none}
+  .pc.just-done,.pc.just-done .pc-check{animation:none}
+  .confetti{display:none}
+}
 .pc-info{flex:1;min-width:0}
 /* إخفاء المعدل — للخصوصية لما يكون جنبك أحد */
 .gpa-card{position:relative}
@@ -627,6 +660,8 @@ padding-left:4px;background-image:none;flex-shrink:0}
 .gpa-val small{font-size:13px;color:var(--text3)}
 .gpa-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px}
 .gpa-right{text-align:left}
+/* زر الإخفاء (👁️) في نفس الزاوية — كان فوق «ساعات محسوبة» */
+.gpa-right .gpa-label{padding-inline-end:42px}
 .gpa-scale{display:flex;gap:5px;margin-top:4px}
 .gpa-pill{font-size:10.5px;font-family:var(--mono);padding:2px 8px;border-radius:20px;background:var(--bg);color:var(--text2)}
 .gpa-hint{font-size:11.5px;color:var(--text3);line-height:1.6;border-top:1px solid var(--border);padding-top:11px}
@@ -2002,14 +2037,18 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
   <div class="prep-prog" id="prepProg" style="display:none"></div>
 
   <div class="progress-card">
-    <div class="prog-top">
-      <div class="prog-num" id="progDone">0<small> / 139 ساعة</small></div>
+    <div class="prog-ring">
+      <svg viewBox="0 0 120 120" aria-hidden="true"><defs><linearGradient id="prGrad" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" style="stop-color:var(--accent)"/><stop offset="1" style="stop-color:var(--open)"/></linearGradient></defs>
+        <circle class="pr-track" cx="60" cy="60" r="52"/><circle class="pr-fill" id="progRing" cx="60" cy="60" r="52"/></svg>
       <div class="prog-pct" id="progPct">0%</div>
     </div>
-    <div class="prog-bar"><div class="prog-fill" id="progFill" style="width:0%"></div></div>
-    <div class="prog-meta">
-      <span id="progRemain">باقي 139 ساعة</span>
-      <span id="progLevel">Freshman</span>
+    <div class="prog-info">
+      <div class="prog-num" id="progDone">0<small> / 139 ساعة</small></div>
+      <div class="prog-meta">
+        <span id="progRemain">باقي 139 ساعة</span>
+        <span id="progLevel">Freshman</span>
+      </div>
     </div>
   </div>
 
@@ -2694,6 +2733,12 @@ function countRun(el,from,to){
 }
 function countPending(root){
   if(!root||countReduce())return;
+  root.querySelectorAll('[data-cnt="ring"]').forEach(el=>{
+    delete el.dataset.cnt;
+    el.getBoundingClientRect();              /* ترتسم فاضية أول، وبعدها تمتلي */
+    el.style.transition='';
+    requestAnimationFrame(()=>{ el.style.strokeDashoffset=String(RING_C*(1-(Number(el.dataset.f)||0))) });
+  });
   root.querySelectorAll('[data-cnt]').forEach(el=>{
     if(!el.offsetParent)return;
     const to=Number(el.dataset.v), from=Number(el.dataset.cnt)||0;
@@ -5993,15 +6038,73 @@ function planTouched(){
 }
 
 function toggleDone(code){
+  const before=semsDone();
   const i=completed.indexOf(code);
   if(i>-1){completed.splice(i,1);delete grades[code];save('pmu_grades',grades);}
   else{
     const chk=prereqCheck(code);
     if(chk.known&&!chk.ok)showToast(t('markedAnyway'),'warn');
     completed.push(code);
+    PLAN_FLASH=new Set([code]);
   }
   save('pmu_completed',completed);pushCompleted();
   planTouched();
+  planCelebrate(before);
+}
+
+/* ═══ «خطتي» تتحرّك (الفكرة ٩) ═══
+   ✓ اللي انعلّمت الحين تنط (PLAN_FLASH — renderPlan تنزّله) · كل ترم يمتلي من نسبته قبل (SEM_P) ·
+   وترم اكتمل بهالضغطة: «🎉 خلّصت …» وقصاصات من بطاقته. الحلقة فوق: ringTo */
+let PLAN_FLASH=null;
+const SEM_P={};
+function semsDone(){
+  return (typeof PLAN!=='undefined'&&Array.isArray(PLAN)?PLAN:[])
+    .filter(s=>s.courses.length&&s.courses.every(c=>isDone(c.c))).map(s=>s.id);
+}
+function planCelebrate(before){
+  const now=semsDone(), fresh=now.filter(id=>!before.includes(id));
+  if(!fresh.length)return;
+  const ar=LANG==='ar', sem=PLAN.find(x=>x.id===fresh[0]);
+  const nm=sem?(t('sem')[sem.id]||sem.label):'';
+  const all=now.length===PLAN.length;
+  showToast(all?(ar?'🎓 خلّصت خطتك كلها — مبروك!':'🎓 You finished your whole plan — congrats!')
+    :(ar?`🎉 خلّصت ${nm}!`:`🎉 You finished ${nm}!`));
+  const el=document.getElementById('sem-'+fresh[0]);
+  const r=el&&el.getBoundingClientRect();
+  if(r&&r.height)confetti(r.left+r.width/2,Math.max(70,r.top+24));
+}
+function confetti(x,y){
+  if(countReduce())return;
+  const box=document.createElement('div');
+  box.className='confetti';
+  box.style.left=x+'px'; box.style.top=y+'px';
+  const cols=['#10b981','#3d6fff','#f59e0b','#f43f5e','#a78bfa'];
+  for(let i=0;i<18;i++){
+    const s=document.createElement('i'), a=i/18*Math.PI*2+Math.random()*.3, d=55+Math.random()*55;
+    s.style.setProperty('--dx',Math.round(Math.cos(a)*d)+'px');
+    s.style.setProperty('--dy',Math.round(Math.sin(a)*d+40)+'px');
+    s.style.setProperty('--r',Math.round(Math.random()*720-360)+'deg');
+    s.style.background=cols[i%cols.length];
+    s.style.animationDelay=Math.round(Math.random()*60)+'ms';
+    box.appendChild(s);
+  }
+  document.body.appendChild(box);
+  setTimeout(()=>box.remove(),1400);
+}
+/* حلقة التقدّم: الكسر النهائي في data-f من أول لحظة، والرسم ينتقل له. تبويب مخفي: تبقى فاضية وتمتلي أول
+   ما يبان (countPending) — مثل الأرقام */
+const RING_C=326.73;
+function ringTo(el,f){
+  if(!el)return;
+  f=Math.max(0,Math.min(1,Number(f)||0));
+  el.dataset.f=String(f);
+  el.classList.toggle('zero',f<=0);
+  if(!countReduce()&&!el.closest('.page.active')){
+    el.style.transition='none'; el.style.strokeDashoffset=String(RING_C); el.dataset.cnt='ring'; return;
+  }
+  delete el.dataset.cnt;
+  el.style.transition='';
+  el.style.strokeDashoffset=String(RING_C*(1-f));
 }
 
 /* هل اختار الطالب تخصصه فعلاً؟ */
@@ -6060,7 +6163,7 @@ function renderPlan(){
   const cr=doneCredits(),pct=TOTAL_CR>0?Math.round(cr/TOTAL_CR*100):0;
   cntIn(document.getElementById('progDone'),cr,0,` / ${TOTAL_CR} ${t('hrsUnit')}`);
   countTo(document.getElementById('progPct'),pct,0,'%');
-  document.getElementById('progFill').style.width=pct+'%';
+  ringTo(document.getElementById('progRing'),TOTAL_CR>0?cr/TOTAL_CR:0);
   document.getElementById('progRemain').textContent=(LANG==='ar'?`${t('remain')} ${TOTAL_CR-cr} ${t('hrsUnit')}`:`${TOTAL_CR-cr} ${t('hrsUnit')} ${t('remain')}`);
   document.getElementById('progLevel').textContent=level(cr);
 
@@ -6125,12 +6228,14 @@ function renderPlan(){
   document.querySelectorAll('.sem-block.open').forEach(el=>openSems.add(el.id));
   const firstRender=!document.querySelector('.sem-block');
 
+  const flash=PLAN_FLASH; PLAN_FLASH=null;
   document.getElementById('planSemesters').innerHTML=PLAN.map((s,i)=>{
     const done=s.courses.filter(c=>isDone(c.c)).length;
     const allDone=done===s.courses.length;
     const isOpen=firstRender?(!allDone&&i<2):openSems.has('sem-'+s.id);
-    return `<div class="sem-block ${isOpen?'open':''}" id="sem-${s.id}">
-      <div class="sem-head" onclick="document.getElementById('sem-${s.id}').classList.toggle('open')">
+    const fr=s.courses.length?+(done/s.courses.length).toFixed(4):0;
+    return `<div class="sem-block ${isOpen?'open':''}${allDone?' done':''}" id="sem-${s.id}">
+      <div class="sem-head" style="--p:${fr}" onclick="document.getElementById('sem-${s.id}').classList.toggle('open')">
         <div class="sem-head-l"><span class="sem-title">${t('sem')[s.id]||s.label}</span>
         <span class="sem-chip ${allDone?'done':''}">${done}/${s.courses.length}</span>
         <button class="sem-all" title="${LANG==='ar'?'علّم الفصل كامل':'Mark whole term'}"
@@ -6181,7 +6286,7 @@ function renderPlan(){
         /* الاختيارية خانة مو مادة حقيقية، ومواد الإدارة ما لها شعب في البحث */
         const tap=!c.el&&!c.adm;
         const hrs=c.h?` <span style="color:var(--text3);font-family:var(--mono);font-size:10.5px">${c.h}H</span>`:'';
-        return `<div class="pc ${d?'done':''} ${locked?'locked':''}">
+        return `<div class="pc ${d?'done':''} ${locked?'locked':''}${d&&flash&&flash.has(c.c)?' just-done':''}">
           <button class="pc-check" onclick="toggleDone('${c.c}')">✓</button>
           <div class="pc-info${tap?' tappable':''}"${tap?` onclick="searchSuggested('${c.c}')"`:''}>
           <div class="pc-code">${c.c}${hrs}${nowBadge(c.c)}</div>
@@ -6189,6 +6294,17 @@ function renderPlan(){
           ${gradeSel}</div>`;
       }).join('')}</div></div>`;
   }).join('');
+  /* كل ترم يمتلي من نسبته قبل لنسبته الحين — لا من صفر مع كل ضغطة */
+  document.querySelectorAll('#planSemesters .sem-block').forEach(b=>{
+    const h=b.querySelector('.sem-head');
+    if(!h)return;
+    const to=h.style.getPropertyValue('--p'), from=SEM_P[b.id];
+    SEM_P[b.id]=to;
+    if(from==null||from===to||countReduce())return;
+    h.style.setProperty('--p',from);
+    h.getBoundingClientRect();
+    requestAnimationFrame(()=>h.style.setProperty('--p',to));
+  });
 }
 
 /* ===== Filters / Monitor / Utils ===== */
@@ -9521,15 +9637,19 @@ function reportPlan(){
 function markSem(id){
   const sem=PLAN.find(x=>x.id===id);
   if(!sem)return;
+  const before=semsDone();
   const allDone=sem.courses.every(c=>isDone(c.c));
+  const fresh=new Set();
   sem.courses.forEach(c=>{
     const i=completed.indexOf(c.c);
     if(allDone){ if(i>-1)completed.splice(i,1); }
-    else if(i===-1)completed.push(c.c);
+    else if(i===-1){ completed.push(c.c); fresh.add(c.c) }
   });
+  if(fresh.size)PLAN_FLASH=fresh;
   save('pmu_completed',completed);
   pushCompleted();
   planTouched();
+  planCelebrate(before);
 }
 
 function onPrepToggle(){
