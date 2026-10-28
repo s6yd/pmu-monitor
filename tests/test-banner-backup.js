@@ -251,6 +251,7 @@ const results = st => st.ban.hits.filter(h => /searchResults$/.test(h.path));
 const SCEN = {
   async backup(t) {
     const DB = base(); user(DB, 1); watch(DB, 1, '30011', 'CLOSED');
+    user(DB, 2); watch(DB, 2, '30012', 'OPEN');           /* كانت مفتوحة، وبانر يقول ما فيها مقاعد */
     const st = await makeOutside({ DB, pmu: { mode: 'down' },
       ban: { data: [bsec('30011', '101', 2), bsec('30012', '102', 0), bsec('40011', '201', 0)] } });
     const c = instance(st); await ready(c);
@@ -260,6 +261,8 @@ const SCEN = {
     t.ok(m[0] && /30011/.test(m[0].text) && /MEEN 3311/.test(m[0].text), 'والرسالة فيها الشعبة بشكلها المعروف');
     t.ok(adminSays(st, /ما يستجيب/) === 1 && adminSays(st, /مستمرة من صفحة بحث بانر/) === 1,
       'والإدارة تعرف: «ما يستجيب» ومعها «المراقبة مستمرة من بانر»');
+    t.eq(DB.monitored_courses.find(x => x.crn === '30012').last_status, 'CLOSE',
+      '**المقفلة من بانر تنكتب CLOSE — بصيغة جدول الجامعة** (كانت CLOSED: كل تبديل للمصدر «تغيّرت حالتها»، والصفحة تعرف CLOSE)');
     const s = await c.search('M1');
     t.ok(s.status !== 200 || !(s.j && s.j.courses && s.j.courses.length),
       '**وبيانات بانر ما دخلت كاش البحث** (صياغتها ممكن تفرق — تنحفظ في جدول طالب فتطلع «تغيّر جدولك» كاذبة)');

@@ -7698,7 +7698,7 @@ function monLiveDemoRows(){
   const now=Date.now(), term=String(regTermCode()), at=ms=>new Date(now-ms).toISOString();
   return [
     {id:-1,scope:'section',course_code:'MEEN 3311',section:'101',crn:'30011',term,last_status:'OPEN',notified_at:at(4*60e3),created_at:at(2*864e5)},
-    {id:-2,scope:'section',course_code:'CHEN 3333',section:'102',crn:'30512',term,last_status:'CLOSED',notified_at:null,created_at:at(5*36e5)},
+    {id:-2,scope:'section',course_code:'CHEN 3333',section:'102',crn:'30512',term,last_status:'CLOSE',notified_at:null,created_at:at(5*36e5)},
     {id:-3,scope:'course',course_code:'PHYS 1422',section:null,crn:null,term,last_status:null,notified_at:null,created_at:at(26*36e5)}
   ];
 }
@@ -7803,6 +7803,8 @@ function monLiveChips(S){
       :`<button class="ml-ch need" onclick="poGo()">🚨 ${ar?'فعّل التنبيه الطارئ':'Enable urgent alert'}</button>`);
   return out.join('');
 }
+/* الجامعة تكتب المقفلة CLOSE (الجرس والفلتر عليها من أول يوم) — وCLOSED كانت تنكتب من احتياط بانر قبل */
+function monClosed(s){ s=String(s||'').toUpperCase(); return s==='CLOSE'||s==='CLOSED' }
 function monLiveRowHtml(m,paused){
   const ar=LANG==='ar', id=Number(m.id), all=m.scope==='course';
   let cls, st;
@@ -7813,7 +7815,7 @@ function monLiveRowHtml(m,paused){
        `<button class="lnk" onclick="openPlans('${all?'course':'monitors'}')">${ar?'فعّلها':'Resume'}</button>`;
   }else if(all){ cls='all'; st=ar?'📡 أي شعبة تفتح أو تنزل يوصلك':'📡 Any section that opens or appears' }
   else if(m.last_status==='OPEN'){ cls='open'; st=ar?'🟢 مفتوحة الحين — روح سجّلها':'🟢 Open now — go register' }
-  else if(m.last_status==='CLOSED'){ cls='closed'; st=ar?'🔴 مقفلة — ننتظرها تفتح':'🔴 Closed — waiting for it to open' }
+  else if(monClosed(m.last_status)){ cls='closed'; st=ar?'🔴 مقفلة — ننتظرها تفتح':'🔴 Closed — waiting for it to open' }
   else { cls='wait'; st=ar?'⏳ ننتظر أول فحص':'⏳ Waiting for the first check' }
   const n=Date.parse(m.notified_at||''), c=Date.parse(m.created_at||'');
   const meta=Number.isFinite(n)?{at:n,k:'n'}:Number.isFinite(c)?{at:c,k:'c'}:null;
@@ -7855,7 +7857,7 @@ function renderMonLive(){
     const paused=MONLIVE_PREVIEW?new Set():pausedMonitorIds();
     const active=rows.filter(m=>!paused.has(m.id));
     const open=active.filter(m=>m.scope!=='course'&&m.last_status==='OPEN');
-    const rank=m=>paused.has(m.id)?4:m.scope==='course'?3:m.last_status==='OPEN'?0:m.last_status==='CLOSED'?1:2;
+    const rank=m=>paused.has(m.id)?4:m.scope==='course'?3:m.last_status==='OPEN'?0:monClosed(m.last_status)?1:2;
     const list=rows.slice().sort((a,b)=>(rank(a)-rank(b))||((Date.parse(a.created_at)||0)-(Date.parse(b.created_at)||0)));
     const isOpen=monLiveIsOpen();
     MONLIVE.kind=S.kind;

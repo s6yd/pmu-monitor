@@ -103,11 +103,14 @@ const server = http.createServer((req, res) => {
 
   /* ── ٣) رابط التوجيه ── */
   {
-    /* ندع التوجيه يحصل فعلاً ونلتقطه على الشبكة — أصدق من محاكاة location */
+    /* ندع التوجيه يحصل فعلاً ونلتقطه على الشبكة — أصدق من محاكاة location.
+       نردّ عليه بصفحة فاضية لا abort: القطع يفتح صفحة خطأ (chrome-error) توصل متأخرة تحت الحمل وتقاطع
+       الرجوع تحت («interrupted by another navigation») — طاحت كذا في run-all مرتين. وننتظر ما وصل
+       قبل ما نرجع */
     let dest = '';
     await page.route('https://pushover.net/**', r => {
       dest = r.request().url();
-      return r.abort();
+      return r.fulfill({ status: 200, contentType: 'text/html', body: '<html><body>pushover</body></html>' });
     });
     await page.evaluate(([c]) => {
       MON_STATE = { pushover: c };
@@ -115,6 +118,8 @@ const server = http.createServer((req, res) => {
       poStart();
     }, [{ mode: 'all', url: SUB }]);
     for (let i = 0; i < 40 && !dest; i++) await page.waitForTimeout(100);
+    await page.waitForURL(u => String(u).startsWith('https://pushover.net/'), { timeout: 8000 }).catch(() => {});
+    await page.waitForLoadState('load').catch(() => {});
     await page.unroute('https://pushover.net/**');
 
     /* نرجع للصفحة لنقرأ ما خُزّن — التخزين يبقى على نفس الأصل */

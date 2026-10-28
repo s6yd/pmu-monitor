@@ -3129,11 +3129,15 @@ function parseHTML(html) {
 
 /* شكل الجدول: عمود أُضيف في النص يزيح الحالة — فتنقرأ «M-CORE - G034» حالةً، وتنكتب في
    last_status، والشعبة اللي تفتح ما تنشاف. نقيس الشكل قبل ما نصدّق الجدول: الـCRN أرقام
-   (٩٠٪)، والحالة OPEN/CLOSED لنصف الصفوف على الأقل (حالة ثالثة ما نعرفها ما تطيّحه) */
+   (٩٠٪)، والحالة OPEN/CLOSE لنصف الصفوف على الأقل (حالة ثالثة ما نعرفها ما تطيّحه).
+   **الجامعة تكتب CLOSE لا CLOSED** (الدليل نفسه: «OPEN مفتوحة، CLOSE مسكّرة»، والجرس في الصفحة
+   على CLOSE من أول يوم): كانت تعدّ CLOSED وحدها، فجدول أغلبه مقفل — وقت التسجيل — يطلع «شكله
+   تغيّر»: المراقبة توقف والبحث يفشل. وCLOSED تنقبل كذلك (ما شفناها منهم — ما تطيّح الجدول) */
+const PMU_STATUSES = new Set(['OPEN', 'CLOSE', 'CLOSED']);
 function pmuShape(rows) {
   const n = rows.length;
   const crn = rows.filter(r => /^\d{4,6}$/.test(r.crn)).length;
-  const st = rows.filter(r => r.status === 'OPEN' || r.status === 'CLOSED').length;
+  const st = rows.filter(r => PMU_STATUSES.has(r.status)).length;
   return { ok: n > 0 && crn >= n * 0.9 && st >= n * 0.5, n, crn, st };
 }
 /* جدول ترم كامل من الجامعة ⇒ صفوف موثوقة أو خطأ بنوعه */
@@ -3186,7 +3190,7 @@ function bannerRows(list) {
       courseTitle: String(s.courseTitle || '').replace(/&amp;/g, '&').trim(),
       section: String(s.sequenceNumber || '').trim(),
       instructor: String(inst).replace(/&amp;/g, '&').trim(),
-      status: open ? 'OPEN' : 'CLOSED'
+      status: open ? 'OPEN' : 'CLOSE'               /* بصيغة الجدول (CLOSE) — وإلا كل تبديل للمصدر «تغيّرت حالتها» */
     };
     const meets = (Array.isArray(s.meetingsFaculty) ? s.meetingsFaculty : [])
       .map(m => m && m.meetingTime).filter(Boolean);
@@ -3263,7 +3267,7 @@ async function fetchBannerTerm(term, opts) {
 
 const pmuWhy = e => e.pmu === 'format'
   ? (e.shape ? `وصل جدول ${e.shape.n} صف، لكن ${Math.round(100 * e.shape.crn / e.shape.n)}٪ منها رقم الشعبة ` +
-               `أرقام و${Math.round(100 * e.shape.st / e.shape.n)}٪ حالتها OPEN/CLOSED — الأعمدة تغيّرت`
+               `أرقام و${Math.round(100 * e.shape.st / e.shape.n)}٪ حالتها OPEN/CLOSE — الأعمدة تغيّرت`
      : `${escP(e.message)}${e.title ? ` — عنوان الصفحة: «${escP(e.title)}»` : ''}`)
   : escP(e.message);
 
