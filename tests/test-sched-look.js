@@ -6,6 +6,7 @@
    ٣) القائمة أو الشبكة — اختيار الطالب ينحفظ.
    ٤) دليل الموقع يقول «تطلع لك بطاقتها من تحت» لا «تختفي بأي لمسة».
    ٥) رقم «جدولي» فوق و«مادة» في الملخّص = عدد المواد (كانا شعباً وصفوفاً — رقمين مختلفين لنفس الجدول).
+   ٦) وكل رقم ثاني كذلك: زر «جدول 1» وورقة الطباعة و«امسح الكل» مواد، و«🔢 أرقام CRN» والنسخ وورقة الطباعة كل CRN مرة.
 
    node tests/test-sched-look.js [مسار pmu-schedule.html] */
 const http = require('http');
@@ -183,6 +184,43 @@ const SUPA = 'window.supabase={createClient:()=>({auth:{getSession:async()=>({da
     r = await run(pg3, () => ({ on: document.getElementById('svList').classList.contains('on'), list: getComputedStyle(document.getElementById('schedDays')).display !== 'none' }));
     eq(r, { on: true, list: true }, 'ورجعت «قائمة» ⇒ تفتح قائمة');
     ok(errs.length === 0, '(الحفظ) بلا أخطاء JS: ' + errs.slice(0, 2).join(' | '));
+    await ctx.close();
+  }
+
+  /* ── ٥) كل رقم وقائمة في «جدولي» من المواد والـCRN لا من الصفوف ──
+     المحاضرة والمعمل بنفس CRN صفّان (الفيزياء 30031): زر «جدول 1» كان «6 مواد» والملخّص «4»، ورقم الفيزياء
+     يتكرر في «🔢 أرقام CRN» وفي «انسخ الأرقام كلها» وفي ورقة الطباعة — يلصقه الطالب في بانر مرتين. */
+  {
+    const { ctx, pg, errs } = await open();
+    await run(pg, () => switchTab('sched'));
+    let r = await run(pg, () => [...document.querySelectorAll('#slotBar .slot-pick .slot-c')].map(x => x.textContent.trim()));
+    eq(r, ['4 مواد', 'فاضي', 'فاضي'], '**زر «جدول 1» يقول «4 مواد» مثل الملخّص** (كان «6 مواد» — يعدّ صفوفاً)');
+    ok(await tap(pg, '#crnBtn'), 'زر «🔢 أرقام CRN» ينضغط');
+    r = await run(pg, () => ({ nums: [...document.querySelectorAll('#crnPanel .crn-row .crn-num')].map(x => x.textContent),
+      all: (document.querySelector('#crnPanel .crn-all') || {}).textContent }));
+    eq(r, { nums: ['30011', '30021', '30023', '30031', '30091'], all: '📋 انسخ الأرقام كلها (5)' },
+      '**«🔢 أرقام CRN»: كل رقم مرة** — المحاضرة والمعمل بنفس CRN سطر واحد (كان رقم الفيزياء مرتين، و«كلها (6)»)');
+    r = await run(pg, () => { window.copyText = (txt, msg) => { window.__cp = [txt, msg] }; copyAllCrn(); return window.__cp });
+    eq(r, ['30011\n30021\n30023\n30031\n30091', 'انتسخت 5 أرقام'], '**«انسخ الأرقام كلها» ينسخ كل رقم مرة** — هذا اللي يلصقه في بانر');
+    /* الترتيب يشتغل على الأرقام نفسها: الفيزياء فوق */
+    r = await run(pg, () => { moveCrn('30031', -1); moveCrn('30031', -1); return [...document.querySelectorAll('#crnPanel .crn-row .crn-num')].map(x => x.textContent) });
+    eq(r, ['30011', '30031', '30021', '30023', '30091'], 'وترتيب الأرقام (▲) يشتغل عليها');
+    r = await run(pg, () => { window.copyText = (txt, msg) => { window.__cp = [txt, msg] }; copyAllCrn(); return window.__cp[0] });
+    eq(r, '30011\n30031\n30021\n30023\n30091', 'والنسخ بالترتيب اللي رتّبه');
+    /* ورقة الطباعة */
+    r = await run(pg, () => ({ stat: (document.querySelector('#printSheet .ps-stat b') || {}).textContent,
+      crns: [...document.querySelectorAll('#printSheet .ps-crn-i b')].map(x => x.textContent) }));
+    eq(r, { stat: '4', crns: ['30011', '30021', '30023', '30031', '30091'] },
+      '**ورقة الطباعة: «4» مواد وكل رقم تسجيل مرة** (كانت «6» ورقم الفيزياء مرتين)');
+    /* «امسح الكل» يسأل عن المواد */
+    r = await run(pg, () => { window.confirm = m => { window.__cf = m; return false }; clearSchedule(); return { m: window.__cf, n: schedule.length } });
+    eq(r, { m: 'تمسح 4 مواد من "جدول 1"؟ ما فيه تراجع.', n: 6 }, '**«امسح الكل» يقول «تمسح 4 مواد»** (كان «تمسح 6 مادة»)، و«لا» ما يمسح شي');
+    /* بالإنجليزي */
+    await run(pg, () => toggleLang());
+    r = await run(pg, () => { window.confirm = m => { window.__cf = m; return false }; clearSchedule();
+      return { chip: document.querySelector('#slotBar .slot-pick .slot-c').textContent.trim(), m: window.__cf } });
+    eq(r, { chip: '4 crs', m: 'Delete 4 courses from "Plan 1"? This cannot be undone.' }, 'وبالإنجليزي كذلك');
+    ok(errs.length === 0, '(الأرقام) بلا أخطاء JS: ' + errs.slice(0, 2).join(' | '));
     await ctx.close();
   }
 

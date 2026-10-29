@@ -2800,7 +2800,7 @@ function baseCourseCode(code){
 
 /* كم مادة في الجدول: بالكود الأم مثل الساعات — المحاضرة والمعمل والشعب البديلة (الجدول مخطِّط) مادة وحدة.
    كانت «مادة» في الملخّص تعدّ صفوفاً: شعبة بمحاضرة ومعمل بنفس CRN تطلع «2 مادة» */
-function schedCourses(){ return new Set(schedule.map(c=>baseCourseCode(c.courseCode))).size }
+function schedCourses(list=schedule){ return new Set(list.map(c=>baseCourseCode(c.courseCode))).size }
 function scheduleCredits(){
   const seen=new Set(); let t=0;
   schedule.forEach(c=>{
@@ -3236,7 +3236,8 @@ function crnOrdered(){
   const byCrn={}; schedule.forEach(c=>{ byCrn[String(c.crn)]=c });
   const out=[];
   saved.forEach(k=>{ if(byCrn[k]){ out.push(byCrn[k]); delete byCrn[k] } });
-  schedule.forEach(c=>{ if(byCrn[String(c.crn)])out.push(c) });   /* الجديد آخراً */
+  /* الجديد آخراً، وكل CRN مرة: المحاضرة والمعمل بنفس CRN صفّان (§٦) — كان رقمها يطلع مرتين وينتسخ مرتين لبانر */
+  schedule.forEach(c=>{ const k=String(c.crn); if(byCrn[k]){ out.push(c); if(c.crn)delete byCrn[k] } });
   return out;
 }
 function moveCrn(crn,dir){
@@ -3270,7 +3271,7 @@ function renderCrn(){
       <span class="crn-copy">${t('crnCopy')}</span>
     </div>`).join('')
     +`<button class="crn-all" onclick="copyAllCrn()">${
-      ar?`📋 انسخ الأرقام كلها (${schedule.length})`:`📋 Copy all (${schedule.length})`}</button>`
+      ar?`📋 انسخ الأرقام كلها (${list.length})`:`📋 Copy all (${list.length})`}</button>`
     +`<div class="crn-hint">${ar
       ?'اضغط أي رقم لنسخه لحاله. الأرقام تُطبع كذلك مع الجدول.'
       :'Tap a number to copy it. They are printed with your schedule too.'}</div>`;
@@ -3282,16 +3283,16 @@ function copyCrn(crn){
 
 function copyAllCrn(){
   /* بالترتيب الذي رتّبه لا بترتيب الأيام — هذا كل فائدة الترتيب */
-  const txt=crnOrdered().map(c=>c.crn).filter(Boolean).join('\n');
-  copyText(txt,LANG==='ar'?`انتسخت ${schedule.length} أرقام`:`Copied ${schedule.length} numbers`);
+  const list=crnOrdered().map(c=>c.crn).filter(Boolean);
+  copyText(list.join('\n'),LANG==='ar'?`انتسخت ${list.length} أرقام`:`Copied ${list.length} numbers`);
 }
 
 function clearSchedule(){
   if(!schedule.length)return;
-  const n=schedule.length;
+  const n=schedCourses();
   const msg=LANG==='ar'
-    ? `تمسح ${n} مادة من "جدول ${SLOT+1}"؟ ما فيه تراجع.`
-    : `Delete ${n} courses from "Plan ${SLOT+1}"? This cannot be undone.`;
+    ? `تمسح ${n_(n)} من "جدول ${SLOT+1}"؟ ما فيه تراجع.`
+    : `Delete ${n} ${n===1?'course':'courses'} from "Plan ${SLOT+1}"? This cannot be undone.`;
   if(!confirm(msg))return;
   schedule.length=0;   /* نفرّغه بدون ما نكسر الإشارة */
   saveSchedules();pushSchedule();updateBadge();renderSchedule();renderResults();showToast(t('clearedSched'));
@@ -3320,10 +3321,11 @@ function renderSlots(){
   const box=document.getElementById('slotBar');
   if(!box)return;
   const ar=LANG==='ar';
+  /* عدد المواد مثل الملخّص ورقم «جدولي» (schedCourses) — كان صفوفاً: «6 مواد» لجدول فيه 4 */
   box.innerHTML=SCHEDULES.map((sc,i)=>`
     <button class="slot-pick${i===SLOT?' on':''}${slotLocked(i)?' locked':''}" onclick="switchSlot(${i})">
       <span class="slot-n">${slotLocked(i)?'🔒 ':''}${ar?'جدول':'Plan'} ${i+1}</span>
-      <span class="slot-c">${sc.length?sc.length+(ar?' مواد':' crs'):(ar?'فاضي':'empty')}</span>
+      <span class="slot-c">${sc.length?(ar?n_(schedCourses(sc)):schedCourses(sc)+' crs'):(ar?'فاضي':'empty')}</span>
     </button>`).join('');
 }
 
@@ -5837,7 +5839,7 @@ function buildPrintSheet(clashSet){
       <div class="ps-sub">Prince Mohammad Bin Fahd University${termName?' · '+escapeHtml(termName):''}</div>
     </div>
     <div class="ps-stats">
-      <div class="ps-stat"><b>${schedule.length}</b><span>${t('courses')}</span></div>
+      <div class="ps-stat"><b>${schedCourses()}</b><span>${t('courses')}</span></div>
       <div class="ps-stat"><b>${scheduleCredits()}</b><span>${t('credits')}</span></div>
       <div class="ps-stat ${clashes==='0'?'ok':'bad'}"><b>${clashes}</b><span>${t('clashes')}</span></div>
     </div>
@@ -5860,7 +5862,7 @@ function buildPrintSheet(clashSet){
   /* أرقام التسجيل — أهم شي في الورقة وقت التسجيل */
   const crns=`<div class="ps-crn"><span class="ps-crn-t">${
     LANG==='ar'?'أرقام التسجيل':'Registration numbers (CRN)'}</span>${
-    schedule.map(c=>{
+    schedule.filter((c,i,a)=>!c.crn||a.findIndex(x=>x.crn===c.crn)===i).map(c=>{     /* كل رقم مرة — المحاضرة والمعمل بنفس CRN صفّان */
       const col=colorOf[c.courseCode]||['#5b6472','#f2f4f7'];
       return `<span class="ps-crn-i" style="--c:${col[0]};--c2:${col[1]}"><b>${
         escapeHtml(String(c.crn||''))}</b>${
