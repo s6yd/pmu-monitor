@@ -230,6 +230,10 @@ const SUPA = 'window.supabase={createClient:()=>({auth:{getSession:async()=>({da
     ok(/اضغط أي مادة تطلع لك بطاقتها من تحت/.test(G) && /كل مادة بلونها/.test(G) && !/وتختفي بأي لمسة/.test(G),
       '**دليل الموقع: «كل مادة بلونها … اضغط أي مادة تطلع لك بطاقتها من تحت»** (كان «تختفي بأي لمسة»)');
     ok(/its card slides up/.test(G) && !/disappears at any touch/.test(G), 'وبالإنجليزي');
+    /* و«دليل الصور» (/guide — نص محمد، عدّلناه بموافقته ٢٩ أكتوبر) الخطوة ٢٢ */
+    const PG = fs.readFileSync(path.join(path.dirname(PAGE), 'jadwalik-guide.html'), 'utf8');
+    ok(/اضغط المادة تطلع لك بطاقتها من تحت/.test(PG) && !/وتختفي بأي لمسة/.test(PG),
+      '**دليل الصور، الخطوة ٢٢: «اضغط المادة تطلع لك بطاقتها من تحت»** (كان «وتختفي بأي لمسة»)');
   }
 
   await browser.close();
