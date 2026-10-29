@@ -8,6 +8,7 @@
    ٥) «تقليل الحركة» في الجوال يطفيها كلها (الأرقام نهائية على طول).
    ٦) شريط الزائر سطر رفيع، و✕ يقفله أسبوعاً (ويرجع بعده).
    ٧) زر «؟» العائم يتنحّى وقت التمرير ويرجع أول ما توقف.
+   ٨) شريط «تيليغرام غير مربوط» للمسجّل بعد ما يوصل ملفه — المربوط ما يطلع له ولا لحظة.
 
    node tests/test-motion.js [مسار pmu-schedule.html] */
 const http = require('http');
@@ -287,6 +288,63 @@ const SUPA = 'window.supabase={createClient:()=>({auth:{getSession:async()=>({da
       an: getComputedStyle(document.querySelector('#resultsList .course-card')).animationName }));
     eq(r, { t: '18', an: 'none' }, 'والنتائج بلا ظهور متدرّج');
     ok(errs.length === 0, '(تقليل الحركة) بلا أخطاء JS: ' + errs.slice(0, 2).join(' | '));
+    await ctx.close();
+  }
+
+  /* ── ٨) شريط تيليغرام للمسجّل: ما نحكم قبل ما يوصل ملفه ──
+     الشريط صار ينرسم أول ما تنعرف الجلسة (٦) — والمسجّل وقتها ملفه (PROFILE) لسا ما وصل، فـtgLinked() خطأ:
+     المربوط كان يطلع له «⚠️ تيليغرام غير مربوط» لين مؤقّت الأربع ثوانٍ. الملف هنا يوصل بعد ٩٠٠ م.ث */
+  const SUPA_USER = linked => `
+window.__ROW=${JSON.stringify({ id: 'u1', email: 'm@x.com', name: 'Student', major: 'MEEN', plan_ver: 'new', prep: false,
+    telegram_chat_id: linked ? '901' : null })};
+function q(t){ const o={
+  select(){return o}, eq(){return o}, order(){return o}, limit(){return o}, in(){return o}, or(){return o},
+  gte(){return o}, lte(){return o}, neq(){return o}, is(){return o},
+  single(){ return new Promise(r=>setTimeout(()=>r({data:t==='profiles'?window.__ROW:null,error:null}),900)) },
+  update(){ return {eq:async()=>({data:[],error:null})} },
+  insert(){ return {select:async()=>({data:[],error:null})} },
+  upsert(){ return Promise.resolve({data:[],error:null}) },
+  delete(){ return {eq:async()=>({data:[],error:null}),in:async()=>({data:[],error:null})} },
+  then(f,r){ return Promise.resolve({data:t==='profiles'?[window.__ROW]:[],error:null}).then(f,r) }
+}; return o }
+window.supabase={createClient:()=>({
+  auth:{ getSession:async()=>({data:{session:{user:{id:'u1',email:'m@x.com'},access_token:'tok'}}}),
+         onAuthStateChange:()=>({data:{subscription:{unsubscribe(){}}}}), signOut:async()=>({}) },
+  from:t=>q(t), channel:()=>({on(){return this},subscribe(){return this}}),
+  storage:{from:()=>({list:async()=>({data:[],error:null})})}
+})};`;
+  for (const linked of [true, false]) {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const pg = await ctx.newPage();
+    const errs = [];
+    pg.on('pageerror', e => errs.push(String(e).slice(0, 160)));
+    await pg.route('**/fonts.googleapis.com/**', r => r.fulfill({ status: 200, contentType: 'text/css', body: '' }));
+    await pg.route('**/cdn.jsdelivr.net/**', r => r.fulfill({ status: 200, contentType: 'application/javascript', body: SUPA_USER(linked) }));
+    await pg.addInitScript(() => { try { localStorage.setItem('pmu_seen_guide', 'true'); localStorage.setItem('pmu_seen_welcome', 'true') } catch (e) {}
+      /* كل حالة يمر بها الشريط، ومعها: هل وصل الملف وقتها؟ */
+      window.__TGV = []; window.__PROF_AT = null;
+      document.addEventListener('DOMContentLoaded', () => {
+        const b = document.getElementById('tgBar'); if (!b) return;
+        const prof = () => { try { return !!PROFILE } catch (e) { return false } };
+        const rec = () => window.__TGV.push({ t: Math.round(performance.now()), shown: !b.hidden, warn: /غير مربوط|not linked/.test(b.textContent), prof: prof() });
+        new MutationObserver(rec).observe(b, { attributes: true, childList: true, subtree: true, characterData: true });
+        rec();                     /* حالته لحظة جاهزية الصفحة — ممكن انرسم قبلها */
+        const iv = setInterval(() => { if (prof()) { window.__PROF_AT = Math.round(performance.now()); clearInterval(iv) } }, 20);
+      }) });
+    await pg.goto(BASE, { waitUntil: 'load' });
+    await pg.waitForFunction(() => window.__PROF_AT !== null, null, { timeout: 8000 }).catch(() => {});
+    await pg.waitForTimeout(linked ? 1500 : 300);
+    const r = await run(pg, () => ({ v: window.__TGV, profAt: window.__PROF_AT, now: !document.getElementById('tgBar').hidden }));
+    const warned = (r.v || []).filter(x => x.shown && x.warn);
+    if (linked) {
+      ok(r.profAt !== null && warned.length === 0,
+        `**المربوط ما يطلع له «تيليغرام غير مربوط» ولا لحظة** (كان يطلع لين يوصل ملفه) — ${JSON.stringify(warned.slice(0, 2))}`);
+    } else {
+      ok(warned.length > 0 && warned.every(x => x.prof), `**وغير المربوط: الشريط بعد ما يوصل ملفه، لا قبل** — ${JSON.stringify((r.v || []).slice(0, 3))}`);
+      ok(warned.length > 0 && warned[0].t - r.profAt < 1500,
+        `**وعلى طول بعد وصوله** — لا بعد مؤقّت الأربع ثوانٍ (${warned[0] ? warned[0].t - r.profAt : '—'} م.ث)`);
+    }
+    ok(errs.length === 0, `(شريط تيليغرام${linked ? ' · مربوط' : ''}) بلا أخطاء JS: ` + errs.slice(0, 2).join(' | '));
     await ctx.close();
   }
 

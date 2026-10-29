@@ -7484,6 +7484,9 @@ function renderTgBar(){
 
   /* ── مسجّل لكن ما ربط تيليغرام ── */
   bar.classList.remove('slim');
+  /* ملفه لسا ما وصل (pullCloud): ما نحكم. الشريط صار ينرسم أول ما تنعرف الجلسة، والمربوط
+     كان يطلع له «غير مربوط» لين مؤقّت الأربع ثوانٍ — pullCloud ترسمه أول ما يوصل */
+  if(!PROFILE)return hide();
   if(tgLinked())return hide();
   const n=(typeof monitored!=='undefined'&&monitored)?monitored.length:0;
   bar.hidden=false;
@@ -10056,6 +10059,7 @@ async function pullCloud(){
     await loadMonitored();
     await loadReviews();
     renderSettings();
+    try{ renderTgBar() }catch(e){}     /* الملف وصل: الشريط يقول الصح على طول، لا بعد مؤقّت الأربع ثوانٍ */
     if(!load('pmu_seen_welcome',false)){
       save('pmu_seen_welcome',true);
       const nm=(PROFILE&&PROFILE.name?PROFILE.name:'').split(' ')[0];
