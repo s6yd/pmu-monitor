@@ -152,8 +152,103 @@ align-items:center;justify-content:center;gap:3px}
 @media (min-width:760px){ .main{max-width:720px;padding:20px 18px 90px} }
 @media (min-width:1024px){ .main{max-width:820px;padding:22px 20px 90px} }
 .page{display:none}.page.active{display:block}
+/* ═══ الحركة (طلب محمد ٢٧ أكتوبر ٢٠٢٦: «يكون تفاعلي اكثر وما تحسه جامد») — transform/opacity بس، وكلها
+   تنطفي مع «تقليل الحركة» في الجوال (آخر الكتلة). العناصر الثابتة (fixed) كلها في body لا داخل .page،
+   فالـtransform وقت الانتقال ما يحرّكها ═══ */
+/* التبويب الجديد ينساب بدل ما يتبدّل فجأة */
+.page.active{animation:pageIn .24s ease-out}
+@keyframes pageIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+/* خط التبويب ينزلق للجديد (moveTabInd) — والخط القديم تحت كل تبويب يختفي لما يشتغل */
+.tab-ind{position:absolute;bottom:0;left:0;width:0;height:2px;border-radius:2px;background:var(--accent);
+pointer-events:none;opacity:0;transition:transform .32s cubic-bezier(.2,.8,.2,1),width .32s cubic-bezier(.2,.8,.2,1),opacity .2s}
+.tabs.ind-on .tab-ind{opacity:1}
+.tabs.ind-on .tab.active::after{display:none}
+.tabs.ind-still .tab-ind{transition:none}
+/* الضغطة لها إحساس: الزر يصغر شوي ويرجع. :where صفر في الأولوية — أي :active موجودة تغلب (النجمة تكبر)،
+   وزر المسح موضعه بـtransform فمستثنى. وiOS ما يطبّق :active إلا مع مستمع touchstart (فاضٍ، تحت) */
+:where(button:not(:disabled):not(.clear-btn)){transition:transform .12s ease}
+:where(button:not(:disabled):not(.clear-btn)):active{transform:scale(.97)}
+.tab:active{transform:none}
+.tab .ti{transition:transform .15s ease}
+.tab:active .ti{transform:scale(.86)}
+/* التحميل: هياكل بطاقات تلمع بدل دائرة — يحسّس إن الموقع أسرع */
+#loadingBox{padding:4px 0 24px}          /* الهياكل بعرض بطاقات النتائج نفسها */
+.sk-list{width:100%;display:flex;flex-direction:column;gap:10px;margin-bottom:14px}
+.sk-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:9px;text-align:start}
+.sk{display:block;height:11px;border-radius:6px;background:linear-gradient(90deg,var(--border) 25%,var(--border2) 50%,var(--border) 75%);
+background-size:300% 100%;animation:skShine 1.3s ease-in-out infinite}
+.sk.w30{width:30%}.sk.w45{width:45%}.sk.w60{width:60%}.sk.w80{width:80%}.sk.tall{height:15px}
+@keyframes skShine{from{background-position:100% 0}to{background-position:0 0}}
+/* نتائج بحث جديد تظهر وحدة ورا الثانية (أول ١٢ — والباقي على طول). إعادة الرسم ما تعيدها */
+.course-card.in{animation:cardIn .3s ease-out both;animation-delay:calc(var(--i,0) * 35ms)}
+@keyframes cardIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){
+  .page.active,.course-card.in,.sk{animation:none}
+  .tab-ind{transition:none}
+  :where(button):active,.tab:active .ti{transform:none}
+}
 
 .search-card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:17px;margin-bottom:16px}
+/* ── «مراقبتك»: المراقبة الحيّة فوق البحث — وقت التسجيل وحده، ولمن عنده مراقبة ── */
+.mon-live{background:var(--card);border:1px solid var(--border);border-radius:18px;margin-bottom:14px;overflow:hidden}
+.mon-live.live{border-color:var(--open-border);background:linear-gradient(180deg,var(--open-bg),transparent 120px),var(--card)}
+.mon-live.warn{border-color:rgba(245,158,11,.42);background:linear-gradient(180deg,var(--warn-bg),transparent 120px),var(--card)}
+.ml-demo{display:flex;align-items:center;gap:8px;padding:8px 10px 8px 14px;font-size:11.5px;line-height:1.6;color:var(--accent2);background:rgba(61,111,255,.1);border-bottom:1px solid var(--border)}
+.ml-demo span{flex:1;min-width:0}
+.ml-demo button{background:none;border:0;color:var(--text2);font-size:15px;line-height:1;padding:4px 6px;cursor:pointer;font-family:inherit}
+.ml-head{display:flex;align-items:flex-start;gap:11px;padding:14px 15px 11px}
+.ml-dot{position:relative;width:10px;height:10px;margin-top:6px;border-radius:50%;background:var(--text3);flex-shrink:0}
+.mon-live.live .ml-dot{background:var(--open)}
+.mon-live.warn .ml-dot{background:var(--warn)}
+.mon-live.live .ml-dot::after,.mon-live.warn .ml-dot::after{content:'';position:absolute;inset:0;border-radius:50%;background:inherit;animation:mlPulse 1.9s ease-out infinite}
+@keyframes mlPulse{0%{transform:scale(1);opacity:.6}100%{transform:scale(3.2);opacity:0}}
+.ml-hd{flex:1;min-width:0}
+.ml-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:14.5px;font-weight:700}
+.ml-pill{font-size:10.5px;font-weight:600;padding:2px 9px;border-radius:20px;background:var(--bg);color:var(--text2);border:1px solid var(--border)}
+.mon-live.live .ml-pill{background:var(--open-bg);color:var(--open);border-color:var(--open-border)}
+.mon-live.warn .ml-pill{background:var(--warn-bg);color:var(--warn);border-color:rgba(245,158,11,.38)}
+.ml-sub{font-size:11.5px;color:var(--text2);margin-top:4px;line-height:1.7}
+.ml-sub b{font-weight:600;color:var(--text)}
+.ml-sub .go{color:var(--open);font-weight:600}
+.ml-stats{display:grid;grid-template-columns:1fr 1fr 1.3fr;gap:8px;padding:0 15px 13px}
+.ml-stat{background:var(--bg);border:1px solid var(--border);border-radius:13px;padding:10px 6px 9px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-width:0}
+.ml-num{font-family:var(--mono);font-size:21px;font-weight:500;line-height:1}
+.ml-lbl{font-size:10.5px;color:var(--text2);white-space:nowrap}
+.ml-stat.hot{border-color:var(--open-border);background:var(--open-bg)}
+.ml-stat.hot .ml-num{color:var(--open)}
+.ml-clock{display:flex;align-items:center;gap:7px;height:21px}
+.ml-ring{width:22px;height:22px;flex-shrink:0;transform:rotate(-90deg)}
+.ml-ring circle{fill:none;stroke-width:3.4}
+.ml-ring .bg{stroke:var(--border2)}
+.ml-ring .fg{stroke:var(--open);stroke-linecap:round;transition:stroke-dashoffset .9s linear}
+.mon-live.warn .ml-ring .fg{stroke:var(--warn)}
+.mon-live.idle .ml-ring .fg{stroke:var(--text3)}
+.ml-ring.spin{animation:mlSpin 1s linear infinite}
+.ml-ring.spin .fg{stroke-dashoffset:44!important;transition:none}
+@keyframes mlSpin{from{transform:rotate(-90deg)}to{transform:rotate(270deg)}}
+.ml-time{font-family:var(--mono);font-size:16px;font-weight:500;line-height:1;direction:ltr;unicode-bidi:isolate}
+.ml-foot{display:flex;align-items:center;gap:7px;padding:10px 15px 12px;border-top:1px solid var(--border)}
+.ml-chs{display:flex;gap:6px;flex-wrap:wrap;min-width:0}
+.ml-ch{font-family:inherit;font-size:11.5px;line-height:1.4;padding:5px 10px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;white-space:nowrap}
+.ml-ch.ok{color:var(--open);border-color:var(--open-border);background:var(--open-bg)}
+.ml-ch.need{color:var(--warn);border-color:rgba(245,158,11,.42);background:var(--warn-bg);font-weight:600}
+.ml-more{margin-inline-start:auto;font-family:inherit;font-size:12px;font-weight:600;color:var(--accent2);background:none;border:0;padding:6px 2px;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.ml-list{border-top:1px solid var(--border)}
+.ml-row{display:flex;align-items:center;gap:10px;padding:11px 15px;border-bottom:1px solid var(--border)}
+.ml-row:last-child{border-bottom:0}
+.ml-info{flex:1;min-width:0}
+.ml-code{font-family:var(--mono);font-size:13px;color:var(--text);background:none;border:0;padding:0;cursor:pointer;text-align:start}
+.ml-code small{font-family:var(--sans);color:var(--text3);font-size:11px;margin-inline-start:4px}
+.ml-st{font-size:12px;margin-top:3px;color:var(--text2);line-height:1.6}
+.ml-row.open .ml-st{color:var(--open);font-weight:600}
+.ml-row.paused .ml-st{color:var(--warn)}
+.ml-st .lnk{font-family:inherit;font-size:11.5px;font-weight:600;color:var(--accent2);background:none;border:0;padding:0;margin-inline-start:6px;cursor:pointer}
+.ml-meta{font-size:10.5px;color:var(--text3);margin-top:2px}
+.ml-stop{font-family:inherit;font-size:12px;padding:7px 12px;border-radius:10px;border:1px solid var(--border2);background:transparent;color:var(--text2);cursor:pointer;flex-shrink:0;min-width:66px}
+.ml-stop.arm{border-color:var(--close-border);background:var(--close-bg);color:var(--close);font-weight:700}
+.mon-live.fresh .ml-head{animation:mlFresh 1.4s ease-out}
+@keyframes mlFresh{0%{background:var(--open-bg)}100%{background:transparent}}
+@media (prefers-reduced-motion:reduce){.ml-dot::after,.ml-ring.spin,.mon-live.fresh .ml-head{animation:none!important}}
 .sc-title{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:13px}
 .fields{display:flex;flex-direction:column;gap:11px}
 .field-label{font-size:12px;color:var(--text2);margin-bottom:5px;display:block}
@@ -176,10 +271,17 @@ padding:12px 15px;font-size:13px;font-weight:600;font-family:var(--sans);cursor:
 
 .stats-bar{display:none;grid-template-columns:1fr 1fr 1fr;gap:9px;margin-bottom:13px}
 .stats-bar.visible{display:grid}
-.stat-box{background:var(--card);border:1px solid var(--border);border-radius:13px;padding:12px;text-align:center}
-.stat-num{font-family:var(--mono);font-size:20px;line-height:1}
+/* العدّادات هي الفلتر (طلب محمد ٢٧ أكتوبر ٢٠٢٦): «مفتوح» تطلع المفتوحة بس، وضغطة ثانية (أو «إجمالي») ترجّع الكل */
+.stat-box{background:var(--card);border:1px solid var(--border);border-radius:13px;padding:12px;text-align:center;
+font-family:var(--sans);color:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;
+transition:transform .12s ease,border-color .2s,background-color .2s}
+.stat-box.on{border-color:var(--accent);background:rgba(61,111,255,.08)}
+.stat-box.o.on{border-color:var(--open);background:var(--open-bg)}
+.stat-box.c.on{border-color:var(--close);background:var(--close-bg)}
+.stat-num{display:block;font-family:var(--mono);font-size:20px;line-height:1}
 .stat-num.open-color{color:var(--open)}.stat-num.close-color{color:var(--close)}
-.stat-label{font-size:11px;color:var(--text3);margin-top:5px}
+.stat-label{display:block;font-size:11px;color:var(--text3);margin-top:5px}
+.stat-box.on .stat-label{color:var(--text2);font-weight:600}
 
 .monitor-banner{display:none;align-items:center;gap:13px;background:var(--open-bg);border:1px solid var(--open-border);
 border-radius:13px;padding:13px 15px;margin-bottom:13px}
@@ -187,14 +289,6 @@ border-radius:13px;padding:13px 15px;margin-bottom:13px}
 .mb-icon{font-size:22px}
 .mb-text h3{font-size:13px;font-weight:600;color:var(--open)}
 .mb-text p{font-size:12px;color:var(--text2);margin-top:2px}
-
-.filter-bar{display:none;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
-.filter-bar.visible{display:flex}
-.filter-label{font-size:12px;color:var(--text2)}
-.ftab{font-size:12px;padding:5px 12px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;font-family:var(--sans)}
-.ftab.active{background:var(--accent);border-color:var(--accent);color:#fff}
-.ftab.open-tab.active{background:var(--open);border-color:var(--open)}
-.ftab.close-tab.active{background:var(--close);border-color:var(--close)}
 
 .results-header{display:none;align-items:center;justify-content:space-between;margin-bottom:11px}
 .results-header.visible{display:flex}
@@ -207,26 +301,81 @@ border-radius:13px;padding:13px 15px;margin-bottom:13px}
 .stale-note.show{display:block}
 .results-list{display:flex;flex-direction:column;gap:8px}
 
-.course-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:13px 15px}
-.course-card.is-open{border-right:3px solid var(--open)}
-.course-card.is-close{border-right:3px solid var(--border2)}
-.course-card.in-schedule{border-color:var(--accent);background:rgba(61,111,255,.06)}
-.cc-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:9px}
-.cc-code{font-size:14px;font-weight:600}
-.cc-title{font-size:12px;color:var(--text2);margin-top:2px}
-.cc-right{display:flex;flex-direction:column;align-items:flex-end;gap:7px;flex-shrink:0}
+/* ═══ نتائج البحث: بطاقة لكل مادة، وتنفتح على شعبها (طلب محمد ٢٧ أكتوبر ٢٠٢٦) ═══ */
+.course-card{background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+.cg-head{display:flex;align-items:center;gap:10px;width:100%;padding:13px 15px;background:none;border:0;color:inherit;
+font-family:var(--sans);text-align:start;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background-color .15s}
+.cg-head:active{transform:none;background:rgba(127,140,170,.1)}
+.cg-l{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.cg-code{font-size:14.5px;font-weight:700;font-family:var(--mono)}
+.cg-title{font-size:12px;color:var(--text2);overflow-wrap:break-word}
+.cg-sums{display:flex;flex-wrap:wrap;gap:3px 14px;margin-top:5px}
+.cg-sum{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--text2)}
+.cg-dot{width:7px;height:7px;border-radius:50%;background:var(--close);flex-shrink:0}
+.cg-dot.on{background:var(--open);box-shadow:0 0 0 3px var(--open-bg)}
+.cg-chev{flex-shrink:0;width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;
+color:var(--text3);transition:transform .25s ease,background-color .2s}
+.course-card.open .cg-chev{transform:rotate(180deg);background:var(--bg);color:var(--text2)}
+.cg-notes{display:flex;flex-wrap:wrap;gap:6px;padding:0 15px 11px;margin-top:-3px}
+.cg-note{font-size:11px;padding:3px 9px;border-radius:20px;line-height:1.5}
+.cg-note.mine{color:var(--accent2);border:1px solid rgba(61,111,255,.35);background:rgba(61,111,255,.08)}
+.cg-note.watch{color:var(--warn);border:1px solid rgba(245,158,11,.35);background:var(--warn-bg)}
+.cg-tags{padding:0 15px 11px;margin-top:-8px}
+.cg-body{display:none;flex-direction:column;gap:7px;padding:0 10px 10px}
+.course-card.open .cg-body{display:flex}
+.course-card.cg-anim .cg-body{animation:cgIn .22s ease-out}
+@keyframes cgIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+/* الشعبة سطر خفيف: الحالة بلون طرفه، وسطر لكل اجتماع (المحاضرة والمعمل بنفس CRN شعبة وحدة — §٦) */
+.sec-row{background:var(--bg);border:1px solid var(--border);border-inline-start:3px solid var(--close);border-radius:11px;padding:9px 11px}
+.sec-row.is-open{border-inline-start-color:var(--open)}
+.sec-row.in-schedule{border-color:rgba(61,111,255,.45);background:rgba(61,111,255,.08)}
+.sec-row.in-schedule.is-open{border-inline-start-color:var(--open)}
+.sec-row.in-schedule.is-close{border-inline-start-color:var(--close)}
+.sr-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.sr-id{display:flex;align-items:center;flex-wrap:wrap;gap:6px;min-width:0}
+.sr-sec{font-family:var(--mono);font-size:13px;font-weight:700}
+.sr-lab{font-size:9.5px;font-weight:600;padding:2px 8px;border-radius:20px;white-space:nowrap;
+background:rgba(139,92,246,.14);color:#a78bfa;border:1px solid rgba(139,92,246,.3)}
+html.light .sr-lab{color:#6d28d9}
+.sr-when{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;margin-top:6px;font-size:12.5px}
+.sr-days{font-weight:600}
+.sr-time{font-family:var(--mono);font-size:12px}
+.sr-room{font-size:11px;color:var(--text3)}
+.sr-doc{display:flex;align-items:center;flex-wrap:wrap;gap:4px 6px;margin-top:5px;font-size:11.5px;color:var(--text2)}
+.sr-sep{color:var(--text3)}
+.sec-row .tag{margin-top:6px}
+.sr-bot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px}
+.sr-crn{font-family:var(--mono);font-size:11px;color:var(--text3);white-space:nowrap}
+.sr-crn b{color:var(--accent2);font-weight:600}
+.sr-acts{display:flex;gap:6px;flex-shrink:0}
+.sr-btn{height:32px;padding:0 12px;border-radius:9px;border:1px solid var(--accent);background:transparent;color:var(--accent2);
+font-size:12.5px;font-weight:600;font-family:var(--sans);cursor:pointer;white-space:nowrap}
+.sr-btn[hidden]{display:none}
+.sr-btn.added{background:var(--accent);color:#fff}
+.sr-btn.blocked{border-color:var(--warn);color:var(--warn)}
+.sr-btn.locked{border-color:var(--close-border);color:var(--close)}
+.sr-btn.bell{border-color:var(--border2);color:var(--text2)}
+.sr-btn.bell.on{border-color:var(--warn);color:var(--warn);background:var(--warn-bg)}
+.sr-btn.bell.locked{opacity:.5}
+.cg-foot{display:flex;justify-content:center;padding-top:1px}
+.cg-all{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 14px;border-radius:10px;border:1px dashed var(--border2);
+background:transparent;color:var(--text2);font-size:12.5px;font-weight:600;font-family:var(--sans);cursor:pointer}
+.cg-all.on{border-style:solid;border-color:var(--accent);color:var(--accent2);background:rgba(61,111,255,.1)}
+.cg-all.locked{opacity:.6}
+/* أضفت الشعبة: سطرها ينبض بلون الجدول، ورقم «جدولي» ينط */
+.sec-row.just-added{animation:addPop .55s ease-out}
+@keyframes addPop{0%{transform:scale(.98);box-shadow:0 0 0 0 rgba(61,111,255,.55)}55%{transform:scale(1.01)}
+100%{transform:none;box-shadow:0 0 0 10px rgba(61,111,255,0)}}
+.tab-badge.bump{animation:bump .45s ease-out}
+@keyframes bump{0%{transform:scale(1)}35%{transform:scale(1.45)}100%{transform:scale(1)}}
+/* «تقليل الحركة» بعد قواعدها لا قبلها: نفس الأولوية والأخيرة تغلب */
+@media (prefers-reduced-motion:reduce){
+  .course-card.cg-anim .cg-body,.sec-row.just-added,.tab-badge.bump{animation:none}
+  .cg-chev,.cg-head{transition:none}
+}
 .badge{font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;font-family:var(--mono)}
 .badge.open{background:var(--open-bg);color:var(--open);border:1px solid var(--open-border)}
 .badge.close{background:var(--close-bg);color:var(--close);border:1px solid var(--close-border)}
-.btn-add{width:34px;height:34px;border-radius:10px;border:1px solid var(--accent);background:transparent;
-color:var(--accent2);font-size:19px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:var(--sans)}
-.btn-add.added{background:var(--accent);color:#fff}
-.btn-add.blocked{border-color:var(--warn);color:var(--warn)}
-.btn-add.locked{border-color:var(--close);color:var(--close)}
-.cc-meta{display:grid;grid-template-columns:1fr 1fr;gap:5px 14px}
-.cc-meta-item{font-size:11px;color:var(--text3)}
-.cc-meta-item span{color:var(--text2)}
-.cc-crn{font-family:var(--mono);font-size:11px;color:var(--accent2);margin-top:7px}
 .tag{margin-top:8px;font-size:11.5px;border-radius:9px;padding:7px 10px;line-height:1.55}
 .tag.warn{color:var(--warn);background:var(--warn-bg);border:1px solid rgba(245,158,11,.3)}
 .tag.err{color:var(--close);background:var(--close-bg);border:1px solid var(--close-border)}
@@ -269,6 +418,7 @@ display:flex;align-items:center;justify-content:space-between}
 .day-body{padding:10px 12px;display:flex;flex-direction:column;gap:7px}
 .slot{background:var(--bg);border-radius:10px;padding:10px 12px;display:flex;align-items:center;gap:11px;border-right:3px solid var(--accent)}
 .slot.clash{border-right-color:var(--warn);background:rgba(245,158,11,.06)}
+#schedDays .slot:not(.clash){border-right-color:var(--cc,var(--accent))}
 /* حالات تبويب اليوم: الماضي باهت لكنه يبقى قابلاً للضغط */
 .slot.past{opacity:.45}
 .slot.now{border-right-color:var(--open);background:rgba(34,197,94,.07)}
@@ -284,14 +434,22 @@ display:flex;align-items:center;justify-content:space-between}
 .empty-day{padding:9px 15px 12px;font-size:12px;color:var(--text3);font-style:italic}
 
 /* PLAN */
-.progress-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:17px;margin-bottom:15px}
-.prog-top{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px}
-.prog-num{font-family:var(--mono);font-size:26px;font-weight:500}
+/* «خطتي» (طلب محمد ٢٧ أكتوبر ٢٠٢٦ — الفكرة ٩): دائرة تقدّم كبيرة بدل الشريط الرفيع */
+.progress-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:17px;margin-bottom:15px;
+display:flex;align-items:center;gap:18px}
+.prog-ring{position:relative;width:112px;height:112px;flex-shrink:0}
+.prog-ring svg{display:block;width:100%;height:100%}
+.pr-track{fill:none;stroke:var(--bg);stroke-width:11}
+/* الحلقة بـstroke-dashoffset: رسم SVG صغير بلا إعادة تخطيط (CLAUDE.md «الحركة») */
+.pr-fill{fill:none;stroke:url(#prGrad);stroke-width:11;stroke-linecap:round;stroke-dasharray:326.73;stroke-dashoffset:326.73;
+transform:rotate(-90deg);transform-origin:60px 60px;transition:stroke-dashoffset .9s cubic-bezier(.2,.8,.2,1)}
+.pr-fill.zero{opacity:0}
+.prog-ring .prog-pct{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+font-family:var(--mono);font-size:21px;font-weight:600;color:var(--text)}
+.prog-info{flex:1;min-width:0}
+.prog-num{font-family:var(--mono);font-size:26px;font-weight:500;line-height:1.25}
 .prog-num small{font-size:14px;color:var(--text3)}
-.prog-pct{font-family:var(--mono);font-size:15px;color:var(--accent2)}
-.prog-bar{height:9px;background:var(--bg);border-radius:20px;overflow:hidden;margin-bottom:11px}
-.prog-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--open));border-radius:20px;transition:width .4s}
-.prog-meta{display:flex;justify-content:space-between;font-size:12px;color:var(--text2)}
+.prog-meta{display:flex;flex-direction:column;gap:4px;margin-top:8px;font-size:12px;color:var(--text2)}
 
 .suggest-card{background:linear-gradient(160deg,rgba(61,111,255,.12),var(--card));border:1px solid var(--accent);
 border-radius:16px;padding:17px;margin-bottom:15px}
@@ -351,6 +509,31 @@ min-width:26px;text-align:end;flex-shrink:0;padding-top:2px}
 .pc-check{width:22px;height:22px;border-radius:7px;border:1.5px solid var(--border2);background:transparent;
 cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:13px;color:transparent;padding:0}
 .pc.done .pc-check{background:var(--open);border-color:var(--open);color:#fff}
+/* كل ترم يمتلي مع موادك: طبقة خضراء بقدر اللي خلّصته، من بداية السطر (transform) */
+.sem-head{position:relative}
+.sem-head::before,.sem-head::after{content:'';position:absolute;inset-inline:0;pointer-events:none;
+transform:scaleX(var(--p,0));transform-origin:100% 50%;transition:transform .6s cubic-bezier(.2,.8,.2,1)}
+html[dir="ltr"] .sem-head::before,html[dir="ltr"] .sem-head::after{transform-origin:0 50%}
+.sem-head::before{top:0;bottom:0;background:var(--open-bg)}
+.sem-head::after{bottom:0;height:2px;background:var(--open)}
+.sem-head>*{position:relative}
+/* علّمت مادة: ✓ تنط والسطر ينبض أخضر */
+.pc.just-done .pc-check{animation:chkPop .45s cubic-bezier(.3,1.6,.5,1)}
+@keyframes chkPop{0%{transform:scale(.55)}60%{transform:scale(1.2)}100%{transform:scale(1)}}
+.pc.just-done{animation:pcDone .7s ease-out}
+@keyframes pcDone{from{box-shadow:0 0 0 0 rgba(16,185,129,.45)}to{box-shadow:0 0 0 8px rgba(16,185,129,0)}}
+/* خلّصت ترماً: قصاصات ملوّنة من بطاقته (في body — عنصر ثابت) */
+.confetti{position:fixed;z-index:9500;width:0;height:0;pointer-events:none}
+.confetti i{position:absolute;left:-4px;top:-5px;width:8px;height:10px;border-radius:2px;opacity:0;
+animation:conf 1.15s cubic-bezier(.15,.7,.3,1) forwards}
+@keyframes conf{0%{opacity:1;transform:translate(0,0) rotate(0)}75%{opacity:1}
+100%{opacity:0;transform:translate(var(--dx),var(--dy)) rotate(var(--r))}}
+/* «تقليل الحركة» بعد قواعدها (نفس الأولوية والأخيرة تغلب) */
+@media (prefers-reduced-motion:reduce){
+  .pr-fill,.sem-head::before,.sem-head::after{transition:none}
+  .pc.just-done,.pc.just-done .pc-check{animation:none}
+  .confetti{display:none}
+}
 .pc-info{flex:1;min-width:0}
 /* إخفاء المعدل — للخصوصية لما يكون جنبك أحد */
 .gpa-card{position:relative}
@@ -390,7 +573,7 @@ outline:none;flex-shrink:0;max-width:78px}
 .pc-wi.set{border-style:solid;border-color:var(--accent);color:var(--accent2)}
 /* تحذير جدول الطرح — المادة ما تُطرح كل ترم */
 /* وميض خفيف على البطاقة التي تغيّرت حالتها بلا إعادة رسم */
-.course-card.just-changed{animation:flash 1.2s ease-out 2}
+.course-card.just-changed,.sec-row.just-changed{animation:flash 1.2s ease-out 2}
 @keyframes flash{0%{box-shadow:0 0 0 0 rgba(245,158,11,.55)}
 100%{box-shadow:0 0 0 10px rgba(245,158,11,0)}}
 .pc-pre{font-size:11px;margin-top:4px;line-height:1.6;color:var(--text3)}
@@ -478,6 +661,8 @@ padding-left:4px;background-image:none;flex-shrink:0}
 .gpa-val small{font-size:13px;color:var(--text3)}
 .gpa-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px}
 .gpa-right{text-align:left}
+/* زر الإخفاء (👁️) في نفس الزاوية — كان فوق «ساعات محسوبة» */
+.gpa-right .gpa-label{padding-inline-end:42px}
 .gpa-scale{display:flex;gap:5px;margin-top:4px}
 .gpa-pill{font-size:10.5px;font-family:var(--mono);padding:2px 8px;border-radius:20px;background:var(--bg);color:var(--text2)}
 .gpa-hint{font-size:11.5px;color:var(--text3);line-height:1.6;border-top:1px solid var(--border);padding-top:11px}
@@ -527,12 +712,6 @@ padding:11px;text-align:center;margin-top:10px}
 
 .pay-line b{font-family:var(--mono);color:var(--accent2)}
 
-/* monitor toggle on course card */
-.btn-bell{width:34px;height:34px;border-radius:10px;border:1px solid var(--border2);
-background:transparent;color:var(--text3);font-size:15px;cursor:pointer;
-display:flex;align-items:center;justify-content:center}
-.btn-bell.on{border-color:var(--warn);color:var(--warn);background:var(--warn-bg)}
-.btn-bell.locked{opacity:.45}
 /* ═══ ورقة الباقات — مكوّن واحد لكل لحظات الجدار ═══ */
 .ps-overlay{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.45);
   display:flex;align-items:flex-end;justify-content:center;opacity:0;transition:opacity .2s}
@@ -627,9 +806,6 @@ display:flex;align-items:center;justify-content:center}
 .ps-rc[hidden]{display:none}
 .ps-rc .btn-sm{flex:none;white-space:nowrap}
 .mon-paused{opacity:.6}
-.btn-bell.all{font-size:13px}
-.btn-bell.all.on{border-color:var(--accent);color:var(--accent);
-background:rgba(61,111,255,.12)}
 
 .my-rev{background:var(--bg);border:1px solid var(--border);border-radius:12px;
 padding:12px 14px;margin-bottom:8px}
@@ -654,11 +830,13 @@ color:var(--accent2);flex-shrink:0;font-family:var(--mono)}
 display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 .doc-score{text-align:center;flex-shrink:0}
 .doc-num{font-family:var(--mono);font-size:16px;font-weight:600}
-.doc-stars{font-size:9px;letter-spacing:-1px;margin-top:2px}
+.doc-stars{font-size:12px;margin-top:3px}
 .doc-none{font-size:11px;color:var(--text3);font-family:var(--sans)}
 
-.stars{color:var(--warn);letter-spacing:1px}
-.stars .off{color:var(--border2)}
+/* «الدكاترة» (طلب محمد ٢٧ أكتوبر ٢٠٢٦ — الفكرة ١١): النجوم بكسورها — 4.3 = أربع وثلث الخامسة، كانت تتقرّب
+   لأقرب نجمة (4.6 تطلع خمس). طبقتان: الرمادية كاملة، والذهبية فوقها بعرض التقييم من بداية السطر */
+.stars{position:relative;display:inline-block;color:var(--border2);letter-spacing:1px;line-height:1;white-space:nowrap;vertical-align:middle}
+.stars .st-on{position:absolute;top:0;inset-inline-start:0;overflow:hidden;color:var(--warn)}
 
 /* rating badge inside search results */
 .rate-chip{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;
@@ -677,13 +855,23 @@ padding:18px;margin-bottom:14px;text-align:center}
 .bars{margin-top:15px;display:flex;flex-direction:column;gap:5px}
 .bar-row{display:flex;align-items:center;gap:9px;font-size:11px;color:var(--text3)}
 .bar-track{flex:1;height:6px;background:var(--bg);border-radius:20px;overflow:hidden}
-.bar-fill{height:100%;background:var(--warn);border-radius:20px}
+.bar-fill{height:100%;background:var(--warn);border-radius:20px;transform-origin:100% 50%}
+/* الأشرطة تكبر ورا بعض لما تفتح صفحة الدكتور (.anim من openDoc) — إعادة الرسم (تفاعل · تقييم · لغة) ما تعيدها */
+.doc-hero.anim .bar-fill{animation:barGrow .7s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--i,0) * 60ms)}
+html[dir="ltr"] .bar-fill,html[dir="ltr"] .tb-track i{transform-origin:0 50%}
+@keyframes barGrow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
 .bar-n{font-family:var(--mono);min-width:18px;text-align:left}
 
-.tag-cloud{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px;justify-content:center}
-.tag-chip{font-size:11.5px;padding:5px 11px;border-radius:20px;
-background:var(--bg);border:1px solid var(--border2);color:var(--text2)}
-.tag-chip b{color:var(--accent2);font-family:var(--mono);margin-right:4px}
+/* الصفات أشرطة بعددها بدل كلمات متساوية: «يشرح زين» من ١٢ تقييم غير «متعاون» من ٢ */
+.tag-bars{margin-top:16px;display:flex;flex-direction:column;gap:7px;text-align:start}
+.tb-row{display:grid;grid-template-columns:minmax(0,7.5em) 1fr 22px;align-items:center;gap:9px;font-size:11.5px;color:var(--text2)}
+.tb-l{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tb-track{height:6px;background:var(--bg);border-radius:20px;overflow:hidden}
+.tb-track i{display:block;height:100%;background:var(--accent);border-radius:20px;transform-origin:100% 50%}
+.doc-hero.anim .tb-track i{animation:barGrow .7s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--i,0) * 60ms + 200ms)}
+.tb-row b{font-family:var(--mono);font-size:11px;color:var(--accent2);font-weight:600;text-align:end}
+/* «تقليل الحركة» بعد قواعدها */
+@media (prefers-reduced-motion:reduce){ .doc-hero.anim .bar-fill,.doc-hero.anim .tb-track i{animation:none} }
 
 .rev{background:var(--card);border:1px solid var(--border);border-radius:14px;
 padding:14px 15px;margin-bottom:8px}
@@ -732,6 +920,11 @@ border-bottom:1px solid rgba(245,158,11,.4);
 font-size:12.5px;line-height:1.7;color:var(--text)}
 .tg-bar button{background:var(--warn);color:#1a1200;border:none;border-radius:9px;
 padding:7px 13px;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer;flex-shrink:0}
+/* الزائر: سطر رفيع وينقفل بـ✕ (أسبوع) — كان صندوقاً برتقالياً كبيراً فوق كل تبويب */
+.tg-bar.slim{flex-wrap:nowrap;padding:6px 8px 6px 14px;font-size:12px;line-height:1.5}
+.tg-bar.slim .tgb-t{flex:1;min-width:0}
+.tg-bar.slim button{padding:5px 11px;font-size:11.5px}
+.tg-bar .tgb-x{background:none;color:var(--text2);padding:4px 6px;font-size:14px;font-weight:400}
 .env-bar{display:none;background:#f59e0b;color:#1a1200;text-align:center;
 padding:6px 12px;font-size:12px;font-weight:700;position:relative;z-index:1}
 .env-bar.on{display:block}
@@ -802,7 +995,10 @@ color:var(--text3);display:flex;flex-wrap:wrap;gap:8px;justify-content:center;al
 .guide-fab{position:fixed;bottom:20px;left:16px;z-index:200;
 background:var(--accent);color:#fff;border:none;border-radius:50%;
 width:48px;height:48px;font-size:21px;cursor:pointer;
-box-shadow:0 6px 22px rgba(61,111,255,.45)}
+box-shadow:0 6px 22px rgba(61,111,255,.45);transition:transform .25s ease,opacity .25s ease}
+/* يتنحّى وقت التمرير (يغطي «أضف» و«راقب» على نفس الطرف) ويرجع أول ما توقف */
+.guide-fab.away{transform:translateY(90px);opacity:0;pointer-events:none}
+@media (prefers-reduced-motion:reduce){.guide-fab{transition:none}}
 
 /* ═══ مساعد جدولك ═══
    زر عائم فوق زر الدليل (الدليل على 20px وارتفاعه 48)، ولوح يستعمل
@@ -1055,8 +1251,9 @@ font-size:9.5px;color:var(--text3);transform:translateY(-4px)}
 .gr-dh{height:30px;display:flex;align-items:center;justify-content:center;
 font-size:11.5px;font-weight:700;color:var(--text2);border-bottom:1px solid var(--border)}
 .gr-body{position:relative}
-.gr-item{position:absolute;inset-inline:3px;background:rgba(77,124,254,.16);
-border-inline-start:2px solid var(--accent);border-radius:7px;padding:4px 5px;
+/* كل مادة بلونها (--cc · --cc-bg من courseColors — الفكرة ١٠)، والتعارض يغلبه بلون التحذير */
+.gr-item{position:absolute;inset-inline:3px;background:var(--cc-bg,rgba(77,124,254,.16));
+border-inline-start:3px solid var(--cc,var(--accent));border-radius:7px;padding:4px 5px;
 overflow:hidden;display:flex;flex-direction:column;gap:1px}
 .gr-item.clash{background:rgba(245,158,11,.16);border-inline-start-color:var(--warn)}
 /* الصفحة RTL: بلا تثبيت الاتجاه يقتطع المتصفح أول الاسم لا آخره،
@@ -1072,21 +1269,10 @@ font-family:var(--sans);font-size:11.5px;font-weight:700;padding:6px 14px;
 border-radius:9px;cursor:pointer}
 .gr-zoom button.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .gr-hint{font-size:11px;color:var(--text3);text-align:center;margin-top:9px}
-/* ── اللوحة السريعة على الشبكة ── */
-.gr-item{cursor:pointer}
-.gr-item.peeking{outline:2px solid var(--accent);outline-offset:-1px}
-#gridPeek{position:fixed;z-index:400;width:min(272px,calc(100vw - 16px));
-background:var(--card);border:1px solid var(--border2);border-radius:14px;
-padding:12px 14px;box-shadow:0 12px 34px var(--shadow),0 2px 8px rgba(0,0,0,.18);
-pointer-events:none;opacity:0;transform:translateY(4px);
-transition:opacity .13s ease,transform .13s ease}
-#gridPeek.in{opacity:1;transform:none}
-.pk-h{font-family:var(--mono);font-size:11px;color:var(--text3);font-weight:700}
-.pk-t{font-size:13.5px;font-weight:700;line-height:1.45;margin:3px 0 9px}
-.pk-r{display:flex;align-items:baseline;justify-content:space-between;gap:12px;
-font-size:12px;padding:3px 0}
-.pk-r span{color:var(--text3);flex-shrink:0}
-.pk-r b{font-weight:600;text-align:end;min-width:0;overflow-wrap:anywhere}
+/* ضغطة على مادة في الشبكة تفتح بطاقتها من تحت (openCourse — نفس بطاقة «اليوم») */
+.gr-item{cursor:pointer;-webkit-tap-highlight-color:transparent;transition:transform .12s ease}
+.gr-item:active{transform:scale(.96)}
+@media (prefers-reduced-motion:reduce){ .gr-item:active{transform:none} }
 /* ── مواعيد الزملاء ── */
 .sg-row{display:flex;gap:10px;align-items:flex-start;background:var(--bg);
 border-radius:12px;padding:11px 12px;margin-top:9px}
@@ -1469,7 +1655,7 @@ margin:0!important;padding:0!important;min-height:0!important}
 .topbar,.tabs,.sched-actions,.slot-remove,.conflict-alert,.sched-summary,.lab-warn,
 .guide-fab,.ai-ask,.guide-overlay,.toast,.state-box,.sync-note,.next-check,.reg-card,.crn-panel,
 .slot-bar,#slotBar,
-.vw-switch,#schedView,#schedGrid,.gr-zoom,.gr-hint,#gridPeek,
+.vw-switch,#schedView,#schedGrid,.gr-zoom,.gr-hint,
 .env-bar,.tg-bar,.pick-hint,#schedPickHint,
 #schedDays,.modal,.overlay,.finals-card,.cal-card,.legal-foot{display:none!important}
 .page{display:none!important}
@@ -1643,6 +1829,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     <span class="ti">📋</span><span class="tl" data-i18n="tabPlanL">خطتي</span></button>
   <button class="tab" id="tabDocs" onclick="switchTab('docs')">
     <span class="ti">👨‍🏫</span><span class="tl" data-i18n="tabDocsL">دكاترة</span></button>
+  <span class="tab-ind" id="tabInd" aria-hidden="true"></span>
 </div>
 
 <div class="main">
@@ -1658,6 +1845,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 </div>
 
 <div class="page active" id="pageSearch">
+  <div class="mon-live" id="monLive" hidden></div>
   <div class="search-card">
     <div class="sc-title" data-i18n="searchTitle">البحث عن المواد</div>
     <div class="fields">
@@ -1712,26 +1900,24 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     </div>
   </div>
 
+  <!-- العدّادات هي الفلتر: تحسب شعباً (CRN) لا صفوفاً — المحاضرة والمعمل بنفس CRN شعبة وحدة -->
   <div class="stats-bar" id="statsBar">
-    <div class="stat-box"><div class="stat-num" id="statTotal">—</div><div class="stat-label" data-i18n="total">إجمالي</div></div>
-    <div class="stat-box"><div class="stat-num open-color" id="statOpen">—</div><div class="stat-label" data-i18n="open">مفتوح</div></div>
-    <div class="stat-box"><div class="stat-num close-color" id="statClose">—</div><div class="stat-label" data-i18n="closed">مغلق</div></div>
-  </div>
-
-  <div class="filter-bar" id="filterBar">
-    <div class="filter-label" data-i18n="show">عرض:</div>
-    <button class="ftab active" onclick="setFilter('all',this)" data-i18n="all">الكل</button>
-    <button class="ftab open-tab" onclick="setFilter('open',this)" data-i18n="onlyOpen">مفتوح فقط</button>
-    <button class="ftab close-tab" onclick="setFilter('close',this)" data-i18n="onlyClosed">مغلق فقط</button>
+    <button type="button" class="stat-box on" data-f="all" aria-pressed="true" onclick="setFilter('all')"><span class="stat-num" id="statTotal">—</span><span class="stat-label" data-i18n="total">إجمالي</span></button>
+    <button type="button" class="stat-box o" data-f="open" aria-pressed="false" onclick="setFilter('open')"><span class="stat-num open-color" id="statOpen">—</span><span class="stat-label" data-i18n="open">مفتوح</span></button>
+    <button type="button" class="stat-box c" data-f="close" aria-pressed="false" onclick="setFilter('close')"><span class="stat-num close-color" id="statClose">—</span><span class="stat-label" data-i18n="closed">مغلق</span></button>
   </div>
 
   <div class="stale-note" id="staleNote"></div>
   <div class="results-header" id="resultsHeader">
-    <div class="results-count"><span id="visibleCount">0</span> <span data-i18n="courseUnit">مادة</span></div>
+    <div class="results-count"><span id="visibleCount">0</span> <span data-i18n="courseUnit">مادة</span> · <span id="visibleSecs">0</span> <span data-i18n="secUnit">شعبة</span></div>
     <div class="results-time" id="lastUpdate">—</div>
   </div>
 
-  <div class="state-box" id="loadingBox"><div class="spinner"></div><div class="state-title">جاري البحث...</div><div class="state-sub">يجيب البيانات من موقع PMU</div></div>
+  <div class="state-box" id="loadingBox"><div class="sk-list" aria-hidden="true">
+    <div class="sk-card"><i class="sk w45 tall"></i><i class="sk w80"></i><i class="sk w60"></i></div>
+    <div class="sk-card"><i class="sk w30 tall"></i><i class="sk w60"></i><i class="sk w80"></i></div>
+    <div class="sk-card"><i class="sk w45 tall"></i><i class="sk w80"></i><i class="sk w45"></i></div>
+  </div><div class="state-sub" id="loadingSub">يجيب البيانات من موقع PMU</div></div>
   <div class="state-box" id="emptyBox"><div class="state-icon">🔍</div><div class="state-title">ما في نتائج</div><div class="state-sub">جرب تغير الفلتر أو البحث</div></div>
   <div class="state-box visible" id="initialBox"><div class="state-icon">📚</div><div class="state-title">ابدأ البحث</div><div class="state-sub">اختار السيمستر والكلية واضغط ابحث</div></div>
 
@@ -1758,7 +1944,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
   <div class="crn-panel" id="crnPanel"></div>
   <div class="state-box visible" id="schedEmpty">
     <div class="state-icon">📅</div><div class="state-title">جدولك فاضي</div>
-    <div class="state-sub">روح لصفحة البحث واضغط ➕ على أي مادة</div>
+    <div class="state-sub">روح لصفحة البحث واضغط «+ أضف» على الشعبة اللي تبيها</div>
     <a class="state-link" href="/guide" target="_blank" rel="noopener" data-i18n="guideLink">📖 شوف الدليل بالصور</a>
   </div>
   <div class="slot-bar" id="slotBar"></div>
@@ -1854,14 +2040,18 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
   <div class="prep-prog" id="prepProg" style="display:none"></div>
 
   <div class="progress-card">
-    <div class="prog-top">
-      <div class="prog-num" id="progDone">0<small> / 139 ساعة</small></div>
+    <div class="prog-ring">
+      <svg viewBox="0 0 120 120" aria-hidden="true"><defs><linearGradient id="prGrad" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" style="stop-color:var(--accent)"/><stop offset="1" style="stop-color:var(--open)"/></linearGradient></defs>
+        <circle class="pr-track" cx="60" cy="60" r="52"/><circle class="pr-fill" id="progRing" cx="60" cy="60" r="52"/></svg>
       <div class="prog-pct" id="progPct">0%</div>
     </div>
-    <div class="prog-bar"><div class="prog-fill" id="progFill" style="width:0%"></div></div>
-    <div class="prog-meta">
-      <span id="progRemain">باقي 139 ساعة</span>
-      <span id="progLevel">Freshman</span>
+    <div class="prog-info">
+      <div class="prog-num" id="progDone">0<small> / 139 ساعة</small></div>
+      <div class="prog-meta">
+        <span id="progRemain">باقي 139 ساعة</span>
+        <span id="progLevel">Freshman</span>
+      </div>
     </div>
   </div>
 
@@ -2464,6 +2654,9 @@ function suggestNext(){
    ورجع لجدوله يقارن، يرجع لنفس المكان بدل ما يبدأ من فوق. */
 const TAB_SCROLL={};
 let CUR_TAB='search';
+/* نتائج بحث جديد تظهر وحدة ورا الثانية: doSearch يرفعها وrenderResults تنزّلها — إعادة الرسم (فلتر · إضافة ·
+   مراقبة) ما تعيد الحركة */
+let RES_ANIM=false;
 
 function switchTab(n){
   /* ما نحفظ لو التبويب نفسه، عشان لا نطمس تصفيراً مقصوداً */
@@ -2490,7 +2683,82 @@ function switchTab(n){
   renderPickHints();
   const y=TAB_SCROLL[n]||0;
   requestAnimationFrame(()=>window.scrollTo(0,y));
+  try{ moveTabInd() }catch(e){}
+  /* الأرقام اللي انكتبت والتبويب مخفي تعدّ من صفر أول ما يبان */
+  try{ countPending(document.getElementById('page'+n[0].toUpperCase()+n.slice(1))) }catch(e){}
 }
+
+/* ═══ الحركة: خط التبويب المنزلق · الأرقام اللي تعدّ ═══ */
+/* الخط تحت التبويب ينزلق للجديد. أول وضع، وبعد تغيّر الأعمدة أو المقاس (still)، بلا انزلاق.
+   بلا تبويب فعّال (الإعدادات من الترس) يختفي */
+function moveTabInd(still){
+  const bar=document.querySelector('.tabs'), ind=document.getElementById('tabInd');
+  if(!bar||!ind)return;
+  const a=bar.querySelector('.tab.active');
+  if(!a||!a.offsetWidth){ bar.classList.remove('ind-on'); return }
+  const br=bar.getBoundingClientRect(), r=a.getBoundingClientRect();
+  const w=Math.round(r.width*0.7), x=Math.round(r.left-br.left+(r.width-w)/2);
+  const jump=still||!bar.classList.contains('ind-on');
+  bar.classList.toggle('ind-still',jump);
+  ind.style.width=w+'px';
+  ind.style.transform='translateX('+x+'px)';
+  bar.classList.add('ind-on');
+  if(jump)requestAnimationFrame(()=>requestAnimationFrame(()=>bar.classList.remove('ind-still')));
+}
+/* الرقم يعدّ من قيمته القديمة للجديدة (نص ثانية). **القيمة النهائية في data-v من أول لحظة** — اللي يقرأ
+   الرقم يقرأه بـcntVal لا من النص (النص وسط العدّ رقم بالطريق). عنصر مخفي (تبويب ثاني) ينكتب على طول
+   ويعدّ من صفر أول ما يبان (countPending من switchTab). و«تقليل الحركة» ⇒ على طول */
+function countReduce(){ try{ return !!(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches) }catch(e){ return false } }
+function countFmt(el,x){ return x.toFixed(Number(el.dataset.d)||0)+(el.dataset.sfx||'') }
+function countTo(el,v,dec,sfx){
+  if(!el)return;
+  if(el._cnt){ cancelAnimationFrame(el._cnt); el._cnt=0 }
+  const n=typeof v==='number'?v:Number(v);
+  if(v===null||v===''||!Number.isFinite(n)){ el.textContent=v==null?'':String(v); delete el.dataset.v; delete el.dataset.cnt; return }
+  const prev=el.dataset.v!=null?Number(el.dataset.v):NaN;
+  el.dataset.v=String(n); el.dataset.d=String(dec||0); el.dataset.sfx=sfx||'';
+  if(countReduce()){ el.textContent=countFmt(el,n); delete el.dataset.cnt; return }
+  if(!el.offsetParent){ el.textContent=countFmt(el,n); el.dataset.cnt='0'; return }
+  const from=Number.isFinite(prev)?prev:0;
+  if(from===n){ el.textContent=countFmt(el,n); return }
+  delete el.dataset.cnt;
+  countRun(el,from,n);
+}
+function countRun(el,from,to){
+  const t0=performance.now();
+  const step=now=>{
+    const k=Math.min(1,(now-t0)/550), e=1-Math.pow(1-k,3);
+    el.textContent=countFmt(el,k<1?from+(to-from)*e:to);
+    el._cnt=k<1?requestAnimationFrame(step):0;
+  };
+  el.textContent=countFmt(el,from);
+  el._cnt=requestAnimationFrame(step);
+}
+function countPending(root){
+  if(!root||countReduce())return;
+  root.querySelectorAll('[data-cnt="ring"]').forEach(el=>{
+    delete el.dataset.cnt;
+    el.getBoundingClientRect();              /* ترتسم فاضية أول، وبعدها تمتلي */
+    el.style.transition='';
+    requestAnimationFrame(()=>{ el.style.strokeDashoffset=String(RING_C*(1-(Number(el.dataset.f)||0))) });
+  });
+  root.querySelectorAll('[data-cnt]').forEach(el=>{
+    if(!el.offsetParent)return;
+    const to=Number(el.dataset.v), from=Number(el.dataset.cnt)||0;
+    delete el.dataset.cnt;
+    if(Number.isFinite(to)&&from!==to)countRun(el,from,to);
+  });
+}
+/* رقم يعدّ داخل صندوق له ذيل ثابت («/ 4.00» · «/ 139 ساعة») */
+function cntIn(box,v,dec,tail){
+  if(!box)return;
+  let n=box.querySelector(':scope > .cnt');
+  if(!n){ box.innerHTML='<span class="cnt"></span><small></small>'; n=box.firstChild }
+  const sm=box.querySelector(':scope > small');
+  if(sm&&sm.textContent!==tail)sm.textContent=tail;
+  countTo(n,v,dec);
+}
+function cntVal(id){ const e=document.getElementById(id); return e?(e.dataset.v!=null?e.dataset.v:e.textContent):'' }
 
 /* بحث جديد يعني نتائج جديدة — نرجع لفوق بدل ما نبقى في وسط قائمة قديمة */
 function resetTabScroll(n){
@@ -2530,6 +2798,9 @@ function baseCourseCode(code){
   return k.trim();
 }
 
+/* كم مادة في الجدول: بالكود الأم مثل الساعات — المحاضرة والمعمل والشعب البديلة (الجدول مخطِّط) مادة وحدة.
+   كانت «مادة» في الملخّص تعدّ صفوفاً: شعبة بمحاضرة ومعمل بنفس CRN تطلع «2 مادة» */
+function schedCourses(list=schedule){ return new Set(list.map(c=>baseCourseCode(c.courseCode))).size }
 function scheduleCredits(){
   const seen=new Set(); let t=0;
   schedule.forEach(c=>{
@@ -2551,7 +2822,7 @@ async function doSearch(){
     const r=await fetch(`${API}?term=${term}&college=${college}&gender=${gender}&filter=${encodeURIComponent(filter)}${kq}`);
     const d=await r.json();
     if(!d.success){ const er=new Error(d.error); er.fromServer=!!d.error; throw er }
-    allCourses=d.courses;renderResults();setStatus(`${d.count} ${t('courseUnit')}`);
+    allCourses=d.courses;RES_ANIM=true;RES_EXP.clear();renderResults();setStatus(`${d.count} ${t('courseUnit')}`);
     dataAge(r);
   }catch(e){
     showLoading(false);setStatus(LANG==='ar'?'خطأ':'Error');
@@ -2640,26 +2911,38 @@ async function quietRefresh(){
   });
   if(!flips)return;
 
-  /* نحدّث البطاقات في مكانها. البطاقة ما تحمل crn في سمة، فنستخرجه
-     من زر الإضافة — toggleCourse('CRN'). */
-  document.querySelectorAll('.course-card').forEach(el=>{
-    const btn=el.querySelector('.btn-add');
-    const mm=btn&&/toggleCourse\('([^']+)'\)/.exec(btn.getAttribute('onclick')||'');
-    if(!mm)return;
-    const c=byCrn.get(mm[1]);
+  /* نحدّث الشعب في مكانها: طرفها وحالتها وزر المراقبة، وملخّص مادتها والعدّادات — بلا إعادة رسم.
+     السطر يحمل CRN في data-crn */
+  const hitGroups=new Set();
+  document.querySelectorAll('#resultsList .sec-row[data-crn]').forEach(el=>{
+    const c=byCrn.get(el.dataset.crn);
     if(!c)return;
-    const badge=el.querySelector('.badge');
-    if(!badge)return;
     const open=statusOf(c)==='OPEN';
     if(el.classList.contains('is-open')===open)return;
     el.classList.toggle('is-open',open);
     el.classList.toggle('is-close',!open);
-    badge.classList.toggle('open',open);
-    badge.classList.toggle('close',!open);
-    badge.textContent=c.status;
+    const badge=el.querySelector('.badge');
+    if(badge){ badge.classList.toggle('open',open); badge.classList.toggle('close',!open); badge.textContent=c.status }
+    const bell=el.querySelector('.sr-btn.bell');
+    if(bell)bell.hidden=open&&!isMonitored(el.dataset.crn);
     el.classList.add('just-changed');
     setTimeout(()=>el.classList.remove('just-changed'),4000);
+    const g=el.closest('.course-card');
+    if(g)hitGroups.add(g);
   });
+  if(hitGroups.size){
+    const rowsBy=new Map();
+    allCourses.forEach(c=>{ const k=String(c.crn); if(!rowsBy.has(k))rowsBy.set(k,[]); rowsBy.get(k).push(c) });
+    hitGroups.forEach(g=>{
+      const secs=(g.dataset.crns||'').split(',').filter(k=>rowsBy.has(k)).map(k=>({crn:k,row:rowsBy.get(k)[0],rows:rowsBy.get(k)}));
+      const box=g.querySelector('.cg-sums');
+      if(box)box.innerHTML=resSumsHtml(secs);
+      /* مطوية: الوميض على المادة — ملخّصها هو اللي تغيّر قدامه */
+      if(!g.classList.contains('open')){ g.classList.add('just-changed'); setTimeout(()=>g.classList.remove('just-changed'),4000) }
+    });
+  }
+  const all=resSections(resBase());
+  resStatsPaint(all.length,all.filter(secOpen).length);
 
   /* بلا تنبيه إطلاقاً: أي صياغة توحي بأن شيئاً تغيّر أمام الطالب،
      فيبحث عمّا لم يتغيّر — والتغيير قد يكون خارج فلتره أصلاً.
@@ -2673,75 +2956,183 @@ function startQuietRefresh(){
   QUIET_ON=true;
 }
 
+/* ═══ نتائج البحث: بطاقة لكل مادة، وتنفتح على شعبها — طلب محمد (٢٧ أكتوبر ٢٠٢٦) ═══
+   كانت كل شعبة بطاقة طويلة (٧ شعب ≈ ٣ شاشات تمرير). صارت المادة بطاقة («٤ شعب · وحدة مفتوحة») والشعبة
+   سطراً خفيفاً: الحالة بلون طرفه، وسطر لكل اجتماع — **المحاضرة والمعمل بنفس CRN شعبة وحدة** (§٦) — و«+ أضف»
+   و«🔕 راقب» بكلمة، و«📡 راقب كل الشعب» مرة تحت المادة. مطوية لو المواد كثيرة، ومفتوحة لو قليلة (بحث بكود أو
+   دكتور)، وضغطة الطالب تنحفظ لين بحث جديد. والعدّادات فوق هي الفلتر، وتعدّ شعباً لا صفوفاً */
+const RES_EXP=new Map();      /* مادة ⇐ مفتوحة؟ — ضغطة الطالب تغلب الافتراض */
+let RES_FLASH=null;           /* CRN انضاف الحين ⇐ سطره ينبض */
+const RES_CHEV='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+function resKey(code){ return String(code||'').trim().toUpperCase().replace(/\s+/g,' ') }
+/* الفلتر النصي على الشعبة كلها: طابق اجتماعاً منها (دكتور المعمل مثلاً) ⇒ تجي باجتماعاتها كلها */
+function resBase(){
+  const f=norm(((document.getElementById('courseFilter')||{}).value||'').trim());
+  if(!f)return allCourses;
+  const hit=new Set();
+  allCourses.forEach(c=>{
+    if(norm(c.courseCode).includes(f)||norm(c.courseTitle).includes(f)||norm(c.crn).includes(f)||
+       norm(c.section).includes(f)||norm(c.instructor).includes(f))hit.add(String(c.crn));
+  });
+  return allCourses.filter(c=>hit.has(String(c.crn)));
+}
+/* صفوف الجامعة ⇒ شعب بترتيب ظهورها (صفّان بنفس CRN شعبة وحدة) */
+function resSections(rows){
+  const m=new Map();
+  rows.forEach(c=>{ const k=String(c.crn), x=m.get(k); if(x)x.rows.push(c); else m.set(k,{crn:k,row:c,rows:[c]}) });
+  return [...m.values()];
+}
+function secOpen(s){ return s.rows.some(r=>statusOf(r)==='OPEN') }
+/* «٤ شعب · وحدة مفتوحة». والمعامل (شعب مستقلة بـCRN خاص) لحالها: الطالب يحتاج محاضرة مفتوحة ومعملاً مفتوحاً */
+function resSumTxt(n,op,lab){
+  if(LANG!=='ar'){
+    const w=lab?(n===1?'lab':'labs'):(n===1?'section':'sections');
+    return `${n} ${w} · ${op===0?(n===1?'closed':'all closed'):op===n?(n===1?'open':'all open'):op+' open'}`;
+  }
+  const cnt=lab?(n===1?'معمل واحد':n===2?'معملين':n<=10?`${n} معامل`:`${n} معمل`)
+               :(n===1?'شعبة وحدة':n===2?'شعبتين':n<=10?`${n} شعب`:`${n} شعبة`);
+  const st=op===0?(n===1?(lab?'مقفل':'مقفلة'):'كلها مقفلة')
+          :op===n?(n===1?(lab?'مفتوح':'مفتوحة'):'كلها مفتوحة')
+          :op===1?(lab?'واحد مفتوح':'وحدة مفتوحة'):`${op} مفتوحة`;
+  return `${cnt} · ${st}`;
+}
+function resSumsHtml(secs){
+  const lec=secs.filter(s=>!isLabSection(s.row)), lab=secs.filter(s=>isLabSection(s.row));
+  return [[lec,false],[lab,true]].filter(x=>x[0].length).map(([a,isLab])=>{
+    const op=a.filter(secOpen).length;
+    return `<span class="cg-sum"><i class="cg-dot${op?' on':''}"></i>${resSumTxt(a.length,op,isLab)}</span>`;
+  }).join('');
+}
+/* «اثنين · أربعاء» و«08:00–09:15» من صيغة الجامعة («MW» · «0800 - 0915»). غيرها (TBA) كما هو */
+function resDays(x){
+  const raw=String(x||'').trim();
+  if(!/^[UMTWRFS]+$/i.test(raw.replace(/\s+/g,'')))return raw;
+  const n=t('daysShort')||{};
+  return parseDays(raw).map(k=>n[k]||k).join(' · ');
+}
+function resTime(x){ const p=parseTime(x); return p?fmtTime(p.start)+'–'+fmtTime(p.end):String(x||'').trim() }
+/* «+ أضف» و«🔕 راقب» بكلمة بدل أيقونات صغيرة. الـCRN من سطرها (data-crn) لا نص داخل onclick */
+function secActsHtml(s,inSch,lock,clash){
+  const ar=LANG==='ar', on=isMonitored(s.crn);
+  const add=`<button type="button" class="sr-btn add${inSch?' added':lock?' locked':clash?' blocked':''}" onclick="toggleCourse(this.closest('.sec-row').dataset.crn)">${
+    inSch?(ar?'✓ في جدولك':'✓ Added'):lock?(ar?'🔒 أضف':'🔒 Add'):(ar?'+ أضف':'+ Add')}</button>`;
+  /* المراقبة للمقفلة — والمراقَبة تبقى ظاهرة ولو فتحت، يوقفها من هنا */
+  const bell=`<button type="button" class="sr-btn bell${on?' on':''}${(!on&&monCapReached())?' locked':''}" onclick="toggleMonitorCourse(this.closest('.sec-row').dataset.crn)"${
+    (secOpen(s)&&!on)?' hidden':''} title="${ar?'مراقبة هذي الشعبة':'Watch this section'}">${on?(ar?'🔔 تراقبها':'🔔 Watching'):(ar?'🔕 راقب':'🔕 Watch')}</button>`;
+  return add+bell;
+}
+function resRowHtml(s,lock,flash){
+  const ar=LANG==='ar', c=s.row, crn=s.crn, open=secOpen(s);
+  const inSch=schedule.some(x=>String(x.crn)===crn);
+  /* التعارض لكل اجتماعاتها: المعمل ممكن يتعارض والمحاضرة لا */
+  const seen=new Set(), clash=[];
+  if(!inSch)s.rows.forEach(r=>findConflicts(r,schedule).forEach(x=>{
+    const k=String(x.crn); if(!seen.has(k)){ seen.add(k); clash.push(x) } }));
+  const mk=new Set(), meets=s.rows.filter(r=>{ const k=(r.courseDate||'')+'|'+(r.courseTiming||''); if(mk.has(k))return false; mk.add(k); return true });
+  const docs=[...new Set(s.rows.map(r=>String(r.instructor||'').trim()).filter(Boolean))];
+  let tag='';
+  if(clash.length)tag=`<div class="tag warn">${t('clashWith')} ${clash.map(x=>escapeHtml(x.courseCode+' §'+x.section)).join('، ')}</div>`;
+  else if(!inSch&&schedule.length&&s.rows.some(r=>parseTime(r.courseTiming)))tag=`<div class="tag ok">${t('noClash')}</div>`;
+  return `<div class="sec-row ${open?'is-open':'is-close'}${inSch?' in-schedule':''}${flash===crn?' just-added':''}" data-crn="${escapeHtml(crn)}">
+      <div class="sr-top"><span class="sr-id"><span class="sr-sec">${ar?'شعبة':'Sec'} ${escapeHtml(c.section)}</span>${
+        isLabSection(c)?`<span class="sr-lab">${ar?'معمل':'Lab'}</span>`:''}${genderChip(c)}</span>
+        <span class="badge ${open?'open':'close'}">${open?'OPEN':escapeHtml(c.status||'—')}</span></div>
+      ${meets.map(r=>`<div class="sr-when"><span class="sr-days">${escapeHtml(resDays(r.courseDate))||'—'}</span><span class="sr-time" dir="ltr">${
+        escapeHtml(resTime(r.courseTiming))||'—'}</span>${r.room?`<span class="sr-room">${escapeHtml(r.room)}</span>`:''}</div>`).join('')}
+      <div class="sr-doc">👤 ${docs.length?docs.map(n=>`${docChip(n)}<span>${escapeHtml(n)}</span>`).join('<span class="sr-sep">·</span>'):'<span>—</span>'}</div>
+      ${tag}<div class="sr-bot"><span class="sr-crn">CRN <b>${escapeHtml(crn)}</b></span><span class="sr-acts">${secActsHtml(s,inSch,lock,clash.length>0)}</span></div>
+    </div>`;
+}
+/* all: شعب المادة بعد الفلتر النصي (ملخّصها) — g.secs: المعروضة بعد فلتر الحالة */
+function resGroupHtml(g,all,expDef,ai,flash){
+  const ar=LANG==='ar';
+  g.secs.sort((a,b)=>String(a.row.section).localeCompare(String(b.row.section),'en',{numeric:true}));
+  /* العنوان من محاضرتها ولو الفلتر ما جاب إلا المعمل («مفتوح» والمفتوح معمل بس) */
+  const head=(all.find(s=>!isLabSection(s.row))||g.secs[0]).row, code=head.courseCode;
+  const exp=RES_EXP.has(g.key)?RES_EXP.get(g.key):expDef;
+  const pre=prereqCheck(code), lock=pre.known&&!pre.ok;
+  let tags='';
+  if(lock){
+    let msg=t('prereqMiss')+' ';
+    if(pre.missing.length)msg+=pre.missing.join('، ');
+    if(pre.needCr)msg+=(pre.missing.length?' + ':'')+`${pre.needCr} ${t('needHrs')} ${pre.haveCr})`;
+    tags+=`<div class="tag err">${escapeHtml(msg)}</div>`;
+  }else if(pre.known&&isPassed(code))tags+=`<div class="tag ok">${t('alreadyDone')}</div>`;
+  /* وش له فيها: شعب في جدوله، وشعب يراقبها، ومراقبة كل الشعب — تبان والمادة مطوية */
+  const term=(document.getElementById('term')||{}).value;
+  const bySec=(a,b)=>a.localeCompare(b,'en',{numeric:true});
+  const mine=[...new Set(schedule.filter(x=>resKey(x.courseCode)===g.key).map(x=>String(x.section)))].sort(bySec);
+  const watch=[...new Set(monitored.filter(m=>m.scope!=='course'&&m.term===term&&resKey(m.course_code)===g.key)
+    .map(m=>String(m.section||m.crn)))].sort(bySec);
+  const allOn=isCourseMonitored(code);
+  /* «شعبة 101» لا «§101»: الرمز وسط العربي ينقلب بعد الرقم («101§») */
+  const secs=l=>escapeHtml(ar?`${l.length>1?'الشعب':'شعبة'} ${l.join(' · ')}`:l.map(x=>'§'+x).join(' · '));
+  const notes=(mine.length?`<span class="cg-note mine">✓ ${ar?'في جدولك':'In your schedule'}: ${secs(mine)}</span>`:'')
+    +(watch.length?`<span class="cg-note watch">🔔 ${ar?'تراقب':'Watching'}: ${secs(watch)}</span>`:'')
+    +(allOn?`<span class="cg-note watch">📡 ${ar?'تراقب كل الشعب':'Watching all sections'}</span>`:'');
+  return `<div class="course-card cg${exp?' open':''}${ai>=0?' in':''}" data-code="${escapeHtml(g.key)}" data-cc="${escapeHtml(code)}" data-crns="${
+      escapeHtml(all.map(s=>s.crn).join(','))}"${ai>=0?` style="--i:${ai}"`:''}>
+    <button type="button" class="cg-head" aria-expanded="${exp?'true':'false'}" onclick="resToggle(this)">
+      <span class="cg-l"><span class="cg-code">${escapeHtml(code)}</span><span class="cg-title">${escapeHtml(head.courseTitle)}</span>
+        <span class="cg-sums">${resSumsHtml(all)}</span></span>
+      <span class="cg-chev" aria-hidden="true">${RES_CHEV}</span>
+    </button>${notes?`<div class="cg-notes">${notes}</div>`:''}${tags?`<div class="cg-tags">${tags}</div>`:''}
+    <div class="cg-body">${g.secs.map(s=>resRowHtml(s,lock,flash)).join('')}
+      <div class="cg-foot"><button type="button" class="cg-all${allOn?' on':''}${isPro()?'':' locked'}" onclick="toggleMonitorAll(this.closest('.course-card').dataset.cc)"
+        title="${allOn?(ar?'توقف مراقبة كل شعب المادة':'Stop watching all sections'):(ar?'راقب كل شعب هذي المادة':'Watch every section of this course')}">📡 ${
+        allOn?(ar?'تراقب كل الشعب':'Watching all sections'):(ar?'راقب كل الشعب':'Watch all sections')}</button></div>
+    </div>
+  </div>`;
+}
+function resToggle(btn){
+  const g=btn&&btn.closest('.course-card');
+  if(!g)return;
+  const open=!g.classList.contains('open');
+  g.classList.toggle('open',open);
+  btn.setAttribute('aria-expanded',open?'true':'false');
+  RES_EXP.set(g.dataset.code,open);
+  g.classList.remove('cg-anim');
+  if(open&&!countReduce()){ void g.offsetWidth; g.classList.add('cg-anim') }
+}
+function resStatsPaint(total,op){
+  countTo(document.getElementById('statTotal'),total);
+  countTo(document.getElementById('statOpen'),op);
+  countTo(document.getElementById('statClose'),total-op);
+  document.querySelectorAll('#statsBar .stat-box').forEach(b=>{
+    const on=b.dataset.f===filterMode;
+    b.classList.toggle('on',on);
+    b.setAttribute('aria-pressed',on?'true':'false');
+  });
+}
 function renderResults(){
   if(allCourses.length&&!QUIET_ON)startQuietRefresh();
-  const raw=document.getElementById('courseFilter').value.trim();
-  const f=norm(raw);
-  let cs=allCourses;
-  if(f)cs=cs.filter(c=>
-    norm(c.courseCode).includes(f)||
-    norm(c.courseTitle).includes(f)||
-    norm(c.crn).includes(f)||
-    norm(c.section).includes(f)||
-    norm(c.instructor).includes(f));
-  const base=cs;
-  if(filterMode==='open')cs=cs.filter(c=>c.status==='OPEN');
-  if(filterMode==='close')cs=cs.filter(c=>c.status==='CLOSE');
-  const op=base.filter(c=>c.status==='OPEN').length;
-  document.getElementById('statTotal').textContent=base.length;
-  document.getElementById('statOpen').textContent=op;
-  document.getElementById('statClose').textContent=base.length-op;
+  const all=resSections(resBase());
+  const op=all.filter(secOpen).length;
+  const secs=filterMode==='open'?all.filter(secOpen):filterMode==='close'?all.filter(s=>!secOpen(s)):all;
 
   showLoading(false);
   document.getElementById('initialBox').classList.remove('visible');
   document.getElementById('statsBar').classList.add('visible');
-  document.getElementById('filterBar').classList.add('visible');
   document.getElementById('resultsHeader').classList.add('visible');
-  document.getElementById('visibleCount').textContent=cs.length;
+  /* بعد ما يبان الشريط — والشريط مخفي ينكتب الرقم على طول بلا عدّ (أول بحث كان كذا) */
+  resStatsPaint(all.length,op);
 
-  const list=document.getElementById('resultsList');
-  if(!cs.length){document.getElementById('emptyBox').classList.add('visible');list.innerHTML='';return}
+  const byKey=new Map(), groups=new Map();
+  all.forEach(s=>{ const k=resKey(s.row.courseCode); if(!byKey.has(k))byKey.set(k,[]); byKey.get(k).push(s) });
+  secs.forEach(s=>{ const k=resKey(s.row.courseCode); if(!groups.has(k))groups.set(k,{key:k,secs:[]}); groups.get(k).secs.push(s) });
+  const list=[...groups.values()];
+  document.getElementById('visibleCount').textContent=list.length;
+  const vs=document.getElementById('visibleSecs');
+  if(vs)vs.textContent=secs.length;
+
+  const el=document.getElementById('resultsList');
+  const anim=RES_ANIM, flash=RES_FLASH; RES_ANIM=false; RES_FLASH=null;
+  if(!list.length){document.getElementById('emptyBox').classList.add('visible');el.innerHTML='';return}
   document.getElementById('emptyBox').classList.remove('visible');
-
-  list.innerHTML=cs.map(c=>{
-    const inSch=schedule.some(s=>s.crn===c.crn);
-    const clash=inSch?[]:findConflicts(c,schedule);
-    const pre=prereqCheck(c.courseCode);
-    let tags='';
-    if(pre.known&&!pre.ok){
-      let msg=t('prereqMiss')+' ';
-      if(pre.missing.length)msg+=pre.missing.join('، ');
-      if(pre.needCr)msg+=(pre.missing.length?' + ':'')+`${pre.needCr} ${t('needHrs')} ${pre.haveCr})`;
-      tags+=`<div class="tag err">${msg}</div>`;
-    }
-    if(inSch)tags+=`<div class="tag ok">${t('inSchedule')}</div>`;
-    else if(clash.length)tags+=`<div class="tag warn">${t('clashWith')} ${clash.map(x=>x.courseCode+' §'+x.section).join('، ')}</div>`;
-    else if(schedule.length&&parseTime(c.courseTiming))tags+=`<div class="tag ok">${t('noClash')}</div>`;
-    if(pre.known&&pre.ok&&isPassed(c.courseCode))tags+=`<div class="tag ok">${t('alreadyDone')}</div>`;
-
-    const lock=pre.known&&!pre.ok;
-    return `<div class="course-card ${c.status==='OPEN'?'is-open':'is-close'} ${inSch?'in-schedule':''}">
-      <div class="cc-top">
-        <div><div class="cc-code">${c.courseCode} <span style="color:var(--text2);font-weight:400">— Sec ${c.section}</span></div>
-        <div class="cc-title">${c.courseTitle}</div></div>
-        <div class="cc-right">
-          ${genderChip(c)}
-          <span class="badge ${c.status==='OPEN'?'open':'close'}">${c.status}</span>
-          <button class="btn-add ${inSch?'added':''} ${lock?'locked':clash.length?'blocked':''}" onclick="toggleCourse('${c.crn}')">${inSch?'✓':'+'}</button>
-          ${c.status==='CLOSE'?`<button class="btn-bell ${isMonitored(c.crn)?'on':''} ${(!isMonitored(c.crn)&&monCapReached())?'locked':''}" onclick="toggleMonitorCourse('${c.crn}')" title="مراقبة هذي الشعبة">${isMonitored(c.crn)?'🔔':'🔕'}</button>`:''}
-          <button class="btn-bell all ${isCourseMonitored(c.courseCode)?'on':''} ${isPro()?'':'locked'}"
-            onclick="toggleMonitorAll('${escapeHtml(c.courseCode)}')"
-            title="${isCourseMonitored(c.courseCode)?'توقف مراقبة كل شعب المادة':'راقب كل شعب هذي المادة'}">📡</button>
-        </div>
-      </div>
-      <div class="cc-meta">
-        <div class="cc-meta-item">📅 <span>${c.courseDate||'—'}</span></div>
-        <div class="cc-meta-item">⏰ <span>${c.courseTiming||'—'}</span></div>
-        <div class="cc-meta-item">👤 ${docChip(c.instructor)}<span>${c.instructor||'—'}</span></div>
-        <div class="cc-meta-item">🏛️ <span>${c.room||'—'}</span></div>
-      </div>
-      <div class="cc-crn">CRN: ${c.crn}</div>${tags}</div>`;
-  }).join('');
+  /* مفتوحة لو المواد قليلة (بحث بكود) أو الفلتر جاب شعباً قليلة (دكتور) — وإلا مطوية */
+  const hasF=!!((document.getElementById('courseFilter')||{}).value||'').trim();
+  const expDef=list.length<=3||(hasF&&secs.length<=10);
+  el.innerHTML=list.map((g,i)=>resGroupHtml(g,byKey.get(g.key)||g.secs,expDef,anim&&i<12?i:-1,flash)).join('');
 }
 
 /* ===== Schedule ===== */
@@ -2788,7 +3179,8 @@ function addSessionsDirect(sess){
   }
   const clash=findConflicts(c,schedule);
   sess.forEach(s=>schedule.push(s));
-  saveSchedules();pushSchedule();updateBadge();renderResults();
+  RES_FLASH=String(c.crn);     /* سطرها ينبض بعد الرسم، ورقم «جدولي» ينط */
+  saveSchedules();pushSchedule();updateBadge(true);renderResults();
   if(clash.length)showToast(`${t('addedButClash')} ${clash[0].courseCode}`,'warn');
   else showToast(`${t('addedTo')} ${c.courseCode} ${t('toSchedule')}`);
   return true;
@@ -2844,7 +3236,8 @@ function crnOrdered(){
   const byCrn={}; schedule.forEach(c=>{ byCrn[String(c.crn)]=c });
   const out=[];
   saved.forEach(k=>{ if(byCrn[k]){ out.push(byCrn[k]); delete byCrn[k] } });
-  schedule.forEach(c=>{ if(byCrn[String(c.crn)])out.push(c) });   /* الجديد آخراً */
+  /* الجديد آخراً، وكل CRN مرة: المحاضرة والمعمل بنفس CRN صفّان (§٦) — كان رقمها يطلع مرتين وينتسخ مرتين لبانر */
+  schedule.forEach(c=>{ const k=String(c.crn); if(byCrn[k]){ out.push(c); if(c.crn)delete byCrn[k] } });
   return out;
 }
 function moveCrn(crn,dir){
@@ -2878,7 +3271,7 @@ function renderCrn(){
       <span class="crn-copy">${t('crnCopy')}</span>
     </div>`).join('')
     +`<button class="crn-all" onclick="copyAllCrn()">${
-      ar?`📋 انسخ الأرقام كلها (${schedule.length})`:`📋 Copy all (${schedule.length})`}</button>`
+      ar?`📋 انسخ الأرقام كلها (${list.length})`:`📋 Copy all (${list.length})`}</button>`
     +`<div class="crn-hint">${ar
       ?'اضغط أي رقم لنسخه لحاله. الأرقام تُطبع كذلك مع الجدول.'
       :'Tap a number to copy it. They are printed with your schedule too.'}</div>`;
@@ -2890,16 +3283,16 @@ function copyCrn(crn){
 
 function copyAllCrn(){
   /* بالترتيب الذي رتّبه لا بترتيب الأيام — هذا كل فائدة الترتيب */
-  const txt=crnOrdered().map(c=>c.crn).filter(Boolean).join('\n');
-  copyText(txt,LANG==='ar'?`انتسخت ${schedule.length} أرقام`:`Copied ${schedule.length} numbers`);
+  const list=crnOrdered().map(c=>c.crn).filter(Boolean);
+  copyText(list.join('\n'),LANG==='ar'?`انتسخت ${list.length} أرقام`:`Copied ${list.length} numbers`);
 }
 
 function clearSchedule(){
   if(!schedule.length)return;
-  const n=schedule.length;
+  const n=schedCourses();
   const msg=LANG==='ar'
-    ? `تمسح ${n} مادة من "جدول ${SLOT+1}"؟ ما فيه تراجع.`
-    : `Delete ${n} courses from "Plan ${SLOT+1}"? This cannot be undone.`;
+    ? `تمسح ${n_(n)} من "جدول ${SLOT+1}"؟ ما فيه تراجع.`
+    : `Delete ${n} ${n===1?'course':'courses'} from "Plan ${SLOT+1}"? This cannot be undone.`;
   if(!confirm(msg))return;
   schedule.length=0;   /* نفرّغه بدون ما نكسر الإشارة */
   saveSchedules();pushSchedule();updateBadge();renderSchedule();renderResults();showToast(t('clearedSched'));
@@ -2928,26 +3321,30 @@ function renderSlots(){
   const box=document.getElementById('slotBar');
   if(!box)return;
   const ar=LANG==='ar';
+  /* عدد المواد مثل الملخّص ورقم «جدولي» (schedCourses) — كان صفوفاً: «6 مواد» لجدول فيه 4 */
   box.innerHTML=SCHEDULES.map((sc,i)=>`
     <button class="slot-pick${i===SLOT?' on':''}${slotLocked(i)?' locked':''}" onclick="switchSlot(${i})">
       <span class="slot-n">${slotLocked(i)?'🔒 ':''}${ar?'جدول':'Plan'} ${i+1}</span>
-      <span class="slot-c">${sc.length?sc.length+(ar?' مواد':' crs'):(ar?'فاضي':'empty')}</span>
+      <span class="slot-c">${sc.length?(ar?n_(schedCourses(sc)):schedCourses(sc)+' crs'):(ar?'فاضي':'empty')}</span>
     </button>`).join('');
 }
 
-function updateBadge(){document.getElementById('schedBadge').textContent=schedule.length}
+/* رقم «جدولي» = عدد المواد، مثل «مادة» في ملخّص جدولي (schedCourses): المحاضرة والمعمل والشعب البديلة مادة
+   وحدة — كان يعدّ صفوفاً (المحاضرة والمعمل بنفس CRN صفّان §٦). ومع إضافة مادة جديدة من البحث ينط (bump) */
+function updateBadge(bump){
+  const b=document.getElementById('schedBadge');
+  if(!b)return;
+  const n=schedCourses(), was=Number(b.textContent)||0;
+  b.textContent=n;
+  if(bump&&n>was&&!countReduce()){ b.classList.remove('bump'); void b.offsetWidth; b.classList.add('bump') }
+}
 
-/* هل هذي الشعبة معمل؟ نعتمد على بيانات الجامعة نفسها فقط:
-   اسم الشعبة فيه LAB، أو كودها فيه L (مثل PHYS 1101L).
-   ما نخمّن من رقم الشعبة — مواد كثيرة شعبها تتجاوز 110 وهي محاضرات. */
+/* هل هذي الشعبة معمل؟ من عنوان الجامعة وحده: ينتهي بـ« LAB» (CLAUDE.md §٦ — «Chemistry for Engineers I LAB»،
+   و«Thermofluids & Energy Lab» بحروف صغيرة). ما نخمّن من رقم الشعبة — مواد كثيرة شعبها تتجاوز 110 وهي محاضرات.
+   كانت تعدّ الكود المنتهي بـL معملاً (PHYS 1101L) — وما فيه كود كذا في بيانات الطلاب، بس فيه PRPL وBIOL (ومثلها ENGL):
+   مواد عادية طلعت «معمل» في بطاقات البحث. و«LEC/LAB» شعبة وحدة محاضرة (قبل LAB شرطة لا مسافة) */
 function isLabSection(c){
-  const sec=String(c.section||'').trim();
-  const code=(c.courseCode||'').toUpperCase();
-  const name=(c.courseTitle||'').toUpperCase();
-  if(/L/i.test(sec))return true;
-  if(/L\b/.test(code)||/L\s/.test(code))return true;
-  if(/\bLABS?\b|\bLABORATORY\b/.test(name))return true;
-  return false;
+  return /\sLAB$/i.test(String(c&&c.courseTitle||'').trim());
 }
 
 /* ينبّه لو المادة لها معمل في نتائج البحث وما أضافه، أو العكس */
@@ -3177,7 +3574,8 @@ function renderLabWarn(){
    بطاقاتها صغيرة، وأزرار الحذف فيها تعني ضغطاً بالغلط.
    خمسة أيام في عرض جوال تعني 70 بكسل لليوم، فالشبكة تُمرَّر أفقياً
    والرمز يُختصر: «4322 §102» بدل «MEEN 4322 §102». */
-let SCHED_VIEW='list';
+/* القائمة أو الشبكة — اختيار الطالب ينحفظ (كان يرجع «قائمة» مع كل فتح) */
+let SCHED_VIEW=load('pmu_sched_view','list')==='grid'?'grid':'list';
 /* ثلاثة مستويات بدل التكبير باللمس: الأخير يتعارض مع تمرير الصفحة على الجوال.
    الضيق يُدخل الأيام الخمسة في عرض الجوال بلا سحب. */
 const GRID_Z=[['w',108,54,'grWide'],['m',82,44,'grMed'],['s',62,36,'grNarrow']];
@@ -3185,12 +3583,38 @@ let GRID_ZOOM=load('pmu_grid_zoom','w');
 function setGridZoom(z){ GRID_ZOOM=z; save('pmu_grid_zoom',z); renderGrid() }
 function zoomCfg(){ return GRID_Z.find(x=>x[0]===GRID_ZOOM)||GRID_Z[0] }
 function setSchedView(v){
-  SCHED_VIEW=v;
-  document.getElementById('svList').classList.toggle('on',v==='list');
-  document.getElementById('svGrid').classList.toggle('on',v==='grid');
-  document.getElementById('schedDays').style.display=v==='list'?'':'none';
-  document.getElementById('schedGrid').style.display=v==='grid'?'':'none';
-  if(v==='grid')renderGrid();
+  SCHED_VIEW=v==='grid'?'grid':'list';
+  save('pmu_sched_view',SCHED_VIEW);
+  applySchedView();
+  if(SCHED_VIEW==='grid')renderGrid();
+}
+function applySchedView(){
+  const v=SCHED_VIEW, set=(id,f)=>{ const e=document.getElementById(id); if(e)f(e) };
+  set('svList',e=>e.classList.toggle('on',v==='list'));
+  set('svGrid',e=>e.classList.toggle('on',v==='grid'));
+  set('schedDays',e=>{ e.style.display=v==='list'?'':'none' });
+  set('schedGrid',e=>{ e.style.display=v==='grid'?'':'none' });
+}
+/* ═══ لون لكل مادة — طلب محمد (٢٧ أكتوبر ٢٠٢٦، الفكرة ١٠: «الأسبوع شبكة ملوّنة، كل مادة بلون») ═══
+   من كود المادة الأم (المحاضرة والمعمل لون واحد)، ومن بصمة الكود فلون المادة غالباً ما يتغيّر لما تضيف غيرها
+   (إلا لو الجديدة أخذت خانته — ما نحفظ الألوان). ومادتان في الجدول ما يتشاركان لوناً لين تخلص الألوان العشرة.
+   **بلا كهرماني ولا برتقالي**: الكهرماني لون التعارض نفسه (--warn) فمادة سليمة كانت تطلع «متعارضة» */
+const COURSE_HUES=['#3d6fff','#10b981','#ec4899','#8b5cf6','#06b6d4','#84cc16','#64748b','#d946ef','#6366f1','#14b8a6'];
+function courseColors(list){
+  const codes=[...new Set((list||[]).map(c=>baseCourseCode(c.courseCode)))].sort();
+  const used=new Set(), map={};
+  codes.forEach(k=>{
+    let h=0; for(const ch of k)h=(h*31+ch.charCodeAt(0))>>>0;
+    let i=h%COURSE_HUES.length;
+    for(let n=0;n<COURSE_HUES.length&&used.has(i);n++)i=(i+1)%COURSE_HUES.length;
+    used.add(i); map[k]=COURSE_HUES[i];
+  });
+  return map;
+}
+function ccStyle(c,map){
+  const col=map[baseCourseCode(c.courseCode)]||COURSE_HUES[0];
+  const n=parseInt(col.slice(1),16);
+  return `--cc:${col};--cc-bg:rgba(${n>>16},${(n>>8)&255},${n&255},.17)`;
 }
 /* الاسم أوضح من الرقم. لو ما اتسع يُقتطع من آخره لا من أوله — والصفحة RTL
    فبلا تثبيت الاتجاه يعرض المتصفح «…Methods» بدل «…Computational». */
@@ -3200,9 +3624,8 @@ function gridLabel(c){
 function renderGrid(){
   const box=document.getElementById('schedGrid');
   if(!box)return;
-  /* البطاقة المرتبطة راح تُحذف مع إعادة الرسم — نغلق اللوحة أولاً */
-  try{ closePeek() }catch(e){}
   const [,COLW,GRID_H]=zoomCfg();
+  const cmap=courseColors(schedule);
   const items=schedule.map(c=>({c,t:parseTime(c.courseTiming)})).filter(x=>x.t);
   if(!items.length){ box.innerHTML=''; return }
   /* من أول محاضرة لآخرها لا من الصباح الباكر — وإلا صار نصفها فاضياً */
@@ -3224,9 +3647,9 @@ function renderGrid(){
           const top=(x.t.start-lo*60)/60*GRID_H;
           const h=Math.max(26,(x.t.end-x.t.start)/60*GRID_H-3);
           return `<div class="gr-item${cl.has(x.c.crn)?' clash':''}"
-            style="top:${top}px;height:${h}px" title="${escapeHtml(c2t(x.c))}"
+            style="top:${top}px;height:${h}px;${ccStyle(x.c,cmap)}" title="${escapeHtml(c2t(x.c))}"
             data-crn="${escapeHtml(x.c.crn)}" data-start="${x.t.start}"
-            onclick="gridPeek(event,this)">
+            onclick="openCourse(this.dataset.crn,+this.dataset.start)">
             <b>${escapeHtml(gridLabel(x.c))}</b>
             <i>${fmtTime(x.t.start)} §${escapeHtml(x.c.section||'')}</i>
             ${h>GRID_H?`<u>${escapeHtml(x.c.room||'')}</u>`:''}
@@ -3248,92 +3671,15 @@ function renderGrid(){
 }
 function c2t(c){ return `${c.courseCode} §${c.section} · ${c.courseTitle||''}` }
 
-/* ═══ لوحة سريعة على بطاقة الشبكة ═══
-   البطاقة ضيقة فالاسم والقاعة مقطوعان. ضغطة تُظهر بطاقة عائمة صغيرة
-   بالمعلومات كاملة، وتختفي بأي تمرير أو ضغطة ثانية — لا تعلّق الصفحة
-   ولا تحتاج زر إغلاق. `pointer-events:none` عليها: أي ضغطة تمرّ للصفحة
-   وتغلقها في الوقت نفسه، فما تصير حاجزاً بين الطالب وجدوله. */
-let PEEK_OFF=null, PEEK_SKIP=false;
-function closePeek(){
-  const el=document.getElementById('gridPeek');
-  if(el)el.remove();
-  document.querySelectorAll('.gr-item.peeking')
-    .forEach(e=>e.classList.remove('peeking'));
-  if(PEEK_OFF){ PEEK_OFF(); PEEK_OFF=null; }
-}
-function gridPeek(ev,el){
-  if(ev)ev.stopPropagation();
-  /* pointerdown يسبق click دائماً، فاللوحة تُغلق قبل وصولنا هنا.
-     PEEK_SKIP يُرفع فقط لو كانت الضغطة على البطاقة المفتوحة نفسها،
-     فتكون النتيجة إغلاقاً لا إعادة فتح — أما الإغلاق بالتمرير فلا
-     يرفعه، عشان الضغط بعده يفتح فوراً. */
-  const skip=PEEK_SKIP; PEEK_SKIP=false;
-  closePeek();
-  if(skip)return;
-
-  const c=(schedule||[]).find(x=>String(x.crn)===el.dataset.crn);
-  if(!c)return;
-  const tm=parseTime(c.courseTiming);
-  const rows=[
-    [t('csTime'), tm?`${fmtTime(tm.start)}–${fmtTime(tm.end)}`:'—', true],
-    [t('csDays'), (parseDays(c.courseDate)||[]).map(d=>t('days')[d]).join(' · ')||'—', false],
-    [t('csRoom'), c.room||'—', true],
-    [t('csDoc'),  c.instructor||'—', true]
-  ];
-  const box=document.createElement('div');
-  box.id='gridPeek';
-  box.innerHTML=`<div class="pk-h ltr">${escapeHtml(c.courseCode||'')} §${
-      escapeHtml(c.section||'')}</div>
-    <div class="pk-t">${escapeHtml(c.courseTitle||'')}</div>
-    ${rows.map(([k,v,ltr])=>`<div class="pk-r"><span>${k}</span>
-      <b${ltr?' class="ltr"':''}>${escapeHtml(v)}</b></div>`).join('')}`;
-  document.body.appendChild(box);
-  el.classList.add('peeking');
-
-  /* الموضع: فوق البطاقة إن وُجد مكان، وإلا تحتها، ومحصور داخل الشاشة */
-  const r=el.getBoundingClientRect();
-  const w=box.offsetWidth, h=box.offsetHeight;
-  const vw=document.documentElement.clientWidth;
-  const vh=document.documentElement.clientHeight;
-  let left=r.left+r.width/2-w/2;
-  left=Math.max(8,Math.min(left,vw-w-8));
-  let top=r.top-h-8;
-  if(top<8)top=Math.min(r.bottom+8,vh-h-8);
-  box.style.left=left+'px';
-  box.style.top=Math.max(8,top)+'px';
-  box.classList.add('in');
-
-  /* الإغلاق: أي تمرير أو ضغطة أو تغيير حجم أو زر Esc */
-  const bye=()=>closePeek();
-  const esc=e=>{ if(e.key==='Escape')closePeek(); };
-  const down=e=>{
-    const hit=e.target&&e.target.closest?e.target.closest('.gr-item'):null;
-    PEEK_SKIP=(hit===el);
-    if(PEEK_SKIP)setTimeout(()=>{PEEK_SKIP=false},400);  /* لو ما تبعها click */
-    closePeek();
-  };
-  /* التمرير يُلتقط في مرحلة الالتقاط عشان يشمل تمرير الشبكة الأفقي */
-  window.addEventListener('scroll',bye,{capture:true,passive:true});
-  window.addEventListener('resize',bye);
-  document.addEventListener('pointerdown',down);
-  document.addEventListener('keydown',esc);
-  PEEK_OFF=()=>{
-    window.removeEventListener('scroll',bye,{capture:true});
-    window.removeEventListener('resize',bye);
-    document.removeEventListener('pointerdown',down);
-    document.removeEventListener('keydown',esc);
-  };
-}
-
 function renderSchedule(){
   renderCrn();   /* لو اللوحة مفتوحة، تتحدث مع كل إضافة أو حذف */
   const empty=document.getElementById('schedEmpty'),wrap=document.getElementById('schedDays');
-  document.getElementById('sumCourses').textContent=schedule.length;
-  document.getElementById('sumHours').textContent=scheduleCredits();
+  countTo(document.getElementById('sumCourses'),schedCourses());
+  countTo(document.getElementById('sumHours'),scheduleCredits());
   const pairs=[];
   for(let i=0;i<schedule.length;i++)for(let j=i+1;j<schedule.length;j++)
     if(conflicts(schedule[i],schedule[j]))pairs.push([schedule[i],schedule[j]]);
-  document.getElementById('sumClashes').textContent=pairs.length;
+  countTo(document.getElementById('sumClashes'),pairs.length);
   const al=document.getElementById('conflictAlert');
   if(pairs.length){al.classList.add('visible');
     document.getElementById('conflictList').innerHTML=pairs.map(p=>`${p[0].courseCode} §${p[0].section} ✕ ${p[1].courseCode} §${p[1].section}`).join('<br>');
@@ -3352,12 +3698,13 @@ function renderSchedule(){
   buildPrintSheet(cl);
   refreshFinalsIfOpen();
 
+  const cmap=courseColors(schedule);
   wrap.innerHTML=DAY_KEYS.map(day=>{
     const items=schedule.filter(c=>parseDays(c.courseDate).includes(day))
       .map(c=>({c,t:parseTime(c.courseTiming)}))
       .sort((a,b)=>(a.t?a.t.start:0)-(b.t?b.t.start:0));
     const body=items.length?`<div class="day-body">${items.map(({c,t})=>`
-      <div class="slot ${cl.has(c.crn)?'clash':''}">
+      <div class="slot ${cl.has(c.crn)?'clash':''}" style="${ccStyle(c,cmap)}">
         <div class="slot-time">${t?fmtTime(t.start)+'–'+fmtTime(t.end):'—'}</div>
         <div class="slot-info tap" data-code="${escapeHtml(c.courseCode)}"
           onclick="searchIn(this.dataset.code)"><div class="slot-name">${c.courseCode} §${c.section}</div>
@@ -3368,6 +3715,7 @@ function renderSchedule(){
     return `<div class="day-block"><div class="day-head"><span>${t('days')[day]}</span>
       <span class="cnt">${items.length} ${t('lecture')}</span></div>${body}</div>`;
   }).join('');
+  applySchedView();
   if(SCHED_VIEW==='grid')renderGrid();
 }
 
@@ -3407,6 +3755,7 @@ function syncBetaTabs(){
   const bar=document.querySelector('.tabs.tabs4');
   if(bar)bar.classList.toggle('tabs5',on);
   if(!on&&CUR_TAB==='today')switchTab('search');
+  try{ moveTabInd(true) }catch(e){}           /* الأعمدة تغيّرت — الخط لمكانه بلا انزلاق */
 }
 
 /* التوقيت مثبّت على السعودية لا على ساعة الجهاز: أوقات المحاضرات نصوص
@@ -4491,7 +4840,7 @@ function shareBlock(c){
 }
 
 /* ═══ لوح تفاصيل المادة ═══
-   يُفتح من تبويب اليوم فقط. الحذف والبحث موجودان في «جدولي» فما نكرّرهما هنا —
+   يُفتح من تبويب اليوم ومن شبكة «جدولي» (الفكرة ١٠). الحذف والبحث في قائمة «جدولي» فما نكرّرهما هنا —
    هذا اللوح مخصّص لما لا مكان له غيره: الغياب والأحداث لاحقاً.
    نفتح على الجلسة المضغوطة تحديداً لا على المادة كاملة، لأن الغياب يُحسب
    على الجلسة، وقد يخصّ الحدث المعمل وحده. */
@@ -4917,6 +5266,11 @@ function stopTodayTick(){ if(TODAY_TICK){clearInterval(TODAY_TICK);TODAY_TICK=nu
 
 /* حالة المراقبة تُجلب للتحقق من نسخة الاختبار فقط */
 let MON_STATE=null;
+/* بطاقة «مراقبتك» (renderMonLive): حالتها في الذاكرة. ومعاينتها ‎?monpreview=1‎ تُقرأ عند تحميل
+   السكربت — initAuth تمسح الرابط أول ما تلقى جلسة */
+let MONLIVE={tick:null,skew:0,at:0,busy:false,n:0,arm:null,seen:null,kind:'',open:null,demo:null,dst:null,subH:null,html:'',inRender:false};
+const MONLIVE_RING=62.83;          /* محيط دائرة العدّ (r=10) */
+let MONLIVE_PREVIEW=/[?&]monpreview=1(?:&|$)/.test(location.search);
 async function loadMonitorState(){
   try{ MON_STATE=await (await fetch(API_BASE+'/api/monitor-status')).json(); }
   catch(e){ MON_STATE=null; }
@@ -4931,6 +5285,8 @@ async function loadMonitorState(){
   try{ if(CUR_TAB==='plan')renderPlan() }catch(e){}
   /* أول قراءة تثبّت بصمة النسخة المحمّلة، وما بعدها يقارن بها */
   try{ checkBuild(MON_STATE) }catch(e){}
+  /* بطاقة «مراقبتك» تبان وقت التسجيل — والنافذة توصل هنا */
+  try{ renderMonLive() }catch(e){}
   /* الفترة المجانية والباقات توصل هنا — وقبلها الجداول الثلاثة مفتوحة
      احتياطاً. فجدول صار مقفولاً يرجع للأول **الحين** لا بعد أول ضغطة،
      والحساب ينصحّح معه (وإلا البوت يقرأ جدولاً الصفحة ما تعرضه). */
@@ -5210,7 +5566,8 @@ function calDays(d){
   return Math.round((new Date(d+'T00:00:00')-now)/864e5);
 }
 function calFmt(d){
-  return new Date(d+'T00:00:00').toLocaleDateString(LANG==='ar'?'ar-SA':'en-GB',
+  /* ar-u-ca-gregory-nu-latn لا ar-SA: تقويم التسجيل كان يطلع هجري بأرقام هندية — ١٠ يناير «٢ شعبان» (CLAUDE.md «الصفحة») */
+  return new Date(d+'T00:00:00').toLocaleDateString(LANG==='ar'?'ar-u-ca-gregory-nu-latn':'en-GB',
     {day:'numeric',month:'short'});
 }
 
@@ -5474,7 +5831,7 @@ function buildPrintSheet(clashSet){
   /* الترويسة */
   const termSel=document.getElementById('term');
   const termName=termSel?(termSel.options[termSel.selectedIndex]||{}).text||'':'';
-  const clashes=document.getElementById('sumClashes').textContent||'0';
+  const clashes=cntVal('sumClashes')||'0';     /* القيمة النهائية — النص وسط العدّ رقم بالطريق */
 
   const head=`<div class="ps-head">
     <div>
@@ -5482,7 +5839,7 @@ function buildPrintSheet(clashSet){
       <div class="ps-sub">Prince Mohammad Bin Fahd University${termName?' · '+escapeHtml(termName):''}</div>
     </div>
     <div class="ps-stats">
-      <div class="ps-stat"><b>${schedule.length}</b><span>${t('courses')}</span></div>
+      <div class="ps-stat"><b>${schedCourses()}</b><span>${t('courses')}</span></div>
       <div class="ps-stat"><b>${scheduleCredits()}</b><span>${t('credits')}</span></div>
       <div class="ps-stat ${clashes==='0'?'ok':'bad'}"><b>${clashes}</b><span>${t('clashes')}</span></div>
     </div>
@@ -5505,7 +5862,7 @@ function buildPrintSheet(clashSet){
   /* أرقام التسجيل — أهم شي في الورقة وقت التسجيل */
   const crns=`<div class="ps-crn"><span class="ps-crn-t">${
     LANG==='ar'?'أرقام التسجيل':'Registration numbers (CRN)'}</span>${
-    schedule.map(c=>{
+    schedule.filter((c,i,a)=>!c.crn||a.findIndex(x=>x.crn===c.crn)===i).map(c=>{     /* كل رقم مرة — المحاضرة والمعمل بنفس CRN صفّان */
       const col=colorOf[c.courseCode]||['#5b6472','#f2f4f7'];
       return `<span class="ps-crn-i" style="--c:${col[0]};--c2:${col[1]}"><b>${
         escapeHtml(String(c.crn||''))}</b>${
@@ -5608,7 +5965,7 @@ function buildPrintSheet(clashSet){
   </div>`;
 
   const foot=`<div class="ps-foot"><span>jadwalik.com</span><span>${
-    new Date().toLocaleDateString(LANG==='ar'?'ar-SA':'en-GB')}</span></div>`;
+    new Date().toLocaleDateString(LANG==='ar'?'ar-u-ca-gregory-nu-latn':'en-GB',{day:'numeric',month:'short',year:'numeric'})}</span></div>`;
 
   el.innerHTML=head+grid+legend+table+crns+note+warn+finals+foot;
 }
@@ -5641,15 +5998,73 @@ function planTouched(){
 }
 
 function toggleDone(code){
+  const before=semsDone();
   const i=completed.indexOf(code);
   if(i>-1){completed.splice(i,1);delete grades[code];save('pmu_grades',grades);}
   else{
     const chk=prereqCheck(code);
     if(chk.known&&!chk.ok)showToast(t('markedAnyway'),'warn');
     completed.push(code);
+    PLAN_FLASH=new Set([code]);
   }
   save('pmu_completed',completed);pushCompleted();
   planTouched();
+  planCelebrate(before);
+}
+
+/* ═══ «خطتي» تتحرّك (الفكرة ٩) ═══
+   ✓ اللي انعلّمت الحين تنط (PLAN_FLASH — renderPlan تنزّله) · كل ترم يمتلي من نسبته قبل (SEM_P) ·
+   وترم اكتمل بهالضغطة: «🎉 خلّصت …» وقصاصات من بطاقته. الحلقة فوق: ringTo */
+let PLAN_FLASH=null;
+const SEM_P={};
+function semsDone(){
+  return (typeof PLAN!=='undefined'&&Array.isArray(PLAN)?PLAN:[])
+    .filter(s=>s.courses.length&&s.courses.every(c=>isDone(c.c))).map(s=>s.id);
+}
+function planCelebrate(before){
+  const now=semsDone(), fresh=now.filter(id=>!before.includes(id));
+  if(!fresh.length)return;
+  const ar=LANG==='ar', sem=PLAN.find(x=>x.id===fresh[0]);
+  const nm=sem?(t('sem')[sem.id]||sem.label):'';
+  const all=now.length===PLAN.length;
+  showToast(all?(ar?'🎓 خلّصت خطتك كلها — مبروك!':'🎓 You finished your whole plan — congrats!')
+    :(ar?`🎉 خلّصت ${nm}!`:`🎉 You finished ${nm}!`));
+  const el=document.getElementById('sem-'+fresh[0]);
+  const r=el&&el.getBoundingClientRect();
+  if(r&&r.height)confetti(r.left+r.width/2,Math.max(70,r.top+24));
+}
+function confetti(x,y){
+  if(countReduce())return;
+  const box=document.createElement('div');
+  box.className='confetti';
+  box.style.left=x+'px'; box.style.top=y+'px';
+  const cols=['#10b981','#3d6fff','#f59e0b','#f43f5e','#a78bfa'];
+  for(let i=0;i<18;i++){
+    const s=document.createElement('i'), a=i/18*Math.PI*2+Math.random()*.3, d=55+Math.random()*55;
+    s.style.setProperty('--dx',Math.round(Math.cos(a)*d)+'px');
+    s.style.setProperty('--dy',Math.round(Math.sin(a)*d+40)+'px');
+    s.style.setProperty('--r',Math.round(Math.random()*720-360)+'deg');
+    s.style.background=cols[i%cols.length];
+    s.style.animationDelay=Math.round(Math.random()*60)+'ms';
+    box.appendChild(s);
+  }
+  document.body.appendChild(box);
+  setTimeout(()=>box.remove(),1400);
+}
+/* حلقة التقدّم: الكسر النهائي في data-f من أول لحظة، والرسم ينتقل له. تبويب مخفي: تبقى فاضية وتمتلي أول
+   ما يبان (countPending) — مثل الأرقام */
+const RING_C=326.73;
+function ringTo(el,f){
+  if(!el)return;
+  f=Math.max(0,Math.min(1,Number(f)||0));
+  el.dataset.f=String(f);
+  el.classList.toggle('zero',f<=0);
+  if(!countReduce()&&!el.closest('.page.active')){
+    el.style.transition='none'; el.style.strokeDashoffset=String(RING_C); el.dataset.cnt='ring'; return;
+  }
+  delete el.dataset.cnt;
+  el.style.transition='';
+  el.style.strokeDashoffset=String(RING_C*(1-f));
 }
 
 /* هل اختار الطالب تخصصه فعلاً؟ */
@@ -5706,9 +6121,9 @@ function renderPlan(){
     } else box.style.display='none';
   }
   const cr=doneCredits(),pct=TOTAL_CR>0?Math.round(cr/TOTAL_CR*100):0;
-  document.getElementById('progDone').innerHTML=`${cr}<small> / ${TOTAL_CR} ${t('hrsUnit')}</small>`;
-  document.getElementById('progPct').textContent=pct+'%';
-  document.getElementById('progFill').style.width=pct+'%';
+  cntIn(document.getElementById('progDone'),cr,0,` / ${TOTAL_CR} ${t('hrsUnit')}`);
+  countTo(document.getElementById('progPct'),pct,0,'%');
+  ringTo(document.getElementById('progRing'),TOTAL_CR>0?cr/TOTAL_CR:0);
   document.getElementById('progRemain').textContent=(LANG==='ar'?`${t('remain')} ${TOTAL_CR-cr} ${t('hrsUnit')}`:`${TOTAL_CR-cr} ${t('hrsUnit')} ${t('remain')}`);
   document.getElementById('progLevel').textContent=level(cr);
 
@@ -5773,12 +6188,14 @@ function renderPlan(){
   document.querySelectorAll('.sem-block.open').forEach(el=>openSems.add(el.id));
   const firstRender=!document.querySelector('.sem-block');
 
+  const flash=PLAN_FLASH; PLAN_FLASH=null;
   document.getElementById('planSemesters').innerHTML=PLAN.map((s,i)=>{
     const done=s.courses.filter(c=>isDone(c.c)).length;
     const allDone=done===s.courses.length;
     const isOpen=firstRender?(!allDone&&i<2):openSems.has('sem-'+s.id);
-    return `<div class="sem-block ${isOpen?'open':''}" id="sem-${s.id}">
-      <div class="sem-head" onclick="document.getElementById('sem-${s.id}').classList.toggle('open')">
+    const fr=s.courses.length?+(done/s.courses.length).toFixed(4):0;
+    return `<div class="sem-block ${isOpen?'open':''}${allDone?' done':''}" id="sem-${s.id}">
+      <div class="sem-head" style="--p:${fr}" onclick="document.getElementById('sem-${s.id}').classList.toggle('open')">
         <div class="sem-head-l"><span class="sem-title">${t('sem')[s.id]||s.label}</span>
         <span class="sem-chip ${allDone?'done':''}">${done}/${s.courses.length}</span>
         <button class="sem-all" title="${LANG==='ar'?'علّم الفصل كامل':'Mark whole term'}"
@@ -5829,7 +6246,7 @@ function renderPlan(){
         /* الاختيارية خانة مو مادة حقيقية، ومواد الإدارة ما لها شعب في البحث */
         const tap=!c.el&&!c.adm;
         const hrs=c.h?` <span style="color:var(--text3);font-family:var(--mono);font-size:10.5px">${c.h}H</span>`:'';
-        return `<div class="pc ${d?'done':''} ${locked?'locked':''}">
+        return `<div class="pc ${d?'done':''} ${locked?'locked':''}${d&&flash&&flash.has(c.c)?' just-done':''}">
           <button class="pc-check" onclick="toggleDone('${c.c}')">✓</button>
           <div class="pc-info${tap?' tappable':''}"${tap?` onclick="searchSuggested('${c.c}')"`:''}>
           <div class="pc-code">${c.c}${hrs}${nowBadge(c.c)}</div>
@@ -5837,10 +6254,22 @@ function renderPlan(){
           ${gradeSel}</div>`;
       }).join('')}</div></div>`;
   }).join('');
+  /* كل ترم يمتلي من نسبته قبل لنسبته الحين — لا من صفر مع كل ضغطة */
+  document.querySelectorAll('#planSemesters .sem-block').forEach(b=>{
+    const h=b.querySelector('.sem-head');
+    if(!h)return;
+    const to=h.style.getPropertyValue('--p'), from=SEM_P[b.id];
+    SEM_P[b.id]=to;
+    if(from==null||from===to||countReduce())return;
+    h.style.setProperty('--p',from);
+    h.getBoundingClientRect();
+    requestAnimationFrame(()=>h.style.setProperty('--p',to));
+  });
 }
 
 /* ===== Filters / Monitor / Utils ===== */
-function setFilter(m,el){filterMode=m;document.querySelectorAll('.ftab').forEach(t=>t.classList.remove('active'));el.classList.add('active');renderResults()}
+/* العدّادات هي الفلتر: «مفتوح» تطلع المفتوحة بس، وضغطة ثانية عليها (أو «إجمالي») ترجّع الكل */
+function setFilter(m){filterMode=(m===filterMode&&m!=='all')?'all':m;if(allCourses.length)renderResults()}
 function clearFilter(){document.getElementById('courseFilter').value='';document.getElementById('clearFilter').style.display='none';if(allCourses.length)renderResults()}
 document.getElementById('courseFilter').addEventListener('input',function(){
   document.getElementById('clearFilter').style.display=this.value?'block':'none';
@@ -5855,6 +6284,8 @@ document.getElementById('docFilter').addEventListener('input',function(){
    ويرسل إشعار تيليغرام — يشتغل حتى والموقع مسكّر. */
 function showLoading(s){
   document.getElementById('loadingBox').classList.toggle('visible',s);
+  const ls=document.getElementById('loadingSub');
+  if(ls)ls.textContent=LANG==='ar'?'يجيب البيانات من موقع PMU':'Fetching from the PMU site';
   document.getElementById('btnSearch').disabled=s;
   document.getElementById('searchBtnText').textContent=s?t('searching'):t('search');
 }
@@ -7015,8 +7446,10 @@ async function refreshProfile(){
 /* ---- monitored courses ---- */
 async function loadMonitored(){
   if(!USER){monitored=[];return}
-  const {data}=await sb.from('monitored_courses').select('*');
-  monitored=data||[];
+  const {data,error}=await sb.from('monitored_courses').select('*');
+  /* قراءة فشلت (شبكة لحظة) ما تمسح القائمة: كانت تصير [] فتختفي الأجراس وبطاقة «مراقبتك» لين القراءة الجاية */
+  if(error||!Array.isArray(data))return;
+  monitored=data;
 }
 
 /* شريط ثابت أعلى كل الصفحات — حالتان يستحيل اجتماعهما،
@@ -7038,17 +7471,22 @@ function renderTgBar(){
         SCHEDULES.forEach(s=>{ if(s&&s.length)n+=s.length });
       if(typeof completed!=='undefined'&&completed) n+=completed.length;
     }catch(e){}
-    if(!n)return hide();
+    if(!n||guestBarOff())return hide();
     bar.hidden=false;
-    bar.innerHTML='<span>⚠️ '+
-      (ar?'<b>ما سجّلت دخولك</b> — شغلك محفوظ على هذا الجهاز فقط، ويروح لو مسحت بيانات المتصفح أو فتحت الموقع من جهاز ثاني'
-         :'<b>Not signed in</b> — your work is saved on this device only, and is lost if you clear browser data or switch devices')+
+    bar.classList.add('slim');
+    bar.innerHTML='<span class="tgb-t">⚠️ '+
+      (ar?'<b>شغلك محفوظ على هذا الجهاز بس</b>':'<b>Saved on this device only</b>')+
       '</span><button onclick="showAuthNote()">'+
-      (ar?'💾 احفظه في حسابك':'💾 Save to my account')+'</button>';
+      (ar?'💾 احفظه في حسابك':'💾 Save to account')+'</button>'+
+      '<button class="tgb-x" onclick="guestBarHide()" aria-label="'+(ar?'إخفاء':'Dismiss')+'">✕</button>';
     return;
   }
 
   /* ── مسجّل لكن ما ربط تيليغرام ── */
+  bar.classList.remove('slim');
+  /* ملفه لسا ما وصل (pullCloud): ما نحكم. الشريط صار ينرسم أول ما تنعرف الجلسة، والمربوط
+     كان يطلع له «غير مربوط» لين مؤقّت الأربع ثوانٍ — pullCloud ترسمه أول ما يوصل */
+  if(!PROFILE)return hide();
   if(tgLinked())return hide();
   const n=(typeof monitored!=='undefined'&&monitored)?monitored.length:0;
   bar.hidden=false;
@@ -7057,6 +7495,16 @@ function renderTgBar(){
        :'<b>Telegram not linked</b> — you will not receive section alerts')+
     (n?(ar?` · عندك ${n} مراقبة معطّلة`:` · ${n} inactive watches`):'')+
     '</span><button onclick="linkTelegram()">'+(ar?'🔗 اربط الحين':'🔗 Link now')+'</button>';
+}
+
+/* شريط الزائر يقفله ✕ أسبوعاً — بعدها يرجع يذكّره (شغله ممكن يضيع) */
+const GUEST_BAR_OFF='pmu_guestbar_off';
+function guestBarOff(){
+  try{ const at=Number(localStorage.getItem(GUEST_BAR_OFF)||0); return at>0&&Date.now()-at<7*864e5 }catch(e){ return false }
+}
+function guestBarHide(){
+  try{ localStorage.setItem(GUEST_BAR_OFF,String(Date.now())) }catch(e){}
+  try{ renderTgBar() }catch(e){}
 }
 
 /* ── التنبيه ما يوصل بلا تيليغرام ──
@@ -7572,8 +8020,8 @@ function renderTgAndMon(ar){
   const ml=document.getElementById('monList');
   if(!monitored.length){
     ml.innerHTML=`<div style="font-size:12.5px;color:var(--text3);padding:8px 0;line-height:1.7">${
-      ar?'ما تراقب أي مادة. روح للبحث واضغط 🔔 على أي مادة مسكّرة.':
-          'Not watching any course. Go to Search and tap 🔔 on a closed course.'}</div>`;
+      ar?'ما تراقب أي مادة. روح للبحث واضغط «🔕 راقب» على أي شعبة مسكّرة.':
+          'Not watching any course. Go to Search and tap «🔕 Watch» on a closed section.'}</div>`;
   }else{
     const paused=pausedMonitorIds();
     ml.innerHTML=monitored.map(m=>{
@@ -7590,6 +8038,8 @@ function renderTgAndMon(ar){
   }
 
   renderMyReviews();
+  /* بطاقة «مراقبتك» فوق البحث: كل تغيير في المراقبات يمر من هنا (إضافة · إيقاف · رجوع للتطبيق · اللغة) */
+  try{ renderMonLive() }catch(e){}
 
   /* account */
   document.getElementById('accEmail').textContent=USER?USER.email:(ar?'غير مسجل':'Not signed in');
@@ -7605,6 +8055,325 @@ function renderTgAndMon(ar){
 
 
 
+
+/* ═══ «مراقبتك» — بطاقة المراقبة الحيّة فوق البحث (طلب محمد، ٢٧ أكتوبر ٢٠٢٦) ═══
+   «يطلع زي عدادات وحالة مراقبة المواد لكل طالب لحاله… ويقدر منه يلغي المراقبة على طول ويعلمه حالة
+   اشعارات بوش اوفر… ويحسس الطالب ان الاداة شغاله تراقبله… اهم شي ما تكون بمكان مزعج».
+   تبان وقت التسجيل وحده (MON_STATE.window) ولمن عنده مراقبة في ترم التسجيل — غير كذا ولا بكسل.
+   مطوية: الحالة والعدّادات وقنوات التنبيه، وتنفتح على موادها وإيقافها — بضغطتين (ضغطة غلط وقت التسجيل
+   تكلّف شعبة). ما تقرّر شي: الحالة من السيرفر (lastCheck · nextCheck · checking)، والصفوف monitored،
+   والإيقاف removeMonitor، والحصة pausedMonitorIds، والتنبيه الطارئ poState.
+   العدّ كل ثانية يلمس نصوصاً بس (استبدال زر تحت الإصبع يضيّع الضغطة)، والسؤال من السيرفر بعد موعد الفحص
+   لا بمؤقت أعمى. ‎?monpreview=1‎ معاينة ببيانات تجريبية موسومة (dev ما يراقب، والنافذة الجاية يناير) —
+   والإيقاف فيها ما يلمس الحساب. */
+function monLiveRows(){
+  if(MONLIVE_PREVIEW)return MONLIVE.demo||(MONLIVE.demo=monLiveDemoRows());
+  if(!USER||!Array.isArray(monitored))return [];
+  const t=String(regTermCode());
+  return monitored.filter(m=>String(m.term||'')===t);
+}
+function monLiveDemoRows(){
+  const now=Date.now(), term=String(regTermCode()), at=ms=>new Date(now-ms).toISOString();
+  return [
+    {id:-1,scope:'section',course_code:'MEEN 3311',section:'101',crn:'30011',term,last_status:'OPEN',notified_at:at(4*60e3),created_at:at(2*864e5)},
+    {id:-2,scope:'section',course_code:'CHEN 3333',section:'102',crn:'30512',term,last_status:'CLOSE',notified_at:null,created_at:at(5*36e5)},
+    {id:-3,scope:'course',course_code:'PHYS 1422',section:null,crn:null,term,last_status:null,notified_at:null,created_at:at(26*36e5)}
+  ];
+}
+/* المعاينة تمثّل دورة كل ٥ دقائق: العدّ ينتهي ⇒ «نفحص الحين» ٤ ثوانٍ ⇒ «آخر فحص الحين» */
+function monLiveDemoState(){
+  const now=Date.now();
+  const D=MONLIVE.dst||(MONLIVE.dst={last:now-70e3,next:now+230e3,chk:0});
+  if(D.chk&&now>=D.chk){ D.last=now; D.next=now+5*60e3; D.chk=0 }
+  else if(!D.chk&&now>=D.next)D.chk=now+4000;
+  return {env:'prod',reason:'peak',active:true,intervalMin:5,activeHours:[7,24],
+    lastCheck:new Date(D.last).toISOString(),nextCheck:D.chk?null:new Date(D.next).toISOString(),checking:!!D.chk};
+}
+/* حالة البطاقة الحين — live · notg (تيليغرام مو مربوط) · stale (ما فحصنا من مدة) · sleep · paused · test · off */
+function monLiveState(){
+  const demo=MONLIVE_PREVIEW;
+  const st=demo?monLiveDemoState():(MON_STATE||{});
+  const now=Date.now()+(demo?0:MONLIVE.skew);
+  const iv=Number(st.intervalMin)>0?Number(st.intervalMin):5;
+  const last=Date.parse(st.lastCheck||''), next=Date.parse(st.nextCheck||'');
+  let kind='off';
+  if(!demo&&st.env&&st.env!=='prod')kind='test';
+  else if(st.reason==='paused')kind='paused';
+  else if(st.reason==='hours')kind='sleep';
+  else if(st.active){
+    if(!((demo&&!USER)||tgLinked()))kind='notg';
+    else if(Number.isFinite(last)&&now-last>Math.max(3*iv,15)*60000)kind='stale';
+    else kind='live';
+  }
+  const running=kind==='live'||kind==='stale'||kind==='notg';
+  return {demo,st,now,iv,last,next,kind,running,
+    checking:running&&(!!st.checking||(Number.isFinite(next)&&next<=now))};
+}
+/* مدة قصيرة: «4 د» · «2 س» · «يومين» */
+function monDur(ms){
+  const ar=LANG==='ar', m=Math.max(0,Math.round(ms/60000));
+  if(m<60)return ar?`${m} د`:`${m} min`;
+  const h=Math.round(m/60);
+  if(h<24)return ar?`${h} س`:`${h} h`;
+  const d=Math.round(h/24);
+  return ar?(d===1?'يوم':d===2?'يومين':d<=10?`${d} أيام`:`${d} يوم`):`${d} d`;
+}
+function monAgo(ms){ const ar=LANG==='ar'; return ms<60000?(ar?'الحين':'just now'):(ar?'قبل '+monDur(ms):monDur(ms)+' ago') }
+function monLiveMeta(at,k){
+  const ar=LANG==='ar', ms=Date.now()-at;
+  if(k==='n')return ar?'نبّهناك '+monAgo(ms):'Alerted you '+monAgo(ms);
+  return ms<60000?(ar?'بدأت مراقبتها الحين':'Watching since just now')
+                 :(ar?'تراقبها من '+monDur(ms):'Watching for '+monDur(ms));
+}
+function monEvery(iv){
+  const ar=LANG==='ar';
+  if(!ar)return `Checking every ${iv} min`;
+  return 'نفحص لك كل '+(iv===1?'دقيقة':iv===2?'دقيقتين':iv<=10?`${iv} دقائق`:`${iv} دقيقة`);
+}
+function monFrom(S){ const h=Number((S.st.activeHours||[])[0]); return Number.isFinite(h)?h:7 }
+function monLiveSubHtml(S,open){
+  const ar=LANG==='ar';
+  const last=Number.isFinite(S.last)?(ar?'آخر فحص ':'Last check ')+monAgo(S.now-S.last)
+                                    :(ar?'أول فحص خلال دقيقة':'First check within a minute');
+  if(S.kind==='notg')return ar?'<b>تيليغرام مو مربوط</b> — نفحص لك، بس التنبيه ما يوصلك لين تربطه'
+                              :'<b>Telegram not linked</b> — we check, but alerts can’t reach you until you link it';
+  if(S.kind==='stale')return ar?`آخر فحص ناجح ${monAgo(S.now-S.last)} — نعيد المحاولة تلقائياً`
+                               :`Last successful check ${monAgo(S.now-S.last)} — retrying automatically`;
+  if(S.kind==='sleep'){ const h=monFrom(S);
+    return ar?`نرجع نفحص الساعة <b dir="ltr">${h}:00</b>${h<12?' الصبح':''} · مراقباتك محفوظة`
+             :`Checks resume at <b>${h}:00</b> · your watches are kept` }
+  if(S.kind==='paused')return ar?'وقّفنا الفحص مؤقتاً من عندنا · مراقباتك محفوظة وترجع تشتغل'
+                                :'Checks are paused on our side for now · your watches are kept';
+  if(S.kind==='test')return ar?'نسخة تجربة — هنا ما نفحص شي. المراقبة الحقيقية في jadwalik.com'
+                              :'Test build — nothing is checked here. Real monitoring runs on jadwalik.com';
+  if(S.kind==='off')return ar?'المراقبة متوقفة الحين · مراقباتك محفوظة':'Monitoring is off right now · your watches are kept';
+  let go='';
+  if(open.length===1){ const m=open[0];
+    go=`<span class="go">🟢 <bdi>${escapeHtml(m.course_code||'')}${m.section?' §'+escapeHtml(m.section):''}</bdi> ${
+      ar?'مفتوحة الحين — روح سجّلها':'is open now — go register'}</span><br>` }
+  else if(open.length>1)
+    go=`<span class="go">🟢 ${ar?`${open.length} من شعبك مفتوحة الحين — روح سجّلها`:`${open.length} of your sections are open now — go register`}</span><br>`;
+  return go+monEvery(S.iv)+' · '+last;
+}
+function monLivePill(kind){
+  const ar=LANG==='ar';
+  return ({live:ar?'شغّالة':'Live',notg:ar?'ما يوصلك تنبيه':'Alerts off',stale:ar?'الفحص متأخر':'Delayed',
+    sleep:ar?'ترتاح بالليل':'Resting',paused:ar?'موقوفة مؤقتاً':'Paused',test:ar?'نسخة تجربة':'Test build'})[kind]
+    ||(ar?'متوقفة':'Off');
+}
+function monLiveTgInfo(){ showToast(LANG==='ar'?'تيليغرام مربوط — التنبيه يوصلك هناك':'Telegram linked — alerts arrive there','ok') }
+/* قنوات التنبيه: تيليغرام (الوحيدة الإلزامية) والتنبيه الطارئ بحالته من poState — مخفي = ما نعرضه */
+function monLiveChips(S){
+  const ar=LANG==='ar', out=[];
+  out.push(((S.demo&&!USER)||tgLinked())
+    ?`<button class="ml-ch ok" onclick="monLiveTgInfo()">✈️ ${ar?'تيليغرام':'Telegram'} ✓</button>`
+    :`<button class="ml-ch need" onclick="linkTelegram()">✈️ ${ar?'اربط تيليغرام':'Link Telegram'}</button>`);
+  let po='hidden';
+  try{ po=poState() }catch(e){}
+  if(po==='hidden'&&S.demo)po='demo';
+  if(po==='locked')
+    out.push(`<button class="ml-ch" onclick="openPlans('pushover')">🚨 ${ar?'أضف التنبيه الطارئ':'Add urgent alert'}</button>`);
+  else if(po==='demo')
+    out.push(`<button class="ml-ch ok">🚨 ${ar?'التنبيه الطارئ':'Urgent alert'} ✓</button>`);
+  else if(po==='open')
+    out.push(PROFILE&&PROFILE.pushover_key
+      ?`<button class="ml-ch ok" onclick="poGo()">🚨 ${ar?'التنبيه الطارئ':'Urgent alert'} ✓</button>`
+      :`<button class="ml-ch need" onclick="poGo()">🚨 ${ar?'فعّل التنبيه الطارئ':'Enable urgent alert'}</button>`);
+  return out.join('');
+}
+/* الجامعة تكتب المقفلة CLOSE (الجرس والفلتر عليها من أول يوم) — وCLOSED كانت تنكتب من احتياط بانر قبل */
+function monClosed(s){ s=String(s||'').toUpperCase(); return s==='CLOSE'||s==='CLOSED' }
+function monLiveRowHtml(m,paused){
+  const ar=LANG==='ar', id=Number(m.id), all=m.scope==='course';
+  let cls, st;
+  if(paused){
+    cls='paused';
+    st=(all?(ar?'⏸️ مراقبة كل الشعب للمشتركين':'⏸️ All-sections watching is for subscribers')
+           :(ar?'⏸️ متوقفة — فوق حد المجاني':'⏸️ Paused — over the free limit'))+
+       `<button class="lnk" onclick="openPlans('${all?'course':'monitors'}')">${ar?'فعّلها':'Resume'}</button>`;
+  }else if(all){ cls='all'; st=ar?'📡 أي شعبة تفتح أو تنزل يوصلك':'📡 Any section that opens or appears' }
+  else if(m.last_status==='OPEN'){ cls='open'; st=ar?'🟢 مفتوحة الحين — روح سجّلها':'🟢 Open now — go register' }
+  else if(monClosed(m.last_status)){ cls='closed'; st=ar?'🔴 مقفلة — ننتظرها تفتح':'🔴 Closed — waiting for it to open' }
+  else { cls='wait'; st=ar?'⏳ ننتظر أول فحص':'⏳ Waiting for the first check' }
+  const n=Date.parse(m.notified_at||''), c=Date.parse(m.created_at||'');
+  const meta=Number.isFinite(n)?{at:n,k:'n'}:Number.isFinite(c)?{at:c,k:'c'}:null;
+  return `<div class="ml-row ${cls}" data-id="${id}">
+    <div class="ml-info">
+      <button class="ml-code" onclick="monLiveSearch(${id})"><bdi>${escapeHtml(m.course_code||'')}</bdi><small>${
+        all?(ar?'كل الشعب':'all sections'):(m.section?'<bdi>§'+escapeHtml(m.section)+'</bdi>':'')}</small></button>
+      <div class="ml-st">${st}</div>
+      ${meta?`<div class="ml-meta" data-at="${meta.at}" data-k="${meta.k}"></div>`:''}
+    </div>
+    <button class="ml-stop" data-stop="${id}" onclick="monLiveStop(${id},this)">${ar?'إيقاف':'Stop'}</button>
+  </div>`;
+}
+function monLiveIsOpen(){
+  if(MONLIVE.open!=null)return MONLIVE.open;
+  try{ return localStorage.getItem('pmu_monlive_open')==='1' }catch(e){ return false }
+}
+function monLiveToggle(){
+  MONLIVE.open=!monLiveIsOpen();
+  try{ localStorage.setItem('pmu_monlive_open',MONLIVE.open?'1':'0') }catch(e){}
+  renderMonLive();
+}
+function monLiveEndPreview(){ MONLIVE_PREVIEW=false; MONLIVE.demo=null; MONLIVE.dst=null; renderMonLive() }
+function monLiveSearch(id){
+  const m=monLiveRows().find(x=>Number(x.id)===Number(id));
+  if(m&&m.course_code)searchIn(m.course_code);
+}
+/* تُنادى كثير (كل renderSettings) — والـHTML نفسه ما ينكتب ثانية: النصوص اللي تتغيّر مع الوقت تملاها
+   monLivePaint، فرسم بلا تغيير في البيانات ما يستبدل زراً تحت إصبع الطالب */
+function renderMonLive(){
+  const box=document.getElementById('monLive');
+  if(!box||MONLIVE.inRender)return;
+  MONLIVE.inRender=true;
+  try{
+    const rows=monLiveRows();
+    const show=MONLIVE_PREVIEW||(!!USER&&!!(MON_STATE&&MON_STATE.window)&&rows.length>0);
+    if(!show){ box.hidden=true; box.innerHTML=''; MONLIVE.html=''; monLiveTickStop(); return }
+    const ar=LANG==='ar', S=monLiveState();
+    const paused=MONLIVE_PREVIEW?new Set():pausedMonitorIds();
+    const active=rows.filter(m=>!paused.has(m.id));
+    const open=active.filter(m=>m.scope!=='course'&&m.last_status==='OPEN');
+    const rank=m=>paused.has(m.id)?4:m.scope==='course'?3:m.last_status==='OPEN'?0:monClosed(m.last_status)?1:2;
+    const list=rows.slice().sort((a,b)=>(rank(a)-rank(b))||((Date.parse(a.created_at)||0)-(Date.parse(b.created_at)||0)));
+    const isOpen=monLiveIsOpen();
+    MONLIVE.kind=S.kind;
+    box.className='mon-live '+(S.kind==='live'?'live':(S.kind==='notg'||S.kind==='stale')?'warn':'idle')+
+      (box.classList.contains('fresh')?' fresh':'');
+    const html=
+      (S.demo?`<div class="ml-demo"><span>👀 ${ar?'معاينة — بيانات تجريبية، مو مراقبتك الحقيقية':'Preview — demo data, not your real watches'}</span>`+
+              `<button onclick="monLiveEndPreview()" aria-label="${ar?'إغلاق المعاينة':'Close preview'}">✕</button></div>`:'')+
+      `<div class="ml-head"><span class="ml-dot"></span><div class="ml-hd">
+        <div class="ml-title">${ar?'مراقبتك':'Your watches'} <span class="ml-pill">${monLivePill(S.kind)}</span></div>
+        <div class="ml-sub" id="mlSub"></div></div></div>
+      <div class="ml-stats">
+        <div class="ml-stat" id="mlCount"><span class="ml-num">${active.length}</span><span class="ml-lbl">${ar?'تراقبها':'Watching'}</span></div>
+        <div class="ml-stat${open.length?' hot':''}" id="mlOpen"><span class="ml-num">${open.length}</span><span class="ml-lbl">${ar?'مفتوحة الحين':'Open now'}</span></div>
+        <div class="ml-stat"><div class="ml-clock"><svg class="ml-ring" id="mlRing" viewBox="0 0 26 26" aria-hidden="true">`+
+          `<circle class="bg" cx="13" cy="13" r="10"/><circle class="fg" id="mlFg" cx="13" cy="13" r="10" stroke-dasharray="${MONLIVE_RING}" style="stroke-dashoffset:${MONLIVE_RING}"/></svg>`+
+          `<span class="ml-time" id="mlTime">—</span></div><span class="ml-lbl" id="mlClockLbl">${ar?'الفحص الجاي':'Next check'}</span></div>
+      </div>`+
+      (isOpen?`<div class="ml-list" id="mlList">${list.map(m=>monLiveRowHtml(m,paused.has(m.id))).join('')}</div>`:'')+
+      `<div class="ml-foot"><div class="ml-chs">${monLiveChips(S)}</div>
+        <button class="ml-more" id="mlMore" aria-expanded="${isOpen}" onclick="monLiveToggle()">${
+          isOpen?(ar?'إخفاء ▴':'Hide ▴'):(ar?'موادك ▾':'Your courses ▾')}</button></div>`;
+    if(html!==MONLIVE.html||box.hidden){ MONLIVE.html=html; MONLIVE.subH=null; box.innerHTML=html }
+    box.hidden=false;
+    MONLIVE.inRender=false;
+    monLivePaint();
+    monLiveTickStart();
+  }catch(e){}
+  finally{ MONLIVE.inRender=false }
+}
+/* كل ثانية: نصوص وقياسات بس — العدّ والدائرة و«قبل X د» — بلا ما نستبدل زر */
+function monLivePaint(){
+  const box=document.getElementById('monLive');
+  if(!box||box.hidden)return;
+  const S=monLiveState();
+  if(S.kind!==MONLIVE.kind){ if(!MONLIVE.inRender)renderMonLive(); return }
+  const ar=LANG==='ar';
+  if(Number.isFinite(S.last)){
+    if(MONLIVE.seen!=null&&S.last>MONLIVE.seen){ box.classList.remove('fresh'); void box.offsetWidth; box.classList.add('fresh') }
+    MONLIVE.seen=S.last;
+  }
+  const sub=document.getElementById('mlSub');
+  if(sub){
+    const paused=MONLIVE_PREVIEW?new Set():pausedMonitorIds();
+    const h=monLiveSubHtml(S,monLiveRows().filter(m=>!paused.has(m.id)&&m.scope!=='course'&&m.last_status==='OPEN'));
+    if(h!==MONLIVE.subH){ MONLIVE.subH=h; sub.innerHTML=h }
+  }
+  let time='—', lbl=ar?'الفحص الجاي':'Next check', prog=0, spin=false;
+  if(S.checking){ spin=true; time='…'; lbl=ar?'نفحص الحين':'Checking now' }
+  else if(S.running&&Number.isFinite(S.next)){
+    const left=S.next-S.now, s=Math.max(0,Math.ceil(left/1000));
+    time=Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
+    prog=Math.min(1,Math.max(0,1-left/(S.iv*60000)));
+  }else if(S.kind==='sleep'){ time=monFrom(S)+':00'; lbl=ar?'نرجع نفحص':'Resumes at' }
+  const tm=document.getElementById('mlTime'), lb=document.getElementById('mlClockLbl');
+  const ring=document.getElementById('mlRing'), fg=document.getElementById('mlFg');
+  if(tm&&tm.textContent!==time)tm.textContent=time;
+  if(lb&&lb.textContent!==lbl)lb.textContent=lbl;
+  if(ring)ring.classList.toggle('spin',spin);
+  if(fg)fg.style.strokeDashoffset=String(MONLIVE_RING*(1-prog));
+  box.querySelectorAll('.ml-meta[data-at]').forEach(el=>{
+    const v=monLiveMeta(Number(el.dataset.at),el.dataset.k);
+    if(el.textContent!==v)el.textContent=v;
+  });
+  /* «متأكد؟» هنا لا في الـHTML: الرسم بعد الضغطة الأولى ما يبدّل الزر */
+  const a=MONLIVE.arm, live=!!(a&&Date.now()<a.until);
+  if(a&&!live)MONLIVE.arm=null;
+  box.querySelectorAll('.ml-stop[data-stop]').forEach(b=>{
+    const on=live&&a.id===Number(b.dataset.stop), v=on?(ar?'متأكد؟':'Sure?'):(ar?'إيقاف':'Stop');
+    b.classList.toggle('arm',on);
+    if(b.textContent!==v)b.textContent=v;
+  });
+}
+function monLiveTickStart(){ if(!MONLIVE.tick)MONLIVE.tick=setInterval(monLiveTick,1000) }
+function monLiveTickStop(){ if(MONLIVE.tick){ clearInterval(MONLIVE.tick); MONLIVE.tick=null } }
+/* نسأل السيرفر بعد موعد الفحص (وكل ١٥ ثانية تتباعد لين دقيقة ما دام «نفحص الحين»)، وبلا موعد كل دقيقتين ونص */
+function monLiveTick(){
+  try{
+    if(document.hidden||CUR_TAB!=='search')return;
+    monLivePaint();
+    if(MONLIVE_PREVIEW)return;
+    const S=monLiveState(), since=Date.now()-MONLIVE.at;
+    const gap=S.checking?Math.min(60000,15000*(1+MONLIVE.n))
+             :S.running?(Number.isFinite(S.next)?Infinity:150000):300000;
+    if(since>=gap)monLiveRefresh();
+  }catch(e){}
+}
+async function monLiveRefresh(){
+  if(MONLIVE.busy||!USER)return;
+  MONLIVE.busy=true; MONLIVE.at=Date.now();
+  const ids=()=>monLiveRows().map(m=>m.id).join(',');
+  const before=ids();
+  try{
+    const t0=Date.now();
+    /* بلا تخزين: الرد العادي مخزّن دقيقتين، وموعد الفحص ما يستنى */
+    const st=await (await fetch(API_BASE+'/api/monitor-status',{cache:'no-store'})).json();
+    const t1=Date.now();
+    if(st&&typeof st==='object'){
+      const sn=Date.parse(st.now||'');
+      if(Number.isFinite(sn))MONLIVE.skew=sn-(t0+t1)/2;          /* ساعة الجوال مو دائماً مضبوطة */
+      MON_STATE=st;
+      try{ checkBuild(st) }catch(e){}
+    }
+    await loadMonitored();
+  }catch(e){}
+  finally{
+    MONLIVE.busy=false;
+    MONLIVE.n=monLiveState().checking?MONLIVE.n+1:0;
+    renderMonLive();
+    /* مراقبة انشالت من البوت («سجّلتها؟») — الأجراس في النتائج تتبعها */
+    if(ids()!==before){ try{ renderResults() }catch(e){} }
+  }
+}
+document.addEventListener('visibilitychange',()=>{
+  try{ if(!document.hidden&&MONLIVE.tick&&!MONLIVE_PREVIEW&&Date.now()-MONLIVE.at>60000)monLiveRefresh() }catch(e){}
+});
+/* الإيقاف بضغطتين: الأولى «متأكد؟» ثلاث ثوانٍ ونص، والثانية توقف — removeMonitor نفسها */
+async function monLiveStop(id,btn){
+  const ar=LANG==='ar', now=Date.now(), a=MONLIVE.arm;
+  if(!a||a.id!==id||now>a.until){
+    MONLIVE.arm={id,until:now+3500};
+    monLivePaint();
+    setTimeout(()=>{ try{ monLivePaint() }catch(e){} },3600);
+    return;
+  }
+  MONLIVE.arm=null;
+  const rows=monLiveRows(), m=rows.find(x=>Number(x.id)===Number(id));
+  const code=m?m.course_code:'';
+  if(MONLIVE_PREVIEW){
+    MONLIVE.demo=rows.filter(x=>Number(x.id)!==Number(id));
+    renderMonLive();
+    showToast(ar?'معاينة — ما وقّفنا شي حقيقي':'Preview — nothing real was stopped');
+    return;
+  }
+  if(btn)btn.disabled=true;
+  await removeMonitor(id);
+  showToast(ar?`وقفنا مراقبة ${code}`:`Stopped watching ${code}`,'ok');
+}
 
 /* ================= فلتر الألفاظ ================= */
 /* قائمة مختصرة — تُوسّع لاحقاً حسب الحاجة */
@@ -7671,9 +8440,15 @@ let formStars=0, formTags=[];
 const tagLabel=k=>{const t=TAGS.find(x=>x.k===k);return t?(LANG==='ar'?t.ar:t.en):k};
 const cleanName=n=>(n||'').trim().replace(/\s+/g,' ');
 
+/* تاريخ التقييم: ميلادي بأرقام لاتينية وبالسنة («28 أكتوبر 2026») — كان ar-SA: هجري بأرقام هندية («٩/٥/١٤٤٨ هـ») */
+function revDate(iso){
+  const d=new Date(iso);
+  return isNaN(d)?'':d.toLocaleDateString(LANG==='ar'?'ar-u-ca-gregory-nu-latn':'en-GB',{day:'numeric',month:'short',year:'numeric'});
+}
 function starStr(v,max=5){
-  const f=Math.round(v);
-  return `<span class="stars">${'★'.repeat(f)}<span class="off">${'★'.repeat(max-f)}</span></span>`;
+  const x=Math.max(0,Math.min(max,Number(v)||0));
+  return `<span class="stars" role="img" aria-label="${x.toFixed(1)} / ${max}">${'★'.repeat(max)}<span class="st-on" style="width:${
+    +(x/max*100).toFixed(1)}%">${'★'.repeat(max)}</span></span>`;
 }
 
 function docStats(name){
@@ -7968,6 +8743,7 @@ function openDoc(name){
   if(CUR_TAB==='docs'&&!currentDoc)DOCS_SCROLL=window.scrollY||0;
   else if(!currentDoc)DOCS_SCROLL=0;
   currentDoc=name;
+  DOC_ANIM=true;            /* فتح جديد: الرقم يعدّ والأشرطة تكبر — إعادة الرسم بعده لا */
   switchTab('docs');
   document.getElementById('docsList').style.display='none';
   document.getElementById('docDetail').style.display='block';
@@ -8004,6 +8780,7 @@ function searchIn(query, note){
     document.getElementById('clearFilter').style.display='block';
   }
 
+  RES_EXP.clear();   /* مادة طواها قبل تنفتح لو جاها من الخطة أو الدكتور */
   /* لو تغيّر الترم لازم نعيد السحب — النتائج القديمة لترم ثانٍ */
   if(changed || !allCourses.length){
     showToast(LANG==='ar'?'جاري جلب مواد الترم القادم...':'Fetching next term courses...');
@@ -8029,29 +8806,32 @@ function searchSuggested(code){
   searchIn(code, LANG==='ar'?`شعب ${code} في ترم التسجيل القادم`:`${code} sections next term`);
 }
 
+let DOC_ANIM=false;
 function renderDocDetail(){
   const ar=LANG==='ar', n=currentDoc, st=docStats(n);
+  const anim=DOC_ANIM; DOC_ANIM=false;
   const mine=reviews.find(r=>r.instructor_name===n&&USER&&r.user_id===USER.id);
   const topTags=Object.entries(st.tags).sort((a,b)=>b[1]-a[1]).slice(0,6);
 
   document.getElementById('docDetail').innerHTML=`
     <button class="back-btn" onclick="backToDocs()">${ar?'‹ رجوع للقائمة':'‹ Back to list'}</button>
 
-    <div class="doc-hero">
+    <div class="doc-hero${anim?' anim':''}">
       <h2>${n}</h2>
       ${st.n?`
-        <div class="hero-score" style="color:var(--warn)">${st.avg.toFixed(1)}</div>
+        <div class="hero-score" id="docScore" style="color:var(--warn)">${st.avg.toFixed(1)}</div>
         <div class="hero-stars">${starStr(st.avg)}</div>
         <div class="hero-count">${st.n} ${ar?'تقييم من الطلاب':'student reviews'}</div>
         <div class="bars">
-          ${[5,4,3,2,1].map(i=>{
+          ${[5,4,3,2,1].map((i,j)=>{
             const c=st.dist[i-1],p=st.n?c/st.n*100:0;
             return `<div class="bar-row"><span>${i}★</span>
-              <div class="bar-track"><div class="bar-fill" style="width:${p}%"></div></div>
+              <div class="bar-track"><div class="bar-fill" style="width:${p}%;--i:${j}"></div></div>
               <span class="bar-n">${c}</span></div>`}).join('')}
         </div>
-        ${topTags.length?`<div class="tag-cloud">${topTags.map(([k,c])=>
-          `<span class="tag-chip"><b>${c}</b>${tagLabel(k)}</span>`).join('')}</div>`:''}
+        ${topTags.length?`<div class="tag-bars">${topTags.map(([k,c],j)=>
+          `<div class="tb-row"><span class="tb-l">${tagLabel(k)}</span><span class="tb-track"><i style="width:${
+            +(c/topTags[0][1]*100).toFixed(1)}%;--i:${j}"></i></span><b>${c}</b></div>`).join('')}</div>`:''}
       `:`<div class="hero-count" style="padding:14px 0">${ar?'ما فيه تقييمات بعد — كن أول من يقيّمه':'No reviews yet — be the first'}</div>`}
     </div>
 
@@ -8081,7 +8861,7 @@ function renderDocDetail(){
             `<span class="rev-tag">${tagLabel(t)}</span>`).join('')}</div>`:''}
           <div class="rev-tags" style="justify-content:space-between;margin-top:9px">
             <span class="rev-date">${ar?'طالب':'Student'}</span>
-            <span class="rev-date">${new Date(r.created_at).toLocaleDateString(ar?'ar-SA':'en-GB')}</span>
+            <span class="rev-date">${revDate(r.created_at)}</span>
           </div>
           <div class="rev-acts">
             <button class="rv-btn${myReact(r.id)==='agree'?' on':''}"
@@ -8094,6 +8874,8 @@ function renderDocDetail(){
         </div>`).join(''))
       : `<div style="font-size:12.5px;color:var(--text3);padding:8px 0">${
           ar?'ما كتب أحد رأيه بعد.':'No written reviews yet.'}</div>`}</div>`;
+  /* الرقم الكبير يعدّ لتقييمه (والنهائي في data-v من أول لحظة) */
+  if(st.n&&anim){ const sc=document.getElementById('docScore'); if(sc){ sc.textContent='0.0'; countTo(sc,+st.avg.toFixed(1),1) } }
   /* سطر خصم التقييم: في عنصره وحده — إعادة رسم الصفحة كلها تقفل نموذج التقييم لو مفتوح */
   paintDocLine();
   if(!REVCREDIT&&USER&&!freeBeta())loadRevCredit().then(x=>{ if(x)revCreditPaint() });
@@ -8255,7 +9037,7 @@ function renderMyReviews(){
       <div class="my-rev-top">
         <div style="flex:1;min-width:0">
           <div class="my-rev-name">${r.instructor_name}</div>
-          <div class="my-rev-sub">${r.course_code||'—'} · ${new Date(r.created_at).toLocaleDateString(ar?'ar-SA':'en-GB')}</div>
+          <div class="my-rev-sub">${r.course_code||'—'} · ${revDate(r.created_at)}</div>
         </div>
         <span>${starStr(r.rating)}</span>
       </div>
@@ -8449,11 +9231,11 @@ print:'🖨️ اطبع',clearAll:'🗑️ امسح الكل',crnBtn:'🔢 أر�
 gpaLabel:'المعدل التراكمي',countedHrs:'ساعات محسوبة',
 suggestTitle:'💡 المقترح للترم الجاي',planTitle:'الخطة الدراسية',
 uni:'الجامعة',major:'التخصص',login:'دخول',tabDocs:'👨‍🏫 دكاترة',myReviews:'تقييماتي',docsTitle:'تقييمات الدكاترة',uniTitle:'جامعتك وتخصصك',docPh:'ابحث عن دكتور...',
-guideLink:'📖 شوف الدليل بالصور',schedEmptyT:'جدولك فاضي',schedEmptyS:'روح لصفحة البحث واضغط ➕ على أي مادة',
+guideLink:'📖 شوف الدليل بالصور',schedEmptyT:'جدولك فاضي',schedEmptyS:'روح لصفحة البحث واضغط «+ أضف» على الشعبة اللي تبيها',
 initT:'ابدأ البحث',initS:'اختار السيمستر والكلية واضغط ابحث',
 loadT:'جاري البحث...',loadS:'يجيب البيانات من موقع الجامعة',
 emptyT:'ما في نتائج',emptyS:'جرب تغير الفلتر أو البحث',
-noClass:'ما في محاضرات ✓',lecture:'محاضرة',hrsUnit:'ساعة',courseUnit:'مادة',
+noClass:'ما في محاضرات ✓',lecture:'محاضرة',hrsUnit:'ساعة',courseUnit:'مادة',secUnit:'شعبة',
 syncOut:'سجّل دخول عشان تنحفظ خطتك وجدولك ويجونك من أي جهاز',
 syncIn:'محفوظ في حسابك',syncIn2:'— بيجيك من أي جهاز تسجل فيه',
 gpaHintEmpty:'حط درجة أي مادة خلصتها تحت — والمواد بدون درجة أو بتقدير P / TR / W ما تدخل الحساب',
@@ -8507,6 +9289,7 @@ clearedSched:'مسحت الجدول',markedAnyway:'سجّلتها كمكتملة
 errConn:'خطأ في الاتصال',errConnSub:'السيرفر قد يكون نايم — انتظر 30 ثانية وجرب مرة ثانية',
 crn:'CRN',sec:'شعبة',
 days:{U:'الأحد',M:'الاثنين',T:'الثلاثاء',W:'الأربعاء',R:'الخميس',F:'الجمعة',S:'السبت'},
+daysShort:{U:'أحد',M:'اثنين',T:'ثلاثاء',W:'أربعاء',R:'خميس',F:'جمعة',S:'سبت'},
 sem:{F1:'السنة الأولى — الترم الأول',F2:'السنة الأولى — الترم الثاني',
 S1:'السنة الثانية — الترم الأول',S2:'السنة الثانية — الترم الثاني',
 J1:'السنة الثالثة — الترم الأول',J2:'السنة الثالثة — الترم الثاني',
@@ -8620,11 +9403,11 @@ print:'🖨️ Print',clearAll:'🗑️ Clear all',crnBtn:'🔢 CRN numbers',
 gpaLabel:'Cumulative GPA',countedHrs:'Counted hours',
 suggestTitle:'💡 Suggested next term',planTitle:'Study Plan',
 uni:'University',major:'Major',login:'Sign in',tabDocs:'👨‍🏫 Faculty',myReviews:'My reviews',docsTitle:'Instructor reviews',uniTitle:'Your university & major',docPh:'Search for an instructor...',
-guideLink:'📖 Visual guide',schedEmptyT:'Your schedule is empty',schedEmptyS:'Go to Search and tap ➕ on any course',
+guideLink:'📖 Visual guide',schedEmptyT:'Your schedule is empty',schedEmptyS:'Go to Search and tap “+ Add” on the section you want',
 initT:'Start searching',initS:'Pick a semester and college, then tap Search',
 loadT:'Searching...',loadS:'Fetching data from the university site',
 emptyT:'No results',emptyS:'Try changing the filter or search',
-noClass:'No classes ✓',lecture:'class',hrsUnit:'hrs',courseUnit:'courses',
+noClass:'No classes ✓',lecture:'class',hrsUnit:'hrs',courseUnit:'courses',secUnit:'sections',
 syncOut:'Sign in to save your plan and schedule across devices',
 syncIn:'Saved to your account',syncIn2:'— available on any device you sign in from',
 gpaHintEmpty:'Add a grade to any completed course below — courses without a grade or marked P / TR / W are excluded',
@@ -8678,6 +9461,7 @@ clearedSched:'Schedule cleared',markedAnyway:'Marked complete although a prerequ
 errConn:'Connection error',errConnSub:'The server may be asleep — wait 30 seconds and try again',
 crn:'CRN',sec:'Sec',
 days:{U:'Sunday',M:'Monday',T:'Tuesday',W:'Wednesday',R:'Thursday',F:'Friday',S:'Saturday'},
+daysShort:{U:'Sun',M:'Mon',T:'Tue',W:'Wed',R:'Thu',F:'Fri',S:'Sat'},
 sem:{PP1:'Pre-Beginner Level',PP2:'Beginner Level',PP3:'Intermediate Level',PP4:'Advanced Level',F1:'Freshman — 1st Term',F2:'Freshman — 2nd Term',
 S1:'Sophomore — 1st Term',S2:'Sophomore — 2nd Term',
 J1:'Junior — 1st Term',J2:'Junior — 2nd Term',
@@ -8790,6 +9574,7 @@ function applyLang(){
   termHint();
   setPlanTitle();
   if(FINALS)renderFinals();
+  try{ moveTabInd(true) }catch(e){}           /* الاتجاه انقلب (عربي ⇄ إنجليزي) — الخط لمكانه */
 }
 
 function setStateBox(id,title,sub){
@@ -8827,15 +9612,19 @@ function reportPlan(){
 function markSem(id){
   const sem=PLAN.find(x=>x.id===id);
   if(!sem)return;
+  const before=semsDone();
   const allDone=sem.courses.every(c=>isDone(c.c));
+  const fresh=new Set();
   sem.courses.forEach(c=>{
     const i=completed.indexOf(c.c);
     if(allDone){ if(i>-1)completed.splice(i,1); }
-    else if(i===-1)completed.push(c.c);
+    else if(i===-1){ completed.push(c.c); fresh.add(c.c) }
   });
+  if(fresh.size)PLAN_FLASH=fresh;
   save('pmu_completed',completed);
   pushCompleted();
   planTouched();
+  planCelebrate(before);
 }
 
 function onPrepToggle(){
@@ -8965,13 +9754,12 @@ function renderGPA(){
   document.getElementById('gpaCount').textContent=n+' '+t('courseUnit');
 
   if(gpa===null){
-    el.innerHTML='—<small> / 4.00</small>';
+    cntIn(el,'—',2,' / 4.00');
     fill.style.width='0%';
     document.getElementById('gpaHint').textContent=t('gpaHintEmpty');
     return;
   }
-  const v=gpa.toFixed(2);
-  el.innerHTML=v+'<small> / 4.00</small>';
+  cntIn(el,gpa,2,' / 4.00');
   const pct=Math.min(100,gpa/4*100);
   fill.style.width=pct+'%';
   const color=gpa>=3.5?'var(--open)':gpa>=2.5?'var(--accent)':gpa>=2?'var(--warn)':'var(--close)';
@@ -9271,6 +10059,7 @@ async function pullCloud(){
     await loadMonitored();
     await loadReviews();
     renderSettings();
+    try{ renderTgBar() }catch(e){}     /* الملف وصل: الشريط يقول الصح على طول، لا بعد مؤقّت الأربع ثوانٍ */
     if(!load('pmu_seen_welcome',false)){
       save('pmu_seen_welcome',true);
       const nm=(PROFILE&&PROFILE.name?PROFILE.name:'').split(' ')[0];
@@ -9383,6 +10172,8 @@ function redrawTodayAfterAuth(){
   USER=session?session.user:null;
   AUTH_READY=true;
   setAuthUI();
+  /* الشريط أول ما نعرف الجلسة — كان ينتظر مؤقّت الأربع ثوانٍ فينزل فجأة ويدفّ الصفحة تحت */
+  try{ renderTgBar() }catch(e){}
   redrawTodayAfterAuth();
   aiProbe().catch(()=>{});
   /* زائر جا على ‎?plans=1‎ (رابط من المساعد · «عن جدولك»): كانت ما تفتح شي —
@@ -9411,6 +10202,27 @@ function redrawTodayAfterAuth(){
     if(defaultTab()!=='today')return;
     if(typeof switchTab==='function')switchTab('today');
   }catch(e){}
+})();
+
+/* ═══ الحركة: مستمعات مرة وحدة ═══
+   ‏iOS ما يطبّق :active (الضغطة) إلا لو فيه مستمع touchstart — مستمع فاضٍ يكفي.
+   وخط التبويب لمكانه أول ما ينرسم ومع كل تغيّر مقاس (تدوير الجوال).
+   وزر «؟» العائم يتنحّى وقت التمرير — على نفس طرف «أضف» و«راقب» فكان يغطيهم — ويرجع أول ما توقف */
+(function(){
+  try{ document.addEventListener('touchstart',function(){},{passive:true}) }catch(e){}
+  try{ requestAnimationFrame(()=>moveTabInd(true)) }catch(e){}
+  let rz=0;
+  window.addEventListener('resize',()=>{ clearTimeout(rz); rz=setTimeout(()=>{ try{ moveTabInd(true) }catch(e){} },120) });
+  const fab=document.querySelector('.guide-fab');
+  if(fab){
+    let y=window.scrollY||0, tm=0;
+    window.addEventListener('scroll',()=>{
+      const ny=window.scrollY||0;
+      if(Math.abs(ny-y)>4)fab.classList.add('away');
+      y=ny; clearTimeout(tm);
+      tm=setTimeout(()=>fab.classList.remove('away'),900);
+    },{passive:true});
+  }
 })();
 
 /* مفتاح المراقبة: من الرابط ?key=xxx أو محفوظ من قبل */

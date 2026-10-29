@@ -1604,7 +1604,7 @@ sections:[
 {ic:'🚀',name:'ابدأ من هنا',open:1,items:[
  {t:'اختر تخصصك',d:'من <b>⚙️ الإعدادات</b> اختر تخصصك — <b>٢٠ تخصص</b>، كل كليات الجامعة. الخطة والساعات والمتطلبات تتغيّر معك تلقائياً.'},
  {t:'علّم اللي خلصته',d:'في <b>📋 خطتي</b> اضغط المربّع جنب كل مادة درستها. المواد اللي متطلبها ناقص تظهر <b>مقفلة</b>، وتنفتح أول ما تعلّم متطلبها.'},
- {t:'ابحث وابنِ جدولك',d:'في <b>🔍 البحث</b> اختر الترم واضغط ابحث. الفلتر يقبل <b>كود المادة</b> أو <b>CRN</b> أو <b>اسم المادة</b> أو <b>اسم الدكتور</b>. اضغط <b>➕</b> على أي شعبة تضيفها.'}]},
+ {t:'ابحث وابنِ جدولك',d:'في <b>🔍 البحث</b> اختر الترم واضغط ابحث. الفلتر يقبل <b>كود المادة</b> أو <b>CRN</b> أو <b>اسم المادة</b> أو <b>اسم الدكتور</b>. اضغط المادة تنفتح شعبها، و<b>+ أضف</b> على الشعبة اللي تبيها.'}]},
 
 {ic:'☀️',name:'يومك',isNew:1,items:[
  {t:'وين أنت من يومك',isNew:1,d:'تبويب <b>اليوم</b> يرتّب محاضراتك بالترتيب: الجارية تتلوّن أخضر ومعها شريط يمشي، و<b>خط «الآن»</b> يتحرك بينها مع الساعة، واللي خلص يبهت لحاله.'},
@@ -1619,7 +1619,7 @@ sections:[
 {ic:'📅',name:'جدولك',items:[
  {t:'ثلاثة جداول تجرّب فيها',d:'<b>جدول ١ · ٢ · ٣</b> — جرّب توزيعات مختلفة قبل ما تقرر، وبدّل بينها بضغطة.'},
  {t:'التعارض ينبّهك',d:'لو أضفت شعبة تتعارض مع مادة عندك، الموقع يقول لك قبل ما تسجّل — لا بعدها.'},
- {t:'الشبكة واضغط أي مادة',isNew:1,d:'حوّل لـ<b>شبكة</b> تشوف أسبوعك كجدول، بثلاثة أحجام. والاسم مقطوع؟ اضغط المادة تطلع لك بطاقة فيها الاسم والقاعة والدكتور كاملة، وتختفي بأي لمسة.'},
+ {t:'الشبكة واضغط أي مادة',isNew:1,d:'حوّل لـ<b>شبكة</b> تشوف أسبوعك كجدول ملوّن، كل مادة بلونها، بثلاثة أحجام. اضغط أي مادة تطلع لك بطاقتها من تحت: الاسم والقاعة والدكتور كاملة، ومواعيدها وغيابك فيها.'},
  {t:'اطبع جدولك',d:'<b>🖨️ اطبع</b> يطلع ورقة واحدة منظّمة — شبكة أسبوعية ملوّنة تبيّن فراغاتك، ومعها اختباراتك النهائية.'},
  {t:'اختباراتك النهائية',d:'اضغط <b>اعرض</b> تحت «اختباراتك النهائية» — موعد وقاعة كل اختبار، وتنبيه لو صار اختبارين بنفس الوقت.'},
  {t:'مواعيد تهمك',d:'أقرب المواعيد بعدّاد أيام: التسجيل، بداية الدراسة، <b>آخر يوم انسحاب</b>، والاختبارات. القريبة تتلوّن تنبيهاً.'}]},
@@ -1648,7 +1648,7 @@ sections:[
 {ic:'🚀',name:'Start here',open:1,items:[
  {t:'Pick your major',d:'In <b>⚙️ Settings</b> choose your major — <b>20 programs</b>, every college. Your plan, credits and prerequisites switch automatically.'},
  {t:'Mark what you finished',d:'In <b>📋 My Plan</b> tick the box next to each course you passed. Courses missing a prerequisite show as <b>locked</b> and open the moment you tick it.'},
- {t:'Search and build',d:'In <b>🔍 Search</b> pick the term and hit search. The filter accepts a <b>course code</b>, <b>CRN</b>, <b>course title</b> or <b>instructor name</b>. Tap <b>➕</b> on any section to add it.'}]},
+ {t:'Search and build',d:'In <b>🔍 Search</b> pick the term and hit search. The filter accepts a <b>course code</b>, <b>CRN</b>, <b>course title</b> or <b>instructor name</b>. Tap a course to open its sections, then <b>+ Add</b> on the one you want.'}]},
 
 {ic:'☀️',name:'Your day',isNew:1,items:[
  {t:'Where you are in your day',isNew:1,d:'The <b>Today</b> tab lays out your lectures in order: the running one turns green with a bar that moves, a <b>“now” line</b> travels between them with the clock, and finished ones fade on their own.'},
@@ -1663,7 +1663,7 @@ sections:[
 {ic:'📅',name:'Your schedule',items:[
  {t:'Three schedules to try',d:'<b>Schedule 1 · 2 · 3</b> — try different arrangements before you commit, and switch with one tap.'},
  {t:'Clashes warn you',d:'If a section you add clashes with a course you already have, you are told before you register — not after.'},
- {t:'Grid view, and tap any course',isNew:1,d:'Switch to <b>Grid</b> to see your week as a timetable, in three sizes. Name cut off? Tap the course and a card shows the full name, room and instructor — it disappears at any touch.'},
+ {t:'Grid view, and tap any course',isNew:1,d:'Switch to <b>Grid</b> to see your week as a color-coded timetable, each course in its own color, in three sizes. Tap any course and its card slides up: full name, room and instructor, plus its dates and your absences.'},
  {t:'Print your schedule',d:'<b>🖨️ Print</b> gives you one clean page — a colour-coded weekly grid showing your gaps, with your final exams underneath.'},
  {t:'Your final exams',d:'Tap <b>Show</b> under “Your final exams” — the date and room for every exam, and a warning if two collide.'},
  {t:'Dates that matter',d:'Upcoming dates with a countdown: registration, first day of class, <b>the withdrawal deadline</b>, and finals. Near dates turn amber.'}]},

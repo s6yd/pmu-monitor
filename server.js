@@ -3129,11 +3129,15 @@ function parseHTML(html) {
 
 /* شكل الجدول: عمود أُضيف في النص يزيح الحالة — فتنقرأ «M-CORE - G034» حالةً، وتنكتب في
    last_status، والشعبة اللي تفتح ما تنشاف. نقيس الشكل قبل ما نصدّق الجدول: الـCRN أرقام
-   (٩٠٪)، والحالة OPEN/CLOSED لنصف الصفوف على الأقل (حالة ثالثة ما نعرفها ما تطيّحه) */
+   (٩٠٪)، والحالة OPEN/CLOSE لنصف الصفوف على الأقل (حالة ثالثة ما نعرفها ما تطيّحه).
+   **الجامعة تكتب CLOSE لا CLOSED** (الدليل نفسه: «OPEN مفتوحة، CLOSE مسكّرة»، والجرس في الصفحة
+   على CLOSE من أول يوم): كانت تعدّ CLOSED وحدها، فجدول أغلبه مقفل — وقت التسجيل — يطلع «شكله
+   تغيّر»: المراقبة توقف والبحث يفشل. وCLOSED تنقبل كذلك (ما شفناها منهم — ما تطيّح الجدول) */
+const PMU_STATUSES = new Set(['OPEN', 'CLOSE', 'CLOSED']);
 function pmuShape(rows) {
   const n = rows.length;
   const crn = rows.filter(r => /^\d{4,6}$/.test(r.crn)).length;
-  const st = rows.filter(r => r.status === 'OPEN' || r.status === 'CLOSED').length;
+  const st = rows.filter(r => PMU_STATUSES.has(r.status)).length;
   return { ok: n > 0 && crn >= n * 0.9 && st >= n * 0.5, n, crn, st };
 }
 /* جدول ترم كامل من الجامعة ⇒ صفوف موثوقة أو خطأ بنوعه */
@@ -3186,7 +3190,7 @@ function bannerRows(list) {
       courseTitle: String(s.courseTitle || '').replace(/&amp;/g, '&').trim(),
       section: String(s.sequenceNumber || '').trim(),
       instructor: String(inst).replace(/&amp;/g, '&').trim(),
-      status: open ? 'OPEN' : 'CLOSED'
+      status: open ? 'OPEN' : 'CLOSE'               /* بصيغة الجدول (CLOSE) — وإلا كل تبديل للمصدر «تغيّرت حالتها» */
     };
     const meets = (Array.isArray(s.meetingsFaculty) ? s.meetingsFaculty : [])
       .map(m => m && m.meetingTime).filter(Boolean);
@@ -3263,7 +3267,7 @@ async function fetchBannerTerm(term, opts) {
 
 const pmuWhy = e => e.pmu === 'format'
   ? (e.shape ? `وصل جدول ${e.shape.n} صف، لكن ${Math.round(100 * e.shape.crn / e.shape.n)}٪ منها رقم الشعبة ` +
-               `أرقام و${Math.round(100 * e.shape.st / e.shape.n)}٪ حالتها OPEN/CLOSED — الأعمدة تغيّرت`
+               `أرقام و${Math.round(100 * e.shape.st / e.shape.n)}٪ حالتها OPEN/CLOSE — الأعمدة تغيّرت`
      : `${escP(e.message)}${e.title ? ` — عنوان الصفحة: «${escP(e.title)}»` : ''}`)
   : escP(e.message);
 
@@ -3329,6 +3333,9 @@ const HEALTHCHECK_URL = (() => {
   return /^https:\/\/[^\s"'<>]+$/.test(u) ? u.replace(/\/+$/, '') : '';
 })();
 let LAST_GOOD_CYCLE = Date.now(), HC_LAST = 0;   /* الإقلاع مهلة: ما نقول «فشل» قبل ربع ساعة منه */
+/* آخر مرة قرأت الدورة حالة الشعب فعلاً (جدول الجامعة أو احتياط بانر) — بطاقة «مراقبتك» تقول للطالب
+   «آخر فحص قبل X د». غير LAST_GOOD_CYCLE: ذاك يبدأ بوقت الإقلاع مهلةً، وهذا صفر لين أول فحص حقيقي */
+let LAST_CHECK = 0;
 const HC_FAIL_AFTER = 15 * 60 * 1000;
 function hcVerdict() {
   if (!monitorState().active) return 'ok';        /* خارج الوقت أو موقوفة: السيرفر حي وبس */
@@ -3666,7 +3673,7 @@ async function runMonitorCycle() {
       ? Math.min(CYCLE_RETRIES + 1, CYCLE_RETRY_MAX + 1)
       : 0;
     CYCLE_DOWN = gotFeed ? 0 : CYCLE_DOWN + 1;
-    if (gotFeed) LAST_GOOD_CYCLE = Date.now();
+    if (gotFeed) LAST_GOOD_CYCLE = LAST_CHECK = Date.now();
 
     /* مصدر الجدول: موقع الجدول أو احتياط بانر. رجوع الجدول بعد بانر = دورة تسجّل بلا إشعار (settle):
        الجدول ممكن يتأخر عن بانر، فـ«مفتوحة» قديمة منه تطلع «فتحت» كاذبة. والذهاب لبانر عادي — بانر
@@ -4661,8 +4668,8 @@ async function handleTelegramUpdate(update) {
       `1️⃣ افتح jadwalik.com\n` +
       `2️⃣ روح لتبويب 🔍 <b>البحث</b>\n` +
       `3️⃣ اكتب كود المادة أو رقم الشعبة أو اسم الدكتور\n` +
-      `4️⃣ اضغط 🔕 جنب الشعبة المقفلة — تصير 🔔\n\n` +
-      `📡 وتبي كل شعب المادة؟ اضغط 📡 على أي شعبة منها.\n\n` +
+      `4️⃣ اضغط على المادة تنفتح شعبها، واضغط «🔕 راقب» جنب الشعبة المقفلة — يصير «🔔 تراقبها»\n\n` +
+      `📡 وتبي كل شعب المادة؟ اضغط «📡 راقب كل الشعب» تحت شعبها.\n\n` +
       `نفحص الشعب طول فترة التسجيل، والإشعار يوصلك على هذي المحادثة.\n\n` +
       `<code>/status</code> — تشوف اللي تراقبه الحين`);
   }
@@ -8568,7 +8575,7 @@ async function aiSchedule(ctx, slot) {
    محاضرات بكرة» — فيظن إن الموقع غلطان (ملاحظة محمد). */
 const AI_SCHED_EMPTY = 'جدوله في موقعنا فاضي — ما أضاف مواده بعد، والجدول يعبّيه الطالب '
   + 'بنفسه (ما يجينا من الجامعة). قل له إن جوابك من الجدول اللي يعبّيه في jadwalik.com، '
-  + 'ويضيف مواده من تبويب 🔍 البحث بزر ➕ — ولا تقل «ما عندك محاضرات» كأنها حقيقة.';
+  + 'ويضيف مواده من تبويب 🔍 البحث بزر «+ أضف» — ولا تقل «ما عندك محاضرات» كأنها حقيقة.';
 const AI_SLOT_EMPTY = 'هذا الجدول فاضي، وعنده مواد في جدول ثانٍ من جداوله الثلاثة في '
   + 'الموقع — قل له يختار جدوله في jadwalik.com أو يسمّي رقمه.';
 const AI_PLAN_EMPTY = 'ما علّم ولا مادة منجزة في «خطتي» على موقعنا، فالحساب يفترض إنه '
@@ -12434,7 +12441,7 @@ const server = http.createServer(async (req, res) => {
   if (parsed.pathname === '/api/monitor-status') {
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Cache-Control', 'public, max-age=120');
-    const st = monitorState();
+    const st = monitorState(), nowMs = Date.now();
     res.writeHead(200);
     res.end(JSON.stringify({
       active: st.active, reason: st.reason,
@@ -12447,6 +12454,13 @@ const server = http.createServer(async (req, res) => {
       /* ترم التسجيل الجاي — «المقترح للترم الجاي» في «خطتي» يُحسب له، نفس «الترم الجاي»
          عند المساعد (قرار محمد: الترم الحالي بعد ما ينقفل تسجيله ما يُخطَّط له) */
       nextRegTerm: nextRegTerm(),
+      /* بطاقة «مراقبتك» في البحث: آخر فحص حقيقي للشعب · الفحص الجاي لو المراقبة تدور الحين · الدورة
+         شغّالة الحين؟ أوقات مطلقة — الصفحة تعدّ منها، فالرد المخزّن دقيقتين ما يخرّب العدّ. و«now» تصحّح
+         ساعة الجوال (البطاقة تسأل بلا تخزين) */
+      lastCheck: LAST_CHECK ? new Date(LAST_CHECK).toISOString() : null,
+      nextCheck: st.active && NEXT_CYCLE_AT > nowMs ? new Date(NEXT_CYCLE_AT).toISOString() : null,
+      checking: !!(st.active && cycleRunning),
+      now: new Date(nowMs).toISOString(),
       /* ما تحتاجه ورقة الباقات وحدود المجاني. الشراء لتسجيل قدّام الطالب:
          ترم النافذة المفتوحة، وبعد ما تنقفل الترم الجاي (payTermNow) */
       plans: {
@@ -12896,11 +12910,14 @@ server.listen(PORT, () => {
   const st = monitorState();
   console.log(`env=${SITE_ENV} | state=${STATE_KEY} | freeBeta=${FREE_BETA} | ترم المزامنة=${activeTerm()}` +
               ` | monitor: ${st.reason} — ${st.ar}`);
-  /* أول دورة بعد 20-60 ثانية عشوائياً، ثم جدولة ذكية */
+  /* أول دورة بعد 20-60 ثانية عشوائياً، ثم جدولة ذكية. وموعدها معروف من الحين — «الفحص الجاي» في
+     بطاقة الطالب واللوحة كان «—» أول دقيقة بعد كل نشر */
+  const firstIn = 20000 + Math.random() * 40000;
+  NEXT_CYCLE_AT = Date.now() + firstIn;
   setTimeout(async () => {
     if (monitorState().active) {
       try { await runMonitorCycle(); } catch (e) { console.log('cycle err', e.message); }
     }
     scheduleNextCycle();
-  }, 20000 + Math.random() * 40000);
+  }, firstIn);
 });
