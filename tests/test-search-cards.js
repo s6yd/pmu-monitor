@@ -417,6 +417,17 @@ const SUPA = 'window.supabase={createClient:()=>({auth:{getSession:async()=>({da
     const G = fs.readFileSync(SHARED, 'utf8');
     ok(/اضغط المادة تنفتح شعبها، و<b>\+ أضف<\/b>/.test(G) && btns.includes('+ أضف') && !/اضغط <b>➕<\/b> على أي شعبة/.test(G),
       `[${theme}] **الدليل داخل الموقع: «اضغط المادة تنفتح شعبها، و+ أضف»** (كان «اضغط ➕» والزر ما عاد ➕)`);
+    /* «دليل الصور» (/guide — نص محمد، عدّلناه بموافقته ٢٩ أكتوبر): الخطوتان ١١ و١٦ بأسماء الأزرار في الصفحة */
+    const PG = fs.readFileSync(path.join(ROOT, 'jadwalik-guide.html'), 'utf8');
+    const step = n => { const i = PG.indexOf(`<span class="num">${n}</span>`); return i < 0 ? '' : PG.slice(i, PG.indexOf('<div class="step">', i)) };
+    ok(/اضغط «\+ أضف» على الشعبة/.test(step(11)) && btns.includes('+ أضف') && !/➕/.test(step(11)),
+      `[${theme}] **دليل الصور، الخطوة ١١: «اضغط «+ أضف» على الشعبة»** (كان «اضغط ➕») — ${step(11).replace(/<img[^>]*>/g, '').slice(0, 90)}`);
+    ok(/اضغط <b>🔕 راقب<\/b> على الشعبة المغلقة/.test(step(16)) && btns.includes('🔕 راقب') && !/اضغط 🔔/.test(step(16)),
+      `[${theme}] **والخطوة ١٦: «اضغط 🔕 راقب على الشعبة المغلقة»** (كان «اضغط 🔔» والزر «🔕 راقب»)`);
+    /* و«المواد المراقبة» في الإعدادات بلا مراقبات: تقول وين يضغط */
+    const monEmpty = await run(pg, () => { renderSettings(); const e = document.getElementById('monList'); return e ? e.textContent.trim() : '' });
+    ok(/اضغط «🔕 راقب» على أي شعبة مسكّرة/.test(monEmpty) && btns.includes('🔕 راقب'),
+      `[${theme}] **الإعدادات بلا مراقبات: «اضغط «🔕 راقب» على أي شعبة مسكّرة»** (كان «اضغط 🔔») — ${monEmpty}`);
 
     /* ── الإنجليزي ── */
     await run(pg, () => toggleLang());

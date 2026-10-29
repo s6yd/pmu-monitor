@@ -8017,8 +8017,8 @@ function renderTgAndMon(ar){
   const ml=document.getElementById('monList');
   if(!monitored.length){
     ml.innerHTML=`<div style="font-size:12.5px;color:var(--text3);padding:8px 0;line-height:1.7">${
-      ar?'ما تراقب أي مادة. روح للبحث واضغط 🔔 على أي مادة مسكّرة.':
-          'Not watching any course. Go to Search and tap 🔔 on a closed course.'}</div>`;
+      ar?'ما تراقب أي مادة. روح للبحث واضغط «🔕 راقب» على أي شعبة مسكّرة.':
+          'Not watching any course. Go to Search and tap «🔕 Watch» on a closed section.'}</div>`;
   }else{
     const paused=pausedMonitorIds();
     ml.innerHTML=monitored.map(m=>{
