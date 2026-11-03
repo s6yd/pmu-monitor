@@ -492,24 +492,40 @@ async function ensureInviteCode(uid, current) {
 /* حساب الطالب: اشتراكه ورصيده ودعوته — لبطاقة «اشتراكي» */
 async function meAccount(uid) {
   const id = encodeURIComponent(uid);
-  const [prof, led, refs] = await Promise.all([
+  const [prof, led, refs, rreq] = await Promise.all([
     sb('GET', 'profiles', {
       query: `?id=eq.${id}&select=id,is_pro,subscription_expires_at,pushover_until,invite_code` }),
     sb('GET', 'credit_ledger', {
-      query: `?user_id=eq.${id}&select=amount_halalas,expires_at,created_at` }).catch(() => []),
-    sb('GET', 'referrals', { query: `?referrer_id=eq.${id}&select=id` }).catch(() => [])
+      query: `?user_id=eq.${id}&select=amount_halalas,expires_at,created_at,ref` }).catch(() => []),
+    sb('GET', 'referrals', { query: `?referrer_id=eq.${id}&select=id` }).catch(() => []),
+    /* آخر طلب رصيد تقييم — الصفحة تعرض قراره مرة (rrNotice): رسالته على تلقرام وحده،
+       فالطالب اللي مو رابط تيليغرام ما كان يدري إنه انقبل ونزل له رصيد */
+    sb('GET', 'review_requests', {
+      query: `?user_id=eq.${id}&select=id,status,admin_note,decided_at&order=created_at.desc&limit=1` })
+      .catch(() => [])
   ]);
   const p = Array.isArray(prof) && prof[0];
   if (!p) return { ok: false, error: 'الحساب غير موجود' };
   const code = await ensureInviteCode(uid, p.invite_code);
-  const bal = creditBalance(Array.isArray(led) ? led : []);
+  const L = Array.isArray(led) ? led : [];
+  const bal = creditBalance(L);
+  const rq = Array.isArray(rreq) && rreq[0];
+  /* آخر طلب معلّق = أرسل بعد آخر قرار، فما نعيده عليه */
+  const reviewDecision = rq && rq.decided_at && (rq.status === 'approved' || rq.status === 'rejected') ? {
+    id: rq.id, status: rq.status, at: rq.decided_at,
+    note: rq.status === 'rejected' ? String(rq.admin_note || '') : '',
+    /* المبلغ من حركة الرصيد نفسها لا من السعر الحالي — اللوحة ممكن غيّرته بعدها */
+    halalas: rq.status === 'approved'
+      ? Number((L.find(x => x.ref === `review_request:${rq.id}`) || {}).amount_halalas) || 0 : 0
+  } : null;
   return {
     ok: true,
     active: isActive(p),
     expires: p.subscription_expires_at || null,
     pushoverUntil: p.pushover_until || null,
     credit: { available: bal.available, nextExpiry: bal.nextExpiry },
-    invite: { code, paidFriends: Array.isArray(refs) ? refs.length : 0 }
+    invite: { code, paidFriends: Array.isArray(refs) ? refs.length : 0 },
+    reviewDecision
   };
 }
 
@@ -1926,7 +1942,7 @@ async function adminReviewRequests(status) {
   if (!uids.length) return { ok: true, requests: [] };
   const inList = uids.map(u => `"${u}"`).join(',');
   const [profs, revs] = await Promise.all([
-    sb('GET', 'profiles', { query: `?id=in.(${inList})&select=id,name,email` }),
+    sb('GET', 'profiles', { query: `?id=in.(${inList})&select=id,name,email,telegram_chat_id` }),
     sbAll('instructor_reviews', { query: `?user_id=in.(${inList})&select=*` })
   ]);
   const P = {};
@@ -1939,6 +1955,8 @@ async function adminReviewRequests(status) {
       id: r.id, userId: r.user_id, term: r.term, status: r.status, note: r.admin_note || null,
       createdAt: r.created_at, decidedAt: r.decided_at,
       name: (P[r.user_id] || {}).name || '—', email: (P[r.user_id] || {}).email || '—',
+      /* مربوط بتلقرام؟ — قرارك يوصله رسالة أو يشوفه في الموقع بس (رقم المحادثة ما يطلع للوحة) */
+      tg: !!(P[r.user_id] || {}).telegram_chat_id,
       /* تقييم حذفه صاحبه بعد الإرسال يظهر «محذوف» — سبب واضح للرفض */
       reviews: (r.instructors || []).map(n => {
         const v = (byUser[r.user_id] || []).find(x => x.instructor_name === n);
@@ -1949,6 +1967,16 @@ async function adminReviewRequests(status) {
       })
     }))
   };
+}
+
+/* القرار يوصل الطالب على تلقرام — القناة الوحيدة. وكان يُرسل بلا انتظار ولا كلمة للوحة،
+   فتقول «انقبل ✅» و«انرفض — وصله السبب» والطالب مو رابط تيليغرام أصلاً (لقاها محمد،
+   ٣ نوفمبر ٢٠٢٦: «قبلته بس ما اشوف راحت رسالة للطالب»). الحين ننتظر رد تيليغرام ونقول
+   للوحة: وصل · مو مربوط · ما وصل. والطالب يشوف القرار في الموقع مرة (reviewDecision في meAccount) */
+async function rrTell(chat, text) {
+  if (!chat) return { notified: false, notifyWhy: 'no-telegram' };
+  const r = await sendMsg(chat, text).catch(() => null);
+  return r && r.ok ? { notified: true } : { notified: false, notifyWhy: 'failed' };
 }
 
 async function adminDecideReviewRequest(id, decision, note) {
@@ -1972,9 +2000,9 @@ async function adminDecideReviewRequest(id, decision, note) {
       prefer: 'return=representation'
     }).catch(e => ({ message: e.message }));
     if (!Array.isArray(r) || !r.length) return { ok: false, error: (r && r.message) || 'انحسم من قبل' };
-    if (chat) sendMsg(chat, `⭐ <b>طلب رصيد التقييم ما انقبل</b>\n\n${esc(why)}\n\n` +
-                            `عدّل تقييماتك من «تقييماتي» وأرسلها من جديد.`).catch(() => {});
-    return { ok: true, status: 'rejected' };
+    return Object.assign({ ok: true, status: 'rejected' },
+      await rrTell(chat, `⭐ <b>طلب رصيد التقييم ما انقبل</b>\n\n${esc(why)}\n\n` +
+                         `عدّل تقييماتك من «تقييماتي» وأرسلها من جديد.`));
   }
   if (decision !== 'approve') return { ok: false, error: 'قرار غير معروف' };
 
@@ -2015,10 +2043,9 @@ async function adminDecideReviewRequest(id, decision, note) {
                warning: 'انقبل، لكن الرصيد ما انضاف — أضفه يدوياً من درج الطالب: ' + ((cr && cr.message) || '') };
     await sb('PATCH', 'review_requests', { query: `?id=eq.${rid}`, body: { credit_id: cr[0].id } }).catch(() => {});
   }
-  if (chat) sendMsg(chat, `⭐ <b>انقبلت تقييماتك — شكراً!</b>\n\n` +
-    (amt > 0 ? `نزل لك ${amt / 100} ريال رصيد، ينخصم تلقائياً من اشتراكك الجاي.` : 'شكراً على مساهمتك.'))
-    .catch(() => {});
-  return { ok: true, status: 'approved' };
+  return Object.assign({ ok: true, status: 'approved', credit: amt > 0 ? amt : 0 },
+    await rrTell(chat, `⭐ <b>انقبلت تقييماتك — شكراً!</b>\n\n` +
+      (amt > 0 ? `نزل لك ${amt / 100} ريال رصيد، ينخصم تلقائياً من اشتراكك الجاي.` : 'شكراً على مساهمتك.')));
 }
 
 /* ============ سحبة على صفحات ============

@@ -1,5 +1,7 @@
 /* رصيد تقييم الدكاترة — اختبار عبر الملفات الثلاثة.
-   node tests/test-review-credit.js [server.js] [pmu-schedule.html] [admin.html] */
+   node tests/test-review-credit.js [server.js] [pmu-schedule.html] [admin.html]
+   والقرار يوصل الطالب: على تلقرام لو مربوط، وفي الموقع مرة لو مو مربوط — واللوحة تقول
+   أي واحد صار (لقاها محمد، ٣ نوفمبر ٢٠٢٦: «قبلته بس ما اشوف راحت رسالة للطالب») */
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
@@ -29,6 +31,7 @@ const DB = {
   app_state: [], app_events: [], monitored_courses: []
 };
 const TG = [];
+const TG_FAIL = new Set();          /* محادثات يرفض تيليغرام رسائلها (٥٠٠) */
 
 function supabase(method, urlPath, body, prefer) {
   const [p, raw = ''] = urlPath.split('?');
@@ -92,7 +95,9 @@ https.request = function (opts, cb) {
         const t = String((opts.headers && opts.headers.Authorization) || '').replace('Bearer ', '');
         if (TOK[t]) o = JSON.stringify({ id: TOK[t] }); else { code = 401; o = '{}' }
       } else if (host === 'api.telegram.org') {
-        TG.push(JSON.parse(chunks.join('') || '{}')); o = JSON.stringify({ ok: true, result: {} });
+        const m = JSON.parse(chunks.join('') || '{}'); TG.push(m);
+        o = TG_FAIL.has(String(m.chat_id)) ? JSON.stringify({ ok: false, error_code: 500, description: 'Internal Server Error' })
+                                           : JSON.stringify({ ok: true, result: {} });
       } else if (!host.includes('pmu.edu.sa'))
         o = JSON.stringify(supabase(opts.method, opts.path, chunks.join(''),
           (opts.headers && (opts.headers.Prefer || opts.headers.prefer)) || ''));
@@ -161,12 +166,15 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   let q = await call('/api/admin/review-requests', 'GET', { admin: true });
   ok(q.requests && q.requests.length === 1 && q.requests[0].reviews.length === 5, 'اللوحة: الطلب بتقييماته الخمسة');
   ok(q.requests[0].reviews[0].comment === 'تعليق A' && q.requests[0].name === 'سالم', 'بالتعليق واسم الطالب');
+  ok(q.requests[0].tg === true, '**والطابور يقول إنه مربوط بتلقرام** (قرارك يوصله رسالة)');
+  ok(!JSON.stringify(q).includes('801'), 'ورقم محادثته ما يطلع للوحة');
 
   r = await call('/api/admin/review-decide', 'POST', { admin: true, body: { id: req.id, decision: 'reject', note: '' } });
   ok(r.ok === false && /إلزامي/.test(r.error || ''), 'رفض بلا سبب: ممنوع');
   r = await call('/api/admin/review-decide', 'POST', { admin: true,
     body: { id: req.id, decision: 'reject', note: 'التعليقات قصيرة <b>جداً</b>' } });
   ok(r.ok === true, 'رفض بسبب: تمّ');
+  ok(r.notified === true, '**واللوحة تعرف إن السبب وصله على تلقرام** — ' + JSON.stringify(r));
   await wait(100);
   const rejMsg = tgTo('801').find(t => /ما انقبل/.test(t)) || '';
   ok(/قصيرة/.test(rejMsg) && /&lt;b&gt;/.test(rejMsg), 'السبب وصل الطالب — والوسوم فيه مهرّبة');
@@ -179,6 +187,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   const req2 = DB.review_requests.find(x => x.user_id === 'u1' && x.status === 'pending');
   r = await call('/api/admin/review-decide', 'POST', { admin: true, body: { id: req2.id, decision: 'approve' } });
   ok(r.ok === true && !r.warning, 'قبول: تمّ بلا تحذير — ' + JSON.stringify(r));
+  ok(r.notified === true && r.credit === 500, '**واللوحة تعرف إن رسالة القبول وصلته ونزل له ٥ ريال** — ' + JSON.stringify(r));
   const pairs = DB.review_credit_pairs.filter(x => x.user_id === 'u1');
   ok(pairs.length === 5, 'خمسة دكاترة انحسبوا للأبد');
   const cr = DB.credit_ledger.find(x => x.user_id === 'u1');
@@ -213,6 +222,47 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   ok(r.ok === false && /انحسبوا/.test(r.error || ''), 'دكتور محتسب من قبل: القبول يُرفض بالسبب');
   ok(DB.review_requests.find(x => x.id === 501).status === 'pending', 'والطلب رجع معلّقاً — ما انقبل نصف قبول');
   ok(!DB.credit_ledger.some(x => x.user_id === 'u2'), 'وما نزل رصيد');
+
+  /* ═══ القرار ما وصل الطالب — لقاها محمد (٣ نوفمبر ٢٠٢٦): «قبلته بس ما اشوف راحت رسالة» ═══
+     رسالة القرار على تلقرام وحده، وكانت تنرسل بلا انتظار: الطالب مو مربوط ⇒ ولا رسالة،
+     واللوحة تقول «انقبل ✅» / «انرفض — وصله السبب» كأنها وصلت */
+  /* ١) تيليغرام رفض الرسالة: اللوحة تقول ما وصلت */
+  TG_FAIL.add('802');
+  r = await call('/api/admin/review-decide', 'POST', { admin: true,
+    body: { id: 501, decision: 'reject', note: 'Dr Z انحسب لك من قبل' } });
+  TG_FAIL.delete('802');
+  ok(r.ok === true && r.notified === false && r.notifyWhy === 'failed',
+     '**تيليغرام رفض رسالة الرفض: اللوحة تقول ما وصلت** — ' + JSON.stringify(r));
+  let acc = await call('/api/me/account', 'GET', { tok: 'tok-u2-bbbbbbbbbbbbbbbbbbbb' });
+  ok(acc.reviewDecision && acc.reviewDecision.status === 'rejected' && /انحسب لك/.test(acc.reviewDecision.note) &&
+     acc.reviewDecision.id === 501, '**والقرار في حسابه بالموقع بسببه** — ' + JSON.stringify(acc.reviewDecision));
+
+  /* ٢) طالب مو رابط تيليغرام */
+  const U3 = 'tok-u3-cccccccccccccccccccc';
+  TOK[U3] = 'u3';
+  DB.profiles.push({ id: 'u3', name: 'فهد', email: 'f@x', telegram_chat_id: null });
+  ['G', 'H', 'I', 'J', 'K'].forEach((n, i) => DB.instructor_reviews.push({ id: 300 + i, user_id: 'u3',
+    instructor_name: 'Dr ' + n, rating: 5, course_code: 'MEEN 34' + i, comment: 'تعليق ' + n, hidden: false,
+    created_at: `2026-0${i + 1}-02T10:00:00+00:00` }));
+  r = await call('/api/me/reviews-credit', 'POST', { tok: U3 });
+  ok(r.ok === true, 'الطالب اللي مو مربوط أرسل طلبه');
+  acc = await call('/api/me/account', 'GET', { tok: U3 });
+  ok(acc.ok === true && acc.reviewDecision === null, 'قيد المراجعة: ولا قرار في حسابه — ' + JSON.stringify(acc.reviewDecision));
+  q = await call('/api/admin/review-requests', 'GET', { admin: true });
+  const q3 = (q.requests || []).find(x => x.userId === 'u3');
+  ok(q3 && q3.tg === false, '**اللوحة تعرف قبل ما تقرر إنه مو رابط تيليغرام** — ' + JSON.stringify(q3 && q3.tg));
+  const tgBefore = TG.length;
+  r = await call('/api/admin/review-decide', 'POST', { admin: true, body: { id: q3 && q3.id, decision: 'approve' } });
+  ok(r.ok === true && r.status === 'approved' && r.notified === false && r.notifyWhy === 'no-telegram',
+     '**قبلته وهو مو مربوط: اللوحة تقول ما وصلته رسالة** — ' + JSON.stringify(r));
+  ok(TG.length === tgBefore, 'وما حاولنا نرسل لمحادثة ما لها وجود');
+  ok(DB.credit_ledger.some(x => x.user_id === 'u3' && x.amount_halalas === 500 && x.reason === 'reviews'),
+     'والرصيد نزل كالعادة');
+  acc = await call('/api/me/account', 'GET', { tok: U3 });
+  ok(acc.reviewDecision && acc.reviewDecision.status === 'approved' && acc.reviewDecision.halalas === 500 &&
+     acc.reviewDecision.id === (q3 && q3.id) && acc.reviewDecision.at,
+     '**وحسابه في الموقع فيه القبول ومبلغه — الصفحة تقوله له** — ' + JSON.stringify(acc.reviewDecision));
+  ok(acc.credit && acc.credit.available === 500, 'ورصيده في الحساب ٥ ريال — ' + JSON.stringify(acc.credit));
 
   /* ═══ الصفحة ═══ */
   {
@@ -354,10 +404,139 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     await browser.close(); srv.close();
   }
 
+  /* ═══ الصفحة: القرار يبان للطالب في الموقع مرة — والطالب مسجّل ومو رابط تيليغرام ═══
+     القرار يجي من /api/me/account (الصفحة تطلبه أصلاً أول ما تفتح) — بلا طلب زيادة */
+  {
+    const { chromium } = require('playwright');
+    let DEC = null, accountCalls = 0;
+    const srv = http.createServer((q2, res) => {
+      const u = q2.url.split('?')[0];
+      if (u === '/') { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); return res.end(fs.readFileSync(PAGE)) }
+      if (u === '/plans.js') {
+        res.writeHead(200, { 'Content-Type': 'application/javascript' });
+        return res.end(fs.readFileSync(path.join(__dirname, '..', 'shared', 'plans.js')));
+      }
+      if (u.endsWith('.js')) { res.writeHead(404); return res.end('') }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      if (u === '/api/me/account') { accountCalls++;
+        return res.end(JSON.stringify({ ok: true, active: false, credit: { available: 500, nextExpiry: null },
+          invite: { code: 'MHD7K2', paidFriends: 0 }, reviewDecision: DEC })) }
+      if (u === '/api/monitor-status') return res.end(JSON.stringify({ freeBeta: false, plans: {} }));
+      if (u.startsWith('/api/me/')) return res.end('{"ok":false}');
+      res.end('{"courses":[]}');
+    });
+    await new Promise(z => srv.listen(0, z));
+    const BASE = `http://127.0.0.1:${srv.address().port}/`;
+    /* مسجّل وملفه بلا telegram_chat_id — مثل الطالب اللي قبلت طلبه */
+    const SUPA_USER = `
+window.__ROW={id:'u3',email:'f@x.com',name:'Student',major:'MEEN',plan_ver:'new',prep:false,telegram_chat_id:null};
+function q(t){ const o={
+  select(){return o}, eq(){return o}, order(){return o}, limit(){return o}, in(){return o}, or(){return o},
+  gte(){return o}, lte(){return o}, neq(){return o}, is(){return o},
+  single(){ return Promise.resolve({data:t==='profiles'?window.__ROW:null,error:null}) },
+  update(){ return {eq:async()=>({data:[],error:null})} },
+  insert(){ return {select:async()=>({data:[],error:null})} },
+  upsert(){ return Promise.resolve({data:[],error:null}) },
+  delete(){ return {eq:async()=>({data:[],error:null}),in:async()=>({data:[],error:null})} },
+  then(f,r){ return Promise.resolve({data:t==='profiles'?[window.__ROW]:[],error:null}).then(f,r) }
+}; return o }
+window.supabase={createClient:()=>({
+  auth:{ getSession:async()=>({data:{session:{user:{id:'u3',email:'f@x.com'},access_token:'tok'}}}),
+         onAuthStateChange:()=>({data:{subscription:{unsubscribe(){}}}}), signOut:async()=>({}) },
+  from:t=>q(t), channel:()=>({on(){return this},subscribe(){return this}}),
+  storage:{from:()=>({list:async()=>({data:[],error:null})})}
+})};`;
+    const browser = await chromium.launch();
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const p = await ctx.newPage();
+    const errs = [];
+    p.on('pageerror', e => errs.push(String(e).slice(0, 160)));
+    await p.route('**/fonts.googleapis.com/**', z => z.fulfill({ status: 200, contentType: 'text/css', body: '' }));
+    await p.route('**/cdn.jsdelivr.net/**', z => z.fulfill({ status: 200, contentType: 'application/javascript', body: SUPA_USER }));
+    await p.addInitScript(() => {
+      try { localStorage.setItem('pmu_seen_guide', 'true'); localStorage.setItem('pmu_seen_welcome', 'true') } catch (e) {}
+      /* كل رسالة طلعت للطالب (نصها كما انعرض) */
+      window.__TOASTS = [];
+      document.addEventListener('DOMContentLoaded', () => {
+        const t = document.getElementById('toast'); if (!t) return;
+        new MutationObserver(() => { if (t.classList.contains('show'))
+          window.__TOASTS.push({ text: t.textContent, html: t.innerHTML, cls: t.className,
+                                 w: Math.round(t.getBoundingClientRect().width) }) })
+          .observe(t, { attributes: true, childList: true, characterData: true, subtree: true });
+      });
+    });
+    const visit = async dec => {
+      DEC = dec; const n0 = accountCalls;
+      await p.goto(BASE, { waitUntil: 'load' });
+      /* الحساب وصل والصفحة خلصت ما بعده */
+      for (let i = 0; i < 80 && accountCalls === n0; i++) await wait(50);
+      await p.waitForTimeout(500);
+      return p.evaluate(() => ({ toasts: window.__TOASTS.slice(), xss: !!window.__XSS }));
+    };
+    const iso = d => new Date(Date.now() - d * 864e5).toISOString();
+    const hit = (v, re) => v.toasts.filter(x => re.test(x.text));
+
+    let v1 = await visit({ id: 3, status: 'approved', at: iso(0.5), halalas: 500, note: '' });
+    const ap = hit(v1, /انقبلت تقييماتك/);
+    ok(ap.length === 1 && /5 ريال رصيد/.test(ap[0].text) && /اشتراكك الجاي/.test(ap[0].text),
+       '**الطالب اللي مو مربوط يفتح الموقع: «✅ انقبلت تقييماتك — نزل لك 5 ريال رصيد، ينخصم تلقائياً من اشتراكك الجاي»** — ' +
+       JSON.stringify(v1.toasts.map(x => x.text)));
+    let v2 = await visit({ id: 3, status: 'approved', at: iso(0.5), halalas: 500, note: '' });
+    eq(hit(v2, /انقبلت/).length, 0, '**ومرة وحدة: يفتح الموقع ثانية وما تتكرر**');
+    let v3 = await visit({ id: 4, status: 'rejected', at: iso(1), halalas: 0,
+      note: '<img src=x onerror="window.__XSS=1"> التعليقات قصيرة' });
+    const rj = hit(v3, /ما انقبل/);
+    ok(rj.length === 1 && /التعليقات قصيرة/.test(rj[0].text) && /أرسلها من جديد/.test(rj[0].text),
+       '**قرار جديد (رفض): يبان بسببه ووش يسوي** — ' + JSON.stringify(v3.toasts.map(x => x.text)));
+    ok(rj.length === 1 && /&lt;img/.test(rj[0].html) && !v3.xss, 'وسبب الرفض نص — ما يتنفّذ في الصفحة');
+    let v4 = await visit({ id: 5, status: 'approved', at: iso(20), halalas: 500, note: '' });
+    eq(hit(v4, /انقبلت/).length, 0, 'قرار أقدم من أسبوعين: ما نطلّعه (جهاز جديد ما ينبش القديم)');
+    let v5 = await visit(null);
+    eq(hit(v5, /انقبلت|ما انقبل/).length, 0, 'وبلا قرار (أو طلبه معلّق): ولا شي');
+    /* الوعد بتلقرام لمن هو مربوط بس */
+    const w = await p.evaluate(async () => {
+      const base = { ok: true, open: true, needed: 5, creditHalalas: 500, eligible: [], approvedThisTerm: false, latest: null };
+      const box = () => { renderMyReviews(); const e = document.getElementById('myRevList'); return e ? e.innerText : '' };
+      const out = {};
+      REVCREDIT = Object.assign({}, base, { eligibleCount: 0, pending: true }); REVCREDIT_AT = Date.now();
+      out.pendOff = box();
+      window.meFetch = async (pth, m) => m === 'POST' ? { ok: true, id: 1 } : Object.assign({}, base, { eligibleCount: 0, pending: true });
+      window.__TOASTS = [];
+      REVCREDIT = Object.assign({}, base, { eligibleCount: 5, pending: false });
+      await submitRevCredit(null);
+      out.sentOff = (window.__TOASTS[0] || {}).text || '';
+      PROFILE = Object.assign({}, PROFILE, { telegram_chat_id: '901' });
+      REVCREDIT = Object.assign({}, base, { eligibleCount: 0, pending: true }); REVCREDIT_AT = Date.now();
+      out.pendOn = box();
+      window.__TOASTS = [];
+      REVCREDIT = Object.assign({}, base, { eligibleCount: 5, pending: false });
+      await submitRevCredit(null);
+      out.sentOn = (window.__TOASTS[0] || {}).text || '';
+      /* left:50% كان يخلّي العرض المتاح نص الشاشة: الرسالة الطويلة تنكسر خمسة أسطر في ١٩٥px */
+      showToast('✅ انقبلت تقييماتك — نزل لك 5 ريال رصيد، ينخصم تلقائياً من اشتراكك الجاي', 'ok', 9000);
+      out.longW = Math.round(document.getElementById('toast').getBoundingClientRect().width);
+      /* والرسالة القصيرة تبقى قصيرة — ما تمتد على الشاشة كلها */
+      showToast('انسخ الرابط ✅', 'ok');
+      out.shortW = Math.round(document.getElementById('toast').getBoundingClientRect().width);
+      return out;
+    });
+    ok(/قيد المراجعة/.test(w.pendOff) && !/تلقرام/.test(w.pendOff) && /يبان لك هنا/.test(w.pendOff),
+       '**مو مربوط: «طلبك قيد المراجعة — الرد يبان لك هنا» بلا وعد تلقرام** — ' + w.pendOff.slice(0, 120));
+    ok(/انرسل للمراجعة/.test(w.sentOff) && !/تلقرام/.test(w.sentOff),
+       '**ورسالة الإرسال كذلك ما تعده بتلقرام** — ' + w.sentOff);
+    ok(/يوصلك الرد على تلقرام/.test(w.pendOn) && /يوصلك الرد على تلقرام/.test(w.sentOn),
+       'والمربوط: «يوصلك الرد على تلقرام» كما كان — ' + w.sentOn);
+    ok(w.longW > 390 * 0.6 && w.longW <= 390 * 0.9 + 1,
+       '**والرسالة الطويلة بعرض الشاشة (لين ٩٠٪) لا نصها** — ' + w.longW + 'px');
+    ok(w.shortW > 0 && w.shortW < 390 * 0.5, 'والرسالة القصيرة على قدّها — ' + w.shortW + 'px');
+    ok(errs.length === 0, 'الصفحة (مسجّل ومو مربوط) بلا أخطاء: ' + errs.slice(0, 2).join(' | '));
+    await browser.close(); srv.close();
+  }
+
   /* ═══ اللوحة ═══ */
   {
     const { chromium } = require('playwright');
-    let decided = null;
+    let decided = null, DECIDE_RES = { ok: true };
     const srv = http.createServer((q2, res) => {
       const u = q2.url.split('?')[0];
       if (u === '/') { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); return res.end(fs.readFileSync(ADMIN)) }
@@ -368,14 +547,14 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
                   { instructor: 'Dr B', missing: true }] }] }));
       if (u.endsWith('/review-decide')) {
         let bd = ''; q2.on('data', c => bd += c);
-        return q2.on('end', () => { decided = JSON.parse(bd || '{}'); res.end(JSON.stringify({ ok: true })) });
+        return q2.on('end', () => { decided = JSON.parse(bd || '{}'); res.end(JSON.stringify(DECIDE_RES)) });
       }
       if (u.endsWith('/health')) return res.end(JSON.stringify({ pricing: { reviewsCreditHalalas: 500 }, monitorInfo: {}, cache: [] }));
       res.end('{}');
     });
     await new Promise(z => srv.listen(0, z));
     const browser = await chromium.launch();
-    const p = await browser.newPage();
+    const p = await browser.newPage({ viewport: { width: 390, height: 844 } });   /* محمد يفتح اللوحة من الآيفون */
     const errs = [];
     p.on('pageerror', e => errs.push(String(e)));
     await p.route('**/fonts.googleapis.com/**', z => z.fulfill({ status: 200, contentType: 'text/css', body: '' }));
@@ -399,6 +578,45 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     ok(v.badge === '1', 'وعدّاد على تبويب التقييمات');
     ok(decided && decided.decision === 'reject' && decided.note === 'التعليق قصير',
        'رفض بلا سبب ما يُرسل، ومع السبب يُرسل — ' + JSON.stringify(decided));
+    /* هل وصلته رسالة؟ قبل القرار (الطابور) وبعده (الرسالة) — كانت «انقبل ✅» و«وصله السبب» دائماً */
+    const w = await p.evaluate(() => {
+      const card = tg => { RREQS = [{ id: 9, userId: 'u9', name: 'فهد', email: 'f@x', createdAt: '2026-11-02T10:00:00Z', tg,
+        reviews: [{ instructor: 'Dr G', rating: 5, course: 'MEEN 3401', comment: 'تمام', reports: 0 }] }];
+        renderRRs(); return document.getElementById('rrBody').innerText };
+      const out = { off: card(false), on: card(true), old: card(undefined) };
+      RREQS = []; renderRRs();
+      return out;
+    });
+    ok(/مو رابط تيليغرام/.test(w.off) && /في الموقع/.test(w.off),
+       '**الطابور: «⚠️ مو رابط تيليغرام — قرارك ما يوصله رسالة، يشوفه في الموقع»** — ' + w.off.slice(0, 120));
+    ok(!/مو رابط/.test(w.on) && !/مو رابط/.test(w.old), 'والمربوط (أو سيرفر قديم بلا الحقل): بلا السطر');
+    const after = async (dec, res) => {
+      DECIDE_RES = res;
+      return p.evaluate(async d => {
+        const seen = []; const real = window.toast;
+        window.toast = (m, k, ms) => { real(m, k, ms);
+          seen.push({ m, k: k || '', ms: ms || 0, w: Math.round(document.getElementById('toast').getBoundingClientRect().width) }) };
+        window.confirm = () => true; window.prompt = () => 'التعليقات قصيرة';
+        await decideRR(9, d, 'فهد');
+        window.toast = real;
+        return seen[0] || { m: '', k: '', ms: 0 };
+      }, dec);
+    };
+    let t1 = await after('approve', { ok: true, status: 'approved', credit: 500, notified: false, notifyWhy: 'no-telegram' });
+    ok(/مو رابط تيليغرام/.test(t1.m) && /ما وصلته رسالة/.test(t1.m) && /في الموقع/.test(t1.m) && /5 ريال/.test(t1.m),
+       '**قبول وهو مو مربوط: «انقبل ✅ ونزل له 5 ريال — مو رابط تيليغرام، فما وصلته رسالة. بيشوفها في الموقع»** — ' + t1.m);
+    ok(t1.ms >= 6000, 'والرسالة تطوّل لين تنقرا — ' + t1.ms);
+    /* العرض بنص ثابت — الـCSS نفسه لا طول الرسالة */
+    const lw = await p.evaluate(() => { toast('انقبل ✅ ونزل له 5 ريال — مو رابط تيليغرام، فما وصلته رسالة. بيشوفها في الموقع أول ما يفتحه', '', 8000);
+      return Math.round(document.getElementById('toast').getBoundingClientRect().width) });
+    ok(lw > 390 * 0.6, '**ورسالة اللوحة الطويلة بعرض الشاشة لا نصها** (كانت ١٩٥px فتنكسر خمسة أسطر) — ' + lw + 'px');
+    let t2 = await after('approve', { ok: true, status: 'approved', credit: 500, notified: true });
+    ok(/وصلته رسالة على تلقرام/.test(t2.m) && t2.k === 'ok', '**قبول ومربوط: «وصلته رسالة على تلقرام»** — ' + t2.m);
+    let t3 = await after('reject', { ok: true, status: 'rejected', notified: false, notifyWhy: 'failed' });
+    ok(/ما وصلت/.test(t3.m) && /الرسائل/.test(t3.m) && /في الموقع/.test(t3.m),
+       '**رفض وتيليغرام ما وصّلها: «رسالة تلقرام ما وصلت (شوف «الرسائل»)»** — ' + t3.m);
+    let t4 = await after('reject', { ok: true, status: 'rejected', notified: true });
+    ok(/وصله السبب على تلقرام/.test(t4.m), 'رفض ومربوط: «وصله السبب على تلقرام» — ' + t4.m);
     ok(errs.length === 0, 'اللوحة بلا أخطاء: ' + errs.slice(0, 2).join(' | '));
     await browser.close(); srv.close();
   }
