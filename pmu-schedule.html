@@ -1537,9 +1537,10 @@ border-radius:20px;padding:1px 7px;flex-shrink:0}
 padding:12px 14px;font-size:12.5px;color:var(--text2);line-height:1.7;margin-top:16px}
 .g-tip b{color:var(--text)}
 
+/* width:max-content: بلاه left:50% يخلّي العرض المتاح نص الشاشة، فالرسالة الطويلة تنكسر خمسة أسطر */
 .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(200%);background:var(--accent);
 color:#fff;padding:11px 20px;border-radius:12px;font-size:13px;font-weight:600;
-box-shadow:0 8px 30px rgba(61,111,255,.4);z-index:999;max-width:90%;text-align:center;
+box-shadow:0 8px 30px rgba(61,111,255,.4);z-index:999;width:max-content;max-width:90%;text-align:center;
 opacity:0;visibility:hidden;pointer-events:none;
 transition:transform .3s ease,opacity .25s ease,visibility 0s linear .3s}
 .toast.show{transform:translateX(-50%) translateY(0);opacity:1;visibility:visible;
@@ -6291,12 +6292,12 @@ function showLoading(s){
 }
 function setStatus(t){document.getElementById('statusText').textContent=t}
 let _toastTimer=null;
-function showToast(m,type){
+function showToast(m,type,ms){
   const t=document.getElementById('toast');
   t.textContent=m;
   t.className='toast show'+(type?' '+type:'');
   clearTimeout(_toastTimer);                    /* ما نخلي مؤقتين يتعاركون */
-  _toastTimer=setTimeout(()=>t.classList.remove('show'),3500);
+  _toastTimer=setTimeout(()=>t.classList.remove('show'),ms||3500);
 }
 
 /* ===== Init ===== */
@@ -6758,12 +6759,44 @@ async function submitRevCredit(btn){
   if(btn){ btn.disabled=true; btn.textContent=ar?'يرسل…':'Sending…' }
   const r=await meFetch('/api/me/reviews-credit','POST').catch(()=>null);
   if(r&&r.ok){
-    showToast(ar?'⏳ انرسل للمراجعة — يوصلك الرد على تلقرام':'⏳ Sent for review — the reply comes on Telegram','ok');
+    showToast(rcReplyTg()
+      ?(ar?'⏳ انرسل للمراجعة — يوصلك الرد على تلقرام':'⏳ Sent for review — the reply comes on Telegram')
+      :(ar?'⏳ انرسل للمراجعة — الرد يبان لك هنا أول ما تفتح الموقع':'⏳ Sent for review — the reply shows here next time you open the site'),'ok');
   }else{
     showToast((r&&r.error)||(ar?'ما انرسل — جرّب مرة ثانية':'Not sent — try again'),'warn');
   }
   await loadRevCredit(true);
   revCreditPaint();
+}
+/* الرد على طلب رصيد التقييم يروح تلقرام وحده — فما نوعد به من مو رابط تيليغرام.
+   الملف ما وصل بعد؟ ما نعرف، فنبقى على الوعد كما كان */
+function rcReplyTg(){ return !PROFILE||tgLinked() }
+/* قرار طلب رصيد التقييم في الموقع — مرة لكل قرار. رسالته على تلقرام وحده، فالطالب
+   اللي مو رابط تيليغرام ما كان يدري إنه انقبل ونزل له رصيد (لقاها محمد، ٣ نوفمبر ٢٠٢٦).
+   القرار من /api/me/account (يُطلب أصلاً عند الدخول — بلا طلب زيادة)، والمشاهدة في
+   المتصفح: جهاز ثاني يشوفه مرة كذلك، وقرار أقدم من أسبوعين ما نطلّعه */
+const RR_SEEN_KEY='pmu_rr_seen', RR_NOTICE_DAYS=14;
+function rrNotice(A){
+  const d=A&&A.reviewDecision;
+  if(!d||!d.id||!(d.status==='approved'||d.status==='rejected'))return '';
+  const at=Date.parse(d.at);
+  if(!at||Date.now()-at>RR_NOTICE_DAYS*864e5)return '';
+  const key=d.id+':'+d.status;
+  if(load(RR_SEEN_KEY,'')===key)return '';
+  save(RR_SEEN_KEY,key);
+  const ar=LANG==='ar', why=String(d.note||'').trim();
+  const cut=why.length>140?why.slice(0,140)+'…':why;
+  const m=d.status==='approved'
+    ?(d.halalas>0
+      ?(ar?`✅ انقبلت تقييماتك — نزل لك ${sarTxt(d.halalas)} ريال رصيد، ينخصم تلقائياً من اشتراكك الجاي`
+          :`✅ Your reviews were approved — ${sarTxt(d.halalas)} SAR credit added, taken off your next subscription`)
+      :(ar?'✅ انقبلت تقييماتك — شكراً على مساهمتك':'✅ Your reviews were approved — thanks!'))
+    :(ar?`❌ طلب رصيد التقييم ما انقبل${cut?': '+cut:''} — عدّل تقييماتك من «تقييماتي» وأرسلها من جديد`
+        :`❌ Review credit not approved${cut?': '+cut:''} — edit your reviews in «My reviews» and send again`);
+  /* textContent — سبب الرفض نص من الإدارة وما يتنفّذ. ولون الموقع للاثنين: الأبيض على
+     برتقالي التحذير يصعب يُقرا في الداكن، و❌ تكفي. وتسع ثوانٍ لين ينقرا السبب */
+  showToast(m,d.status==='approved'?'ok':'',9000);
+  return m;
 }
 /* المربّع أعلى «تقييماتي» — يظهر بعد الفترة المجانية فقط */
 function revCreditHTML(){
@@ -6775,7 +6808,9 @@ function revCreditHTML(){
   const bar=`<div class="rc-bar"><div style="width:${Math.round(have/n*100)}%"></div></div>`;
   let body='';
   if(C.pending){
-    body=`<div class="rc-state">⏳ ${ar?'طلبك قيد المراجعة — يوصلك الرد على تلقرام':'Under review — the reply comes on Telegram'}</div>`;
+    body=`<div class="rc-state">⏳ ${rcReplyTg()
+      ?(ar?'طلبك قيد المراجعة — يوصلك الرد على تلقرام':'Under review — the reply comes on Telegram')
+      :(ar?'طلبك قيد المراجعة — الرد يبان لك هنا أول ما تفتح الموقع':'Under review — the reply shows here next time you open the site')}</div>`;
   }else if(C.approvedThisTerm){
     body=`<div class="rc-state good">✅ ${ar?`انقبل طلبك هذا الترم — نزل لك ${money} ريال`:`Approved this term — ${money} SAR credited`}</div>`;
   }else{
@@ -10180,7 +10215,8 @@ function redrawTodayAfterAuth(){
      تفتح الورقة وفيها «سجّل دخولك واشترك» */
   if(!USER&&PLANS_OPEN){ PLANS_OPEN=false; try{ openPlans('compare') }catch(e){} }
   if(USER){await pullCloud();setAuthUI();renderPlan();enforceSlotAndRedraw();redrawTodayAfterAuth();
-    loadAccount(true).then(()=>{ try{ if(CUR_TAB==='set')renderSettings() }catch(e){} });
+    loadAccount(true).then(()=>{ try{ if(CUR_TAB==='set')renderSettings() }catch(e){}
+      try{ rrNotice(ACCOUNT) }catch(e){} });
     payReturn().catch(()=>{});          /* رجع من صفحة الدفع؟ */
     if(PO_GO)poGo();                    /* جا من رابط الإيصال؟ */
     if(document.getElementById('pageSched').classList.contains('active'))renderSchedule();}
