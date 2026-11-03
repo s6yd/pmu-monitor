@@ -286,9 +286,10 @@ padding:3px 9px;font-size:10.5px;color:var(--text2)}
 border-radius:50%;animation:spin .8s linear infinite;margin:40px auto}
 @keyframes spin{to{transform:rotate(360deg)}}
 
+/* width:max-content: بلاه left:50% يخلّي العرض المتاح نص الشاشة، فالرسالة الطويلة تنكسر خمسة أسطر */
 .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(90px);
 background:var(--accent);color:#fff;padding:11px 20px;border-radius:12px;font-size:13px;
-font-weight:600;transition:transform .3s;z-index:999;max-width:90%;text-align:center}
+font-weight:600;transition:transform .3s;z-index:999;width:max-content;max-width:90%;text-align:center}
 .toast.show{transform:translateX(-50%) translateY(0)}
 .toast.err{background:var(--close)}
 .toast.ok{background:var(--open)}
@@ -566,10 +567,10 @@ function daysLeft(d){
   if(!d) return null;
   return Math.ceil((new Date(d)-new Date())/864e5);
 }
-function toast(msg,kind){
+function toast(msg,kind,ms){
   const t=document.getElementById('toast');
   t.textContent=msg; t.className='toast show '+(kind||'');
-  clearTimeout(t._x); t._x=setTimeout(()=>t.className='toast',2600);
+  clearTimeout(t._x); t._x=setTimeout(()=>t.className='toast',ms||2600);
 }
 function flagged(txt){
   const s=String(txt||'').toLowerCase();
@@ -1666,6 +1667,7 @@ function renderRRs(){
       <div class="row-meta" style="margin-bottom:8px">
         <span><b>${esc(q.name)}</b></span><span>${esc(q.email)}</span><span>${fdate(q.createdAt)}</span>
       </div>
+      ${q.tg===false?`<div class="gauge-sub" style="color:var(--warn);margin:0 0 8px">⚠️ مو رابط تيليغرام — قرارك ما يوصله رسالة، يشوفه في الموقع أول ما يفتحه</div>`:''}
       ${q.reviews.map(v=>v.missing
         ?`<div class="cr-row"><span>${esc(v.instructor)}</span><b style="color:var(--close)">محذوف بعد الإرسال</b></div>`
         :`<div class="cr-row" style="flex-direction:column;align-items:stretch;gap:4px">
@@ -1683,6 +1685,18 @@ function renderRRs(){
       </div>
     </div>`).join('');
 }
+/* بعد القرار: هل وصلت الطالب رسالة؟ السيرفر ينتظر رد تيليغرام ويقول (notified · notifyWhy).
+   كانت «انقبل ✅» و«انرفض — وصله السبب» دائماً — والطالب ممكن مو رابط تيليغرام أصلاً */
+function rrDoneMsg(decision,r){
+  const ok=decision==='approve'
+    ?'انقبل ✅'+(r.credit>0?` ونزل له ${r.credit/100} ريال`:'')
+    :'انرفض';
+  if(r.notified===true)return ok+(decision==='approve'?' — وصلته رسالة على تلقرام':' — وصله السبب على تلقرام');
+  const site=decision==='approve'?'بيشوفها في الموقع أول ما يفتحه':'بيشوف السبب في الموقع أول ما يفتحه';
+  if(r.notifyWhy==='no-telegram')return `${ok} — مو رابط تيليغرام، فما وصلته رسالة. ${site}`;
+  if(r.notifyWhy==='failed')return `${ok} — رسالة تلقرام ما وصلت (شوف «الرسائل»). ${site}`;
+  return decision==='approve'?ok:'انرفض — وصله السبب';
+}
 async function decideRR(id,decision,name){
   let note='';
   if(decision==='reject'){
@@ -1696,7 +1710,8 @@ async function decideRR(id,decision,name){
   try{
     const r=await api('review-decide',{body:{id,decision,note}});
     if(!r.ok)return toast(r.error||'ما ضبط','err');
-    toast(r.warning?r.warning:(decision==='approve'?'انقبل ✅':'انرفض — وصله السبب'),r.warning?'err':'ok');
+    if(r.warning)toast(r.warning,'err');
+    else toast(rrDoneMsg(decision,r),r.notified===false?'':'ok',r.notified===false?8000:0);
     await loadAll();
   }catch(e){ toast(e.message,'err') }
 }
