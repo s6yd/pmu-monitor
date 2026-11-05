@@ -48,6 +48,7 @@ const eq = (a, b, m) => ok(JSON.stringify(a) === JSON.stringify(b),
 
 /* ═══ القاعدة المزيّفة — تطابق PostgREST: الفلاتر، القصّ عند ١٠٠٠،
    Prefer في الترويسة، والقيود الفريدة ترجع 23505 ═══ */
+const U_PO = '00000000-0000-4000-8000-0000000000b0';
 const TOK = {
   'tok-own-aaaaaaaaaaaaaaaaaaaaaa': 'u-own',   /* صاحب الموقع: تلقرامه = ADMIN_CHAT_ID */
   'tok-st-bbbbbbbbbbbbbbbbbbbbbbb': 'u-st',
@@ -57,7 +58,8 @@ const TOK = {
   'tok-late-ffffffffffffffffffffff': 'u-late',
   'tok-miss-gggggggggggggggggggggg': 'u-miss',
   'tok-race-hhhhhhhhhhhhhhhhhhhhhh': 'u-race',
-  'tok-po-iiiiiiiiiiiiiiiiiiiiiiiii': 'u-po',
+  /* مشتري التنبيه الطارئ بمعرّف بشكل UUID مثل الإنتاج: رابط التفعيل في إيصاله موقَّع بمعرّفه (poGoLink) */
+  'tok-po-iiiiiiiiiiiiiiiiiiiiiiiii': U_PO,
 };
 const tokOf = u => Object.keys(TOK).find(k => TOK[k] === u);
 const prof = (id, extra) => Object.assign({ id, email: id + '@x.com', name: 'Name ' + id,
@@ -75,7 +77,7 @@ const DB = {
     prof('u-miss', { phone: '0500000005' }),
     prof('u-race', { phone: '0500000006', telegram_chat_id: '6006' }),
     prof('u-friend2', { invite_code: 'FRE234', telegram_chat_id: '7778' }),
-    prof('u-po', { phone: '0500000010', telegram_chat_id: '6010' }),
+    prof(U_PO, { phone: '0500000010', telegram_chat_id: '6010' }),
   ],
   credit_ledger: [
     { id: 1, user_id: 'u-cr', amount_halalas: 1500, reason: 'reviews',
@@ -847,26 +849,29 @@ async function prodSuite() {
   /* ── ١٣) التنبيه الطارئ: ما يُباع وهو ما ينفعّل، ومن اشتراه يوصله كيف يفعّله ── */
   let ms13 = (await call('GET', '/api/monitor-status')).j || {};
   eq(ms13.plans && ms13.plans.pushoverOffered, false, '**وضع التنبيه الطارئ «off»: الورقة ما تعرضه**');
-  q = (await call('GET', '/api/me/quote?pushover=1', { tok: tokOf('u-po') })).j;
+  q = (await call('GET', '/api/me/quote?pushover=1', { tok: tokOf(U_PO) })).j;
   eq([q.pushover, q.po, q.amount], [false, 0, 1900],
      '**ولو طلبه بنفسه: ما يُحسب** — كان يدفع على شي بطاقة تفعيله مخفية');
   await call('POST', '/api/admin/pushover-mode', { admin: true, body: { mode: 'addon' } });
   ms13 = (await call('GET', '/api/monitor-status')).j || {};
   eq(ms13.plans && ms13.plans.pushoverOffered, true, 'وضع «addon»: تنعرض');
   eq(ms13.plans && ms13.plans.termCode, q.term, 'والورقة تعرف أي ترم تبيع — نفس ترم السعر');
-  r = (await call('POST', '/api/me/checkout', { tok: tokOf('u-po'), body: { pushover: true } })).j;
+  r = (await call('POST', '/api/me/checkout', { tok: tokOf(U_PO), body: { pushover: true } })).j;
   ok(r.ok, 'اشترى الترم مع التنبيه الطارئ — ' + JSON.stringify(r));
   const s13 = sub(r.id) || {};
   /* السعر ١٥ ريال (قرار محمد ٣٠ سبتمبر ٢٠٢٦ — كان ١٠) */
   eq([s13.pushover, s13.amount_halalas], [true, 3400], 'الصف: مع الإضافة · ٣٤ ريال');
   ord(r.id).status = 'PAID';
-  await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf('u-po') });
+  await call('GET', '/api/me/pay?id=' + r.id, { tok: tokOf(U_PO) });
   eq(sub(r.id).status, 'paid', 'ودفع');
   const rp = String((tgTo('6010', /إيصال/).pop() || {}).text || '');
   ok(rp.includes('• التنبيه الطارئ: 15 ريال') && rp.includes('<b>المدفوع: 34 ريال</b>'),
      'الإيصال فيه الإضافة والمجموع — ' + rp.slice(0, 160));
+  /* توقّع تغيّر عمداً (تذكرة #50): كان ‎https://jadwalik.com/?pushover=1‎ — يفتح من تلقرام في متصفحه الداخلي،
+     والطالب مو مسجّل فيه فما يطلع له زر «تفعيل». صار رابطاً موقَّعاً يفتح صفحة Pushover على طول (test-pushover-link) */
   ok(/فعّل التنبيه الطارئ/.test(rp) && /تطبيق <b>Pushover<\/b>/.test(rp) &&
-     rp.includes('https://jadwalik.com/?pushover=1'), '**ومعه خطوات تفعيل التنبيه الطارئ ورابطها**');
+     rp.includes('https://jadwalik.com/api/pushover-go?t=' + U_PO + '.') && !rp.includes('?pushover=1'),
+     '**ومعه خطوات تفعيل التنبيه الطارئ ورابطها — رابط تفعيل موقَّع بمعرّفه، يفتح صفحة Pushover بلا دخول**');
   ok(/Critical Alerts/.test(rp), 'وكيف يرن وهو صامت');
   ok(/لو طلب منك دفعاً/.test(rp), 'ووعد الصفحة نفسه: إضافتك تغطي التطبيق');
   /* الرخصة علينا (تنضاف بموافقتك — رخص Pushover)، والإيصال ما يشرحها — قرار محمد (٤ أكتوبر ٢٠٢٦): «مو لازم كل هذا
