@@ -50,6 +50,7 @@ run test-sub-core       "$S" "$A"
 run test-free-tier      "$S" "$F"
 run test-referral       "$S" "$F"
 run test-review-credit  "$S" "$F" "$A"
+run test-import         "$S" "$F"
 run test-pushover-addon "$S" "$F" "$A"
 run test-static-pages   "$S"
 run test-legal          .
