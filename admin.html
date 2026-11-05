@@ -217,6 +217,8 @@ border-bottom:1px solid var(--border);font-size:12.5px}
 .kv span{color:var(--text3)}
 .kv b{font-family:var(--mono);font-weight:500}
 .kv b.good{color:var(--open)}.kv b.warn{color:var(--warn)}.kv b.bad{color:var(--close)}
+.imp-row .row-top>span{font-size:12px;font-weight:700;flex-shrink:0}
+.imp-row .row-top .good{color:var(--open)}.imp-row .row-top .warn{color:var(--warn)}.imp-row .row-top .bad{color:var(--close)}
 .tab.active::after{content:'';position:absolute;bottom:0;left:15%;right:15%;
 height:2px;background:var(--accent);border-radius:2px}
 
@@ -649,12 +651,13 @@ async function loadAllInner(silent){
    الوضع والنموذج والسقوف والإنفاق ومربّع تجربة. كل شي من هنا بلا نشر:
    اسم النموذج يتقدّم على متغيّر Render، والسقوف تُحفظ في القاعدة.
    التكلفة تجي محسوبة من السيرفر — اللوحة تعرض ما يُرجعه ولا تحسب سعراً. */
-let AI=null, AITOP=null, AIMSGS=[], AIBUSY=false;
+let AI=null, AITOP=null, AIMSGS=[], AIBUSY=false, AIIMP=null;
 
 async function loadAi(){
   try{
-    const [a,t]=await Promise.all([api('ai'),api('ai-top').catch(()=>null)]);
-    AI=a; AITOP=t; renderAi();
+    const [a,t,im]=await Promise.all([api('ai'),api('ai-top').catch(()=>null),
+      api('import-log').catch(()=>null)]);
+    AI=a; AITOP=t; AIIMP=im; renderAi();
   }catch(e){ toast(e.message,'err'); }
 }
 
@@ -733,6 +736,7 @@ function renderAi(){
     </div>
 
     ${aiChannelCard()}
+    ${aiImportCard()}
     ${aiTopCard()}
     ${aiChatCard()}`;
   renderAiChat();
@@ -760,6 +764,67 @@ function aiChannelCard(){
         والأسئلة قبل هالتحديث محسوبة على الموقع.
       </div>
     </div>`;
+}
+
+/* سجل الاستيراد (الجدول من بانر · الدرجات من Degree Works) — طلب محمد (٥ نوفمبر ٢٠٢٦: «نعرف الي استخدم
+   هذي الميزات ونشوف لو نجحت او اذا فشلت عشان نعدل ونحسن بعدين»). السيرفر يجمع القراءة ونتيجتها في الصفحة
+   سطراً لكل محاولة — أعداد ورموز بس، بلا محتوى الملف. اللوحة تعرض ولا تحسب. */
+const IMP_OUT={added:['✅ أضاف','good'],closed:['قفل بلا إضافة','warn'],left:['انقرأ وما كمّل','warn'],
+  nomatch:['الأرقام ما طابقت بيانات الجامعة','bad'],nodata:['بيانات الجامعة ما وصلت','bad'],
+  nocrn:['لصق بلا أرقام','warn'],big:['الملف كبير','bad'],type:['نوع ملف غلط','bad'],open:['الملف ما انفتح','bad'],
+  notschedule:['مو جدول','bad'],notaudit:['مو كشف Degree Works','bad'],empty:['ما قدر يقرأ الملف','bad'],
+  refused:['النموذج رفض','bad'],error:['خلل في القراءة','bad'],off:['المساعد مقفل','warn'],
+  admin:['المساعد لك وحدك','warn'],nokey:['مفتاح المساعد ناقص','bad'],day:['خلصت أسئلته اليوم','warn'],
+  term:['خلصت أسئلته للترم','warn'],month:['خلص سقف الشهر','bad'],unknown:['سقف الشهر ما انقرأ','bad'],
+  noprofile:['ما لقينا حسابه','bad']};
+const IMP_KIND={schedule:'📅 جدول',grades:'📋 درجات'};
+const IMP_SRC={pdf:'ملف PDF',image:'صورة',paste:'لصق أرقام',other:'ملف نوعه غير معروف'};
+function impWhen(d){
+  const x=new Date(d); if(isNaN(x))return '—';
+  return x.toLocaleString('ar-u-ca-gregory-nu-latn',{timeZone:'Asia/Riyadh',month:'short',day:'numeric',
+    hour:'2-digit',minute:'2-digit'});
+}
+function aiImportCard(){
+  const L=AIIMP;
+  const head=`<div class="sec-title">📥 الاستيراد — آخر ${(L&&L.days)||30} يوم</div>`;
+  if(!L||!L.ok)return head+`<div class="gauge-sub" style="margin-bottom:12px;color:var(--warn)">${
+    esc((L&&L.error)||'ما قدرنا نقرأ سجل الاستيراد')}</div>`;
+  const kinds=Object.keys(L.summary||{});
+  if(!kinds.length)return head+`<div class="empty" style="padding:24px"><div class="empty-icon">📥</div>
+    <div class="empty-t">ما أحد استعمل الاستيراد للحين</div></div>`;
+  const sums=kinds.map(k=>{
+    const x=L.summary[k];
+    const why=Object.entries(x.reasons||{}).sort((a,b)=>b[1]-a[1])
+      .map(([r,n])=>`<span class="tag">${esc((IMP_OUT[r]||[r])[0])} <span class="ltr">×${n}</span></span>`).join(' ');
+    return `<div class="gauge" style="margin-bottom:10px">
+      <div class="kv"><span>${esc(IMP_KIND[k]||k)}</span><b><span class="ltr">${x.tries}</span> محاولة ·
+        <span class="ltr">${x.users}</span> طالب</b></div>
+      <div class="kv"><span>أضافوا</span><b class="good"><span class="ltr">${x.added}</span> مرة ·
+        <span class="ltr">${x.courses}</span> مادة</b></div>
+      <div class="kv"><span>قفلوا بلا إضافة</span><b><span class="ltr">${x.closed}</span></b></div>
+      <div class="kv"><span>انقرأ وما كمّلوا</span><b><span class="ltr">${x.left}</span></b></div>
+      <div class="kv"><span>فشلت</span><b class="${x.failed?'bad':''}"><span class="ltr">${x.failed}</span></b></div>
+      <div class="kv"><span>الكلفة</span><b><span class="ltr">${x.sar}</span> ريال</b></div>
+      ${why?`<div class="tags">${why}</div>`:''}</div>`;
+  }).join('');
+  const rows=(L.recent||[]).map(e=>{
+    const o=IMP_OUT[e.outcome]||[e.outcome,''];
+    const bits=[];
+    if(e.rows)bits.push(`انقرأ <b><span class="ltr">${e.rows}</span></b>`);
+    if(e.skipped)bits.push(`ما انقرأ <b><span class="ltr">${e.skipped}</span></b>`);
+    if(e.found||e.missing)bits.push(`لقينا <b><span class="ltr">${e.found}</span></b>`);
+    if(e.missing)bits.push(`ما لقينا <b><span class="ltr">${e.missing}</span></b>`);
+    if(e.warned)bits.push(`بتحذير <b><span class="ltr">${e.warned}</span></b>`);
+    if(e.added)bits.push(`أضاف <b><span class="ltr">${e.added}</span></b>`);
+    if(e.sar)bits.push(`<span class="ltr">${e.sar}</span> ريال`);
+    return `<div class="row imp-row">
+      <div class="row-top"><b>${esc(e.name||e.email||'—')}</b><span class="${o[1]}">${esc(o[0])}</span></div>
+      <div class="row-meta"><span>${esc(IMP_KIND[e.kind]||e.kind)} · ${esc(IMP_SRC[e.src]||e.src||'')}</span>
+        <span>${esc(impWhen(e.at))}</span>
+        ${e.email&&e.name?`<span><span class="ltr">${esc(e.email)}</span></span>`:''}</div>
+      ${bits.length?`<div class="row-meta">${bits.map(b=>`<span>${b}</span>`).join('')}</div>`:''}</div>`;
+  }).join('');
+  return head+sums+`<div class="sec-title" style="font-size:12px">آخر المحاولات</div>`+rows;
 }
 
 /* أكثر ١٠ طلاب استهلاكاً — رقمه الحقيقي بالريال لا عدد أسئلته وحده */
