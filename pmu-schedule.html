@@ -453,6 +453,13 @@ border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
 .im-add{display:block;width:100%;margin-top:6px}
 .im-add:disabled{opacity:.5;box-shadow:none}
 .im-priv{font-size:11px;color:var(--text3);line-height:1.6;margin-top:12px;text-align:center}
+/* استيراد الدرجات في «خطتي»: زر كامل لما الخطة فاضية، وسطر خفيف لما فيها مواد */
+.gi-open{display:block;width:100%;margin:10px 0 12px;padding:10px 12px;border-radius:12px;background:transparent;
+border:1px dashed var(--border2);color:var(--accent);font-family:var(--sans);font-size:12.5px;font-weight:700;cursor:pointer}
+.gi-open.big{border:none;background:var(--accent);color:#fff;font-size:14px;padding:13px;box-shadow:0 6px 18px rgba(77,124,254,.28)}
+.gi-open[hidden]{display:none}
+.im-tag.new{background:rgba(77,124,254,.12);color:var(--accent)}
+.im-g{flex:none;margin-inline-start:auto;font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text);padding-top:1px}
 .btn-ghost{background:transparent;border:1px solid var(--border2);color:var(--text2);border-radius:11px;
 padding:11px;font-size:13px;font-weight:600;font-family:var(--sans);cursor:pointer}
 .btn-ghost.danger{color:var(--close);border-color:var(--close-border)}
@@ -2103,6 +2110,8 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     </div>
   </div>
 
+  <button class="gi-open" id="giBtn" onclick="openGrades()" data-i18n="giOpen" hidden>📥 استورد درجاتك من Degree Works</button>
+
   <div class="tap-tip" id="tapTip">
     👆 <b>اضغط أي مادة</b> عشان تشوف شعبها وأوقاتها في الترم الحالي
   </div>
@@ -2320,6 +2329,10 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 <!-- استيراد الجدول من بانر — في body لا داخل .page (حركة التبويب تحبس position:fixed) -->
 <div class="guide-overlay" id="imOv" onclick="if(event.target===this)closeImport()">
   <div class="guide-sheet" id="imSheet"></div>
+</div>
+<!-- استيراد الدرجات من Degree Works — في body كذلك -->
+<div class="guide-overlay" id="giOv" onclick="if(event.target===this)closeGrades()">
+  <div class="guide-sheet" id="giSheet"></div>
 </div>
 
 <div class="guide-overlay" id="guideOverlay" onclick="if(event.target===this)closeGuide()">
@@ -3256,6 +3269,16 @@ function removeFromSchedule(crn){
    بتمنعها كلها. التكرار ممنوع، والحفظ نفسه (saveSchedules · pushSchedule). */
 let IM={state:'pick',found:[],missing:[],term:'',msg:'',bad:false,skipped:0};
 const IM_PDF_MAX=600*1024, IM_IMG_MAX=1100*1024, IM_IMG_SIDE=2000;
+/* سجل الاستيراد (طلب محمد ٥ نوفمبر ٢٠٢٦: «نعرف الي استخدم هذي الميزات ونشوف لو نجحت او اذا فشلت»):
+   السيرفر يسجّل القراءة، والصفحة تكمّل بنتيجتها — أضاف كم · قفل · فشل قبل ما يوصلنا. أعداد بس، بلا أرقام
+   شعب، وللمسجّل وحده (الزائر ما له حساب نربطه به). ونتيجة وحدة لكل محاولة (IM.logged) */
+function imLog(outcome,extra){
+  if(!USER||IM.logged)return;
+  IM.logged=true;
+  const st=IM.stats||{};
+  meFetch('/api/me/import-log','POST',Object.assign({ev:IM.ev||null,kind:'schedule',src:IM.src||'pdf',outcome,
+    found:st.found||0,missing:st.missing||0,warned:st.warned||0,added:0},extra||{})).catch(()=>{});
+}
 function openImport(){
   const ov=document.getElementById('imOv');
   if(!ov)return;
@@ -3270,6 +3293,7 @@ function closeImport(){
   const ov=document.getElementById('imOv');
   if(ov)ov.classList.remove('open');
   document.body.style.overflow='';
+  if(IM.state==='review')imLog('closed');
 }
 /* ترمات البحث نفسها — البحث العام يرفض غيرها (searchTermOk في السيرفر) */
 function imTerms(){
@@ -3332,7 +3356,8 @@ async function imPaste(){
   /* أرقام هندية من لوحة عربية تنقلب لاتينية — كل رقم CRN خمس خانات */
   const txt=String(el?el.value:'').replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d));
   const crns=[...new Set(txt.match(/\b\d{5}\b/g)||[])].slice(0,30);
-  if(!crns.length)return imFail(ar?'ما لقيت أرقام CRN — كل رقم خمس خانات.':'No CRNs found — each one is five digits.');
+  IM.ev=null; IM.src='paste'; IM.logged=false; IM.stats=null;
+  if(!crns.length){ imLog('nocrn'); return imFail(ar?'ما لقيت أرقام CRN — كل رقم خمس خانات.':'No CRNs found — each one is five digits.') }
   const sel=document.getElementById('imTerm'); if(sel)IM.term=sel.value;
   IM.msg=''; IM.bad=false; IM.skipped=0;
   await imMatch(crns.map(crn=>({crn,code:'',section:''})),IM.term);
@@ -3354,20 +3379,25 @@ async function imFile(input){
     :'Sign in with Google so we can read your file — or paste your CRNs without signing in.');
   const big=ar?'الملف كبير — اطبع الجدول على ورق A3 عشان يطلع في صفحة وحدة، أو صوّر الشاشة.'
     :'The file is too big — print the schedule on A3 so it fits one page, or take a screenshot.';
+  const isPdf=f.type==='application/pdf'||/\.pdf$/i.test(f.name||'');
+  IM.ev=null; IM.src=isPdf?'pdf':'image'; IM.logged=false; IM.stats=null;
   let media, data;
   try{
-    if(f.type==='application/pdf'||/\.pdf$/i.test(f.name||'')){
-      if(f.size>IM_PDF_MAX)return imFail(big);
+    if(isPdf){
+      if(f.size>IM_PDF_MAX){ imLog('big'); return imFail(big) }
       media='application/pdf'; data=await imB64(f);
     }else if(/^image\//.test(f.type||'')){
       /* صورة الآيفون ميغات — نضغطها، بضلع أطول من صور المواد عشان تبان الأرقام */
       const b=await shrink(f,IM_IMG_SIDE);
-      if(b.size>IM_IMG_MAX)return imFail(big);
+      if(b.size>IM_IMG_MAX){ imLog('big'); return imFail(big) }
       media='image/jpeg'; data=await imB64(b);
-    }else return imFail(ar?'اختر ملف PDF أو صورة لجدولك.':'Pick a PDF or an image of your schedule.');
-  }catch(e){ return imFail(ar?'ما قدرت أفتح الملف — جرّب ملفاً ثانياً.':'Couldn’t open the file — try another one.') }
+    }else{ imLog('type'); return imFail(ar?'اختر ملف PDF أو صورة لجدولك.':'Pick a PDF or an image of your schedule.') }
+  }catch(e){ imLog('open'); return imFail(ar?'ما قدرت أفتح الملف — جرّب ملفاً ثانياً.':'Couldn’t open the file — try another one.') }
   IM.state='reading'; IM.msg=''; IM.bad=false; renderImport();
   const r=await meFetch('/api/me/import','POST',{kind:'schedule',media,data}).catch(()=>null);
+  /* القراءة نفسها (نجحت أو ليش فشلت) يسجّلها السيرفر — رقمها يرجع هنا ونكمّل عليه */
+  if(r&&r.ev)IM.ev=r.ev;
+  if(!r||!r.ok)IM.logged=true;
   if(!r||!r.ok){
     if(r&&['off','admin','nokey'].includes(r.why))
       return imFail(ar?'قراءة الملفات مو متاحة الحين — الصق أرقام CRN تحت.':'Reading files isn’t available right now — paste your CRNs below.');
@@ -3394,8 +3424,8 @@ async function imMatch(rows,term){
     const res=await fetch(`${API}?term=${encodeURIComponent(term)}&college=ALL&gender=${g}&filter=${kq}`);
     d=await res.json();
   }catch(e){ d=null }
-  if(!d||!d.success)return imFail((ar&&d&&d.error)?d.error
-    :(ar?'ما قدرت أجيب بيانات الجامعة الحين — جرّب بعد شوي.':'Couldn’t load the university data right now — try again shortly.'));
+  if(!d||!d.success){ imLog('nodata',{missing:rows.length}); return imFail((ar&&d&&d.error)?d.error
+    :(ar?'ما قدرت أجيب بيانات الجامعة الحين — جرّب بعد شوي.':'Couldn’t load the university data right now — try again shortly.')) }
   const byCrn=new Map();
   (d.courses||[]).forEach(c=>{ const k=String(c.crn); if(!byCrn.has(k))byCrn.set(k,[]); byCrn.get(k).push(c) });
   IM.found=[]; IM.missing=[];
@@ -3411,8 +3441,9 @@ async function imMatch(rows,term){
     const have=schedule.some(s=>String(s.crn)===String(r.crn));
     IM.found.push({crn:String(r.crn),sess,read:r,ok,have,pick:ok&&!have});
   });
-  if(!IM.found.length)return imFail(ar?`ما لقينا هذي الأرقام في ${termLabel(term)} — تأكد من الترم أو الأرقام.`
-    :`We couldn’t find these CRNs in ${termLabel(term)} — check the term or the numbers.`);
+  IM.stats={found:IM.found.length,missing:IM.missing.length,warned:IM.found.filter(x=>!x.ok).length};
+  if(!IM.found.length){ imLog('nomatch'); return imFail(ar?`ما لقينا هذي الأرقام في ${termLabel(term)} — تأكد من الترم أو الأرقام.`
+    :`We couldn’t find these CRNs in ${termLabel(term)} — check the term or the numbers.`) }
   IM.state='review';
   renderImport();
 }
@@ -3463,9 +3494,201 @@ function imAdd(){
   try{ renderSchedule() }catch(e){}
   /* نتائج البحث (لو فيه) تعرف إنها انضافت — وبلا بحث ما نرسم «ما فيه نتائج» */
   try{ if(allCourses.length)renderResults() }catch(e){}
-  closeImport();
   const n=schedCourses(added);
+  imLog('added',{added:n});
+  closeImport();
   showToast(ar?`✅ انضافت ${n_(n)} لـ«جدول ${SLOT+1}»`:`✅ Added ${n} course${n===1?'':'s'} to «Schedule ${SLOT+1}»`,'ok');
+}
+/* ═══════════ استيراد الدرجات من Degree Works ═══════════
+   الدفعة الثانية من طلب محمد (٤ نوفمبر ٢٠٢٦: «الجدول والدرجات والمواد الي خلصها»؛ «كشف الدرجات من نفس
+   المكان بس تدخل على دقري اوديت وتسوي طباعه»). النموذج يقرأ الرمز والدرجة لكل مادة خلصها (/api/me/import ·
+   kind:'grades')، والطالب يشوف كل مادة قبل ما تنضاف: مادة من خطته ⇒ مختارة · نفس درجتها ⇒ «موجودة» ·
+   درجة غيرها ⇒ مختارة وتقول وش كانت · مو في خطته ⇒ بلا اختيار (المعدل ما يحسبها أصلاً — calcGPA). وأغلب اللي
+   مو في خطته في النسخة الثانية ⇒ نقول له يمكن نسخته غلط (ما نغيّرها بنفسنا). والحفظ نفس الحفظ (completed ·
+   grades · pushCompleted) بلا حارس المتطلبات: درجاته حقيقة في الجامعة. وسجل الاستيراد مثل الجدول. */
+let GI={state:'pick',rows:[],gpa:'',skipped:0,msg:'',bad:false};
+/* الزر للمتاح فقط: بلا تخصص ما فيه خطة، والمساعد مقفل = ما فيه قراءة ملفات (ولا بديل — طريق مسدود) */
+function giSync(){
+  const b=document.getElementById('giBtn');
+  if(!b)return;
+  b.hidden=!(majorChosen()&&aiShown());
+  b.classList.toggle('big',!completed.length);
+}
+function openGrades(){
+  const ov=document.getElementById('giOv');
+  if(!ov)return;
+  if(typeof closeGuide==='function')closeGuide();
+  GI={state:'pick',rows:[],gpa:'',skipped:0,msg:'',bad:false};
+  ov.classList.add('open');
+  document.body.style.overflow='hidden';
+  renderGrades();
+}
+function closeGrades(){
+  const ov=document.getElementById('giOv');
+  if(ov)ov.classList.remove('open');
+  document.body.style.overflow='';
+  if(GI.state==='review')giLog('closed');
+}
+function giLog(outcome,extra){
+  if(!USER||GI.logged)return;
+  GI.logged=true;
+  const st=GI.stats||{};
+  meFetch('/api/me/import-log','POST',Object.assign({ev:GI.ev||null,kind:'grades',src:GI.src||'pdf',outcome,
+    found:st.found||0,missing:st.missing||0,warned:st.warned||0,added:0},extra||{})).catch(()=>{});
+}
+function giFail(m){ GI.state='pick'; GI.msg=m; GI.bad=true; renderGrades() }
+function renderGrades(){
+  const box=document.getElementById('giSheet');
+  if(!box)return;
+  const ar=LANG==='ar';
+  const head=`<div class="guide-grip"></div>
+    <div class="guide-head"><h2>${ar?'📥 استورد درجاتك':'📥 Import your grades'}</h2>
+      <button class="guide-close" onclick="closeGrades()">✕</button></div>`;
+  const msg=GI.msg?`<div class="im-msg${GI.bad?' bad':''}" id="giMsg">${escapeHtml(GI.msg)}</div>`:'';
+  if(GI.state==='reading'){
+    box.innerHTML=head+`<div class="rm-empty"><div class="spinner" style="margin:0 auto 12px"></div>${
+      ar?'نقرأ درجاتك…':'Reading your grades…'}</div>`;
+    return;
+  }
+  if(GI.state==='review'){ box.innerHTML=head+msg+giReviewHtml(); return }
+  box.innerHTML=head+msg+`
+    <div class="guide-lead">${ar?'موادك اللي خلصتها ودرجاتها تدخل «خطتي» — والمعدل والمقترح يتحسبون عليها.'
+      :'The courses you finished and their grades go into My plan — your GPA and suggestions follow.'}</div>
+    <ol class="im-steps" id="giSteps">${ar?`
+      <li><span>ادخل بانر ← <b dir="ltr">Student Records</b> ← <b dir="ltr">Degree Works</b></span></li>
+      <li><span>اضغط <b dir="ltr">Print</b> فوق الكشف — يفتح لك ملف PDF</span></li>
+      <li><span>اضغط زر المشاركة ← <b dir="ltr">Save to Files</b></span></li>
+      <li><span>ارجع هنا واختر الملف</span></li>`:`
+      <li><span>Open Banner → <b>Student Records</b> → <b>Degree Works</b></span></li>
+      <li><span>Tap <b>Print</b> above the audit — it opens a PDF</span></li>
+      <li><span>Tap the share button → <b>Save to Files</b></span></li>
+      <li><span>Come back and pick the file</span></li>`}</ol>
+    <label class="demo-btn im-pick">${ar?'📄 اختر ملف Degree Works':'📄 Pick the Degree Works file'}
+      <input type="file" class="im-file" id="giFileIn" accept="application/pdf,image/*" onchange="giFile(this)"></label>
+    <div class="im-priv">${ar?'الملف ينقرأ وما نحفظه — اللي ينحفظ الدرجات اللي تختارها بس.'
+      :'We read the file and don’t keep it — only the grades you pick are saved.'}</div>`;
+}
+async function giFile(input){
+  const f=input&&input.files&&input.files[0], ar=LANG==='ar';
+  if(input)input.value='';
+  if(!f)return;
+  /* القراءة سؤال للمساعد على حسابه، والدرجات تنحفظ في حسابه */
+  if(!USER)return giFail(ar?'سجّل دخولك بقوقل عشان نقرأ ملفك — والدرجات تنحفظ في حسابك.'
+    :'Sign in with Google so we can read your file — your grades are saved to your account.');
+  const isPdf=f.type==='application/pdf'||/\.pdf$/i.test(f.name||'');
+  GI.ev=null; GI.src=isPdf?'pdf':'image'; GI.logged=false; GI.stats=null;
+  const big=ar?'الملف كبير — ارفع ملف Degree Works كما طلع من «Print».'
+    :'The file is too big — upload the Degree Works file as Print made it.';
+  let media, data;
+  try{
+    if(isPdf){
+      if(f.size>IM_PDF_MAX){ giLog('big'); return giFail(big) }
+      media='application/pdf'; data=await imB64(f);
+    }else if(/^image\//.test(f.type||'')){
+      const b=await shrink(f,IM_IMG_SIDE);
+      if(b.size>IM_IMG_MAX){ giLog('big'); return giFail(big) }
+      media='image/jpeg'; data=await imB64(b);
+    }else{ giLog('type'); return giFail(ar?'اختر ملف PDF من Degree Works أو صورة له.':'Pick a PDF from Degree Works or an image of it.') }
+  }catch(e){ giLog('open'); return giFail(ar?'ما قدرت أفتح الملف — جرّب ملفاً ثانياً.':'Couldn’t open the file — try another one.') }
+  GI.state='reading'; GI.msg=''; GI.bad=false; renderGrades();
+  const r=await meFetch('/api/me/import','POST',{kind:'grades',media,data}).catch(()=>null);
+  if(r&&r.ev)GI.ev=r.ev;
+  if(!r||!r.ok){
+    GI.logged=true;          /* السيرفر سجّل القراءة بسببها */
+    if(r&&['off','admin','nokey'].includes(r.why))
+      return giFail(ar?'قراءة الملفات مو متاحة الحين — علّم موادك ودرجاتها من الخطة تحت.'
+        :'Reading files isn’t available right now — mark your courses and grades in the plan below.');
+    return giFail((r&&r.msg)||(ar?'صار خلل وأنا أقرأ الملف — جرّب بعد شوي.':'Something went wrong reading the file — try again shortly.'));
+  }
+  giReview(r);
+}
+function giReview(r){
+  GI.gpa=r.gpa||''; GI.skipped=Number(r.skipped)||0;
+  GI.rows=(r.rows||[]).map(x=>{
+    const code=String(x.code||''), grade=String(x.grade||'');
+    const pc=findPlanCourse(code);
+    /* الاختياري التقني بالرمز (tech) يدخل المعدل مثل «خطتي» (calcGPA)، وخانته في الخطة يعلّمها هو */
+    const tech=!pc&&!!TECH_ELECTIVES[code];
+    const inPlan=!!(pc||tech);
+    const done=completed.includes(code), had=grades[code]||'';
+    const same=done&&had===grade;
+    return {code,grade,name:pc?pc.n:'',inPlan,tech,done,had,same,pick:inPlan&&!same};
+  });
+  const out=GI.rows.filter(x=>!x.inPlan);
+  /* مواد التحضيري والتحضيري مطفي: مكانها مستويات التحضيري في خطته */
+  GI.prepHint=!prepOn()&&out.some(x=>/^PR[A-Z]{2} 0\d{3}$/.test(x.code));
+  /* نسخة الخطة: أغلب اللي مو في خطته في النسخة الثانية؟ نقولها — والتغيير له من بطاقة النسخة */
+  GI.altHint='';
+  if(out.length>=3&&PlanLogic.hasAltPlan(MAJOR)){
+    const other=PLAN_VER==='old'?'new':'old';
+    const alt=PlanLogic.planOf(MAJOR,other);
+    const altCodes=new Set(((alt&&alt.sems)||[]).flatMap(sm=>sm.courses.map(c=>c.c)));
+    const hit=out.filter(x=>altCodes.has(x.code)).length;
+    if(hit>=3&&hit*2>=out.length)GI.altHint=other;
+  }
+  GI.stats={found:GI.rows.filter(x=>x.inPlan).length,missing:out.length,
+    warned:GI.rows.filter(x=>x.done&&!x.same).length};
+  GI.state='review';
+  renderGrades();
+}
+function giReviewHtml(){
+  const ar=LANG==='ar';
+  const list=GI.rows.map((x,i)=>{
+    const tag=x.same?`<span class="im-tag have">${ar?'موجودة في خطتك':'Already in your plan'}</span>`
+      :!x.inPlan?`<span class="im-tag warn">${ar?'مو في خطتك':'Not in your plan'}</span>`
+      :x.tech&&!x.done?`<span class="im-tag new">${ar?'اختياري تقني — علّم خانته في الخطة كذلك':'Technical elective — tick its slot in the plan too'}</span>`
+      :x.done?`<span class="im-tag warn">${ar
+        ?(x.had?`درجتك في «خطتي» <span dir="ltr">${escapeHtml(x.had)}</span> ← تصير <span dir="ltr">${escapeHtml(x.grade)}</span>`
+               :`في «خطتي» بلا درجة ← تصير <span dir="ltr">${escapeHtml(x.grade)}</span>`)
+        :(x.had?`My plan has ${escapeHtml(x.had)} → becomes ${escapeHtml(x.grade)}`:`In My plan without a grade → becomes ${escapeHtml(x.grade)}`)}</span>`
+      :`<span class="im-tag new">${ar?'جديدة':'New'}</span>`;
+    const off=x.same||!x.inPlan;
+    return `<label class="im-row${off?' off':''}" data-code="${escapeHtml(x.code)}">
+      <input type="checkbox"${x.pick?' checked':''}${off?' disabled':''} onchange="giToggle(${i},this.checked)">
+      <div><div class="im-t"><span dir="ltr">${escapeHtml(x.code)}</span>${x.name?` — ${escapeHtml(x.name)}`:''}</div>${tag}</div>
+      <b class="im-g" dir="ltr">${escapeHtml(x.grade)}</b></label>`;
+  }).join('');
+  const pick=GI.rows.filter(x=>x.pick&&!x.same);
+  const gpa=GI.gpa?`<div class="im-miss" id="giGpa">${ar
+    ?`معدلك في Degree Works: <b dir="ltr">${escapeHtml(GI.gpa)}</b> — معدل «خطتي» يحسب مواد خطتك بس، فممكن يفرق شوي.`
+    :`Your Degree Works GPA: <b>${escapeHtml(GI.gpa)}</b> — My plan only counts courses in your plan, so it may differ slightly.`}</div>`:'';
+  const alt=GI.altHint?`<div class="im-msg" id="giAlt">${ar
+    ?`أغلب المواد اللي مو في خطتك موجودة في الخطة ${GI.altHint==='old'?'القديمة':'الجديدة'} — يمكن نسخة خطتك غلط. غيّرها من بطاقة النسخة تحت «الخطة الدراسية» (أو من ⚙️ الإعدادات) وارجع استورد.`
+    :`Most courses not in your plan are in the ${GI.altHint==='old'?'old':'new'} plan — your plan version may be wrong. Switch it from the version card under «Study plan» (or in ⚙️ Settings) and import again.`}</div>`:'';
+  const prep=GI.prepHint?`<div class="im-msg" id="giPrep">${ar
+    ?'فيه مواد من التحضيري — فعّل «🎓 أنا في البرنامج التحضيري» من ⚙️ الإعدادات وارجع استورد.'
+    :'Some courses are from the preparatory program — turn on «🎓 I’m in the preparatory program» in ⚙️ Settings and import again.'}</div>`:'';
+  const nOut=GI.rows.filter(x=>!x.inPlan).length;
+  const outNote=nOut?`<div class="im-miss" id="giOut">${ar
+    ?`${n_(nOut)} مو في خطتك ما تنضاف — لو منها اختياري، علّم خانته في الخطة.`
+    :`${nOut} course${nOut===1?' isn’t':'s aren’t'} in your plan and won’t be added — if one is an elective, tick its slot in the plan.`}</div>`:'';
+  const skip=GI.skipped?`<div class="im-miss">${ar?`${GI.skipped} سطر ما انقرأت درجته — علّمه من الخطة تحت.`
+    :`${GI.skipped} rows weren't readable — mark them in the plan below.`}</div>`:'';
+  return `<div class="guide-lead">${ar?`لقينا ${n_(GI.rows.length)} بدرجاتها — اختر اللي تبيها:`
+      :`We found ${GI.rows.length} courses with grades — pick the ones you want:`}</div>
+    ${alt}${prep}<div class="im-list">${list}</div>${outNote}${gpa}${skip}
+    <button class="demo-btn im-add" id="giAddBtn" onclick="giAdd()"${pick.length?'':' disabled'}>${
+      pick.length?(ar?`أضف ${n_(pick.length)} لـ«خطتي»`:`Add ${pick.length} course${pick.length===1?'':'s'} to My plan`)
+      :(ar?'اختر مادة':'Pick a course')}</button>
+    <button class="btn-sm ghost im-add" onclick="GI.state='pick';GI.msg='';renderGrades()">${ar?'رجوع':'Back'}</button>`;
+}
+function giToggle(i,on){
+  const x=GI.rows[i];
+  if(!x||x.same||!x.inPlan)return;
+  x.pick=!!on;
+  renderGrades();
+}
+function giAdd(){
+  const ar=LANG==='ar';
+  const pick=GI.rows.filter(x=>x.pick&&!x.same&&x.inPlan);
+  if(!pick.length)return;
+  pick.forEach(x=>{ if(!completed.includes(x.code))completed.push(x.code); grades[x.code]=x.grade });
+  PLAN_FLASH=new Set(pick.map(x=>x.code));
+  save('pmu_completed',completed); save('pmu_grades',grades); pushCompleted();
+  giLog('added',{added:pick.length});
+  closeGrades();
+  planTouched();
+  showToast(ar?`✅ انضافت ${n_(pick.length)} لـ«خطتي» بدرجاتها`:`✅ Added ${pick.length} course${pick.length===1?'':'s'} to My plan`,'ok');
 }
 /* ═══════════ أرقام التسجيل (CRN) ═══════════
    وقت التسجيل الطالب يحتاج الأرقام بسرعة، فنعرضها مطوية
@@ -6374,6 +6597,7 @@ function renderPlan(){
   const chosen=majorChosen();
   const pm=document.getElementById('pickMajor');
   if(pm)pm.classList.toggle('on',!chosen);
+  try{ giSync() }catch(e){}
   document.getElementById('pagePlan').classList.toggle('no-major',!chosen);
   if(!chosen)return;
 
@@ -6506,13 +6730,13 @@ function renderPlan(){
            غير المنتهية وغير مقفلة: قائمة تقدير افتراضي لتوقّع المعدل. */
         const wi=WHATIF[c.c]||'';
         const gradeSel=d
-          ? `<select class="grade-sel ${g?'':'empty'}" onchange="setGrade('${c.c}',this.value)">
+          ? `<select class="grade-sel ${g?'':'empty'}" dir="ltr" onchange="setGrade('${c.c}',this.value)">
             <option value="">—</option>
             ${GRADE_LIST.map(x=>`<option value="${x}" ${g===x?'selected':''}>${x}</option>`).join('')}
           </select>`
           : (c.el || locked
              ? `<div class="pc-cr">${c.h?c.h+'H':'—'}</div>`
-             : `<select class="pc-wi ${wi?'set':''}" title="${LANG==='ar'?'تقدير افتراضي':'Projected grade'}"
+             : `<select class="pc-wi ${wi?'set':''}" dir="ltr" title="${LANG==='ar'?'تقدير افتراضي':'Projected grade'}"
                   onchange="setWhatIf('${c.c}',this.value)">
                 <option value="">${c.h?c.h+'H':'—'}</option>
                 ${['A+','A','B+','B','C+','C','D+','D'].map(x=>
@@ -6737,6 +6961,7 @@ async function aiProbe(){
 
 /* مدخلان: واحد في أعلى لوح المساعدة، وواحد في صفحة اليوم */
 function aiSync(){
+  try{ giSync() }catch(e){}
   const e=document.getElementById('aiEntry');
   if(e)e.hidden=!aiShown();
   /* شريط اليوم جزء من رسم الصفحة، فنعيد رسمها مرة لما تتغيّر الحالة */
@@ -7338,9 +7563,20 @@ let PLANS_OPEN=/[?&]plans=1(?:&|$)/.test(location.search)||(()=>{
 })();
 /* ‎?pushover=1‎ من رابط الإيصال: بعد الدخول نفتح الإعدادات على بطاقة التفعيل.
    يُقرأ عند تحميل السكربت — poCheckUnlock وinitAuth يمسحان الرابط */
-let PO_GO=/[?&]pushover=1(?:&|$)/.test(location.search);
-/* جا بغرض (رابط الإيصال · زر التفعيل): دليل أول زيارة ما يقتحم فوق البطاقة */
-let GUIDE_HOLD=!!PAY_BACK||PLANS_OPEN;      /* وراجع من صفحة الدفع: النتيجة أهم من الدليل (صورة اختبار الصفحة: الاثنين فوق بعض) */
+/* وزائر جا منه (يفتح من تلقرام في متصفحه الداخلي — مو مسجّل فيه): ندخّله ونرجّعه للبطاقة بعد الدخول
+   بعلامة في التخزين مثل PLANS_AFTER_LOGIN (رابط الرجوع من قوقل ثابت). تذكرة #50: كانت تطلع له صفحة عادية بلا شي */
+const PO_AFTER_LOGIN='jdw_po_after_login';
+let PO_GO=/[?&]pushover=1(?:&|$)/.test(location.search)||(()=>{
+  try{
+    const at=Number(localStorage.getItem(PO_AFTER_LOGIN)||0);
+    localStorage.removeItem(PO_AFTER_LOGIN);
+    return at>0&&Date.now()-at<15*60*1000;
+  }catch(e){ return false }
+})();
+/* نتيجة الربط من السيرفر (‎/api/pushover-return‎ · ‎/api/pushover-go‎): نقولها ونفتح البطاقة (poBackShow) */
+let PO_BACK=(/[?&]pushover=(on|off|fail|bad|expired|closed)(?:&|$)/.exec(location.search)||[])[1]||null;
+/* جا بغرض (رابط الإيصال · زر التفعيل · رجوع من Pushover): دليل أول زيارة ما يقتحم فوق البطاقة */
+let GUIDE_HOLD=!!PAY_BACK||PLANS_OPEN||PO_GO||!!PO_BACK;      /* وراجع من صفحة الدفع: النتيجة أهم من الدليل (صورة اختبار الصفحة: الاثنين فوق بعض) */
 function payClosedText(why){
   const ar=LANG==='ar';
   return ({beta:ar?'الدفع يفتح مع نهاية الفترة المجانية':'Checkout opens when the free period ends',
@@ -8148,21 +8384,43 @@ function poCheckUnlock(){
   }catch(e){}
 }
 
-function poStart(){
-  const c=poConf();
+async function poStart(){
+  const c=poConf(), ar=LANG==='ar';
   if(!c||!c.url)return;
-  /* رمز عشوائي نتحقق منه عند الرجوع. بدونه يقدر أحد يفتح للطالب رابط
-     العودة بمفتاح يملكه هو، فتروح إشعارات الطالب الخاصة له. */
-  let n='';
+  /* الربط عبر السيرفر (تذكرة #50): رابط الرجوع من Pushover فيه رمز يوقّعه السيرفر لصاحب الجلسة،
+     فيحفظ المفتاح في أي متصفح رجع. كان رمزاً في تخزين هالمتصفح والرجوع لازم يوصله هو وهو مسجّل —
+     والتطبيق على الشاشة الرئيسية ومتصفح تلقرام الداخلي يرجعون لغيره، فينرفض أو ينرمي بصمت */
+  if(!USER){
+    try{ localStorage.setItem(PO_AFTER_LOGIN,String(Date.now())) }catch(e){}
+    return googleSignIn();
+  }
+  const r=await meFetch('/api/me/pushover-start','POST',{}).catch(()=>null);
+  if(!r||!r.ok||!/^https:\/\/(www\.)?pushover\.net\//.test(String(r.url||''))){
+    showToast(r&&r.why==='off'?(ar?'التنبيه الطارئ مو متاح الحين':'Urgent alerts are unavailable right now')
+      :(ar?'ما ضبطت — جرّب مرة ثانية':'Failed — try again'),'err');
+    return;
+  }
+  location.href=r.url;
+}
+
+/* نتيجة الربط من السيرفر — رجع من صفحة Pushover أو رابط التفعيل على ‎?pushover=…‎ */
+function poBackShow(){
+  const st=PO_BACK;
+  if(!st)return;
+  PO_BACK=null;
   try{
-    const a=new Uint8Array(16); crypto.getRandomValues(a);
-    n=[...a].map(x=>x.toString(16).padStart(2,'0')).join('');
-    localStorage.setItem(PO_NONCE,n);
-  }catch(e){ showToast(LANG==='ar'?'ما ضبطت — جرّب مرة ثانية':'Failed — try again','err'); return }
-  const base=location.origin+'/';
-  const ok=base+'?rand='+n;
-  location.href=c.url+'?success='+encodeURIComponent(ok)+
-                '&failure='+encodeURIComponent(base);
+    const q=new URLSearchParams(location.search); q.delete('pushover');
+    history.replaceState({},'',location.pathname+(q.toString()?'?'+q:''));
+  }catch(e){}
+  const ar=LANG==='ar';
+  const msg={on:ar?'🔔 التنبيه الطارئ شغّال':'🔔 Urgent alerts on',
+    off:ar?'أوقفنا التنبيه الطارئ':'Urgent alerts off',
+    fail:ar?'ما انربط التطبيق — جرّب «تفعيل» مرة ثانية من ⚙️ الإعدادات':'Not linked — try «Enable» again in ⚙️ Settings',
+    bad:ar?'رابط التفعيل ما هو صحيح — فعّله من ⚙️ الإعدادات ← «تفعيل»':'That link is invalid — enable it from ⚙️ Settings',
+    expired:ar?'رابط التفعيل انتهى — فعّله من ⚙️ الإعدادات ← «تفعيل»':'That link expired — enable it from ⚙️ Settings',
+    closed:ar?'التنبيه الطارئ مو متاح الحين':'Urgent alerts are unavailable right now'}[st];
+  showToast(msg,st==='on'||st==='off'?'ok':'err');
+  if(USER&&st!=='closed'){ try{ poGo() }catch(e){} }
 }
 
 /* رابط الإيصال وزر «فعّل التنبيه الطارئ» بعد الدفع: الإعدادات على بطاقة التفعيل.
@@ -8201,7 +8459,8 @@ async function poHandleReturn(){
                          :'Link did not originate here — cancelled','err');
     return;
   }
-  if(!USER){ clean(); return }
+  /* بلا دخول كان ينرمي بصمت: الطالب يظن إنه فعّله */
+  if(!USER){ clean(); showToast(LANG==='ar'?'سجّل دخولك وجرّب «تفعيل» مرة ثانية':'Sign in and try «Enable» again','err'); return }
 
   const val=unsub?null:(key||null);
   const {error}=await sb.from('profiles').update({pushover_key:val}).eq('id',USER.id);
@@ -9536,7 +9795,7 @@ filterHelp:'ابحث بكود المادة، أو الـ CRN، أو اسم ال�
 search:'🔍 ابحث',searching:'جاري البحث...',monitor:'📡 راقب',stopMonitor:'⏹ أوقف',
 total:'إجمالي',open:'مفتوح',closed:'مغلق',show:'عرض:',all:'الكل',onlyOpen:'مفتوح فقط',onlyClosed:'مغلق فقط',
 courses:'مادة',credits:'ساعة معتمدة',clashes:'تعارض',clashTitle:'يوجد تعارض في الجدول',
-print:'🖨️ اطبع',clearAll:'🗑️ امسح الكل',crnBtn:'🔢 أرقام CRN',imOpen:'📥 استورد جدولك من بانر',
+print:'🖨️ اطبع',clearAll:'🗑️ امسح الكل',crnBtn:'🔢 أرقام CRN',imOpen:'📥 استورد جدولك من بانر',giOpen:'📥 استورد درجاتك من Degree Works',
 gpaLabel:'المعدل التراكمي',countedHrs:'ساعات محسوبة',
 suggestTitle:'💡 المقترح للترم الجاي',planTitle:'الخطة الدراسية',
 uni:'الجامعة',major:'التخصص',login:'دخول',tabDocs:'👨‍🏫 دكاترة',myReviews:'تقييماتي',docsTitle:'تقييمات الدكاترة',uniTitle:'جامعتك وتخصصك',docPh:'ابحث عن دكتور...',
@@ -9708,7 +9967,7 @@ filterHelp:'Search by course code, CRN, course title, or instructor name',
 search:'🔍 Search',searching:'Searching...',monitor:'📡 Monitor',stopMonitor:'⏹ Stop',
 total:'Total',open:'Open',closed:'Closed',show:'Show:',all:'All',onlyOpen:'Open only',onlyClosed:'Closed only',
 courses:'Courses',credits:'Credit hours',clashes:'Conflicts',clashTitle:'Schedule conflict detected',
-print:'🖨️ Print',clearAll:'🗑️ Clear all',crnBtn:'🔢 CRN numbers',imOpen:'📥 Import from Banner',
+print:'🖨️ Print',clearAll:'🗑️ Clear all',crnBtn:'🔢 CRN numbers',imOpen:'📥 Import from Banner',giOpen:'📥 Import grades from Degree Works',
 gpaLabel:'Cumulative GPA',countedHrs:'Counted hours',
 suggestTitle:'💡 Suggested next term',planTitle:'Study Plan',
 uni:'University',major:'Major',login:'Sign in',tabDocs:'👨‍🏫 Faculty',myReviews:'My reviews',docsTitle:'Instructor reviews',uniTitle:'Your university & major',docPh:'Search for an instructor...',
@@ -9860,6 +10119,8 @@ function applyLang(){
   /* لوح الاستيراد مرسوم بـJS — يعاد بلغته الجديدة */
   { const ov=document.getElementById('imOv');
     if(ov&&ov.classList.contains('open')&&typeof renderImport==='function')renderImport(); }
+  { const ov=document.getElementById('giOv');
+    if(ov&&ov.classList.contains('open')&&typeof renderGrades==='function')renderGrades(); }
   document.getElementById('courseFilter').placeholder=L.filterPh;
   document.getElementById('docFilter').placeholder=L.docPh;
   document.getElementById('searchBtnText').textContent=L.search;
@@ -10169,7 +10430,8 @@ function closeAuthNote(){
   if(el)el.remove();
 }
 
-function showAuthNote(){
+/* why: سطر يقول ليش يدخل الحين (رابط تفعيل التنبيه الطارئ) — داخل النافذة: رسالة منبثقة تحتها ما تنقرأ */
+function showAuthNote(why){
   closeAuthNote();
   const ar=LANG==='ar';
   const t=ar?{
@@ -10206,6 +10468,9 @@ function showAuthNote(){
   wrap.innerHTML=
     '<div style="background:var(--card);border:1px solid var(--border);border-radius:18px;'+
       'max-width:440px;width:100%;max-height:86vh;overflow:auto;padding:22px">'+
+      (why?'<div id="authWhy" style="font-size:13.5px;font-weight:600;line-height:1.8;margin-bottom:14px;padding:11px 13px;'+
+        'border-radius:11px;background:rgba(61,111,255,.1);border:1px solid rgba(61,111,255,.28);white-space:pre-line">'+
+        escapeHtml(why)+'</div>':'')+
       '<div style="font-size:17px;font-weight:700;margin-bottom:6px">🔒 '+t.title+'</div>'+
       '<div style="font-size:13.5px;color:var(--text2);line-height:1.85">'+t.lead+'</div>'+
       '<div style="margin-top:14px;padding:12px 14px;border-radius:12px;'+
@@ -10491,12 +10756,19 @@ function redrawTodayAfterAuth(){
   /* زائر جا على ‎?plans=1‎ (رابط من المساعد · «عن جدولك»): كانت ما تفتح شي —
      تفتح الورقة وفيها «سجّل دخولك واشترك» */
   if(!USER&&PLANS_OPEN){ PLANS_OPEN=false; try{ openPlans('compare') }catch(e){} }
+  /* زائر جا من رابط الإيصال القديم (‎?pushover=1‎): ندخّله، وبعد الدخول نفتح له بطاقة «تفعيل» */
+  if(!USER&&PO_GO){ PO_GO=false;
+    try{ localStorage.setItem(PO_AFTER_LOGIN,String(Date.now())) }catch(e){}
+    try{ showAuthNote(LANG==='ar'
+      ?'🚨 عشان تفعّل التنبيه الطارئ: سجّل دخولك بنفس حساب قوقل اللي دفعت منه — وبعدها نفتح لك «تفعيل».\nفتحت الرابط من تلقرام وما زبط الدخول؟ افتح jadwalik.com في Safari.'
+      :'🚨 To enable urgent alerts: sign in with the Google account you paid with — then we open «Enable».\nOpened this from Telegram and sign-in fails? Open jadwalik.com in Safari.') }catch(e){} }
   if(USER){await pullCloud();setAuthUI();renderPlan();enforceSlotAndRedraw();redrawTodayAfterAuth();
     loadAccount(true).then(()=>{ try{ if(CUR_TAB==='set')renderSettings() }catch(e){}
       try{ rrNotice(ACCOUNT) }catch(e){} });
     payReturn().catch(()=>{});          /* رجع من صفحة الدفع؟ */
     if(PO_GO)poGo();                    /* جا من رابط الإيصال؟ */
     if(document.getElementById('pageSched').classList.contains('active'))renderSchedule();}
+  try{ poBackShow() }catch(e){}         /* رجع من صفحة Pushover؟ (بعد الملف — فيه مفتاحه الجديد) */
   sb.auth.onAuthStateChange(async(ev,sess)=>{
     const was=!!USER;USER=sess?sess.user:null;
     if(USER&&!was){await pullCloud();setAuthUI();renderPlan();redrawTodayAfterAuth();

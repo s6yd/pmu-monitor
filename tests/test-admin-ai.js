@@ -60,6 +60,8 @@ function makeServer(st) {
         return res.end(JSON.stringify(st.ai));
       }
       if (u.endsWith('/ai-top')) return res.end(JSON.stringify(st.top));
+      if (u.endsWith('/import-log')) return res.end(JSON.stringify(st.imp ||
+        { ok: true, days: 30, env: 'prod', summary: {}, recent: [] }));
       if (u.endsWith('/ai-ping')) return res.end(JSON.stringify(st.ping));
       if (u.endsWith('/ai-thread')) {
         st.threads.push(req.url);
@@ -370,6 +372,45 @@ const openAi = async page => {
     ok(/زوار قبل فصل القنوات 3 سؤال/.test(t), 'وأسئلة الزوار قبل الفصل تبين بعددها');
     eq(errs, [], 'بلا أخطاء');
     await page.close(); close();
+  }
+
+  /* ── ٧) سجل الاستيراد — طلب محمد (٥ نوفمبر ٢٠٢٦: «نعرف الي استخدم هذي الميزات ونشوف لو نجحت او اذا فشلت») ── */
+  {
+    const st = { ai: aiState(), top: topState(), posts: [], asks: [], warms: [], threads: [],
+      imp: { ok: true, days: 30, env: 'prod',
+        summary: { schedule: { tries: 7, added: 3, courses: 11, closed: 1, left: 1, failed: 2, users: 5, sar: 0.42,
+                               reasons: { notschedule: 1, big: 1 } } },
+        recent: [
+          { at: '2026-11-05T09:30:00.000Z', email: 'a@x.com', name: 'Ahmad', kind: 'schedule', src: 'pdf',
+            outcome: 'added', read: 'ok', rows: 6, skipped: 1, found: 5, missing: 1, warned: 1, added: 4, sar: 0.06 },
+          { at: '2026-11-04T18:00:00.000Z', email: 'b@x.com', name: '<img src=x onerror=alert(2)>', kind: 'schedule',
+            src: 'image', outcome: 'notschedule', read: 'notschedule', rows: 0, skipped: 0, found: 0, missing: 0,
+            warned: 0, added: 0, sar: 0.05 },
+          { at: '2026-11-04T10:00:00.000Z', email: null, name: null, kind: 'schedule', src: 'paste',
+            outcome: 'nomatch', read: null, rows: 0, skipped: 0, found: 0, missing: 3, warned: 0, added: 0, sar: 0 }] } };
+    const { page, errs, close } = await open(browser, st);
+    await openAi(page);
+    const t = await page.textContent('#aiBody');
+    ok(/📥 الاستيراد/.test(t), '**بطاقة «📥 الاستيراد» في تبويب المساعد**');
+    ok(/7\s*محاولة/.test(t) && /5\s*طالب/.test(t) && /3\s*مرة/.test(t) && /11\s*مادة/.test(t),
+       '**الملخّص: محاولات · طلاب · أضافوا كم مرة وكم مادة** — كما رجّعه السيرفر');
+    ok(/مو جدول/.test(t) && /الملف كبير/.test(t), '**وأسباب الفشل بالعربي** (مو جدول · الملف كبير)');
+    ok(/a@x\.com|Ahmad/.test(t) && /✅ أضاف/.test(t) && /ملف PDF/.test(t) && /أضاف\s*4/.test(t) && /ما لقينا\s*1/.test(t),
+       '**آخر المحاولات: مين · من وين · النتيجة · كم لقينا وكم أضاف**');
+    ok(/لصق أرقام/.test(t) && /الأرقام ما طابقت/.test(t), 'واللصق اللي ما طابق يبان');
+    ok(!/هـ/.test(t) && /نوفمبر|نوف/.test(t), 'والتاريخ ميلادي لا هجري');
+    ok(await page.$('#aiBody img') === null, 'والاسم يُهرَّب — ولا وسم من بيانات طالب');
+    eq(errs, [], 'بلا أخطاء JS');
+    await page.close(); close();
+
+    /* السجل ما انقرأ: البطاقة تقولها — لا «ما أحد استعمله» */
+    const st2 = Object.assign({}, st, { imp: { ok: false, error: 'تعذّر قراءة السجل' } });
+    const o2 = await open(browser, st2);
+    await openAi(o2.page);
+    const t2 = await o2.page.textContent('#aiBody');
+    ok(/تعذّر قراءة السجل/.test(t2) && !/ما أحد استعمل/.test(t2), 'السجل ما انقرأ: تقولها البطاقة — لا «ما أحد استعمله»');
+    eq(o2.errs, [], 'بلا أخطاء JS');
+    await o2.page.close(); o2.close();
   }
 
   /* ── ٦) فحص ثابت ── */

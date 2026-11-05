@@ -1698,6 +1698,7 @@ function fakeModel(ctx) {
     const ov0 = await callE('plan_overview', '{}');
     eq(ov0.completedRecorded, 0, 'ملخص الخطة يقول كم مادة علّمها منجزة');
     ok(/خطتي/.test(ov0.note || ''), '**وبلا منجزات: يقول إن الحساب من اللي علّمه في «خطتي»**');
+    ok(/استورد درجاتك من Degree Works/.test(ov0.note || ''), '**وبلا منجزات: يحثّه يستورد درجاته — «📥 استورد درجاتك من Degree Works»** — ' + (ov0.note || ''));
     const ov1 = await call('plan_overview', '{}');
     eq([ov1.completedRecorded, ov1.note], [3, undefined], 'وطالب علّم منجزاته: بلا الملاحظة');
     for (const t of ['next_term_suggestion', 'graduation_forecast', 'retake_list']) {

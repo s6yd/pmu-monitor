@@ -29,7 +29,7 @@ const server = http.createServer((req, res) => {
   if (u.endsWith('/pay')) return res.end(JSON.stringify(ST.pay));
   if (u.endsWith('/pay-ping')) { ST.pings++; return res.end(JSON.stringify(ST.ping)) }
   if (u.endsWith('/po-lic')) { ST.licGets++; return res.end(JSON.stringify(ST.lic)) }
-  if (/\/po-lic-(retry|done|approve|skip)$/.test(u)) {
+  if (/\/po-lic-(retry|done|approve|skip|link)$/.test(u)) {
     let raw = '';
     req.setEncoding('utf8');
     req.on('data', c => raw += c);
@@ -362,6 +362,38 @@ const server = http.createServer((req, res) => {
   await lic(L({ waitingList: [{ user: U3, email: '<img src=x onerror=alert(1)>', source: 'comp', since: null, asked: false }] }));
   ok(await page.$('#poLicCard img') === null, 'إيميل فيه وسم في المنتظرين يُهرَّب');
 
+  /* ── ٧-ب) دفعوا وما ربطوا التطبيق (تذكرة #50): كانوا ما يبانون أبداً — والسيرفر يتخطّاهم بصمت ── */
+  const U5 = '00000000-0000-4000-8000-000000000005', U6 = '00000000-0000-4000-8000-000000000006';
+  const GO5 = 'https://jadwalik.com/api/pushover-go?t=' + U5 + '.abc.' + 'x'.repeat(27);
+  const UL = L({ unlinked: [
+    { user: U5, email: 's5@example.com', source: 'paid', at: ago(60 * 24 * 32), due: ago(60 * 24 * 25), tg: true, noted: true, link: GO5 },
+    { user: U6, email: 's6@example.com', source: 'comp', at: ago(60), due: ago(60), tg: false, noted: false,
+      link: GO5.replace(U5, U6) }] });
+  t = await lic(UL);
+  ok(/دفعوا وما ربطوا التطبيق ?2/.test(t) && /s5@example\.com · اشترى قبل 32 يوم/.test(t) && /s6@example\.com · هدية/.test(t),
+     '**اللوحة: «دفعوا وما ربطوا التطبيق 2» بإيميلاتهم ومتى اشتروا** — ' + t.slice(t.indexOf('دفعوا'), t.indexOf('دفعوا') + 90));
+  ok(/بلا الربط ما نقدر نضيف رخصته/.test(t), 'ومعها ليش يهم: بلا الربط ما تنضاف رخصته ولا يوصله تنبيه');
+  eq(await page.$$eval(`#poLicCard button[data-u="${U5}"]`, b => b.map(x => x.textContent.trim())), ['📩 أرسل له رابط التفعيل'],
+     '**المربوط تلقرام: زر «📩 أرسل له رابط التفعيل»**');
+  ok(await page.$(`#poLicCard button[data-u="${U6}"]`) === null && /مو رابط تيليغرام/.test(t),
+     'وبلا تلقرام: بلا زر الإرسال، و«مو رابط تيليغرام»');
+  ok(await page.$$eval('#poLicCard button[data-l]', b => b.map(x => x.dataset.l)).then(l => l.includes(GO5)),
+     'و«📋 انسخ الرابط» برابط تفعيله');
+  ST.licCalls.length = 0;
+  ST.licNext = { ok: true, email: 's5@example.com' };
+  await tap('link', U5, 'dismiss');
+  eq(ST.licCalls.length, 0, '«أرسل له الرابط» بتأكيد — ورفضت: ما راح شي');
+  const askMsg = await tap('link', U5, 'accept');
+  await page.waitForTimeout(200);
+  eq(ST.licCalls, [{ act: 'po-lic-link', body: { userId: U5 } }], '**ووافقت: الرابط ينرسل لهالطالب بالذات**');
+  ok(/s5@example\.com/.test(askMsg || '') && /رابط تفعيل التنبيه الطارئ/.test(askMsg || ''), 'والتأكيد فيه إيميله — ' + askMsg);
+  ok(/أرسلنا له رابط التفعيل/.test(await toastText()), 'ورسالة «📩 أرسلنا له رابط التفعيل»');
+  await lic(L({ unlinked: [{ user: U6, email: '<img src=x onerror=alert(2)>', source: 'comp', at: null, due: null, tg: false,
+    noted: false, link: GO5 }] }));
+  ok(await page.$('#poLicCard img') === null, 'إيميل فيه وسم في «ما ربطوا» يُهرَّب');
+  t = await lic(L({ unlinked: [] }));
+  ok(!/دفعوا وما ربطوا/.test(t), 'وما فيه أحد: القسم ما يطلع');
+
   ok(errs.length === 0, 'بلا أخطاء JS — ' + errs.slice(0, 2).join(' | '));
   if (SHOT) {
     await lic(STOP);
@@ -374,6 +406,8 @@ const server = http.createServer((req, res) => {
     await lic(L({ waiting: 2, waitingList: LB.waitingList.concat([
       { user: U4, email: 's4@example.com', source: 'comp', since: ago(5), asked: true }]) }));
     await page.screenshot({ path: path.join(SHOT, 'admin-polic-on.png'), fullPage: true });
+    await lic(UL);
+    await page.screenshot({ path: path.join(SHOT, 'admin-polic-unlinked.png'), fullPage: true });
     await page.goto(`http://127.0.0.1:${server.address().port}/`, { waitUntil: 'load' });
     await page.waitForFunction(() => typeof window.loadPay === 'function', null, { timeout: 15000 }).catch(() => {});
 

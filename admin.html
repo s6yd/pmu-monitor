@@ -217,6 +217,8 @@ border-bottom:1px solid var(--border);font-size:12.5px}
 .kv span{color:var(--text3)}
 .kv b{font-family:var(--mono);font-weight:500}
 .kv b.good{color:var(--open)}.kv b.warn{color:var(--warn)}.kv b.bad{color:var(--close)}
+.imp-row .row-top>span{font-size:12px;font-weight:700;flex-shrink:0}
+.imp-row .row-top .good{color:var(--open)}.imp-row .row-top .warn{color:var(--warn)}.imp-row .row-top .bad{color:var(--close)}
 .tab.active::after{content:'';position:absolute;bottom:0;left:15%;right:15%;
 height:2px;background:var(--accent);border-radius:2px}
 
@@ -649,12 +651,13 @@ async function loadAllInner(silent){
    الوضع والنموذج والسقوف والإنفاق ومربّع تجربة. كل شي من هنا بلا نشر:
    اسم النموذج يتقدّم على متغيّر Render، والسقوف تُحفظ في القاعدة.
    التكلفة تجي محسوبة من السيرفر — اللوحة تعرض ما يُرجعه ولا تحسب سعراً. */
-let AI=null, AITOP=null, AIMSGS=[], AIBUSY=false;
+let AI=null, AITOP=null, AIMSGS=[], AIBUSY=false, AIIMP=null;
 
 async function loadAi(){
   try{
-    const [a,t]=await Promise.all([api('ai'),api('ai-top').catch(()=>null)]);
-    AI=a; AITOP=t; renderAi();
+    const [a,t,im]=await Promise.all([api('ai'),api('ai-top').catch(()=>null),
+      api('import-log').catch(()=>null)]);
+    AI=a; AITOP=t; AIIMP=im; renderAi();
   }catch(e){ toast(e.message,'err'); }
 }
 
@@ -733,6 +736,7 @@ function renderAi(){
     </div>
 
     ${aiChannelCard()}
+    ${aiImportCard()}
     ${aiTopCard()}
     ${aiChatCard()}`;
   renderAiChat();
@@ -760,6 +764,67 @@ function aiChannelCard(){
         والأسئلة قبل هالتحديث محسوبة على الموقع.
       </div>
     </div>`;
+}
+
+/* سجل الاستيراد (الجدول من بانر · الدرجات من Degree Works) — طلب محمد (٥ نوفمبر ٢٠٢٦: «نعرف الي استخدم
+   هذي الميزات ونشوف لو نجحت او اذا فشلت عشان نعدل ونحسن بعدين»). السيرفر يجمع القراءة ونتيجتها في الصفحة
+   سطراً لكل محاولة — أعداد ورموز بس، بلا محتوى الملف. اللوحة تعرض ولا تحسب. */
+const IMP_OUT={added:['✅ أضاف','good'],closed:['قفل بلا إضافة','warn'],left:['انقرأ وما كمّل','warn'],
+  nomatch:['الأرقام ما طابقت بيانات الجامعة','bad'],nodata:['بيانات الجامعة ما وصلت','bad'],
+  nocrn:['لصق بلا أرقام','warn'],big:['الملف كبير','bad'],type:['نوع ملف غلط','bad'],open:['الملف ما انفتح','bad'],
+  notschedule:['مو جدول','bad'],notaudit:['مو كشف Degree Works','bad'],empty:['ما قدر يقرأ الملف','bad'],
+  refused:['النموذج رفض','bad'],error:['خلل في القراءة','bad'],off:['المساعد مقفل','warn'],
+  admin:['المساعد لك وحدك','warn'],nokey:['مفتاح المساعد ناقص','bad'],day:['خلصت أسئلته اليوم','warn'],
+  term:['خلصت أسئلته للترم','warn'],month:['خلص سقف الشهر','bad'],unknown:['سقف الشهر ما انقرأ','bad'],
+  noprofile:['ما لقينا حسابه','bad']};
+const IMP_KIND={schedule:'📅 جدول',grades:'📋 درجات'};
+const IMP_SRC={pdf:'ملف PDF',image:'صورة',paste:'لصق أرقام',other:'ملف نوعه غير معروف'};
+function impWhen(d){
+  const x=new Date(d); if(isNaN(x))return '—';
+  return x.toLocaleString('ar-u-ca-gregory-nu-latn',{timeZone:'Asia/Riyadh',month:'short',day:'numeric',
+    hour:'2-digit',minute:'2-digit'});
+}
+function aiImportCard(){
+  const L=AIIMP;
+  const head=`<div class="sec-title">📥 الاستيراد — آخر ${(L&&L.days)||30} يوم</div>`;
+  if(!L||!L.ok)return head+`<div class="gauge-sub" style="margin-bottom:12px;color:var(--warn)">${
+    esc((L&&L.error)||'ما قدرنا نقرأ سجل الاستيراد')}</div>`;
+  const kinds=Object.keys(L.summary||{});
+  if(!kinds.length)return head+`<div class="empty" style="padding:24px"><div class="empty-icon">📥</div>
+    <div class="empty-t">ما أحد استعمل الاستيراد للحين</div></div>`;
+  const sums=kinds.map(k=>{
+    const x=L.summary[k];
+    const why=Object.entries(x.reasons||{}).sort((a,b)=>b[1]-a[1])
+      .map(([r,n])=>`<span class="tag">${esc((IMP_OUT[r]||[r])[0])} <span class="ltr">×${n}</span></span>`).join(' ');
+    return `<div class="gauge" style="margin-bottom:10px">
+      <div class="kv"><span>${esc(IMP_KIND[k]||k)}</span><b><span class="ltr">${x.tries}</span> محاولة ·
+        <span class="ltr">${x.users}</span> طالب</b></div>
+      <div class="kv"><span>أضافوا</span><b class="good"><span class="ltr">${x.added}</span> مرة ·
+        <span class="ltr">${x.courses}</span> مادة</b></div>
+      <div class="kv"><span>قفلوا بلا إضافة</span><b><span class="ltr">${x.closed}</span></b></div>
+      <div class="kv"><span>انقرأ وما كمّلوا</span><b><span class="ltr">${x.left}</span></b></div>
+      <div class="kv"><span>فشلت</span><b class="${x.failed?'bad':''}"><span class="ltr">${x.failed}</span></b></div>
+      <div class="kv"><span>الكلفة</span><b><span class="ltr">${x.sar}</span> ريال</b></div>
+      ${why?`<div class="tags">${why}</div>`:''}</div>`;
+  }).join('');
+  const rows=(L.recent||[]).map(e=>{
+    const o=IMP_OUT[e.outcome]||[e.outcome,''];
+    const bits=[];
+    if(e.rows)bits.push(`انقرأ <b><span class="ltr">${e.rows}</span></b>`);
+    if(e.skipped)bits.push(`ما انقرأ <b><span class="ltr">${e.skipped}</span></b>`);
+    if(e.found||e.missing)bits.push(`لقينا <b><span class="ltr">${e.found}</span></b>`);
+    if(e.missing)bits.push(`ما لقينا <b><span class="ltr">${e.missing}</span></b>`);
+    if(e.warned)bits.push(`بتحذير <b><span class="ltr">${e.warned}</span></b>`);
+    if(e.added)bits.push(`أضاف <b><span class="ltr">${e.added}</span></b>`);
+    if(e.sar)bits.push(`<span class="ltr">${e.sar}</span> ريال`);
+    return `<div class="row imp-row">
+      <div class="row-top"><b>${esc(e.name||e.email||'—')}</b><span class="${o[1]}">${esc(o[0])}</span></div>
+      <div class="row-meta"><span>${esc(IMP_KIND[e.kind]||e.kind)} · ${esc(IMP_SRC[e.src]||e.src||'')}</span>
+        <span>${esc(impWhen(e.at))}</span>
+        ${e.email&&e.name?`<span><span class="ltr">${esc(e.email)}</span></span>`:''}</div>
+      ${bits.length?`<div class="row-meta">${bits.map(b=>`<span>${b}</span>`).join('')}</div>`:''}</div>`;
+  }).join('');
+  return head+sums+`<div class="sec-title" style="font-size:12px">آخر المحاولات</div>`+rows;
 }
 
 /* أكثر ١٠ طلاب استهلاكاً — رقمه الحقيقي بالريال لا عدد أسئلته وحده */
@@ -2203,11 +2268,21 @@ function poLicCardHTML(){
       <span>${esc(x.email||String(x.user||'').slice(0,8))} · ${x.source==='comp'?'هدية':'اشترى الإضافة'}</span>
       <span style="color:var(--text3)">${x.since?esc('مستحق '+payAgo(x.since)):''}</span></div>${
       act?`<div class="pay-use">${btn('approve',x.user,'✅ أضف','go')} ${btn('skip',x.user,'✖️ لا')}</div>`:''}</div>`).join('');
+  /* دفعوا وما ربطوا التطبيق (تذكرة #50): بلا الربط ما ينسألك عنهم ولا يوصلهم تنبيه — كانوا ما يبانون أبداً.
+     «📩 أرسل له رابط التفعيل» يرسله على تلقرام، و«📋 انسخ الرابط» لو مو رابط تلقرام */
+  const ul=(d.unlinked||[]).map(x=>`<div class="pay-item"><div class="cr-row">
+      <span>${esc(x.email||String(x.user||'').slice(0,8))} · ${x.source==='comp'?'هدية':'اشترى '+esc(payAgo(x.at))}</span>
+      <span style="color:var(--warn)">ما ربط التطبيق</span></div>
+      <div class="pay-use">${x.tg&&act?btn('link',x.user,'📩 أرسل له رابط التفعيل','go')+' ':''}${x.link?`<button class="mini" data-l="${esc(x.link)}" onclick="poLicCopy(this)">📋 انسخ الرابط</button>`:''}${
+        x.tg?'':' <span style="color:var(--text3)">مو رابط تيليغرام</span>'}</div></div>`).join('');
   return `<div class="gauge" style="margin-bottom:12px">${head}
     <div class="kv"><span>الوضع</span>${st}</div>
     <div class="kv"><span>الرصيد عند Pushover</span>${cr}</div>
     ${d.waiting!=null?`<div class="kv"><span>ينتظرون موافقتك</span><b>${Number(d.waiting)}</b></div>`:''}
     ${wait?`<div style="margin-top:8px">${wait}</div>`:''}
+    ${ul?`<div class="kv" id="poLicUnlinked"><span>دفعوا وما ربطوا التطبيق</span><b style="color:var(--warn)">${(d.unlinked||[]).length}</b></div>
+      <div style="margin-top:8px">${ul}</div>
+      ${payTip('<b>بلا الربط ما نقدر نضيف رخصته، ولا يوصله تنبيه طارئ</b> — وتجربة Pushover المجانية تخلص بعد 30 يوم من تنزيله. أرسل له رابط التفعيل: يضغطه ويوافق في صفحة Pushover (بلا دخول للموقع)، وبعدها يوصلك سؤال رخصته.')}`:''}
     ${payTip(`<b>ما تنضاف رخصة إلا بموافقتك</b>: أول ما يصير طالب مستحقاً يوصلك على تلقرام زرّان «✅ أضف الرخصة» و«✖️ لا»، وهنا نفسهما. مشتري الإضافة يستحق بعد ${Number(d.refundDays)||7} أيام من الدفع (مدة الاسترجاع — الرخصة ما تنسترجع)، والهدية فوراً — وبشرط يربط التطبيق. الرصيد تشتريه من صفحة التطبيق في pushover.net («Purchase License Credits»).`)}
     ${d.state==='stopped'?payTip('<b style="color:var(--close)">طالب واقف تحت</b> — Pushover ينصح ما نعيد لحالنا. «🔁 أعد» يطلبها له من جديد، و«✔️ تمّت» لو أضفتها بيدك أو تبي تتخطّاه.'):''}
     ${rows?`<div style="margin-top:8px">${rows}</div>`:''}
@@ -2215,6 +2290,13 @@ function poLicCardHTML(){
       ${act?btn('go','','▶️ كمّل الحين','go'):''}
       <button class="mini" onclick="loadPoLic(true)">🔄 تحديث</button></div>
   </div>`;
+}
+/* نسخ رابط التفعيل — يرسله محمد بنفسه (مو رابط تلقرام · رد على تذكرة) */
+async function poLicCopy(b){
+  const l=(b&&b.dataset.l)||'';
+  if(!l)return;
+  try{ await navigator.clipboard.writeText(l); toast('📋 انتسخ الرابط — أرسله له','ok') }
+  catch(e){ prompt('انسخ رابط التفعيل:',l) }
 }
 async function loadPoLic(force){
   if(!force&&POLIC&&Date.now()-POLIC_AT<60000)return;
@@ -2227,8 +2309,21 @@ async function loadPoLic(force){
    addnow = أضفها لطالب قلت له «لا» (أو «تمّت») · done = تمّت يدوياً أو تخطّاه */
 async function poLicAct(k,b){
   const u=(b&&b.dataset.u)||'';
-  const who=([...((POLIC&&POLIC.waitingList)||[]),...((POLIC&&POLIC.rows)||[])]
+  const who=([...((POLIC&&POLIC.waitingList)||[]),...((POLIC&&POLIC.rows)||[]),...((POLIC&&POLIC.unlinked)||[])]
     .find(x=>x.user===u)||{}).email||'هالطالب';
+  /* رابط التفعيل لمشتري ما ربط: رسالة له على تلقرام — والرد نتيجة الإرسال لا حالة البطاقة */
+  if(k==='link'){
+    if(!confirm(`نرسل لـ${who} رابط تفعيل التنبيه الطارئ على تلقرام؟`))return;
+    if(b)b.disabled=true;
+    try{
+      const r=await api('po-lic-link',{body:{userId:u}});
+      if(r&&r.ok)toast('📩 أرسلنا له رابط التفعيل','ok');
+      else toast(((r&&r.error)||'تعذّر')+(r&&r.link?' — انسخ الرابط وأرسله له':''),'err');
+    }catch(e){ toast(e.message,'err') }
+    finally{ if(b&&b.isConnected)b.disabled=false }
+    loadPoLic(true);
+    return;
+  }
   if(k==='approve'&&!confirm(`نضيف رخصة Pushover لـ${who}؟\n\nتنخصم رخصة من رصيدك وما ترجع.`))return;
   if(k==='skip'&&!confirm(`ما نضيفها لـ${who}؟\n\nما نرجع نسألك عنه — ولو غيّرت رأيك: «✅ أضفها» على صفّه تحت.`))return;
   if(k==='addnow'&&!confirm(`نضيف رخصة Pushover لـ${who} الحين؟\n\nلو أضفتها له بيدك من قبل، هذي رخصة ثانية. تنخصم من رصيدك وما ترجع.`))return;
