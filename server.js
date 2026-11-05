@@ -10933,6 +10933,95 @@ const IMPORT_MSG = {
   noprofile: 'ما لقيت حسابك — سجّل خروج ودخول وجرّب ثانية.'
 };
 
+/* ═══ سجل الاستيراد — طلب محمد (٥ نوفمبر ٢٠٢٦) ═══
+   «نعرف الي استخدم هذي الميزات ونشوف لو نجحت او اذا فشلت عشان نعدل ونحسن بعدين».
+   حدث في app_events (kind 'import' — الجدول موجود، بلا SQL، وينظَّف بعد ٣٠ يوم مثل باقي الأحداث):
+   - **read** (السيرفر، مع كل نداء /api/me/import): مين · وش · من وين · النتيجة (ok أو سببها) · كم
+     انقرأ · كم ما انقرأ · الكلفة.
+   - **done** (الصفحة، /api/me/import-log): كم لقينا في بيانات الجامعة · كم ما لقينا · كم بتحذير · كم
+     أضاف — أو قفل بلا إضافة، أو فشل قبل ما يوصلنا (الملف كبير · نوعه غلط)، أو لصق أرقام.
+   والاثنان بنفس الرقم (ev) فاللوحة تجمعهما سطراً واحداً.
+   **ولا شي من محتوى الملف** — لا CRN ولا رمز مادة ولا درجة: أعداد ورموز نتيجة بس. */
+const IMPORT_LOG_KINDS = ['schedule', 'grades'];
+const IMPORT_LOG_SRC = ['pdf', 'image', 'paste'];
+/* اللي تقدر الصفحة تقوله — قائمة مغلقة: الطالب يقدر يرسل أي شي لهالنقطة */
+const IMPORT_LOG_DONE = ['added', 'closed', 'nomatch', 'nodata', 'nocrn', 'big', 'type', 'open'];
+const IMPORT_LOG_MAX = 40;                     /* لكل طالب بالساعة */
+const IMPORT_LOG_RL = new Map();               /* طالب → [أوقات] */
+const importEv = () => crypto.randomBytes(6).toString('hex');
+const importInt = v => Math.max(0, Math.min(500, parseInt(v, 10) || 0));
+function importLog(p) { logEvent('import', Object.assign({ at: Date.now(), env: SITE_ENV }, p)) }
+function importLogAllowed(uid) {
+  const now = Date.now(), list = (IMPORT_LOG_RL.get(uid) || []).filter(t => now - t < 3600e3);
+  if (list.length >= IMPORT_LOG_MAX) { IMPORT_LOG_RL.set(uid, list); return false }
+  list.push(now); IMPORT_LOG_RL.set(uid, list);
+  return true;
+}
+/* حدث الصفحة: كل حقل من قائمته أو رقم بحدّه — وإلا ما ينكتب */
+function importLogDone(uid, b) {
+  const kind = IMPORT_LOG_KINDS.includes(b && b.kind) ? b.kind : null;
+  const src = IMPORT_LOG_SRC.includes(b && b.src) ? b.src : null;
+  const outcome = IMPORT_LOG_DONE.includes(b && b.outcome) ? b.outcome : null;
+  if (!kind || !src || !outcome) return { ok: false, why: 'bad' };
+  if (!importLogAllowed(uid)) return { ok: false, why: 'rate' };
+  const ev = /^[0-9a-f]{12}$/.test(String(b.ev || '')) ? String(b.ev) : importEv();
+  importLog({ ev, stage: 'done', user: uid, kind, src, outcome, found: importInt(b.found),
+    missing: importInt(b.missing), warned: importInt(b.warned), added: importInt(b.added) });
+  return { ok: true };
+}
+
+/* اللوحة: سطر لكل محاولة (read + done بنفس ev) بإيميل صاحبها، وملخّص لكل نوع */
+async function adminImportLog(daysQ) {
+  const days = Math.max(1, Math.min(30, parseInt(daysQ, 10) || 30));
+  const since = new Date(Date.now() - days * 864e5).toISOString();
+  const rows = await sb('GET', 'app_events', { query: `?kind=eq.import&at=gte.${encodeURIComponent(since)}`
+    + '&select=at,payload&order=at.desc&limit=2000' }).catch(() => null);
+  if (!Array.isArray(rows)) return { ok: false, error: 'تعذّر قراءة السجل' };
+  const by = new Map();
+  for (const r of rows) {
+    const p = r && r.payload;
+    /* القاعدة مشتركة: كل بيئة تشوف محاولاتها */
+    if (!p || p.env !== SITE_ENV) continue;
+    const k = p.ev || ('n' + by.size);
+    const e = by.get(k) || { ev: p.ev || null, at: Number(p.at) || Date.parse(r.at) || 0,
+      user: p.user || null, kind: p.kind, src: p.src };
+    if (p.stage === 'read') Object.assign(e, { read: p.outcome, rows: p.rows || 0,
+      skipped: p.skipped || 0, cost: p.cost || 0 });
+    else Object.assign(e, { done: p.outcome, found: p.found || 0, missing: p.missing || 0,
+      warned: p.warned || 0, added: p.added || 0 });
+    e.at = Math.min(e.at, Number(p.at) || e.at);
+    if (p.src && e.src !== p.src && p.stage === 'done') e.src = p.src;
+    by.set(k, e);
+  }
+  const list = [...by.values()].sort((a, b) => b.at - a.at);
+  /* النتيجة النهائية: أضاف · قفل · سبب الفشل · أو انقرأ وما كمّل (قفل التطبيق قبل ما يختار) */
+  list.forEach(e => { e.outcome = e.done || (e.read === 'ok' ? 'left' : e.read) || 'left' });
+  const ids = [...new Set(list.map(e => e.user).filter(isUuid))];
+  const people = ids.length ? await sb('GET', 'profiles',
+    { query: `?id=in.(${ids.join(',')})&select=id,email,name` }).catch(() => null) : [];
+  const who = new Map((Array.isArray(people) ? people : []).map(x => [x.id, x]));
+  const summary = {};
+  for (const e of list) {
+    const s = summary[e.kind] = summary[e.kind] || { tries: 0, added: 0, courses: 0, closed: 0,
+      left: 0, failed: 0, users: 0, costMicro: 0, reasons: {}, _u: new Set() };
+    s.tries++; s._u.add(e.user || 'guest'); s.costMicro += e.cost || 0;
+    if (e.outcome === 'added') { s.added++; s.courses += e.added || 0 }
+    else if (e.outcome === 'closed') s.closed++;
+    else if (e.outcome === 'left') s.left++;
+    else { s.failed++; s.reasons[e.outcome] = (s.reasons[e.outcome] || 0) + 1 }
+  }
+  Object.values(summary).forEach(s => { s.users = s._u.size; s.sar = Number(aiSar(s.costMicro)); delete s._u });
+  return { ok: true, days, env: SITE_ENV, summary,
+    recent: list.slice(0, 60).map(e => {
+      const u = who.get(e.user) || null;
+      return { at: new Date(e.at).toISOString(), email: u ? (u.email || null) : null,
+        name: u ? (u.name || null) : null, kind: e.kind, src: e.src, outcome: e.outcome,
+        read: e.read || null, rows: e.rows || 0, skipped: e.skipped || 0, found: e.found || 0,
+        missing: e.missing || 0, warned: e.warned || 0, added: e.added || 0,
+        sar: Number(aiSar(e.cost || 0)) };
+    }) };
+}
+
 /* جسم الطلب كبير (الملف base64) — قارئ بحدّه، ونص لا بايتات (§٦: base64 حروف لاتينية أصلاً) */
 function importReadBody(req, max) {
   return new Promise(resolve => {
@@ -11011,8 +11100,9 @@ async function importSchedule(userId, b) {
                   output_tokens: Math.max(0, Number(u.output_tokens) || 0),
                   cache_creation_input_tokens: Math.max(0, Number(u.cache_creation_input_tokens) || 0),
                   cache_read_input_tokens: Math.max(0, Number(u.cache_read_input_tokens) || 0) };
+  let cost = 0;
   if (usage.input_tokens > 0 || usage.output_tokens > 0) {
-    const cost = aiCostMicro(model, usage);
+    cost = aiCostMicro(model, usage);
     const row = { user_id: String(userId), env: SITE_ENV, term: quota.term, model, on_date: aiToday(),
                   calls: 1, in_tokens: usage.input_tokens, out_tokens: usage.output_tokens,
                   cache_w_tokens: usage.cache_creation_input_tokens,
@@ -11030,16 +11120,20 @@ async function importSchedule(userId, b) {
     OPS.aiFails = (OPS.aiFails || 0) + 1;
     /* السبب وحده في السجل — لا الملف ولا شي منه */
     console.log('import: فشل نداء النموذج — ' + ((j && j.error && j.error.type) || r.err || ('http ' + r.status)));
-    return { ok: false, why: 'error', msg: IMPORT_MSG.error, used: aiUsedOf(quota) };
+    return { ok: false, why: 'error', msg: IMPORT_MSG.error, used: aiUsedOf(quota), _cost: cost };
   }
-  if (j.stop_reason === 'refusal') return { ok: false, why: 'refused', msg: IMPORT_MSG.refused, used: aiUsedOf(quota) };
+  if (j.stop_reason === 'refusal')
+    return { ok: false, why: 'refused', msg: IMPORT_MSG.refused, used: aiUsedOf(quota), _cost: cost };
   const text = j.content.filter(c => c.type === 'text').map(c => String(c.text || '')).join('').trim();
   let raw = null; try { raw = JSON.parse(text) } catch (e) {}
-  if (!raw) return { ok: false, why: 'empty', msg: IMPORT_MSG.empty, used: aiUsedOf(quota) };
+  if (!raw) return { ok: false, why: 'empty', msg: IMPORT_MSG.empty, used: aiUsedOf(quota), _cost: cost };
   const out = importClean(raw);
-  if (out.kind !== 'schedule') return { ok: false, why: 'notschedule', msg: IMPORT_MSG.notschedule, used: aiUsedOf(quota) };
-  if (!out.rows.length) return { ok: false, why: 'empty', msg: IMPORT_MSG.empty, used: aiUsedOf(quota) };
-  return { ok: true, kind: 'schedule', term: out.term, rows: out.rows, skipped: out.skipped, used: aiUsedOf(quota) };
+  if (out.kind !== 'schedule')
+    return { ok: false, why: 'notschedule', msg: IMPORT_MSG.notschedule, used: aiUsedOf(quota), _cost: cost };
+  if (!out.rows.length)
+    return { ok: false, why: 'empty', msg: IMPORT_MSG.empty, used: aiUsedOf(quota), skipped: out.skipped, _cost: cost };
+  return { ok: true, kind: 'schedule', term: out.term, rows: out.rows, skipped: out.skipped,
+           used: aiUsedOf(quota), _cost: cost };
 }
 /* ═══ نهاية استيراد الجدول ═══ */
 
@@ -12194,6 +12288,9 @@ const server = http.createServer(async (req, res) => {
           tokens: r.tokens || null });
       }
 
+      /* سجل الاستيراد (الجدول والدرجات): مين استعمله ونجح ولا فشل وليش */
+      if (act === 'import-log') return send(200, await adminImportLog(parsed.query.days));
+
       /* استهلاك المساعد يوماً بيوم — اللوحة ترسمه */
       if (act === 'ai-usage') {
         const n = Math.max(1, Math.min(90, parseInt(parsed.query.days, 10) || 30));
@@ -12597,15 +12694,38 @@ const server = http.createServer(async (req, res) => {
     if (req.method !== 'POST') { res.writeHead(405); res.end(JSON.stringify({ error: 'POST' })); return }
     const user = await sbAuthUser(bearerOf(req));
     if (!user) { res.writeHead(401); res.end(JSON.stringify({ ok: false, why: 'signin' })); return }
+    const ev = importEv();
+    let src = 'other';
     try {
       const rb = await importReadBody(req, IMPORT_BODY_MAX);
+      const body = rb.body || {};
+      src = IMPORT_TYPES[String(body.media || '')] || 'other';
       const out = rb.big ? { ok: false, why: 'big', msg: IMPORT_MSG.big }
-                         : await importSchedule(user.id, rb.body || {});
+                         : await importSchedule(user.id, body);
+      /* سجل الاستيراد: النتيجة وأعدادها وكلفتها — بلا شي من الملف */
+      importLog({ ev, stage: 'read', user: user.id, kind: 'schedule', src,
+        outcome: out.ok ? 'ok' : String(out.why || 'error'), rows: Array.isArray(out.rows) ? out.rows.length : 0,
+        skipped: Number(out.skipped) || 0, cost: Number(out._cost) || 0 });
+      delete out._cost;
+      out.ev = ev;
       res.writeHead(200); res.end(JSON.stringify(out));
     } catch (e) {
       console.log('import: ' + (e && e.message));
-      res.writeHead(500); res.end(JSON.stringify({ ok: false, why: 'error' }));
+      importLog({ ev, stage: 'read', user: user.id, kind: 'schedule', src, outcome: 'error', rows: 0, skipped: 0, cost: 0 });
+      res.writeHead(500); res.end(JSON.stringify({ ok: false, why: 'error', ev }));
     }
+    return;
+  }
+
+  /* الصفحة تكمل حكاية الاستيراد: كم لقينا وكم أضاف — أو قفل، أو فشل قبل ما يوصلنا (سجل الاستيراد) */
+  if (parsed.pathname === '/api/me/import-log') {
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'no-store');
+    if (req.method !== 'POST') { res.writeHead(405); res.end(JSON.stringify({ error: 'POST' })); return }
+    const user = await sbAuthUser(bearerOf(req));
+    if (!user) { res.writeHead(401); res.end(JSON.stringify({ ok: false, why: 'signin' })); return }
+    const out = importLogDone(user.id, await readBody(req));
+    res.writeHead(out.ok ? 200 : out.why === 'rate' ? 429 : 400); res.end(JSON.stringify(out));
     return;
   }
 

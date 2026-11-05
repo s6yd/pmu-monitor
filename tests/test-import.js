@@ -21,10 +21,12 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 
 /* ═══ محاكي القاعدة والمزوّد ═══ */
 const U1 = 'tok-u1-aaaaaaaaaaaaaaaaaaaa';
-const TOK = { [U1]: 'u1' };
+/* معرّف بشكل UUID مثل الإنتاج: سجل الاستيراد في اللوحة يجيب الإيميل للمعرّفات بشكل UUID وحدها (isUuid) */
+const UID = '0b7e2c1a-4d3f-4a5b-9c8d-1e2f3a4b5c6d';
+const TOK = { [U1]: UID };
 let nextId = 100;
 const DB = {
-  profiles: [{ id: 'u1', name: 'Student', email: 's@x', telegram_chat_id: null, is_pro: false,
+  profiles: [{ id: UID, name: 'Student', email: 's@x', telegram_chat_id: null, is_pro: false,
                subscription_expires_at: null }],
   ai_usage: [], ai_spend_day: [], ai_threads: [], app_state: [], app_events: [], monitored_courses: []
 };
@@ -170,6 +172,9 @@ const reply = (obj, extra) => () => ({ status: 200, json: Object.assign({
   const before = AI.length;
   r = await imp({ kind: 'schedule', media: 'application/pdf', data: PDF64 });
   ok(r.j.ok === true && r.j.term === '202710', 'قراءة الجدول: تمّت بترمه — ' + JSON.stringify(r.j).slice(0, 160));
+  const EV1 = r.j.ev;
+  ok(/^[0-9a-f]{12}$/.test(EV1 || '') && !('_cost' in r.j),
+     '**والرد فيه رقم المحاولة (ev) لسجل الاستيراد**، وبلا الكلفة الداخلية — ' + EV1);
   eq(r.j.rows, [{ crn: '31201', code: 'MEEN 3322', section: '101' }, { crn: '31228', code: 'CHEM 1421', section: '114' },
                 { crn: '31240', code: 'COMM 1311', section: '' }],
      '**الصفوف بعد التنظيف: CRN خمس خانات · الرمز بمسافة وحدة · الشعبة ثلاث خانات أو فاضية · بلا تكرار**');
@@ -188,7 +193,7 @@ const reply = (obj, extra) => () => ({ status: 200, json: Object.assign({
   ok(!P.tools && /CRN/.test(String(P.system || '')) && /not instructions/.test(String(P.system || '')),
      'بلا أدوات، والتعليمات تقول إن نص الملف بيانات لا أوامر');
   eq(P.model, 'claude-sonnet-5-5', 'نفس نموذج المساعد');
-  const U = DB.ai_usage.filter(x => x.user_id === 'u1');
+  const U = DB.ai_usage.filter(x => x.user_id === UID);
   ok(U.length === 1 && U[0].channel === 'web' && U[0].calls === 1 && U[0].in_tokens === 2100 &&
      U[0].out_tokens === 350 && U[0].cost_micro === Math.round(3.75 * (2100 * 2 + 350 * 10)) && U[0].env === 'dev',
      '**كلفتها الحقيقية في ai_usage — سؤال من أسئلة المساعد** — ' + JSON.stringify(U[0] || null));
@@ -226,10 +231,10 @@ const reply = (obj, extra) => () => ({ status: 200, json: Object.assign({
 
   /* السقف اليومي للمجاني (٥) يحرسه — القراءة سؤال */
   DB.profiles[0].is_pro = false;
-  ok(DB.ai_usage.filter(x => x.user_id === 'u1' && x.on_date === TODAY).length >= 5,
+  ok(DB.ai_usage.filter(x => x.user_id === UID && x.on_date === TODAY).length >= 5,
      '**كل قراءة انكتبت سؤالاً في يومه** — ' + DB.ai_usage.length);
-  for (let i = DB.ai_usage.filter(x => x.user_id === 'u1' && x.on_date === TODAY).length; i < 5; i++)
-    DB.ai_usage.push({ id: nextId++, user_id: 'u1', env: 'dev', term: TERM, on_date: TODAY, calls: 1, cost_micro: 1 });
+  for (let i = DB.ai_usage.filter(x => x.user_id === UID && x.on_date === TODAY).length; i < 5; i++)
+    DB.ai_usage.push({ id: nextId++, user_id: UID, env: 'dev', term: TERM, on_date: TODAY, calls: 1, cost_micro: 1 });
   const aiBefore = AI.length;
   AI_REPLY = reply({ kind: 'schedule', term: '202710', rows: [{ crn: '31201', code: 'MEEN 3322', section: '101' }] });
   r = await imp({ kind: 'schedule', media: 'application/pdf', data: PDF64 });
@@ -242,6 +247,72 @@ const reply = (obj, extra) => () => ({ status: 200, json: Object.assign({
      '**الملف ما ينحفظ في القاعدة** (ولا في المحادثة)');
   ok(!LOGS.some(l => l.includes(PDF64.slice(10, 50)) || l.includes('IMPORTTESTMARKER')),
      '**ولا يطلع في السجل** — حتى وقت الفشل');
+
+  /* ═══ سجل الاستيراد — طلب محمد (٥ نوفمبر ٢٠٢٦: «نعرف الي استخدم هذي الميزات ونشوف لو نجحت او اذا فشلت») ═══
+     حدث في app_events لكل قراءة (السيرفر) ولنتيجتها (الصفحة) — أعداد ورموز، بلا شي من الملف */
+  await wait(150);
+  const evs = () => DB.app_events.filter(x => x.kind === 'import').map(x => x.payload || {});
+  const reads = evs().filter(p => p.stage === 'read');
+  const r1 = reads.find(p => p.ev === EV1) || {};
+  ok(r1.user === UID && r1.kind === 'schedule' && r1.src === 'pdf' && r1.outcome === 'ok' && r1.rows === 3 &&
+     r1.skipped === 1 && r1.cost === Math.round(3.75 * (2100 * 2 + 350 * 10)) && r1.env === 'dev',
+     '**كل قراءة تنكتب في السجل: مين · من وين · النتيجة · كم انقرأ · كم ما انقرأ · كلفتها** — ' + JSON.stringify(r1));
+  const outs = new Set(reads.map(p => p.outcome));
+  ok(['off', 'type', 'big', 'ok', 'notschedule', 'refused', 'empty', 'error', 'day'].every(o => outs.has(o)),
+     '**والفشل بسببه**: مقفل · نوع غلط · كبير · مو جدول · رفض · ما انقرأ · خلل · خلصت أسئلته — ' + [...outs].join(','));
+  ok(reads.some(p => p.src === 'image' && p.outcome === 'ok'), 'والصورة مصدرها «صورة»');
+  ok(reads.every(p => /^[0-9a-f]{12}$/.test(p.ev || '')) && new Set(reads.map(p => p.ev)).size === reads.length,
+     'ولكل محاولة رقم خاص بها');
+  eq(reads.length, 14, 'محاولة مسجّلة لكل نداء بحساب (والطلب بلا حساب ما ينكتب)');
+  ok(reads.some(p => p.src === 'other' && p.outcome === 'type'), 'ونوع ما نعرفه مصدره «غير معروف» لا «ملف PDF»');
+  const logDump = JSON.stringify(DB.app_events);
+  ok(!/31201|31228|MEEN 3322|CHEM 1421|IMPORTTESTMARKER/.test(logDump) && !logDump.includes(PDF64.slice(10, 50)),
+     '**ولا شي من محتوى الملف في السجل** — لا CRN ولا رمز مادة ولا الملف');
+
+  /* نتيجة الصفحة: كم لقينا وكم أضاف — بنفس رقم المحاولة */
+  const LG = body => call('/api/me/import-log', 'POST', { tok: U1, body });
+  eq((await call('/api/me/import-log', 'POST', { body: { kind: 'schedule', src: 'pdf', outcome: 'added' } })).status, 401,
+     'نتيجة الصفحة بلا حساب: ٤٠١');
+  eq((await LG({ kind: 'schedule', src: 'pdf', outcome: 'hacked' })).status, 400, 'نتيجة ما نعرفها: مرفوضة');
+  eq((await LG({ kind: 'transcript', src: 'pdf', outcome: 'added' })).status, 400, 'ونوع ما نعرفه: مرفوض');
+  r = await LG({ ev: EV1, kind: 'schedule', src: 'pdf', outcome: 'added', found: 3, missing: 1, warned: 1, added: 2,
+                 note: 'MEEN 3322 تجربة', crns: ['31201'] });
+  ok(r.status === 200 && r.j.ok === true, 'النتيجة انكتبت — ' + JSON.stringify(r.j));
+  await wait(100);
+  const d1 = evs().find(p => p.stage === 'done' && p.ev === EV1) || {};
+  ok(d1.user === UID && d1.outcome === 'added' && d1.found === 3 && d1.missing === 1 && d1.warned === 1 && d1.added === 2,
+     '**الصفحة تكمّل: لقينا ٣ · ما لقينا ١ · بتحذير ١ · أضاف ٢ — بنفس الرقم** — ' + JSON.stringify(d1));
+  ok(!('note' in d1) && !('crns' in d1) && !/31201|MEEN/.test(JSON.stringify(d1)),
+     'وأي حقل ثاني من الصفحة ما ينكتب (لا نص ولا أرقام شعب)');
+  await LG({ kind: 'schedule', src: 'paste', outcome: 'nocrn' });
+  await LG({ ev: 'zz-not-hex', kind: 'schedule', src: 'paste', outcome: 'added', found: 2, added: 99999 });
+  await wait(100);
+  const pastes = evs().filter(p => p.stage === 'done' && p.src === 'paste');
+  ok(pastes.length === 2 && pastes.every(p => /^[0-9a-f]{12}$/.test(p.ev)) && pastes.some(p => p.added === 500),
+     'اللصق محاولة لحالها برقم جديد، والأرقام بحدّها — ' + JSON.stringify(pastes.map(p => [p.outcome, p.added])));
+
+  /* اللوحة: سطر لكل محاولة بإيميل صاحبها، وملخّص */
+  DB.app_events.push({ id: nextId++, kind: 'import', at: new Date().toISOString(),
+    payload: { ev: 'aaaaaaaaaaaa', stage: 'read', env: 'prod', user: UID, kind: 'schedule', src: 'pdf', outcome: 'ok', rows: 9, at: Date.now() } });
+  eq((await call('/api/admin/import-log', 'GET')).status, 401, 'سجل الاستيراد في اللوحة برمزها وحده');
+  r = await call('/api/admin/import-log', 'GET', { admin: true });
+  const A = r.j || {}, S = (A.summary || {}).schedule || {};
+  const row1 = (A.recent || []).find(e => e.rows === 3 && e.added === 2) || {};
+  ok(A.ok === true && row1.email === 's@x' && row1.outcome === 'added' && row1.found === 3 && row1.missing === 1 &&
+     row1.warned === 1 && row1.skipped === 1 && row1.src === 'pdf' && row1.sar > 0,
+     '**اللوحة: القراءة ونتيجتها سطر واحد بإيميل صاحبها** — ' + JSON.stringify(row1));
+  ok((A.recent || []).some(e => e.src === 'image' && e.outcome === 'left'),
+     'وانقرأ وما كمّل (قفل قبل ما يختار) يبان «ما كمّل»');
+  ok(S.tries >= 15 && S.added >= 2 && S.courses >= 2 && S.users === 1 && S.failed >= 9 &&
+     S.reasons && S.reasons.notschedule >= 1 && S.reasons.day >= 1 && S.reasons.nocrn >= 1,
+     '**والملخّص: محاولات · أضافوا · مواد · طلاب · فشلت وأسبابها** — ' + JSON.stringify(S).slice(0, 200));
+  ok(!(A.recent || []).some(e => e.rows === 9), 'ومحاولات البيئة الثانية ما تختلط (القاعدة مشتركة)');
+  ok(!/31201|31228|MEEN 3322|IMPORTTESTMARKER/.test(JSON.stringify(A)), 'ولا محتوى ملف في رد اللوحة');
+
+  /* سقف: الصفحة ما تقدر تعبّي السجل */
+  let last = 200;
+  for (let i = 0; i < 45 && last !== 429; i++) last = (await LG({ kind: 'schedule', src: 'paste', outcome: 'closed' })).status;
+  eq(last, 429, 'نتائج الصفحة بسقف لكل طالب بالساعة — ما تعبّي السجل');
 
   /* ═══ الصفحة ═══ */
   const { chromium } = require('playwright');
@@ -257,7 +328,7 @@ const reply = (obj, extra) => () => ({ status: 200, json: Object.assign({
     C('20031', 'PHYS 1421', 'Physics for Engineers I', '101', 'R', '1300 - 1550', 'Lee, Ann', 'M-SCI - L105'),
     C('20231', 'PHYS 1421', 'Physics for Engineers I', '201', 'MW', '0930 - 1045', 'Smith, Sara', 'F-SCI - 201')
   ];
-  const SEEN = { courses: [], imports: [] };
+  const SEEN = { courses: [], imports: [], logs: [] };
   let IMPORT_RES = null, AI_ST_RES = { on: true, why: '' };
   const srv = http.createServer((q2, res) => {
     const u = q2.url.split('?')[0];
@@ -269,6 +340,8 @@ const reply = (obj, extra) => () => ({ status: 200, json: Object.assign({
       return res.end(JSON.stringify({ success: true, count: COURSES.length, courses: COURSES })) }
     if (u === '/api/me/import') { let bd = ''; q2.setEncoding('utf8'); q2.on('data', c => bd += c);
       return q2.on('end', () => { SEEN.imports.push(JSON.parse(bd || '{}')); res.end(JSON.stringify(IMPORT_RES || { ok: false })) }) }
+    if (u === '/api/me/import-log') { let bd = ''; q2.setEncoding('utf8'); q2.on('data', c => bd += c);
+      return q2.on('end', () => { SEEN.logs.push(JSON.parse(bd || '{}')); res.end('{"ok":true}') }) }
     if (u === '/api/me/ai') return res.end(JSON.stringify(AI_ST_RES));
     if (u === '/api/monitor-status') return res.end(JSON.stringify({ freeBeta: false, plans: {} }));
     if (u.startsWith('/api/me/')) return res.end('{"ok":false}');
@@ -382,6 +455,7 @@ window.supabase={createClient:()=>({ auth:{ getSession:async()=>({data:{session:
     const en = await p.evaluate(() => { if (typeof renderImport !== 'function') return '';
       LANG = 'en'; renderImport(); const t = document.getElementById('imSheet').innerText; LANG = 'ar'; renderImport(); return t });
     ok(/Print Class Schedule/.test(en) && /Paste|paste/.test(en) && !/الصق/.test(en), 'واللوح بالإنجليزي كامل');
+    eq(SEEN.logs.length, 0, '**الزائر ما ينكتب له شي في سجل الاستيراد** — ما له حساب نربطه به');
     await ctx.close();
   }
 
@@ -389,7 +463,7 @@ window.supabase={createClient:()=>({ auth:{ getSession:async()=>({data:{session:
   {
     const { ctx, p } = await open(SUPA_USER);
     await toasts(p);
-    IMPORT_RES = { ok: true, kind: 'schedule', term: '202710', skipped: 1, rows: [
+    IMPORT_RES = { ok: true, kind: 'schedule', term: '202710', skipped: 1, ev: 'abcdef012345', rows: [
       { crn: '31215', code: 'MEEN 3333', section: '102' },
       { crn: '31220', code: 'CHEM 1421', section: '101' },
       { crn: '31228', code: 'MEEN 9999', section: '114' }] };
@@ -415,6 +489,12 @@ window.supabase={createClient:()=>({ auth:{ getSession:async()=>({data:{session:
     const after = await p.evaluate(() => schedule.map(c => c.crn));
     eq(after, ['31215', '31220'], '**انضافت المختارة — ومنها MEEN 3333 بلا حارس المتطلبات (مسجّلة في الجامعة)**');
     ok(pre.known && !pre.ok, '(والحارس كان بيمنعها فعلاً: متطلباتها ناقصة في «خطتي»)');
+    await wait(200);
+    const L1 = SEEN.logs[SEEN.logs.length - 1] || {};
+    ok(SEEN.logs.length === 1 && L1.ev === 'abcdef012345' && L1.kind === 'schedule' && L1.src === 'pdf' &&
+       L1.outcome === 'added' && L1.found === 3 && L1.missing === 0 && L1.warned === 1 && L1.added === 2,
+       '**بعد الإضافة الصفحة تكمّل السجل بنفس رقم القراءة: لقينا ٣ · بتحذير ١ · أضاف مادتين** — ' + JSON.stringify(L1));
+    ok(!/31215|31220|MEEN 3333|CHEM 1421/.test(JSON.stringify(SEEN.logs)), 'وبلا أرقام شعب ولا رموز مواد');
 
     /* صورة: تنضغط JPEG قبل الرفع */
     IMPORT_RES = { ok: true, kind: 'schedule', term: '202710', rows: [{ crn: '31201', code: 'MEEN 3322', section: '101' }] };
@@ -424,6 +504,13 @@ window.supabase={createClient:()=>({ auth:{ getSession:async()=>({data:{session:
     const img = SEEN.imports[SEEN.imports.length - 1] || {};
     ok(img.media === 'image/jpeg' && /^\/9j\//.test(img.data || ''), '**الصورة تنضغط JPEG قبل الرفع**');
     await p.evaluate(() => { if (typeof closeImport === 'function') closeImport() });
+    await wait(200);
+    const L2 = SEEN.logs[SEEN.logs.length - 1] || {};
+    ok(SEEN.logs.length === 2 && L2.outcome === 'closed' && L2.src === 'image' && L2.added === 0,
+       '**قفل اللوح وقت المراجعة بلا إضافة: «قفل» في السجل** — ' + JSON.stringify(L2));
+    await p.evaluate(() => { if (typeof closeImport === 'function') closeImport() });
+    await wait(100);
+    eq(SEEN.logs.length, 2, 'والقفل مرة ثانية ما يكرر السطر');
 
     /* رفض السيرفر: الرسالة كما هي · والمقفل يودّي للصق */
     IMPORT_RES = { ok: false, why: 'day', msg: 'خلصت أسئلتك المجانية لهذا اليوم (5). ترجع لي بكرة.' };
@@ -432,6 +519,8 @@ window.supabase={createClient:()=>({ auth:{ getSession:async()=>({data:{session:
     await p.waitForTimeout(500);
     let t = (await sheet(p)).text;
     ok(/خلصت أسئلتك المجانية/.test(t), 'خلص سقفه: رسالة السيرفر نفسها');
+    await wait(150);
+    eq(SEEN.logs.length, 2, 'ورفض السيرفر ما تكرره الصفحة — السيرفر سجّله بسببه');
     IMPORT_RES = { ok: false, why: 'off', msg: 'المساعد مقفل حالياً — باقي الموقع شغّال عادي.' };
     await p.setInputFiles('#imFileIn', { name: 's.pdf', mimeType: 'application/pdf', buffer: PDF }).catch(() => {});
     await p.waitForTimeout(500);
@@ -444,12 +533,23 @@ window.supabase={createClient:()=>({ auth:{ getSession:async()=>({data:{session:
     t = (await sheet(p)).text;
     ok(/202530/.test(t) && /مو من الترمات/.test(t), 'ترم الملف مو من ترماتنا: يُقال، ونكمل بترم البحث');
     await p.evaluate(() => { if (typeof closeImport === 'function') closeImport() });
+    /* ملف PDF كبير: يرفضه الجوال قبل ما يوصلنا — فالصفحة تسجّله */
+    const nImp = SEEN.imports.length;
+    await p.evaluate(() => { if (typeof openImport === 'function') openImport() });
+    await p.setInputFiles('#imFileIn', { name: 'big.pdf', mimeType: 'application/pdf',
+      buffer: Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(700 * 1024, 65)]) }).catch(() => {});
+    await wait(300);
+    const LB = SEEN.logs[SEEN.logs.length - 1] || {};
+    ok(SEEN.imports.length === nImp && LB.outcome === 'big' && LB.src === 'pdf' && !LB.ev,
+       '**PDF كبير قبل الرفع: «كبير» في السجل من الصفحة، وما نرسل الملف** — ' + JSON.stringify(LB));
     /* ملف مو PDF ولا صورة */
     await p.evaluate(() => { if (typeof openImport === 'function') openImport() });
     await p.setInputFiles('#imFileIn', { name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('hello') }).catch(() => {});
     await p.waitForTimeout(300);
     t = (await sheet(p)).text;
     ok(/PDF أو صورة/.test(t), 'ملف نصي: «اختر ملف PDF أو صورة»');
+    await wait(200);
+    ok((SEEN.logs[SEEN.logs.length - 1] || {}).outcome === 'type', 'وفي السجل «نوع ملف غلط»');
     await ctx.close();
   }
 

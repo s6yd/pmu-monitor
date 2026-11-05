@@ -3256,6 +3256,16 @@ function removeFromSchedule(crn){
    بتمنعها كلها. التكرار ممنوع، والحفظ نفسه (saveSchedules · pushSchedule). */
 let IM={state:'pick',found:[],missing:[],term:'',msg:'',bad:false,skipped:0};
 const IM_PDF_MAX=600*1024, IM_IMG_MAX=1100*1024, IM_IMG_SIDE=2000;
+/* سجل الاستيراد (طلب محمد ٥ نوفمبر ٢٠٢٦: «نعرف الي استخدم هذي الميزات ونشوف لو نجحت او اذا فشلت»):
+   السيرفر يسجّل القراءة، والصفحة تكمّل بنتيجتها — أضاف كم · قفل · فشل قبل ما يوصلنا. أعداد بس، بلا أرقام
+   شعب، وللمسجّل وحده (الزائر ما له حساب نربطه به). ونتيجة وحدة لكل محاولة (IM.logged) */
+function imLog(outcome,extra){
+  if(!USER||IM.logged)return;
+  IM.logged=true;
+  const st=IM.stats||{};
+  meFetch('/api/me/import-log','POST',Object.assign({ev:IM.ev||null,kind:'schedule',src:IM.src||'pdf',outcome,
+    found:st.found||0,missing:st.missing||0,warned:st.warned||0,added:0},extra||{})).catch(()=>{});
+}
 function openImport(){
   const ov=document.getElementById('imOv');
   if(!ov)return;
@@ -3270,6 +3280,7 @@ function closeImport(){
   const ov=document.getElementById('imOv');
   if(ov)ov.classList.remove('open');
   document.body.style.overflow='';
+  if(IM.state==='review')imLog('closed');
 }
 /* ترمات البحث نفسها — البحث العام يرفض غيرها (searchTermOk في السيرفر) */
 function imTerms(){
@@ -3332,7 +3343,8 @@ async function imPaste(){
   /* أرقام هندية من لوحة عربية تنقلب لاتينية — كل رقم CRN خمس خانات */
   const txt=String(el?el.value:'').replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d));
   const crns=[...new Set(txt.match(/\b\d{5}\b/g)||[])].slice(0,30);
-  if(!crns.length)return imFail(ar?'ما لقيت أرقام CRN — كل رقم خمس خانات.':'No CRNs found — each one is five digits.');
+  IM.ev=null; IM.src='paste'; IM.logged=false; IM.stats=null;
+  if(!crns.length){ imLog('nocrn'); return imFail(ar?'ما لقيت أرقام CRN — كل رقم خمس خانات.':'No CRNs found — each one is five digits.') }
   const sel=document.getElementById('imTerm'); if(sel)IM.term=sel.value;
   IM.msg=''; IM.bad=false; IM.skipped=0;
   await imMatch(crns.map(crn=>({crn,code:'',section:''})),IM.term);
@@ -3354,20 +3366,25 @@ async function imFile(input){
     :'Sign in with Google so we can read your file — or paste your CRNs without signing in.');
   const big=ar?'الملف كبير — اطبع الجدول على ورق A3 عشان يطلع في صفحة وحدة، أو صوّر الشاشة.'
     :'The file is too big — print the schedule on A3 so it fits one page, or take a screenshot.';
+  const isPdf=f.type==='application/pdf'||/\.pdf$/i.test(f.name||'');
+  IM.ev=null; IM.src=isPdf?'pdf':'image'; IM.logged=false; IM.stats=null;
   let media, data;
   try{
-    if(f.type==='application/pdf'||/\.pdf$/i.test(f.name||'')){
-      if(f.size>IM_PDF_MAX)return imFail(big);
+    if(isPdf){
+      if(f.size>IM_PDF_MAX){ imLog('big'); return imFail(big) }
       media='application/pdf'; data=await imB64(f);
     }else if(/^image\//.test(f.type||'')){
       /* صورة الآيفون ميغات — نضغطها، بضلع أطول من صور المواد عشان تبان الأرقام */
       const b=await shrink(f,IM_IMG_SIDE);
-      if(b.size>IM_IMG_MAX)return imFail(big);
+      if(b.size>IM_IMG_MAX){ imLog('big'); return imFail(big) }
       media='image/jpeg'; data=await imB64(b);
-    }else return imFail(ar?'اختر ملف PDF أو صورة لجدولك.':'Pick a PDF or an image of your schedule.');
-  }catch(e){ return imFail(ar?'ما قدرت أفتح الملف — جرّب ملفاً ثانياً.':'Couldn’t open the file — try another one.') }
+    }else{ imLog('type'); return imFail(ar?'اختر ملف PDF أو صورة لجدولك.':'Pick a PDF or an image of your schedule.') }
+  }catch(e){ imLog('open'); return imFail(ar?'ما قدرت أفتح الملف — جرّب ملفاً ثانياً.':'Couldn’t open the file — try another one.') }
   IM.state='reading'; IM.msg=''; IM.bad=false; renderImport();
   const r=await meFetch('/api/me/import','POST',{kind:'schedule',media,data}).catch(()=>null);
+  /* القراءة نفسها (نجحت أو ليش فشلت) يسجّلها السيرفر — رقمها يرجع هنا ونكمّل عليه */
+  if(r&&r.ev)IM.ev=r.ev;
+  if(!r||!r.ok)IM.logged=true;
   if(!r||!r.ok){
     if(r&&['off','admin','nokey'].includes(r.why))
       return imFail(ar?'قراءة الملفات مو متاحة الحين — الصق أرقام CRN تحت.':'Reading files isn’t available right now — paste your CRNs below.');
@@ -3394,8 +3411,8 @@ async function imMatch(rows,term){
     const res=await fetch(`${API}?term=${encodeURIComponent(term)}&college=ALL&gender=${g}&filter=${kq}`);
     d=await res.json();
   }catch(e){ d=null }
-  if(!d||!d.success)return imFail((ar&&d&&d.error)?d.error
-    :(ar?'ما قدرت أجيب بيانات الجامعة الحين — جرّب بعد شوي.':'Couldn’t load the university data right now — try again shortly.'));
+  if(!d||!d.success){ imLog('nodata',{missing:rows.length}); return imFail((ar&&d&&d.error)?d.error
+    :(ar?'ما قدرت أجيب بيانات الجامعة الحين — جرّب بعد شوي.':'Couldn’t load the university data right now — try again shortly.')) }
   const byCrn=new Map();
   (d.courses||[]).forEach(c=>{ const k=String(c.crn); if(!byCrn.has(k))byCrn.set(k,[]); byCrn.get(k).push(c) });
   IM.found=[]; IM.missing=[];
@@ -3411,8 +3428,9 @@ async function imMatch(rows,term){
     const have=schedule.some(s=>String(s.crn)===String(r.crn));
     IM.found.push({crn:String(r.crn),sess,read:r,ok,have,pick:ok&&!have});
   });
-  if(!IM.found.length)return imFail(ar?`ما لقينا هذي الأرقام في ${termLabel(term)} — تأكد من الترم أو الأرقام.`
-    :`We couldn’t find these CRNs in ${termLabel(term)} — check the term or the numbers.`);
+  IM.stats={found:IM.found.length,missing:IM.missing.length,warned:IM.found.filter(x=>!x.ok).length};
+  if(!IM.found.length){ imLog('nomatch'); return imFail(ar?`ما لقينا هذي الأرقام في ${termLabel(term)} — تأكد من الترم أو الأرقام.`
+    :`We couldn’t find these CRNs in ${termLabel(term)} — check the term or the numbers.`) }
   IM.state='review';
   renderImport();
 }
@@ -3463,8 +3481,9 @@ function imAdd(){
   try{ renderSchedule() }catch(e){}
   /* نتائج البحث (لو فيه) تعرف إنها انضافت — وبلا بحث ما نرسم «ما فيه نتائج» */
   try{ if(allCourses.length)renderResults() }catch(e){}
-  closeImport();
   const n=schedCourses(added);
+  imLog('added',{added:n});
+  closeImport();
   showToast(ar?`✅ انضافت ${n_(n)} لـ«جدول ${SLOT+1}»`:`✅ Added ${n} course${n===1?'':'s'} to «Schedule ${SLOT+1}»`,'ok');
 }
 /* ═══════════ أرقام التسجيل (CRN) ═══════════
