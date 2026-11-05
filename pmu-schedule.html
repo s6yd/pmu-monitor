@@ -408,6 +408,51 @@ border:1px solid rgba(245,158,11,.35);border-radius:13px;padding:13px 15px;margi
 .sched-actions .btn-ghost.danger{grid-column:1/-1;padding:9px;font-size:12px;
 opacity:.75}
 .sched-actions .btn-ghost.danger:active{opacity:1}
+/* استيراد الجدول من بانر — سطر لحاله مثل المسح، بلا لون التحذير */
+.sched-actions .btn-ghost.wide{grid-column:1/-1;padding:9px;font-size:12px}
+.state-box .im-open{margin-top:14px}
+.im-steps{margin:0 0 14px;padding:12px 14px;background:var(--card);border:1px solid var(--border);
+border-radius:13px;font-size:12.5px;line-height:1.85;color:var(--text2);list-style:none;counter-reset:im}
+.im-steps li{counter-increment:im;display:flex;gap:8px;align-items:flex-start}
+.im-steps li::before{content:counter(im);flex-shrink:0;width:19px;height:19px;border-radius:50%;
+background:var(--accent);color:#fff;font-size:11px;font-weight:700;display:inline-flex;
+align-items:center;justify-content:center;margin-top:4px}
+.im-steps b{color:var(--text);font-weight:700}
+.im-pick{display:block;width:100%;text-align:center;position:relative}
+/* الخانة مخفية بالشفافية لا بـdisplay:none — سفاري الآيفون القديم ما يفتح الملفات من label لخانة مخفية */
+.im-file{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none}
+.im-or{font-size:11.5px;color:var(--text3);text-align:center;margin:16px 0 8px}
+/* ١٦px على الحقل: سفاري يزوّم على الخط الأصغر (§٦) */
+.im-paste{display:block;width:100%;min-height:62px;resize:vertical;background:var(--card);
+border:1px solid var(--border2);border-radius:11px;color:var(--text);font-family:var(--mono);
+font-size:16px;padding:10px 12px;box-sizing:border-box}
+.im-row2{display:flex;gap:8px;margin-top:8px}
+.im-row2 select{flex:1;min-width:0;font-size:16px;background:var(--card);color:var(--text);
+border:1px solid var(--border2);border-radius:11px;padding:8px 10px;font-family:var(--sans)}
+.im-msg{font-size:12.5px;line-height:1.7;border-radius:11px;padding:10px 12px;margin:10px 0;
+background:rgba(77,124,254,.08);color:var(--text2)}
+.im-msg.bad{background:var(--close-bg);color:var(--close)}
+.im-list{display:flex;flex-direction:column;gap:8px;margin:10px 0}
+.im-row{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--border);
+border-radius:12px;padding:10px 12px;cursor:pointer}
+/* الحقول كلها appearance:none وعرضها ١٠٠٪ (القاعدة العامة) — مربع بنفس شكل مربع الباقات */
+.im-row input[type=checkbox]{width:20px;height:20px;flex:none;padding:0;margin:2px 0 0;border-radius:6px;
+-webkit-appearance:none;appearance:none;background:var(--bg);border:2px solid var(--border2);position:relative;cursor:pointer}
+.im-row input[type=checkbox]:checked{background:var(--accent);border-color:var(--accent)}
+.im-row input[type=checkbox]:checked::after{content:'';position:absolute;left:6px;top:2px;width:5px;height:10px;
+border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.im-row input[type=checkbox]:disabled{opacity:.5;cursor:default}
+.im-row:has(input:checked){border-color:var(--accent)}
+.im-row.off{opacity:.65;cursor:default}
+.im-t{font-size:13px;font-weight:700}
+.im-s{font-size:11.5px;color:var(--text3);margin-top:2px;line-height:1.6}
+.im-tag{display:inline-block;font-size:11px;font-weight:600;border-radius:7px;padding:1px 7px;margin-top:5px}
+.im-tag.have{background:var(--open-bg);color:var(--open)}
+.im-tag.warn{background:var(--warn-bg);color:var(--warn)}
+.im-miss{font-size:12px;color:var(--text3);line-height:1.7;margin:2px 0 10px}
+.im-add{display:block;width:100%;margin-top:6px}
+.im-add:disabled{opacity:.5;box-shadow:none}
+.im-priv{font-size:11px;color:var(--text3);line-height:1.6;margin-top:12px;text-align:center}
 .btn-ghost{background:transparent;border:1px solid var(--border2);color:var(--text2);border-radius:11px;
 padding:11px;font-size:13px;font-weight:600;font-family:var(--sans);cursor:pointer}
 .btn-ghost.danger{color:var(--close);border-color:var(--close-border)}
@@ -1940,12 +1985,14 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
   <div class="sched-actions">
     <button class="btn-ghost" onclick="toggleCrn()" id="crnBtn" data-i18n="crnBtn">🔢 أرقام CRN</button>
     <button class="btn-ghost" onclick="printSchedule()" data-i18n="print">🖨️ اطبع</button>
+    <button class="btn-ghost wide" id="imBtn" onclick="openImport()" data-i18n="imOpen" hidden>📥 استورد جدولك من بانر</button>
     <button class="btn-ghost danger" onclick="clearSchedule()" data-i18n="clearAll">🗑️ امسح الكل</button>
   </div>
   <div class="crn-panel" id="crnPanel"></div>
   <div class="state-box visible" id="schedEmpty">
     <div class="state-icon">📅</div><div class="state-title">جدولك فاضي</div>
     <div class="state-sub">روح لصفحة البحث واضغط «+ أضف» على الشعبة اللي تبيها</div>
+    <button class="demo-btn im-open" onclick="openImport()" data-i18n="imOpen">📥 استورد جدولك من بانر</button>
     <a class="state-link" href="/guide" target="_blank" rel="noopener" data-i18n="guideLink">📖 شوف الدليل بالصور</a>
   </div>
   <div class="slot-bar" id="slotBar"></div>
@@ -2269,6 +2316,10 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 <button class="guide-fab" onclick="openGuide()" title="كيف أستخدم الموقع">؟</button>
 <div class="guide-overlay" id="aiOv" onclick="if(event.target===this)closeAi()">
   <div class="guide-sheet" id="aiSheet"></div>
+</div>
+<!-- استيراد الجدول من بانر — في body لا داخل .page (حركة التبويب تحبس position:fixed) -->
+<div class="guide-overlay" id="imOv" onclick="if(event.target===this)closeImport()">
+  <div class="guide-sheet" id="imSheet"></div>
 </div>
 
 <div class="guide-overlay" id="guideOverlay" onclick="if(event.target===this)closeGuide()">
@@ -3195,6 +3246,227 @@ function removeFromSchedule(crn){
   saveSchedules();pushSchedule();updateBadge();renderSchedule();renderResults();
   showToast(`${t('removed')} ${r.courseCode}`);
 }
+/* ═══════════ استيراد الجدول من بانر ═══════════
+   طلب محمد (٤ نوفمبر ٢٠٢٦): الطلاب ودّهم الموقع يجيب جدولهم من الجامعة — وما ندخل حساباتهم، فيرفع
+   الطالب ملفه هو. الخطوات من محمد نفسه (بانر ← Student Records ← Print Class Schedule ← Share ←
+   Print ← A3 ← Save to Files). النموذج يقرأ أرقام الشعب وحدها (/api/me/import)، والباقي من بيانات
+   الجامعة اللي عندنا (/api/courses نفسها) — والطالب يشوف كل شعبة ويختار قبل ما تنضاف. ولصق أرقام
+   CRN بلا نموذج ولا حساب.
+   **بلا حارس المتطلبات** (addSessionsDirect): الشعب مسجّلة في الجامعة فعلاً، و«خطتي» الفاضية كانت
+   بتمنعها كلها. التكرار ممنوع، والحفظ نفسه (saveSchedules · pushSchedule). */
+let IM={state:'pick',found:[],missing:[],term:'',msg:'',bad:false,skipped:0};
+const IM_PDF_MAX=600*1024, IM_IMG_MAX=1100*1024, IM_IMG_SIDE=2000;
+function openImport(){
+  const ov=document.getElementById('imOv');
+  if(!ov)return;
+  /* لوحان مفتوحان معاً ما ينفع — الدليل يفتح تلقائياً أول زيارة */
+  if(typeof closeGuide==='function')closeGuide();
+  IM={state:'pick',found:[],missing:[],term:imDefTerm(),msg:'',bad:false,skipped:0};
+  ov.classList.add('open');
+  document.body.style.overflow='hidden';
+  renderImport();
+}
+function closeImport(){
+  const ov=document.getElementById('imOv');
+  if(ov)ov.classList.remove('open');
+  document.body.style.overflow='';
+}
+/* ترمات البحث نفسها — البحث العام يرفض غيرها (searchTermOk في السيرفر) */
+function imTerms(){
+  const sel=document.getElementById('term');
+  return sel?[...sel.options].map(o=>o.value):[];
+}
+function imDefTerm(){
+  const sel=document.getElementById('term');
+  return (sel&&sel.value)||(imTerms()[0]||'');
+}
+function imSecN(x){
+  if(LANG!=='ar')return x+(x===1?' section':' sections');
+  return x===1?'شعبة وحدة':x===2?'شعبتين':x<=10?`${x} شعب`:`${x} شعبة`;
+}
+function renderImport(){
+  const box=document.getElementById('imSheet');
+  if(!box)return;
+  const ar=LANG==='ar';
+  const head=`<div class="guide-grip"></div>
+    <div class="guide-head"><h2>${ar?'📥 استورد جدولك':'📥 Import your schedule'}</h2>
+      <button class="guide-close" onclick="closeImport()">✕</button></div>`;
+  const msg=IM.msg?`<div class="im-msg${IM.bad?' bad':''}" id="imMsg">${escapeHtml(IM.msg)}</div>`:'';
+  if(IM.state==='reading'){
+    box.innerHTML=head+`<div class="rm-empty"><div class="spinner" style="margin:0 auto 12px"></div>${
+      ar?'نقرأ أرقام شعبك…':'Reading your sections…'}</div>`;
+    return;
+  }
+  if(IM.state==='review'){ box.innerHTML=head+msg+imReviewHtml(); return }
+  /* المساعد مقفل أو تحت التجربة (aiShown): قراءة الملف من نفس الباب — يبقى اللصق */
+  const fileOk=!AI_ST||aiShown();
+  const terms=imTerms().map(v=>`<option value="${v}"${v===IM.term?' selected':''}>${termLabel(v)}</option>`).join('');
+  box.innerHTML=head+msg+`
+    <div class="guide-lead">${ar?'جدولك المسجّل في الجامعة يدخل «جدولي» بأوقاته وقاعاته ودكاترته.'
+      :'Bring the schedule you registered at the university into My schedule — with times, rooms and instructors.'}</div>
+    ${fileOk?`<ol class="im-steps" id="imSteps">${ar?`
+      <li><span>ادخل بانر ← <b dir="ltr">Student Records</b> ← <b dir="ltr">Print Class Schedule</b></span></li>
+      <li><span>من «⋯» في سفاري اضغط <b dir="ltr">Share</b> ← <b dir="ltr">Print</b></span></li>
+      <li><span>غيّر الورق لـ <b dir="ltr">A3</b> عشان يطلع الجدول كامل في صفحة وحدة</span></li>
+      <li><span>اضغط زر المشاركة فوق ← <b dir="ltr">Save to Files</b></span></li>
+      <li><span>ارجع هنا واختر الملف — أو صورة للجدول</span></li>`:`
+      <li><span>Open Banner → <b>Student Records</b> → <b>Print Class Schedule</b></span></li>
+      <li><span>In Safari tap «⋯» → <b>Share</b> → <b>Print</b></span></li>
+      <li><span>Set the paper to <b>A3</b> so the whole schedule fits one page</span></li>
+      <li><span>Tap the share button at the top → <b>Save to Files</b></span></li>
+      <li><span>Come back and pick the file — or a screenshot of it</span></li>`}</ol>
+    <label class="demo-btn im-pick">${ar?'📄 اختر الملف أو الصورة':'📄 Pick the file or image'}
+      <input type="file" class="im-file" id="imFileIn" accept="application/pdf,image/*" onchange="imFile(this)"></label>`
+    :`<div class="im-msg">${ar?'قراءة الملفات مو متاحة الحين — الصق أرقام CRN تحت.'
+      :'Reading files isn’t available right now — paste your CRNs below.'}</div>`}
+    <div class="im-or">${ar?'أو الصق أرقام CRN (من بانر أو من أي مكان)':'Or paste your CRNs (from Banner or anywhere)'}</div>
+    <textarea class="im-paste" id="imPaste" inputmode="numeric" placeholder="12345 12346 12347"></textarea>
+    <div class="im-row2"><select id="imTerm" onchange="IM.term=this.value">${terms}</select>
+      <button class="btn-sm" onclick="imPaste()">${ar?'دوّر عليها':'Find them'}</button></div>
+    <div class="im-priv">${ar?'الملف ينقرأ وما نحفظه — اللي ينحفظ الشعب اللي تختارها بس.'
+      :'We read the file and don’t keep it — only the sections you pick are saved.'}</div>`;
+}
+function imFail(m){ IM.state='pick'; IM.msg=m; IM.bad=true; renderImport() }
+async function imPaste(){
+  const el=document.getElementById('imPaste'), ar=LANG==='ar';
+  /* أرقام هندية من لوحة عربية تنقلب لاتينية — كل رقم CRN خمس خانات */
+  const txt=String(el?el.value:'').replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+  const crns=[...new Set(txt.match(/\b\d{5}\b/g)||[])].slice(0,30);
+  if(!crns.length)return imFail(ar?'ما لقيت أرقام CRN — كل رقم خمس خانات.':'No CRNs found — each one is five digits.');
+  const sel=document.getElementById('imTerm'); if(sel)IM.term=sel.value;
+  IM.msg=''; IM.bad=false; IM.skipped=0;
+  await imMatch(crns.map(crn=>({crn,code:'',section:''})),IM.term);
+}
+function imB64(blob){
+  return new Promise((res,rej)=>{
+    const fr=new FileReader();
+    fr.onload=()=>{ const s=String(fr.result||''), i=s.indexOf(','); res(i>=0?s.slice(i+1):'') };
+    fr.onerror=()=>rej(fr.error);
+    fr.readAsDataURL(blob);
+  });
+}
+async function imFile(input){
+  const f=input&&input.files&&input.files[0], ar=LANG==='ar';
+  if(input)input.value='';
+  if(!f)return;
+  /* القراءة سؤال للمساعد على حسابه — الزائر يلصق الأرقام بلا دخول */
+  if(!USER)return imFail(ar?'سجّل دخولك بقوقل عشان نقرأ ملفك — أو الصق أرقام CRN بدون دخول.'
+    :'Sign in with Google so we can read your file — or paste your CRNs without signing in.');
+  const big=ar?'الملف كبير — اطبع الجدول على ورق A3 عشان يطلع في صفحة وحدة، أو صوّر الشاشة.'
+    :'The file is too big — print the schedule on A3 so it fits one page, or take a screenshot.';
+  let media, data;
+  try{
+    if(f.type==='application/pdf'||/\.pdf$/i.test(f.name||'')){
+      if(f.size>IM_PDF_MAX)return imFail(big);
+      media='application/pdf'; data=await imB64(f);
+    }else if(/^image\//.test(f.type||'')){
+      /* صورة الآيفون ميغات — نضغطها، بضلع أطول من صور المواد عشان تبان الأرقام */
+      const b=await shrink(f,IM_IMG_SIDE);
+      if(b.size>IM_IMG_MAX)return imFail(big);
+      media='image/jpeg'; data=await imB64(b);
+    }else return imFail(ar?'اختر ملف PDF أو صورة لجدولك.':'Pick a PDF or an image of your schedule.');
+  }catch(e){ return imFail(ar?'ما قدرت أفتح الملف — جرّب ملفاً ثانياً.':'Couldn’t open the file — try another one.') }
+  IM.state='reading'; IM.msg=''; IM.bad=false; renderImport();
+  const r=await meFetch('/api/me/import','POST',{kind:'schedule',media,data}).catch(()=>null);
+  if(!r||!r.ok){
+    if(r&&['off','admin','nokey'].includes(r.why))
+      return imFail(ar?'قراءة الملفات مو متاحة الحين — الصق أرقام CRN تحت.':'Reading files isn’t available right now — paste your CRNs below.');
+    return imFail((r&&r.msg)||(ar?'صار خلل وأنا أقرأ الملف — جرّب بعد شوي، أو الصق أرقام CRN.'
+      :'Something went wrong reading the file — try again, or paste your CRNs.'));
+  }
+  const terms=imTerms();
+  let term=IM.term;
+  if(r.term&&terms.includes(r.term))term=r.term;
+  else if(r.term){ IM.msg=ar?`ترم الجدول (${r.term}) مو من الترمات اللي عندنا — دوّرنا في ${termLabel(term)}.`
+    :`The schedule's term (${r.term}) isn't one we have — we searched ${termLabel(term)}.`; }
+  IM.skipped=Number(r.skipped)||0;
+  await imMatch(r.rows||[],term);
+}
+async function imMatch(rows,term){
+  const ar=LANG==='ar';
+  IM.term=term; IM.state='reading'; renderImport();
+  /* الجنس من أرقام الشعب (1xx طلاب · 2xx طالبات) — نفس قاعدة الجامعة */
+  const secs=rows.map(r=>r.section).filter(Boolean);
+  const g=secs.length&&secs.every(s=>s[0]==='1')?'M1':secs.length&&secs.every(s=>s[0]==='2')?'F1':'ALL';
+  let d=null;
+  try{
+    const kq=PRO_KEY?`&key=${encodeURIComponent(PRO_KEY)}`:'';
+    const res=await fetch(`${API}?term=${encodeURIComponent(term)}&college=ALL&gender=${g}&filter=${kq}`);
+    d=await res.json();
+  }catch(e){ d=null }
+  if(!d||!d.success)return imFail((ar&&d&&d.error)?d.error
+    :(ar?'ما قدرت أجيب بيانات الجامعة الحين — جرّب بعد شوي.':'Couldn’t load the university data right now — try again shortly.'));
+  const byCrn=new Map();
+  (d.courses||[]).forEach(c=>{ const k=String(c.crn); if(!byCrn.has(k))byCrn.set(k,[]); byCrn.get(k).push(c) });
+  IM.found=[]; IM.missing=[];
+  rows.forEach(r=>{
+    const list=byCrn.get(String(r.crn));
+    if(!list){ IM.missing.push(r); return }
+    /* المحاضرة والمعمل بنفس CRN شعبة وحدة باجتماعين — مثل sessionsOf */
+    const seen=new Set(), sess=[];
+    list.forEach(c=>{ const k=(c.courseDate||'')+'|'+(c.courseTiming||''); if(!seen.has(k)){ seen.add(k); sess.push(c) } });
+    const c=sess[0];
+    /* الرقم يطابق المادة والشعبة اللي في الملف؟ رقم انقرأ غلط ممكن يطابق شعبة ثانية */
+    const ok=(!r.code||norm(c.courseCode)===norm(r.code))&&(!r.section||String(c.section)===String(r.section));
+    const have=schedule.some(s=>String(s.crn)===String(r.crn));
+    IM.found.push({crn:String(r.crn),sess,read:r,ok,have,pick:ok&&!have});
+  });
+  if(!IM.found.length)return imFail(ar?`ما لقينا هذي الأرقام في ${termLabel(term)} — تأكد من الترم أو الأرقام.`
+    :`We couldn’t find these CRNs in ${termLabel(term)} — check the term or the numbers.`);
+  IM.state='review';
+  renderImport();
+}
+function imReviewHtml(){
+  const ar=LANG==='ar', tn=termLabel(IM.term);
+  const rows=IM.found.map((x,i)=>{
+    const c=x.sess[0];
+    const times=x.sess.map(s=>`${s.courseDate||''} ${s.courseTiming||''}`.trim()).filter(Boolean).join(' · ');
+    const read=`${x.read.code||''} ${x.read.section||''}`.trim();
+    const tag=x.have?`<span class="im-tag have">${ar?'موجودة في جدولك':'Already in your schedule'}</span>`
+      :!x.ok?`<span class="im-tag warn">${ar?`⚠️ الرقم لشعبة ثانية — الملف يقول ${escapeHtml(read)}`
+        :`⚠️ This CRN is another section — the file says ${escapeHtml(read)}`}</span>`:'';
+    return `<label class="im-row${x.have?' off':''}" data-crn="${escapeHtml(x.crn)}">
+      <input type="checkbox"${x.pick?' checked':''}${x.have?' disabled':''} onchange="imToggle(${i},this.checked)">
+      <div><div class="im-t">${escapeHtml(c.courseCode)} · ${escapeHtml(String(c.section||''))} — ${escapeHtml(decodeEnt(c.courseTitle||''))}</div>
+      <div class="im-s"><span dir="ltr">${escapeHtml(times)}</span> · <span dir="ltr">CRN ${escapeHtml(x.crn)}</span></div>${tag}</div></label>`;
+  }).join('');
+  const miss=IM.missing.length?`<div class="im-miss" id="imMiss">${ar?`ما لقينا في ${tn}:`:`Not found in ${tn}:`} <span dir="ltr">${
+    IM.missing.map(r=>escapeHtml(r.crn)).join(' · ')}</span></div>`:'';
+  const skip=IM.skipped?`<div class="im-miss">${ar?`${IM.skipped} سطر ما انقرأ رقمه بوضوح — ضيفه من البحث.`
+    :`${IM.skipped} rows weren't readable — add them from Search.`}</div>`:'';
+  const pick=IM.found.filter(x=>x.pick&&!x.have);
+  const n=schedCourses([].concat(...pick.map(x=>x.sess)));
+  const cur=schedCourses();
+  const note=cur?`<div class="im-miss">${ar?`«جدول ${SLOT+1}» فيه ${n_(cur)} — بنضيف عليها وما نشيل شي.`
+    :`«Schedule ${SLOT+1}» already has ${cur} course${cur===1?'':'s'} — we add, and remove nothing.`}</div>`:'';
+  return `<div class="guide-lead">${ar?`لقينا ${imSecN(IM.found.length)} في ${tn} — اختر اللي تبيها:`
+      :`We found ${imSecN(IM.found.length)} in ${tn} — pick the ones you want:`}</div>
+    <div class="im-list">${rows}</div>${miss}${skip}${note}
+    <button class="demo-btn im-add" id="imAddBtn" onclick="imAdd()"${pick.length?'':' disabled'}>${
+      pick.length?(ar?`أضف ${n_(n)} لـ«جدول ${SLOT+1}»`:`Add ${n} course${n===1?'':'s'} to «Schedule ${SLOT+1}»`)
+      :(ar?'اختر شعبة':'Pick a section')}</button>
+    <button class="btn-sm ghost im-add" onclick="IM.state='pick';IM.msg='';renderImport()">${ar?'رجوع':'Back'}</button>`;
+}
+function imToggle(i,on){
+  const x=IM.found[i];
+  if(!x||x.have)return;
+  x.pick=!!on;
+  renderImport();
+}
+function imAdd(){
+  const ar=LANG==='ar';
+  const pick=IM.found.filter(x=>x.pick&&!x.have&&!schedule.some(s=>String(s.crn)===x.crn));
+  if(!pick.length)return;
+  const added=[];
+  pick.forEach(x=>x.sess.forEach(s=>{ schedule.push(s); added.push(s) }));
+  saveSchedules(); pushSchedule(); updateBadge(true);
+  try{ renderSchedule() }catch(e){}
+  /* نتائج البحث (لو فيه) تعرف إنها انضافت — وبلا بحث ما نرسم «ما فيه نتائج» */
+  try{ if(allCourses.length)renderResults() }catch(e){}
+  closeImport();
+  const n=schedCourses(added);
+  showToast(ar?`✅ انضافت ${n_(n)} لـ«جدول ${SLOT+1}»`:`✅ Added ${n} course${n===1?'':'s'} to «Schedule ${SLOT+1}»`,'ok');
+}
 /* ═══════════ أرقام التسجيل (CRN) ═══════════
    وقت التسجيل الطالب يحتاج الأرقام بسرعة، فنعرضها مطوية
    عشان لا تزحم الصفحة، وننسخها بضغطة. */
@@ -3691,6 +3963,8 @@ function renderSchedule(){
 
   const sv=document.getElementById('schedView');
   if(sv)sv.style.display=schedule.length?'':'none';
+  /* الاستيراد: زر كبير في «جدولك فاضي»، وسطر صغير تحت الأزرار لما يكون فيه مواد */
+  const ib=document.getElementById('imBtn'); if(ib)ib.hidden=!schedule.length;
   if(!schedule.length){empty.classList.add('visible');wrap.innerHTML='';
     const g=document.getElementById('schedGrid'); if(g)g.innerHTML='';
     buildPrintSheet(new Set());return}
@@ -4508,13 +4782,13 @@ async function photoUrl(path){
 
 /* صورة الآيفون ٤ ميغا — الضغط في المتصفح ينزّلها لثلاثمئة كيلو تقريباً،
    فالرفع أسرع والتكلفة أقل بلا فرق يُذكر في وضوح السبورة. */
-function shrink(file){
+function shrink(file,max){
   return new Promise((res,rej)=>{
     const img=new Image(), url=URL.createObjectURL(file);
     img.onload=()=>{
       URL.revokeObjectURL(url);
       let {width:w,height:h}=img;
-      const sc=Math.min(1,PH_MAX/Math.max(w,h));
+      const sc=Math.min(1,(max||PH_MAX)/Math.max(w,h));
       w=Math.round(w*sc); h=Math.round(h*sc);
       const cv=document.createElement('canvas');
       cv.width=w; cv.height=h;
@@ -9262,7 +9536,7 @@ filterHelp:'ابحث بكود المادة، أو الـ CRN، أو اسم ال�
 search:'🔍 ابحث',searching:'جاري البحث...',monitor:'📡 راقب',stopMonitor:'⏹ أوقف',
 total:'إجمالي',open:'مفتوح',closed:'مغلق',show:'عرض:',all:'الكل',onlyOpen:'مفتوح فقط',onlyClosed:'مغلق فقط',
 courses:'مادة',credits:'ساعة معتمدة',clashes:'تعارض',clashTitle:'يوجد تعارض في الجدول',
-print:'🖨️ اطبع',clearAll:'🗑️ امسح الكل',crnBtn:'🔢 أرقام CRN',
+print:'🖨️ اطبع',clearAll:'🗑️ امسح الكل',crnBtn:'🔢 أرقام CRN',imOpen:'📥 استورد جدولك من بانر',
 gpaLabel:'المعدل التراكمي',countedHrs:'ساعات محسوبة',
 suggestTitle:'💡 المقترح للترم الجاي',planTitle:'الخطة الدراسية',
 uni:'الجامعة',major:'التخصص',login:'دخول',tabDocs:'👨‍🏫 دكاترة',myReviews:'تقييماتي',docsTitle:'تقييمات الدكاترة',uniTitle:'جامعتك وتخصصك',docPh:'ابحث عن دكتور...',
@@ -9434,7 +9708,7 @@ filterHelp:'Search by course code, CRN, course title, or instructor name',
 search:'🔍 Search',searching:'Searching...',monitor:'📡 Monitor',stopMonitor:'⏹ Stop',
 total:'Total',open:'Open',closed:'Closed',show:'Show:',all:'All',onlyOpen:'Open only',onlyClosed:'Closed only',
 courses:'Courses',credits:'Credit hours',clashes:'Conflicts',clashTitle:'Schedule conflict detected',
-print:'🖨️ Print',clearAll:'🗑️ Clear all',crnBtn:'🔢 CRN numbers',
+print:'🖨️ Print',clearAll:'🗑️ Clear all',crnBtn:'🔢 CRN numbers',imOpen:'📥 Import from Banner',
 gpaLabel:'Cumulative GPA',countedHrs:'Counted hours',
 suggestTitle:'💡 Suggested next term',planTitle:'Study Plan',
 uni:'University',major:'Major',login:'Sign in',tabDocs:'👨‍🏫 Faculty',myReviews:'My reviews',docsTitle:'Instructor reviews',uniTitle:'Your university & major',docPh:'Search for an instructor...',
@@ -9583,6 +9857,9 @@ function applyLang(){
   { const ov=document.getElementById('aiOv');
     if(ov&&ov.classList.contains('open')&&typeof renderAiSheet==='function')
       renderAiSheet(true); }
+  /* لوح الاستيراد مرسوم بـJS — يعاد بلغته الجديدة */
+  { const ov=document.getElementById('imOv');
+    if(ov&&ov.classList.contains('open')&&typeof renderImport==='function')renderImport(); }
   document.getElementById('courseFilter').placeholder=L.filterPh;
   document.getElementById('docFilter').placeholder=L.docPh;
   document.getElementById('searchBtnText').textContent=L.search;
