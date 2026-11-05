@@ -984,8 +984,8 @@ function payTermName(term) {
 /* الإيصال على تلقرام — لقاها محمد: «اشتراكك فعّال» وحدها ما تقول وش اشترى ولا
    كم دفع، ومن اشترى التنبيه الطارئ ما يدري إن فيه خطوة تفعيل. الأرقام من صف
    الاشتراك نفسه (حسبته meQuote وتحقّقنا منه عند EdfaPay) — ما نعيد حساب شي هنا.
-   ورابط التفعيل فيه ‎?pushover=1‎: يفتح بطاقة التفعيل في الإعدادات حتى في وضع
-   «link» (وفي «addon» تظهر للمشتري أصلاً) */
+   ورابط التفعيل موقَّع (poGoLink — تذكرة #50): يفتح صفحة Pushover على طول بلا دخول للموقع،
+   والرجوع يحفظ مفتاحه في أي متصفح. كان ‎?pushover=1‎ (بطاقة الإعدادات — للمسجّل وحده) */
 function payReceipt(s) {
   const d = v => new Date(v).toLocaleDateString('ar-u-ca-gregory-nu-latn',
     { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Riyadh' });
@@ -1005,8 +1005,12 @@ function payReceipt(s) {
   L.push(`التاريخ: ${d(s.paid_at || Date.now())}`, `ساري حتى: ${d(s.valid_until)}`);
   if (s.pushover) L.push('', '🚨 <b>فعّل التنبيه الطارئ</b> — مرة وحدة من جوالك:',
     '1️⃣ نزّل تطبيق <b>Pushover</b> من App Store أو Google Play وسوّ حساباً فيه',
-    `2️⃣ افتح ${PAY_ORIGIN_PROD}/?pushover=1 واضغط «تفعيل»`,
-    '3️⃣ وافق في صفحة Pushover — ترجع للموقع ويطلع لك «🔔 التنبيه الطارئ شغّال»',
+    /* رابط موقَّع يفتح صفحة Pushover على طول (poGoLink — تذكرة #50): كان ‎?pushover=1‎ يفتح من تلقرام
+       في متصفحه الداخلي، والطالب مو مسجّل فيه فما يطلع له زر «تفعيل» أصلاً */
+    isUuid(String(s.user_id || ''))
+      ? `2️⃣ اضغط هالرابط: ${poGoLink(s.user_id, Math.max(7 * 864e5, (Date.parse(s.valid_until) || 0) - Date.now()))}`
+      : `2️⃣ افتح ${PAY_ORIGIN_PROD}/?pushover=1 واضغط «تفعيل»`,
+    '3️⃣ سجّل دخولك في صفحة Pushover بنفس حساب التطبيق ووافق — يطلع لك «🔔 التنبيه الطارئ شغّال»',
     '4️⃣ في إعدادات تطبيق Pushover فعّل <b>Critical Alerts</b> عشان يرن حتى لو الجوال صامت',
     /* الرخصة علينا وتنضاف بموافقتك (رخص Pushover)، والإيصال ما يشرحها — قرار محمد (٤ أكتوبر ٢٠٢٦):
        «مو لازم كل هذا الشرح». الوعد وحده (§٧) */
@@ -1519,6 +1523,7 @@ const PO_LIC_BATCH = 10;
 const PO_LIC = { busy: false, credits: null, creditsAt: 0, creditsErr: null, low: null,
   unsaved: new Map(),                           /* انضافت وما انكتبت — ما نسمّيها «ما ندري» */
   asked: new Map(),                             /* سألناك عنه — مرة وحدة، ويُحفظ مع الحالة */
+  noted: new Map(),                             /* قلنا لك «دفع وما ربط التطبيق» — مرة وحدة، ويُحفظ */
   deciding: new Set() };                        /* ضغطتان على نفس الطالب ما تشتغلان معاً */
 const PO_LIC_DONE_MSG = '🎟 <b>انضافت رخصة Pushover لحسابك</b>\n\n' +
   'التطبيق صار مفعّل لك بلا دفع — لا الحين ولا بعد التجربة، علينا 🤍\n' +
@@ -1619,7 +1624,7 @@ async function poLicCandidates() {
     if (!Array.isArray(pr)) throw new Error('profiles: ' + ((pr && pr.message) || 'رد غير متوقع'));
     for (const p of pr) {
       const key = String(p.pushover_key || '').trim();
-      if (!/^[A-Za-z0-9]{20,40}$/.test(key) || !hasPushoverAddon(p)) continue;
+      if (!PO_KEY_RE.test(key) || !hasPushoverAddon(p)) continue;
       if (ADMIN_CHAT_ID && String(p.telegram_chat_id || '') === ADMIN_CHAT_ID) continue;
       const w = src.get(p.id);
       out.push({ id: p.id, key, chat: p.telegram_chat_id || null, email: p.email || '',
@@ -1743,11 +1748,14 @@ async function poLicRun() {
      سؤالنا (اشترى الإضافة لترم ثاني · هدية جديدة)؟ نسألك ثانية */
   const fresh = (await poLicCandidates()).filter(c =>
     !(PO_LIC.asked.get(c.id) >= (Date.parse(c.since || '') || 0))).slice(0, PO_LIC_BATCH);
-  if (!fresh.length) return;
-  await poLicCredits(false);                                    /* رصيدك في الرسالة (محفوظ ٥ دقائق) */
-  let asked = 0;
-  for (const c of fresh) if (await poLicAsk(c)) { PO_LIC.asked.set(c.id, Date.now()); asked++ }
-  if (asked) saveState().catch(() => {});
+  if (fresh.length) {
+    await poLicCredits(false);                                  /* رصيدك في الرسالة (محفوظ ٥ دقائق) */
+    let asked = 0;
+    for (const c of fresh) if (await poLicAsk(c)) { PO_LIC.asked.set(c.id, Date.now()); asked++ }
+    if (asked) saveState().catch(() => {});
+  }
+  /* ودفع وما ربط التطبيق: كان يتخطّاه بصمت (تذكرة #50) — نقول لك مرة وحدة وبيدك ترسل له الرابط */
+  await poLicNoteUnlinked();
 }
 
 /* موافقتك أو رفضك لطالب (زر تلقرام أو اللوحة). الإضافة تعيد فحص الاستحقاق الحين —
@@ -1828,12 +1836,18 @@ async function poLicState(fresh) {
   const wl = table ? await poLicCandidates().then(l => l.map(c => ({ user: c.id, email: c.email || '',
     source: c.source, since: c.since || null, asked: PO_LIC.asked.has(c.id) })), () => null) : null;
   const waiting = wl ? wl.length : null;
+  /* دفعوا وما ربطوا التطبيق — بلا الربط ما ينسألك عنهم ولا يوصلهم تنبيه (تذكرة #50).
+     ومعهم رابط التفعيل تنسخه أو ترسله له من هنا */
+  const ul = await poLicUnlinked().then(l => l.map(c => ({ user: c.id, email: c.email || '', source: c.source,
+    at: c.at || null, due: c.due || null, tg: !!c.chat, noted: PO_LIC.noted.has(c.id),
+    link: poGoLink(c.id) })), () => null);
   const failed = rows.filter(x => x.status === 'failed');
   return { ok: true, live: PAY_LIVE, on: PUSHOVER_ON && PUSHOVER_MODE !== 'off',
     table: table ? 'ok' : 'missing', credits: c.credits, creditsError: c.error || null,
     state: !PAY_LIVE ? 'dev' : !PUSHOVER_ON || PUSHOVER_MODE === 'off' ? 'off' : !table ? 'missing'
       : failed.some(x => x.kind !== 'credits') ? 'stopped' : failed.length ? 'credits' : 'on',
     waiting, waitingList: wl ? wl.slice(0, 30) : null, approval: true, refundDays: REFUND_DAYS, low: PO_LIC_LOW,
+    unlinked: ul ? ul.slice(0, 30) : null,
     rows: rows.map(x => ({ user: x.user_id, email: email.get(x.user_id) || '', status: x.status,
       source: x.source, kind: x.kind || null, credits: x.credits == null ? null : Number(x.credits),
       error: x.error || null, at: x.created_at, doneAt: x.done_at || null })) };
@@ -1871,6 +1885,130 @@ async function poLicDone(userId) {
   return poLicState(true);
 }
 /* ═══ نهاية رخص Pushover ═══ */
+
+/* ═══ ربط تطبيق Pushover — عبر السيرفر ═══
+   تذكرة #50 (٥ نوفمبر ٢٠٢٦): مشتري التنبيه الطارئ دفع قبل شهر وما انربط تطبيقه أبداً — فما
+   وصل محمد سؤال رخصته (poLicCandidates تبي مفتاحاً)، وخلصت تجربة Pushover المجانية بعد ٣٠ يوم، بصمت.
+   الربط كان كله في المتصفح: رمز في تخزينه، والرجوع من صفحة Pushover لازم يوصل **نفس** المتصفح وهو
+   مسجّل دخول. ورابط الإيصال يفتح من تلقرام في متصفحه الداخلي (ما هو مسجّل فيه — فما يطلع زر «تفعيل»
+   أصلاً)، والتطبيق على الشاشة الرئيسية تخزينه منفصل عن المتصفح اللي يرجع له Pushover.
+   صار برمز يوقّعه السيرفر (`poLinkToken` — HMAC على المعرّف والنوع والانتهاء، بلا جدول ولا SQL):
+   · `go` — رابط الإيصال ورسالة «📩 أرسل له رابط التفعيل»: يفتح صفحة Pushover على طول، بلا دخول.
+   · `ret` — رابط الرجوع من Pushover (ساعتين): السيرفر يحفظ المفتاح لصاحب الرمز، في أي متصفح رجع.
+   والرمز يحمي اللي كان يحميه رمز المتصفح: ما أحد يربط مفتاحه هو بحساب طالب فتروح تنبيهاته له. */
+const PO_KEY_RE = /^[A-Za-z0-9]{20,40}$/;
+const PO_LINK_SECRET = crypto.createHash('sha256')
+  .update('jadwalik-pushover-link:' + (SB_SERVICE_KEY || TELEGRAM_TOKEN || ADMIN_TOKEN)).digest();
+const PO_LINK_ON = !!(SB_SERVICE_KEY || TELEGRAM_TOKEN || ADMIN_TOKEN);   /* بلا سرّ = توقيع يعرفه أي أحد */
+const PO_GO_MS = 120 * 864e5;                    /* رابط التفعيل: ترم وزيادة — والإيصال لين نهاية الإضافة */
+const PO_RET_MS = 2 * 3600e3;                    /* رابط الرجوع من صفحة Pushover */
+function poLinkSig(kind, uid, exp) {
+  return crypto.createHmac('sha256', PO_LINK_SECRET).update(`${kind}|${uid}|${exp}`).digest('base64')
+    .replace(/\+/g, '-').replace(/\//g, '_').slice(0, 27);
+}
+function poLinkToken(uid, kind, ms) {
+  const exp = Math.floor((Date.now() + ms) / 1000).toString(36);
+  return `${uid}.${exp}.${poLinkSig(kind, uid, exp)}`;
+}
+/* { uid } لو الرمز سليم ولسا ما انتهى، وإلا { why: 'bad' | 'expired' } */
+function poLinkCheck(t, kind) {
+  const m = /^([0-9a-f-]{36})\.([0-9a-z]{1,10})\.([A-Za-z0-9_-]{27})$/.exec(String(t || ''));
+  if (!PO_LINK_ON || !m || !isUuid(m[1])) return { why: 'bad' };
+  const a = Buffer.from(poLinkSig(kind, m[1], m[2])), b = Buffer.from(m[3]);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return { why: 'bad' };
+  if (parseInt(m[2], 36) * 1000 < Date.now()) return { why: 'expired' };
+  return { uid: m[1] };
+}
+/* صفحة الاشتراك في Pushover، ورجوعها لسيرفرنا برمز صاحبها */
+function poSubscribeUrl(uid, origin) {
+  const ret = `${origin}/api/pushover-return?t=${poLinkToken(uid, 'ret', PO_RET_MS)}`;
+  return PUSHOVER_SUBSCRIBE_URL + (PUSHOVER_SUBSCRIBE_URL.includes('?') ? '&' : '?') +
+    'success=' + encodeURIComponent(ret) + '&failure=' + encodeURIComponent(origin + '/?pushover=fail');
+}
+function poGoLink(uid, ms) {
+  return `${PAY_ORIGIN_PROD}/api/pushover-go?t=${poLinkToken(uid, 'go', ms || PO_GO_MS)}`;
+}
+const PO_LINK_MSG = link => '🚨 <b>فعّل التنبيه الطارئ</b> — باقي خطوة وحدة\n\n' +
+  'إضافتك مدفوعة ✅، بس تطبيق Pushover للحين مو مربوط بحسابك، فما يوصلك منه شي.\n\n' +
+  `1️⃣ اضغط هالرابط: ${link}\n` +
+  '2️⃣ سجّل دخولك في صفحة Pushover بنفس حساب التطبيق، ووافق\n' +
+  '3️⃣ يطلع لك «🔔 التنبيه الطارئ شغّال»\n\n' +
+  'ورخصة التطبيق علينا: تنضاف لحسابك بعد الربط — لو طلب منك دفعاً، لا تدفع.';
+const poLicDay = v => v ? new Date(v).toLocaleDateString('ar-u-ca-gregory-nu-latn',
+  { day: 'numeric', month: 'long', timeZone: 'Asia/Riyadh' }) : '';
+
+/* دفعوا على الإضافة (أو هدية) وهي سارية، وما ربطوا التطبيق. due: متى كان بينسألك عن رخصته لو ربط
+   (نهاية مدة الاسترجاع · وقت الهدية). ترمي لو ما قدرنا نقرأ */
+async function poLicUnlinked() {
+  const enc = encodeURIComponent, now = new Date().toISOString();
+  const [paid, comp] = await Promise.all([
+    sbAll('subscriptions', { strict: true, query: '?status=eq.paid&gateway=eq.edfapay&pushover=eq.true' +
+      `&valid_until=gt.${enc(now)}&select=id,user_id,paid_at` }),
+    sbAll('subscriptions', { strict: true, query: '?status=eq.comp&pushover=eq.true' +
+      `&valid_until=gt.${enc(now)}&select=id,user_id,created_at` })]);
+  const src = new Map();
+  for (const x of paid) if (!src.has(x.user_id)) src.set(x.user_id, { source: 'paid', at: x.paid_at || null });
+  for (const x of comp) if (!src.has(x.user_id)) src.set(x.user_id, { source: 'comp', at: x.created_at || null });
+  const ids = [...src.keys()].filter(id => isUuid(String(id)));
+  const out = [];
+  for (let i = 0; i < ids.length; i += 100) {
+    const pr = await sb('GET', 'profiles', { query: `?id=in.(${ids.slice(i, i + 100).join(',')})` +
+      '&select=id,email,telegram_chat_id,is_pro,pushover_key,pushover_until' });
+    if (!Array.isArray(pr)) throw new Error('profiles: ' + ((pr && pr.message) || 'رد غير متوقع'));
+    for (const p of pr) {
+      if (PO_KEY_RE.test(String(p.pushover_key || '').trim()) || !hasPushoverAddon(p)) continue;
+      if (ADMIN_CHAT_ID && String(p.telegram_chat_id || '') === ADMIN_CHAT_ID) continue;
+      const w = src.get(p.id);
+      const due = w.source === 'paid' && w.at ? new Date(Date.parse(w.at) + REFUND_DAYS * 864e5).toISOString() : w.at;
+      out.push({ id: p.id, email: p.email || '', chat: p.telegram_chat_id || null, source: w.source, at: w.at, due });
+    }
+  }
+  return out;
+}
+/* من poLicRun: اللي جا وقت سؤال رخصته وهو ما ربط — رسالة لك مرة وحدة بزر «📩 أرسل له رابط التفعيل».
+   الطالب ما يوصله شي إلا بضغطتك (مثل الرخصة). وتيليغرام رفض؟ تنعاد الدورة الجاية */
+async function poLicNoteUnlinked() {
+  if (!ADMIN_CHAT_ID) return;
+  let list;
+  try { list = await poLicUnlinked() } catch (e) { return }
+  const due = list.filter(c => c.due && Date.parse(c.due) <= Date.now() &&
+    !(PO_LIC.noted.get(c.id) >= Date.parse(c.due))).slice(0, PO_LIC_BATCH);
+  let n = 0;
+  for (const c of due) {
+    const r = await sendMsg(ADMIN_CHAT_ID, '🎟 <b>طالب اشترى التنبيه الطارئ وما ربط تطبيق Pushover</b>\n\n' +
+      `${esc(c.email || 'بلا إيميل')}\n${c.source === 'comp' ? 'هدية منك' : 'اشترى ' + poLicDay(c.at)}\n\n` +
+      'بلا الربط ما يوصله تنبيه طارئ، ولا نقدر نضيف رخصته — وتجربة التطبيق المجانية تخلص بعد 30 يوم من تنزيله.' +
+      (c.chat ? '\n\nنرسل له رابط التفعيل؟ يضغطه ويوافق في صفحة Pushover، وبعدها يوصلك سؤال رخصته.'
+              : '\n\n⚠️ مو رابط تيليغرام — انسخ رابط التفعيل من اللوحة ← «النظام» ← «🎟 رخص Pushover» وأرسله له.'),
+      c.chat ? kb([[btn('📩 أرسل له رابط التفعيل', 'pol:link:' + c.id)]]) : undefined).catch(() => null);
+    if (r && r.ok) { PO_LIC.noted.set(c.id, Date.now()); n++ }
+  }
+  if (n) saveState().catch(() => {});
+}
+/* «📩 أرسل له رابط التفعيل» (زر تلقرام أو اللوحة): نعيد الفحص الحين — ممكن ربط بعد رسالتنا */
+async function poLicSendLink(userId) {
+  const uid = String(userId || '');
+  if (!isUuid(uid)) return { ok: false, error: 'معرّف غير صالح' };
+  let c;
+  try { c = (await poLicUnlinked()).find(x => x.id === uid) }
+  catch (e) { return { ok: false, error: 'تعذّر قراءة المشترين — ' + e.message } }
+  if (!c) return { ok: false, already: true, error: 'ربط التطبيق من قبل، أو ما عاد عنده الإضافة' };
+  const link = poGoLink(uid);
+  if (!c.chat) return { ok: false, error: 'مو رابط تيليغرام — أرسل له الرابط بنفسك', link, email: c.email };
+  const r = await sendMsg(c.chat, PO_LINK_MSG(link)).catch(() => null);
+  return r && r.ok ? { ok: true, email: c.email }
+    : { ok: false, error: 'تيليغرام رفض الرسالة — أرسل له الرابط بنفسك', link, email: c.email };
+}
+async function poLicTgLink(cq, ack, chatId, uid) {
+  if (!ADMIN_CHAT_ID || String(chatId) !== String(ADMIN_CHAT_ID)) return ack();
+  await ack('نرسل…');
+  const r = await poLicSendLink(uid);
+  if (!cq.message) return;
+  const who = r.email ? ' — ' + esc(r.email) : '';
+  return editMsg(cq, r.ok ? `🎟 📩 <b>أرسلنا له رابط التفعيل</b>${who}\nأول ما يربط التطبيق يوصلك سؤال رخصته.`
+    : `🎟 ${r.already ? '✅' : '⚠️'} ${esc(r.error || 'تعذّر')}${who}` + (r.link ? `\n\nرابطه: ${esc(r.link)}` : ''));
+}
+/* ═══ نهاية ربط تطبيق Pushover ═══ */
 
 /* ═══ رصيد تقييم الدكاترة ═══
    الطالب يقيّم N دكاترة ← يرسل طلباً ← تراجعه في اللوحة ← تقبل أو ترفض
@@ -2758,6 +2896,7 @@ async function saveState() {
                  aiCaps: AI_CAPS, aiAlerted: AI_ALERTED,
                  /* رخص Pushover: مين سألناك عنه — بلا حفظه يجيك السؤال مرة ثانية مع كل نشر */
                  poLicAsked: [...PO_LIC.asked.entries()].slice(-2000),
+                 poLicNoted: [...PO_LIC.noted.entries()].slice(-2000),
                  /* «الشعبة اختفت» انقالت لصاحبها — بلا حفظه تتكرر مع كل نشر */
                  monGone: [...MON_GONE_TOLD].slice(-3000),
                  /* احتياط بانر: مفتاحه من اللوحة، ومصدر آخر دورة (رجوع الجدول بعده يسجّل بلا إشعار) */
@@ -2831,6 +2970,8 @@ async function restoreState() {
   if ('aiAlerted' in g) AI_ALERTED = String(g.aiAlerted || '');
   if (Array.isArray(g.poLicAsked))
     for (const [id, at] of g.poLicAsked) if (isUuid(String(id))) PO_LIC.asked.set(String(id), Number(at) || 0);
+  if (Array.isArray(g.poLicNoted))
+    for (const [id, at] of g.poLicNoted) if (isUuid(String(id))) PO_LIC.noted.set(String(id), Number(at) || 0);
   if ('bannerOn' in g) BANNER_ON = !!g.bannerOn;
   if (g.monSource === 'pmu' || g.monSource === 'banner') MON_SOURCE = g.monSource;
   if (Array.isArray(g.monGone)) g.monGone.forEach(k => { if (/^\d+\|\d{3,8}$/.test(String(k))) MON_GONE_TOLD.add(String(k)) });
@@ -4160,6 +4301,9 @@ async function handleCallback(cq) {
   /* رخصة Pushover بموافقتك (poLicAsk) — للإدارة وحدها */
   const pl = data.match(/^pol:(ok|no):([0-9a-f-]{36})$/);
   if (pl && chatId) return poLicTgDecide(cq, ack, chatId, pl[1] === 'ok', pl[2]);
+  /* «📩 أرسل له رابط التفعيل» — مشتري ما ربط التطبيق (poLicNoteUnlinked) — للإدارة وحدها */
+  const plk = data.match(/^pol:link:([0-9a-f-]{36})$/);
+  if (plk && chatId) return poLicTgLink(cq, ack, chatId, plk[1]);
 
   const mm = data.match(/^(stop|keep):(\d+)$/);
   if (!mm || !chatId) return ack();
@@ -12307,6 +12451,11 @@ const server = http.createServer(async (req, res) => {
       /* رخص Pushover: الرصيد والوضع والمنتظرون، وزرّا «أضف» و«لا» لكل واحد (موافقتك
          قبل أي رخصة)، و«أعد» و«تمّت» لما يوقف طالب */
       if (act === 'po-lic') return send(200, await poLicState(parsed.query.fresh === '1'));
+      /* «📩 أرسل له رابط التفعيل» من اللوحة — مشتري ما ربط التطبيق */
+      if (act === 'po-lic-link' && req.method === 'POST') {
+        const b = await readBody(req);
+        return send(200, await poLicSendLink(b.userId));
+      }
       if ((act === 'po-lic-retry' || act === 'po-lic-done') && req.method === 'POST') {
         const b = await readBody(req);
         return send(200, await (act === 'po-lic-done' ? poLicDone(b.userId) : poLicRetry(b.userId)));
@@ -12750,6 +12899,47 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(500); res.end(JSON.stringify({ error: 'تعذّر' }));
     }
     return;
+  }
+
+  /* ═══ ربط تطبيق Pushover (poLinkToken) ═══
+     «تفعيل» من الصفحة: رابط صفحة الاشتراك برمز رجوع لصاحب الجلسة */
+  if (parsed.pathname === '/api/me/pushover-start') {
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'no-store');
+    if (req.method !== 'POST') { res.writeHead(405); res.end(JSON.stringify({ error: 'POST' })); return }
+    const user = await sbAuthUser(bearerOf(req));
+    if (!user) { res.writeHead(401); res.end(JSON.stringify({ ok: false, why: 'signin' })); return }
+    if (!pushoverOn()) { res.writeHead(200); res.end(JSON.stringify({ ok: false, why: 'off' })); return }
+    res.writeHead(200); res.end(JSON.stringify({ ok: true, url: poSubscribeUrl(user.id, payOrigin(req)) }));
+    return;
+  }
+  /* رابط الإيصال ورسالة «📩 أرسل له رابط التفعيل»: صفحة Pushover على طول، بلا دخول */
+  if (parsed.pathname === '/api/pushover-go') {
+    const origin = payOrigin(req), c = poLinkCheck(parsed.query.t, 'go');
+    res.writeHead(302, { 'Cache-Control': 'no-store', 'Location': !pushoverOn() ? origin + '/?pushover=closed'
+      : c.uid ? poSubscribeUrl(c.uid, origin) : origin + '/?pushover=' + c.why });
+    res.end();
+    return;
+  }
+  /* الرجوع من صفحة Pushover: المفتاح لصاحب الرمز — في أي متصفح رجع، مسجّل ولا لا */
+  if (parsed.pathname === '/api/pushover-return') {
+    const origin = payOrigin(req);
+    const back = st => { res.writeHead(302, { 'Cache-Control': 'no-store', 'Location': origin + '/?pushover=' + st }); res.end() };
+    const c = poLinkCheck(parsed.query.t, 'ret');
+    if (!c.uid) return back(c.why);
+    const unsub = parsed.query.pushover_unsubscribed === '1';
+    const key = String(parsed.query.pushover_user_key || '').trim();
+    if (!unsub && !PO_KEY_RE.test(key)) return back('fail');
+    const r = await sb('PATCH', 'profiles', { query: `?id=eq.${c.uid}`, body: { pushover_key: unsub ? null : key },
+      prefer: 'return=representation' }).catch(e => ({ message: e.message }));
+    if (!Array.isArray(r) || !r.length) {
+      console.log('ربط Pushover: ما انحفظ — ' + ((r && r.message) || 'ما فيه صف'));
+      return back('fail');
+    }
+    console.log('ربط Pushover: ' + (unsub ? 'انلغى' : 'انربط'));
+    /* سؤال رخصته (لو مستحق) يوصلك الحين، لا بعد دورة الخمس دقائق */
+    if (!unsub && PAY_LIVE) poLicTick().catch(() => {});
+    return back(unsub ? 'off' : 'on');
   }
 
   /* ═══ /api/me/ai — سؤال واحد للمساعد ═══

@@ -2268,11 +2268,21 @@ function poLicCardHTML(){
       <span>${esc(x.email||String(x.user||'').slice(0,8))} · ${x.source==='comp'?'هدية':'اشترى الإضافة'}</span>
       <span style="color:var(--text3)">${x.since?esc('مستحق '+payAgo(x.since)):''}</span></div>${
       act?`<div class="pay-use">${btn('approve',x.user,'✅ أضف','go')} ${btn('skip',x.user,'✖️ لا')}</div>`:''}</div>`).join('');
+  /* دفعوا وما ربطوا التطبيق (تذكرة #50): بلا الربط ما ينسألك عنهم ولا يوصلهم تنبيه — كانوا ما يبانون أبداً.
+     «📩 أرسل له رابط التفعيل» يرسله على تلقرام، و«📋 انسخ الرابط» لو مو رابط تلقرام */
+  const ul=(d.unlinked||[]).map(x=>`<div class="pay-item"><div class="cr-row">
+      <span>${esc(x.email||String(x.user||'').slice(0,8))} · ${x.source==='comp'?'هدية':'اشترى '+esc(payAgo(x.at))}</span>
+      <span style="color:var(--warn)">ما ربط التطبيق</span></div>
+      <div class="pay-use">${x.tg&&act?btn('link',x.user,'📩 أرسل له رابط التفعيل','go')+' ':''}${x.link?`<button class="mini" data-l="${esc(x.link)}" onclick="poLicCopy(this)">📋 انسخ الرابط</button>`:''}${
+        x.tg?'':' <span style="color:var(--text3)">مو رابط تيليغرام</span>'}</div></div>`).join('');
   return `<div class="gauge" style="margin-bottom:12px">${head}
     <div class="kv"><span>الوضع</span>${st}</div>
     <div class="kv"><span>الرصيد عند Pushover</span>${cr}</div>
     ${d.waiting!=null?`<div class="kv"><span>ينتظرون موافقتك</span><b>${Number(d.waiting)}</b></div>`:''}
     ${wait?`<div style="margin-top:8px">${wait}</div>`:''}
+    ${ul?`<div class="kv" id="poLicUnlinked"><span>دفعوا وما ربطوا التطبيق</span><b style="color:var(--warn)">${(d.unlinked||[]).length}</b></div>
+      <div style="margin-top:8px">${ul}</div>
+      ${payTip('<b>بلا الربط ما نقدر نضيف رخصته، ولا يوصله تنبيه طارئ</b> — وتجربة Pushover المجانية تخلص بعد 30 يوم من تنزيله. أرسل له رابط التفعيل: يضغطه ويوافق في صفحة Pushover (بلا دخول للموقع)، وبعدها يوصلك سؤال رخصته.')}`:''}
     ${payTip(`<b>ما تنضاف رخصة إلا بموافقتك</b>: أول ما يصير طالب مستحقاً يوصلك على تلقرام زرّان «✅ أضف الرخصة» و«✖️ لا»، وهنا نفسهما. مشتري الإضافة يستحق بعد ${Number(d.refundDays)||7} أيام من الدفع (مدة الاسترجاع — الرخصة ما تنسترجع)، والهدية فوراً — وبشرط يربط التطبيق. الرصيد تشتريه من صفحة التطبيق في pushover.net («Purchase License Credits»).`)}
     ${d.state==='stopped'?payTip('<b style="color:var(--close)">طالب واقف تحت</b> — Pushover ينصح ما نعيد لحالنا. «🔁 أعد» يطلبها له من جديد، و«✔️ تمّت» لو أضفتها بيدك أو تبي تتخطّاه.'):''}
     ${rows?`<div style="margin-top:8px">${rows}</div>`:''}
@@ -2280,6 +2290,13 @@ function poLicCardHTML(){
       ${act?btn('go','','▶️ كمّل الحين','go'):''}
       <button class="mini" onclick="loadPoLic(true)">🔄 تحديث</button></div>
   </div>`;
+}
+/* نسخ رابط التفعيل — يرسله محمد بنفسه (مو رابط تلقرام · رد على تذكرة) */
+async function poLicCopy(b){
+  const l=(b&&b.dataset.l)||'';
+  if(!l)return;
+  try{ await navigator.clipboard.writeText(l); toast('📋 انتسخ الرابط — أرسله له','ok') }
+  catch(e){ prompt('انسخ رابط التفعيل:',l) }
 }
 async function loadPoLic(force){
   if(!force&&POLIC&&Date.now()-POLIC_AT<60000)return;
@@ -2292,8 +2309,21 @@ async function loadPoLic(force){
    addnow = أضفها لطالب قلت له «لا» (أو «تمّت») · done = تمّت يدوياً أو تخطّاه */
 async function poLicAct(k,b){
   const u=(b&&b.dataset.u)||'';
-  const who=([...((POLIC&&POLIC.waitingList)||[]),...((POLIC&&POLIC.rows)||[])]
+  const who=([...((POLIC&&POLIC.waitingList)||[]),...((POLIC&&POLIC.rows)||[]),...((POLIC&&POLIC.unlinked)||[])]
     .find(x=>x.user===u)||{}).email||'هالطالب';
+  /* رابط التفعيل لمشتري ما ربط: رسالة له على تلقرام — والرد نتيجة الإرسال لا حالة البطاقة */
+  if(k==='link'){
+    if(!confirm(`نرسل لـ${who} رابط تفعيل التنبيه الطارئ على تلقرام؟`))return;
+    if(b)b.disabled=true;
+    try{
+      const r=await api('po-lic-link',{body:{userId:u}});
+      if(r&&r.ok)toast('📩 أرسلنا له رابط التفعيل','ok');
+      else toast(((r&&r.error)||'تعذّر')+(r&&r.link?' — انسخ الرابط وأرسله له':''),'err');
+    }catch(e){ toast(e.message,'err') }
+    finally{ if(b&&b.isConnected)b.disabled=false }
+    loadPoLic(true);
+    return;
+  }
   if(k==='approve'&&!confirm(`نضيف رخصة Pushover لـ${who}؟\n\nتنخصم رخصة من رصيدك وما ترجع.`))return;
   if(k==='skip'&&!confirm(`ما نضيفها لـ${who}؟\n\nما نرجع نسألك عنه — ولو غيّرت رأيك: «✅ أضفها» على صفّه تحت.`))return;
   if(k==='addnow'&&!confirm(`نضيف رخصة Pushover لـ${who} الحين؟\n\nلو أضفتها له بيدك من قبل، هذي رخصة ثانية. تنخصم من رصيدك وما ترجع.`))return;

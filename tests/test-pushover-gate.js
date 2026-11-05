@@ -101,7 +101,11 @@ const server = http.createServer((req, res) => {
     ok(again === true, 'وتبقى مفتوحة بعدها على نفس الجهاز');
   }
 
-  /* ── ٣) رابط التوجيه ── */
+  /* ── ٣) «تفعيل»: الرابط من السيرفر (تذكرة #50 — توقّع تغيّر عمداً) ──
+     كان رمزاً عشوائياً في تخزين هالمتصفح ورابط رجوع للصفحة نفسها، فالرجوع لازم يوصل نفس المتصفح وهو
+     مسجّل — والتطبيق على الشاشة الرئيسية ومتصفح تلقرام الداخلي يرجعون لغيره فينرفض أو ينرمي بصمت.
+     صار السيرفر يعطي الرابط (‎/api/me/pushover-start‎) ورجوعه لسيرفرنا برمز موقَّع لصاحب الجلسة —
+     وشكل الرابط والرمز يثبتهما test-pushover-link على السيرفر نفسه */
   {
     /* ندع التوجيه يحصل فعلاً ونلتقطه على الشبكة — أصدق من محاكاة location.
        نردّ عليه بصفحة فاضية لا abort: القطع يفتح صفحة خطأ (chrome-error) توصل متأخرة تحت الحمل وتقاطع
@@ -112,34 +116,71 @@ const server = http.createServer((req, res) => {
       dest = r.request().url();
       return r.fulfill({ status: 200, contentType: 'text/html', body: '<html><body>pushover</body></html>' });
     });
-    await page.evaluate(([c]) => {
+    const RET = SUB + '?success=' + encodeURIComponent('http://127.0.0.1/api/pushover-return?t=T') + '&failure=x';
+    await page.evaluate(([c, u]) => {
       MON_STATE = { pushover: c };
-      try { localStorage.removeItem('jdw_po_nonce') } catch (e) {}
+      USER = { id: 'u1' };
+      try { localStorage.removeItem('jdw_po_nonce'); localStorage.removeItem('__mf') } catch (e) {}
+      /* التخزين يبقى على نفس الأصل بعد ما نرجع — فنسجّل النداء فيه */
+      window.meFetch = async (p, m) => { localStorage.setItem('__mf', p + '|' + m); return { ok: true, url: u } };
       poStart();
-    }, [{ mode: 'all', url: SUB }]);
+    }, [{ mode: 'all', url: SUB }, RET]);
     for (let i = 0; i < 40 && !dest; i++) await page.waitForTimeout(100);
     await page.waitForURL(u => String(u).startsWith('https://pushover.net/'), { timeout: 8000 }).catch(() => {});
     await page.waitForLoadState('load').catch(() => {});
     await page.unroute('https://pushover.net/**');
 
-    /* نرجع للصفحة لنقرأ ما خُزّن — التخزين يبقى على نفس الأصل */
     await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'load' });
     await page.waitForFunction(() => typeof poVisible === 'function',
       null, { timeout: 15000 }).catch(() => {});
-    const nonce = await page.evaluate(() => {
-      try { return localStorage.getItem('jdw_po_nonce') || '' } catch (e) { return '' }
+    const st = await page.evaluate(() => {
+      try { return { mf: localStorage.getItem('__mf') || '', nonce: localStorage.getItem('jdw_po_nonce') } }
+      catch (e) { return {} }
     });
-
-    ok(dest.startsWith(SUB + '?'), 'التوجيه لرابط الاشتراك — ' + dest.slice(0, 70));
-    ok(/[?&]success=/.test(dest) && /[?&]failure=/.test(dest),
-       'ومعه success و failure');
-    ok(nonce.length >= 24, 'ورمز عشوائي محفوظ محلياً — طوله ' + nonce.length);
-    const sp = new URL(dest || SUB).searchParams;
-    const succ = sp.get('success') || '';
-    ok(succ.includes('rand=' + nonce), 'والرمز داخل رابط النجاح');
-    ok(succ.startsWith('http://127.0.0.1'), 'ورابط النجاح على نفس الأصل');
-    ok((sp.get('failure') || '').startsWith('http://127.0.0.1'),
-       'ورابط الرفض كذلك');
+    ok(st.mf === '/api/me/pushover-start|POST', '**«تفعيل» يطلب الرابط من السيرفر** (/api/me/pushover-start) — ' + st.mf);
+    ok(dest === RET, '**والتوجيه للرابط اللي رجّعه السيرفر نفسه** — ' + dest.slice(0, 60));
+    ok(st.nonce === null, 'وما ينحفظ رمز في تخزين المتصفح — الرجوع ما يعتمد عليه');
+  }
+  /* الكود القديم يوجّه لـPushover فعلاً هنا: نلقّط التوجيه ونرجع، فيطلع ✗ لا انهيار */
+  const home = async () => {
+    await page.waitForTimeout(400);                 /* التوجيه ممكن ما ثبت لسا */
+    await page.waitForLoadState('load').catch(() => {});
+    if (page.url().startsWith(`http://127.0.0.1:${port}`)) return;
+    await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'load' });
+    await page.waitForFunction(() => typeof poVisible === 'function', null, { timeout: 15000 }).catch(() => {});
+  };
+  await page.route('https://pushover.net/**', r => r.fulfill({ status: 200, contentType: 'text/html', body: '<html></html>' }));
+  /* زائر يضغط «تفعيل»: ندخّله أول، وعلامة ترجّعه للبطاقة بعد الدخول — لا توجيه لـPushover */
+  {
+    const r = await page.evaluate(async ([c]) => {
+      MON_STATE = { pushover: c }; USER = null;
+      window.__gsi = 0; window.googleSignIn = () => { window.__gsi++ };
+      window.meFetch = async () => { window.__mfGuest = 1; return { ok: true, url: 'https://pushover.net/x' } };
+      try { localStorage.removeItem('jdw_po_after_login') } catch (e) {}
+      await poStart();
+      return { gsi: window.__gsi, mf: !!window.__mfGuest, mark: !!localStorage.getItem('jdw_po_after_login'), href: location.href };
+    }, [{ mode: 'all', url: SUB }]).catch(() => ({ gsi: 0, href: 'وجّه لـPushover' }));
+    await home();
+    ok(r.gsi === 1 && !r.mf && r.mark && r.href.startsWith('http://127.0.0.1'),
+       '**زائر يضغط «تفعيل»: يدخّله بقوقل ويحفظ علامة يرجع بها للبطاقة** — كان يروح لـPushover ويرجع وينرمي مفتاحه بصمت');
+  }
+  /* رابط من السيرفر مو لـPushover · المساعد مطفأ: ما نوجّه */
+  {
+    const r = await page.evaluate(async ([c]) => {
+      MON_STATE = { pushover: c }; USER = { id: 'u1' };
+      window.showToast = (m) => { window.__toast = m };
+      window.meFetch = async () => ({ ok: true, url: 'https://evil.example/subscribe' });
+      await poStart();
+      const a = { toast: window.__toast, href: location.href };
+      window.meFetch = async () => ({ ok: false, why: 'off' });
+      await poStart();
+      return { a, b: { toast: window.__toast, href: location.href } };
+    }, [{ mode: 'all', url: SUB }]).catch(() => ({ a: { href: 'وجّه لـPushover' }, b: {} }));
+    await home();
+    await page.unroute('https://pushover.net/**');
+    ok(/ما ضبطت/.test(r.a.toast || '') && r.a.href.startsWith('http://127.0.0.1'),
+       'رابط مو لـpushover.net: ما نوجّه له — «ما ضبطت»');
+    ok(/مو متاح/.test(r.b.toast || ''), 'والتنبيه الطارئ مطفأ في السيرفر: «مو متاح الحين»');
   }
 
   /* ── ٤) الرجوع: الرمز الصحيح يحفظ المفتاح ── */
@@ -198,6 +239,52 @@ const server = http.createServer((req, res) => {
     });
     ok(r.upd && r.upd.pushover_key === null, 'الإلغاء يكتب null');
     ok(r.prof === null, 'والملف المحلي انحدّث');
+  }
+
+  /* ── ٧) الرجوع القديم بلا دخول: كان ينرمي بصمت — الحين يقول له ── */
+  {
+    const r = await page.evaluate(async () => {
+      window.__upd = null; USER = null; PROFILE = {};
+      window.__toast = ''; window.showToast = (m) => { window.__toast = m };
+      localStorage.setItem('jdw_po_nonce', 'n3');
+      history.replaceState({}, '', '/?rand=n3&pushover_user_key=KEY456');
+      await poHandleReturn();
+      return { upd: window.__upd, toast: window.__toast };
+    });
+    ok(r.upd === null && /سجّل دخولك/.test(r.toast), '**رجع من Pushover وهو مو مسجّل: «سجّل دخولك وجرّب ثانية»** — كان صمتاً');
+  }
+
+  /* ── ٨) نتيجة الربط من السيرفر (‎?pushover=…‎) وزائر رابط الإيصال القديم — عند التحميل ── */
+  const fresh = async q => {
+    const p2 = await browser.newPage();
+    await p2.route('**/fonts.googleapis.com/**', r => r.fulfill({ status: 200, contentType: 'text/css', body: '' }));
+    await p2.route('**/cdn.jsdelivr.net/**', r => r.fulfill({ status: 200, contentType: 'application/javascript',
+      body: 'window.supabase={createClient:()=>({auth:{getSession:async()=>({data:{session:null}}),' +
+        'onAuthStateChange:()=>({data:{subscription:{unsubscribe(){}}}})},' +
+        'from:()=>({select(){return this},eq(){return this},order(){return this},limit(){return this},' +
+        'then:(f)=>f({data:[],error:null})}),channel:()=>({on(){return this},subscribe(){return this}}),' +
+        'storage:{from:()=>({list:async()=>({data:[],error:null})})}})};' }));
+    p2.on('pageerror', e => errs.push(String(e)));
+    await p2.addInitScript(() => { try { localStorage.setItem('pmu_seen_guide', 'true');
+      localStorage.setItem('pmu_seen_welcome', 'true') } catch (e) {} });
+    await p2.goto(`http://127.0.0.1:${port}/${q}`, { waitUntil: 'load' });
+    await p2.waitForTimeout(1500);
+    const v = await p2.evaluate(() => ({ toast: (document.getElementById('toast') || {}).textContent || '',
+      search: location.search, auth: !!document.getElementById('authBack'),
+      why: (document.getElementById('authWhy') || {}).textContent || '',
+      mark: (() => { try { return !!localStorage.getItem('jdw_po_after_login') } catch (e) { return false } })() }));
+    await p2.close();
+    return v;
+  };
+  {
+    const on = await fresh('?pushover=on');
+    ok(/التنبيه الطارئ شغّال/.test(on.toast) && !/pushover=/.test(on.search),
+       '**رجع من Pushover عبر السيرفر: «🔔 التنبيه الطارئ شغّال» — ولو في متصفح مو مسجّل فيه**، والرابط تنظّف');
+    const ex = await fresh('?pushover=expired');
+    ok(/انتهى/.test(ex.toast) && /الإعدادات/.test(ex.toast), 'ورابط منتهي: «انتهى — فعّله من الإعدادات»');
+    const g = await fresh('?pushover=1');
+    ok(g.auth && /عشان تفعّل التنبيه الطارئ/.test(g.why) && /بنفس حساب قوقل اللي دفعت منه/.test(g.why) && /Safari/.test(g.why) && g.mark,
+       '**زائر جا من رابط الإيصال القديم: نافذة الدخول وفيها «عشان تفعّل التنبيه الطارئ: سجّل دخولك بنفس الحساب اللي دفعت منه» (و«افتح في Safari»)، وعلامة ترجّعه للبطاقة** — كانت صفحة عادية بلا شي — ' + g.why.slice(0, 60));
   }
 
   ok(errs.length === 0, 'بلا أخطاء JS: ' + errs.slice(0, 2).join(' | '));
