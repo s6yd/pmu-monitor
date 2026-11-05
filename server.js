@@ -984,8 +984,8 @@ function payTermName(term) {
 /* الإيصال على تلقرام — لقاها محمد: «اشتراكك فعّال» وحدها ما تقول وش اشترى ولا
    كم دفع، ومن اشترى التنبيه الطارئ ما يدري إن فيه خطوة تفعيل. الأرقام من صف
    الاشتراك نفسه (حسبته meQuote وتحقّقنا منه عند EdfaPay) — ما نعيد حساب شي هنا.
-   ورابط التفعيل فيه ‎?pushover=1‎: يفتح بطاقة التفعيل في الإعدادات حتى في وضع
-   «link» (وفي «addon» تظهر للمشتري أصلاً) */
+   ورابط التفعيل موقَّع (poGoLink — تذكرة #50): يفتح صفحة Pushover على طول بلا دخول للموقع،
+   والرجوع يحفظ مفتاحه في أي متصفح. كان ‎?pushover=1‎ (بطاقة الإعدادات — للمسجّل وحده) */
 function payReceipt(s) {
   const d = v => new Date(v).toLocaleDateString('ar-u-ca-gregory-nu-latn',
     { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Riyadh' });
