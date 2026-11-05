@@ -193,6 +193,8 @@ let PULLED = [];        /* كل نداء يسحب من الجامعة يُسجَ
 let NEXT_REG = '202710';
 /* ترم التسجيل (regTerm) — باني الجداول يبني له. متغيّر عشان حالة «يبني لترم بعد ترم الدراسة» */
 let REG_TERM = '202710';
+/* currentWindow — نافذة التسجيل الحالية (null = خارجها): عمر البيانات يُقال وقتها وحده */
+let CUR_WIN = null;
 
 const ctxObj = {
   console: { log() {} }, Promise, JSON, Object, Array, String, Number, Math, Date,
@@ -210,6 +212,8 @@ const ctxObj = {
      في الإنتاج والاختبار أخضر. */
   absAllowedFor: () => 4,          /* حد ثابت — منطقه مُختبَر في مكانه */
   activeTerm: () => '202710',
+  currentWindow: () => CUR_WIN,
+  SEARCH_OLD_MS: 15 * 60 * 1000,
   FINALS_ON: true,
   coursesCache: new Map(),
   ROOM_INDEX: null,
@@ -219,13 +223,6 @@ const ctxObj = {
   buildRoomIndex: () => { PULLED.push('buildRoomIndex'); return Promise.resolve(null) },
   fetchPage: () => { PULLED.push('fetchPage'); return Promise.resolve('') },
   getFinals: () => { PULLED.push('getFinals'); return Promise.resolve([]) },
-  freeRooms: (idx, o) => {
-    const rooms = [...idx.rooms.entries()]
-      .filter(([, r]) => !o.gender || r.gender === o.gender)
-      .filter(([, r]) => !r.slots.some(s => s.day === o.day && s.start < o.to && s.end > o.from))
-      .map(([name, r]) => ({ room: name, building: r.building, freeUntil: null }));
-    return { total: rooms.length, rooms: rooms.slice(0, o.limit || 5) };
-  },
   hasAccess: p => !!(p && p.is_pro),
   /* أسعار غير الافتراضية عمداً: الرفض وأداة الباقات تقرأ من PRICING (اللوحة) لا من نص */
   PRICING: { termHalalas: 2400, pushoverHalalas: 1600, friendDiscountHalalas: 400,
@@ -305,6 +302,15 @@ vm.createContext(ctxObj);
   const i = L.findIndex(x => x.startsWith('function payTermName('));
   const j = L.findIndex((x, n) => n > i && x === '}');
   if (i < 0 || j <= i) ok(false, 'ما لقيت payTermName في السيرفر');
+  else vm.runInContext(L.slice(i, j + 1).join('\n'), ctxObj);
+}
+/* freeRooms وroomParts الحقيقيتان كذلك: كانت هنا freeRooms مزيّفة تتجاهل المبنى (near)،
+   فترتيب «مبنى محاضرته أول» ما ينفحص أبداً */
+for (const name of ['freeRooms', 'roomParts']) {
+  const L = src.split('\n');
+  const i = L.findIndex(x => x.startsWith(`function ${name}(`));
+  const j = L.findIndex((x, n) => n > i && x === '}');
+  if (i < 0 || j <= i) ok(false, `ما لقيت ${name} في السيرفر`);
   else vm.runInContext(L.slice(i, j + 1).join('\n'), ctxObj);
 }
 ok(typeof ctxObj.tagGender === 'function', 'tagGender الحقيقية محمّلة');
@@ -1303,12 +1309,31 @@ function fakeModel(ctx) {
     const sec = await callFree('sections', '{"code":"MATH 1422"}');
     eq(sec.found, 2, 'شعبتان لـMATH 1422');
     eq(sec.sections.map(x => x.crn).sort(), ['10002', '10009'], 'بالأرقام الصحيحة');
-    ok(sec.cacheAgeMin >= 0, 'ومعها عمر الكاش — ' + sec.cacheAgeMin);
+    /* **قاعدة تغيّرت بقرار محمد (٥ نوفمبر ٢٠٢٦: «ما يحتاج ذكر الكاش»)**: كانت «ومعها عمر الكاش»،
+       فيختم النموذج كل رد بـ«البيانات من كاش عمره 104 دقائق» */
+    ok(!('cacheAgeMin' in sec) && !('statusOld' in sec),
+       '**وبلا عمر الكاش** — خارج التسجيل ولا كلمة عن عمر البيانات — ' + JSON.stringify(sec).slice(0, 80));
     eq(PULLED, [], 'ولا سحبة رغم إن الكاش دافئ');
 
     const open = await callFree('sections', '{"code":"MATH 1422","openOnly":true}');
     eq(open.found, 1, 'المفتوحة فقط: وحدة');
     eq(open.sections[0].crn, '10002', 'وهي المفتوحة');
+
+    /* وبدل العمر قاعدة البحث نفسها (§٧ · X-Old): وقت التسجيل وفوق ربع ساعة ⇒ statusOld وحده */
+    {
+      const hit = ctxObj.coursesCache.get('202710|ALL|M1');
+      const at0 = hit.at;
+      const ask = async (ageMin, win) => { hit.at = Date.now() - ageMin * 60000; CUR_WIN = win;
+        return callFree('sections', '{"code":"MATH 1422"}') };
+      let r = await ask(20, { term: '202720' });
+      ok(r.found === 2 && r.statusOld === true && !('cacheAgeMin' in r),
+         '**وقت التسجيل وعمرها ٢٠ دقيقة: statusOld وحده — بلا رقم عمر** — ' + JSON.stringify(r).slice(0, 90));
+      r = await ask(10, { term: '202720' });
+      ok(r.found === 2 && !('statusOld' in r), 'وقت التسجيل وعمرها ١٠ دقائق: ولا كلمة');
+      r = await ask(300, null);
+      ok(r.found === 2 && !('statusOld' in r), 'خارج التسجيل وعمرها ٥ ساعات: ولا كلمة (الجدول ما يتغيّر)');
+      hit.at = at0; CUR_WIN = null;
+    }
 
     /* «المواد اللي باقية لي، مين أفضل الدكاترة اللي يدرّسونها؟» — لقاها محمد: الجواب
        كان «ما قدرت أطلع لك جواب». يحتاج شعب كل مادة ثم تقييم كل دكتور (٢٠ نداء وأكثر)
@@ -1362,7 +1387,9 @@ function fakeModel(ctx) {
     PULLED = [];
     const stale = await callFree('sections', '{"code":"X 1111"}');
     ok(stale.available === false, 'كاش عمره ٢٠ ساعة ⇒ غير متاح');
-    ok(stale.staleMin > 600, 'ويقول كم عمره — ' + stale.staleMin);
+    /* قاعدة تغيّرت بقرار محمد: كانت «ويقول كم عمره» (staleMin) — العمر ما يطلع للنموذج */
+    ok(!('staleMin' in stale) && /مو جاهزة/.test(stale.error || ''),
+       '**وما يقول كم عمره** — «مو جاهزة، جرّب بعد شوي» وبس');
     eq(PULLED, ['getCourses', 'getCourses'],
        '**وحاول يجدّده** — كاش نصف يوم في موسم التسجيل يضلّل');
 
@@ -1391,20 +1418,104 @@ function fakeModel(ctx) {
         slots:[{ day:'M', start:480, end:530 }] }],
     ]) };
     PULLED = [];
-    /* نافذة ٩:٠٠–١٠:٠٠ الأحد: محاضرة G034 خلصت ٨:٥٠، فالقاعتان فاضيتان */
-    const fr = await callFree('free_rooms', '{"day":"U","from":540,"to":600}');
+    /* نافذة ٩:٠٠–١٠:٠٠ الأحد: محاضرة G034 خلصت ٨:٥٠، فالقاعتان فاضيتان.
+       gender لأن جدول u-free فاضي: بلاها ما نعرف جنسه فنسأله (تحت، ٦هـ-٢) */
+    const fr = await callFree('free_rooms', '{"day":"U","from":540,"to":600,"gender":"M"}');
     eq(fr.total, 2, 'بعد ٨:٥٠ القاعتان فاضيتان');
     ok(fr.rooms.some(r => r.room === 'M-COBA - G034'),
        'وG034 منها — محاضرتها خلصت، والتقاطع بالدقيقة لا بالساعة');
 
     /* نافذة ٨:٢٠–٩:٠٠ تتداخل مع محاضرة G034 فتُستبعد */
-    const fr2 = await callFree('free_rooms', '{"day":"U","from":500,"to":540}');
+    const fr2 = await callFree('free_rooms', '{"day":"U","from":500,"to":540,"gender":"M"}');
     ok(!fr2.rooms.some(r => r.room === 'M-COBA - G034'), 'وأثناء محاضرتها تُستبعد');
     ok(fr2.rooms.some(r => r.room === 'M-COBA - G099'), 'وG099 فاضية — محاضرتها الاثنين');
     eq(PULLED, [], 'ولا سحبة — ما نادينا buildRoomIndex');
     ok(!!(await callFree('free_rooms', '{"day":"Z","from":1,"to":2}')).error, 'يوم غلط يُرفض');
     ok(!!(await callFree('free_rooms', '{"day":"U","from":600,"to":500}')).error,
        'نافذة مقلوبة تُرفض');
+
+    /* ٦هـ-٢) القاعات بجنس الطالب ومبناه — لقاها محمد في محادثات الإنتاج (٥ نوفمبر ٢٠٢٦):
+       «وين قاعة فاضية الحين؟» ⇒ خمس قاعات عشوائية (F-CORE · GZONE · M-CCES لطالب واحد) و«البيانات
+       من كاش عمره 104 دقائق». الحين: الجنس من جدوله · مبنى محاضرته أول · ما نعرف؟ نسأل */
+    {
+      ctxObj.ROOM_INDEX = { at: Date.now() - 104 * 60000, rooms: new Map([
+        ['M-COBA - G034', { gender:'M', building:'COBA', zone:'M-COBA', slots:[{ day:'U', start:480, end:530 }] }],
+        ['M-COBA - G099', { gender:'M', building:'COBA', zone:'M-COBA', slots:[{ day:'U', start:900, end:950 }] }],
+        ['M-CORE - F160', { gender:'M', building:'CORE', zone:'M-CORE', slots:[{ day:'U', start:840, end:890 }] }],
+        ['M-CORE - F155', { gender:'M', building:'CORE', zone:'M-CORE', slots:[{ day:'U', start:720, end:770 }] }],
+        ['M-CCES - F055', { gender:'M', building:'CCES', zone:'M-CCES', slots:[{ day:'M', start:600, end:650 }] }],
+        ['F-CORE - F061', { gender:'F', building:'CORE', zone:'F-CORE', slots:[{ day:'U', start:480, end:530 }] }],
+        ['F-LRC - 101', { gender:'F', building:'LRC', zone:'F-LRC', slots:[{ day:'U', start:480, end:530 }] }],
+        ['GZONE - F143', { gender:null, building:'GZONE', zone:'GZONE', slots:[{ day:'U', start:480, end:530 }] }],
+      ]) };
+      const RS = fakeModel(await aiStudentCtx('u-sched')), RF = fakeModel(await aiStudentCtx('u-schedf'));
+      const RG = (n, a) => aiRunTool(n, JSON.parse(a), { userId: null, profile: null, pro: false, guest: true, plan: null });
+      const W = '"day":"U","from":600,"to":700';      /* الأحد ١٠:٠٠–١١:٤٠ */
+      const names = r => (r.rooms || []).map(x => x.room);
+
+      /* جدوله فاضي ولا قال: ما نعرف جنسه ⇒ نسأله بلا قائمة */
+      const q0 = await callFree('free_rooms', `{${W}}`);
+      ok(q0.needGender === true && names(q0).length === 0,
+         '**ما نعرف جنسه: needGender وبلا ولا قاعة** (قاعات الطلاب غير الطالبات) — ' + JSON.stringify(q0).slice(0, 120));
+      ok(/طلاب ولا طالبات/.test(q0.ask || '') && /مبنى/.test(q0.ask || ''),
+         'ويقول للنموذج يسأله «طلاب ولا طالبات؟ ووش أقرب مبنى لك؟»');
+      ok(q0.scheduleEmpty === true && /استورد جدولك من بانر/.test(q0.note || ''),
+         '**وجدوله فاضي: نحثّه يضيفه — «📥 استورد جدولك من بانر»** — ' + (q0.note || ''));
+
+      /* قال «طلاب» وما نعرف مبناه: قاعة لكل مبنى من مباني الطلاب، ونسأله وش أقربها */
+      const q1 = await callFree('free_rooms', `{${W},"gender":"M"}`);
+      ok(names(q1).length === 3 && names(q1).every(r => /^M-/.test(r)),
+         '**قال «طلاب»: قاعات الطلاب وحدها — لا F- ولا GZONE** — ' + names(q1).join(' · '));
+      eq(new Set((q1.rooms || []).map(r => r.building)).size, names(q1).length,
+         '**وما نعرف مبناه: قاعة لكل مبنى** — لا خمس من مبنى واحد ما يدري وينه');
+      ok(q1.askBuilding === true && ['CCES', 'COBA', 'CORE'].every(b => (q1.buildings || []).includes(b)) &&
+         !(q1.buildings || []).some(b => b === 'LRC' || b === 'GZONE'),
+         'و«وش أقرب مبنى لك؟» بأسماء مباني الطلاب وحدها — ' + (q1.buildings || []).join(','));
+      ok((q1.rooms || []).every(r => r.freeUntil === null || /^\d\d:\d\d$/.test(r.freeUntil)) &&
+         (q1.rooms || []).some(r => r.freeUntil === '14:00'),
+         '«فاضية لين» ساعة مكتوبة (14:00) لا دقائق من منتصف الليل — ' + JSON.stringify(q1.rooms));
+      ok(q1.scheduleEmpty === true && /استورد/.test(q1.note || ''), 'وجدوله فاضي: نفس الحث');
+
+      /* جدوله فيه شعبة 101 ومحاضرته الجاية الأحد ١٢:٠٠ في M-CORE: يعرف كل شي بلا سؤال */
+      const q2 = await RS('free_rooms', `{${W}}`);
+      ok(q2.gender === 'M' && names(q2).length > 0 && names(q2).every(r => /^M-/.test(r)),
+         '**جنسه من جدوله (شعبة 101 = طلاب)** بلا ما يسأله — ' + names(q2).join(' · '));
+      ok(q2.near === 'CORE' && q2.nearFrom === 'schedule' &&
+         ((q2.rooms || [])[0] || {}).building === 'CORE' && q2.rooms[0].sameBuilding === true,
+         '**وأولها في مبنى محاضرته الجاية (CORE ١٢:٠٠)** — ' + JSON.stringify((q2.rooms || [])[0]));
+      ok(!q2.needGender && !q2.askBuilding && !q2.scheduleEmpty && !q2.note, 'وما يسأله شي ولا يحثّه — يعرف من جدوله');
+      /* مبنى محاضرته مليان في النافذة: ما ترجع قاعات من مبنى ثاني عشوائي — قاعة لكل مبنى */
+      const q2b = await RS('free_rooms', '{"day":"U","from":700,"to":900}');
+      ok(q2b.near === 'CORE' && names(q2b).length >= 2 && !names(q2b).some(r => /CORE/.test(r)) &&
+         new Set((q2b.rooms || []).map(r => r.building)).size === names(q2b).length,
+         '**ومبنى محاضرته ما فيه فاضي: قاعة لكل مبنى ثاني** — ' + names(q2b).join(' · '));
+
+      /* طالبة (شعبة 201) وما عندها محاضرة الأحد: قاعات الطالبات، ونسألها عن المبنى */
+      const q3 = await RF('free_rooms', `{${W}}`);
+      ok(q3.gender === 'F' && names(q3).length === 2 && names(q3).every(r => /^F-/.test(r)),
+         '**طالبة (شعبة 201): قاعات الطالبات وحدها** — ' + names(q3).join(' · '));
+      ok(q3.askBuilding === true && !q3.near, 'وما عندها محاضرة ذاك اليوم: نسألها وش أقرب مبنى');
+
+      /* قال المبنى */
+      const q4 = await callFree('free_rooms', `{${W},"gender":"M","building":"coba"}`);
+      ok(q4.near === 'COBA' && q4.nearFrom === 'asked' && ((q4.rooms || [])[0] || {}).building === 'COBA' && !q4.askBuilding,
+         '**قال المبنى (coba): أولها فيه** — ' + names(q4).join(' · '));
+      const q5 = await callFree('free_rooms', `{${W},"gender":"M","building":"مبنى الهندسة"}`);
+      ok(q5.unknownBuilding && names(q5).length === 0 && (q5.buildings || []).includes('CORE'),
+         'ومبنى ما نعرفه: نعرض الأسماء ونسأل — لا قاعات من مبنى ثاني');
+
+      /* الزائر: ما نعرف جدوله — نسأله، ونقول له يسجّل ويضيف جدوله */
+      const q6 = await RG('free_rooms', `{${W}}`);
+      ok(q6.needGender === true && names(q6).length === 0 && /سجّل دخوله/.test(q6.note || '') && !q6.scheduleEmpty,
+         '**الزائر: نسأله، ونقول «سجّل وأضف جدولك»** — ' + JSON.stringify(q6).slice(0, 100));
+
+      /* ولا كلمة «كاش» للنموذج: في وصف أي أداة ولا في نتيجة */
+      const facing = JSON.stringify(Object.values(AI_TOOLS).map(t => [t.description, t.input_schema]));
+      ok(!/كاش|cache/i.test(facing), '**ولا كلمة «كاش» في وصف أي أداة** — النموذج يكرّرها للطالب');
+      ok(!/cacheAgeMin|staleMin|كاش/.test(JSON.stringify([q0, q1, q2, q3, q4, q5, q6])),
+         'ولا عمر الكاش ولا كلمته في نتائج القاعات (الفهرس عمره 104 دقائق)');
+      ctxObj.ROOM_INDEX = null;
+    }
 
     /* ٦و) النهائيات */
     ctxObj.finalsCache.M = { at: Date.now(), exams: [
@@ -1419,6 +1530,7 @@ function fakeModel(ctx) {
     const fin = await callFree('finals', '{"code":"MATH 1422"}');
     eq(fin.count, 1, 'نهائي MATH 1422 موجود');
     eq(fin.exams[0].date, '2099-01-20', 'بتاريخه');
+    ok(!('cacheAgeMin' in fin), 'وبلا عمر الكاش (قرار محمد)');
     eq(PULLED, [], 'ولا سحبة — ما نادينا fetchPage');
     const finCrn = await callFree('finals', '{"crn":"10001"}');
     eq(finCrn.count, 1, 'والبحث بالشعبة يشتغل');
@@ -1494,7 +1606,9 @@ function fakeModel(ctx) {
     const b = await callS('build_schedule', '{"codes":["CHEM 1421","PHYS 1421","MATH 1422"]}');
     ok(b.ok && b.options.length === 3, 'ركّب ثلاثة خيارات — ' + JSON.stringify({o:b.options.length,m:b.missing,c:b.conflicts}));
     eq(b.term, '202710', 'ومن ترم التسجيل');
-    ok(b.cacheAgeMin >= 0, 'ومعها عمر الكاش');
+    /* قاعدة تغيّرت بقرار محمد (٥ نوفمبر ٢٠٢٦): كانت «ومعها عمر الكاش» */
+    ok(!('cacheAgeMin' in b) && !('statusOld' in b), 'وبلا عمر الكاش — خارج التسجيل ولا كلمة');
+    ok(!/الكاش/.test(b.note || ''), 'والملاحظة بلا «آخر تحديث للكاش»');
     ok(/الشعب المطروحة/.test(b.note || ''), 'ومعها إن المقاعد تتغيّر');
     ok(b.options.every(o => o.picks.length === 5),
        '**وكل خيار خمس شعب** — الكيمياء بمعملها والفيزياء بمعملها والرياضيات');
