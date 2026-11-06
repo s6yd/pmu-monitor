@@ -82,6 +82,7 @@ run test-tg-ask         "$S"
 run test-tg-hook        "$S"
 run test-utf8-chunks    "$S"
 run test-prep-sync      "$F"
+run test-prep-entry     "$F"
 run test-ai-page        "$F"
 
 echo

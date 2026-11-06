@@ -1781,8 +1781,37 @@ function planVerStore(major,ver){
   return PLAN_OLD_DEFAULT.includes(major)?major+':'+v:v;
 }
 
-/* مستويات التحضيري — مادة الرياضيات تتغيّر حسب التخصص */
-function prepSems(major){
+/* ═══ من وين بدأ التحضيري — تذكرة #81 (٦ نوفمبر ٢٠٢٦) ═══
+   صفحة البرنامج في موقع الجامعة («Sequence of Courses»): الجدول تحت هو المسار «المثالي» لمن يبدأ من
+   التأسيسي (أربعة ترمات)، ومن يبدأ من المبتدئ ثلاثة ومن المتوسط اثنين — المستويات اللي تحت مستواه
+   ما تخصّه. و**من يبدأ من المتقدم**: «need only take study skills II, but they will have to complete the
+   second semester of the mathematics requirement in their first semester in Core» — ترمه في التحضيري
+   فيه Introductory Algebra (أول ترمين الرياضيات) وبلا Study Skills I، ورياضيات تخصصه الثانية
+   (Pre-Calculus أو Intermediate Algebra) في **أول ترم بتخصصه**. قالتها تذكرة #81 (كيميكال)، وكان الموقع
+   يعرض المسار المثالي للكل، فيقفل على اللي بدأ من المتقدم مستواه لين يعلّم مستويات ما دخلها. الافتراضي PP1 = ما كان. */
+const PREP_LEVELS=['PP1','PP2','PP3','PP4'];
+const PREP_MATH_1='PRPM 0011';                    /* Introductory Algebra — أول ترمين الرياضيات */
+function prepFromOf(v){ return PREP_LEVELS.includes(v)?v:'PP1' }
+/* رياضيات التحضيري الثانية لمن بدأ من المتقدم — في أول ترم بتخصصه، بعد Introductory Algebra */
+function prepCoreMath(major){
+  const mc=PREP_MATH[major]||'PRPM 0012';
+  return {c:mc,n:(PREP_MATH_NAME[mc]||'')+' — رياضيات التحضيري',h:0,p:[PREP_MATH_1],prep:true};
+}
+
+/* مستويات التحضيري — مادة الرياضيات تتغيّر حسب التخصص، والمستويات من اللي بدأ منه (from) */
+function prepSems(major,from){
+  const f=prepFromOf(from);
+  if(f==='PP4')return [
+  {id:'PP4',label:'التحضيري — المستوى المتقدم',hrs:0,prep:true,courses:[
+    {c:'PRPC 0061',n:'Advanced Communication Skills',h:0,p:[],adm:true,prep:true},
+    {c:'PRPW 0061',n:'Advanced Writing Skills',h:0,p:[],adm:true,prep:true},
+    {c:'PRPA 0061',n:'Advanced Enhanced Learning',h:0,p:[],adm:true,prep:true},
+    {c:'PRPL 0012',n:'Theories & Applications of Learning II',h:0,p:[],prep:true},
+    {c:PREP_MATH_1,n:'Introductory Algebra',h:0,p:[],prep:true},
+    {c:PREP_EXIT,n:'Core Entry Exam — اختبار الخروج',h:0,p:[],adm:true,prep:true}]}];
+  return prepSemsAll(major).slice(PREP_LEVELS.indexOf(f));
+}
+function prepSemsAll(major){
   const mc=PREP_MATH[major]||'PRPM 0012';
   const mn=PREP_MATH_NAME[mc]||'';
   return [
@@ -1813,11 +1842,18 @@ function prepSems(major){
   ];
 }
 
-/* فصول الخطة كما تبنيها الصفحة: التحضيري أولاً لمن فعّله */
-function semesters(major,planVer,prep){
+/* فصول الخطة كما تبنيها الصفحة: التحضيري أولاً لمن فعّله — من المستوى اللي بدأ منه.
+   ومن بدأ من المتقدم: رياضيات التحضيري الثانية أول مادة في أول ترم بتخصصه (نسخة من الترم —
+   بيانات الخطة مشتركة وما تنلمس) */
+function semesters(major,planVer,prep,from){
   const p=planOf(major,planVer);
   if(!p)return [];
-  return prep?prepSems(major).concat(p.sems):p.sems;
+  if(!prep)return p.sems;
+  const f=prepFromOf(from);
+  let sems=p.sems;
+  if(f==='PP4'&&sems.length)
+    sems=[Object.assign({},sems[0],{courses:[prepCoreMath(major)].concat(sems[0].courses)})].concat(sems.slice(1));
+  return prepSems(major,f).concat(sems);
 }
 
 /* ═══ السياق ═══
@@ -1825,15 +1861,15 @@ function semesters(major,planVer,prep){
 function ctxOf(o){
   o=o||{};
   const major=o.major, planVer=o.planVer==='old'?'old':'new';
-  const prep=!!o.prep;
+  const prep=!!o.prep, prepFrom=prepFromOf(o.prepFrom);
   const p=planOf(major,planVer)||{};
   return {
-    major, planVer, prep,
+    major, planVer, prep, prepFrom,
     completed: Array.isArray(o.completed)?o.completed:[],
     grades: (o.grades&&typeof o.grades==='object')?o.grades:{},
     /* sems و tech يقبلان تمريراً صريحاً: الصفحة تبنيهما في applyMajor
        وتمرّر ما عندها بالضبط، فما نعيد حسابهما ونخاطر باختلاف. */
-    sems: Array.isArray(o.sems)?o.sems:semesters(major,planVer,prep),
+    sems: Array.isArray(o.sems)?o.sems:semesters(major,planVer,prep,prepFrom),
     tech: (o.tech&&typeof o.tech==='object')?o.tech:(p.tech||{}),
     total: o.total!==undefined?o.total:p.total,
     /* ترم التخطيط: الصفحة تمرّر ترم التسجيل الجاي (planTermCode)، والمساعد
@@ -2316,8 +2352,10 @@ function suggestNext(ctx){
     /* المادة اللي رسب فيها لازم يعيدها — تبقى في المقترح */
     if(isPassed(ctx,c.c)||c.el)return;   /* الراسب والمنسحب يبقيان في المقترح */
     if(c.adm)return;                 /* مواد تنزّلها الإدارة — الطالب ما يسجّلها بنفسه */
-    if(c.prep && (!pSem || sem.id!==pSem.id))return;   /* مستوى التحضيري الحالي فقط */
-    if(!c.prep && pSem)return;                         /* مواد التخصص تنتظر إنهاء التحضيري */
+    if(c.prep && sem.prep && (!pSem || sem.id!==pSem.id))return;   /* مستوى التحضيري الحالي فقط */
+    /* مواد التخصص تنتظر إنهاء التحضيري — ورياضيات التحضيري الثانية لمن بدأ من المتقدم معها (في
+       أول ترم بتخصصه: prepCoreMath)، وتنزل أساسية مثل مواد التحضيري */
+    if((!c.prep || !sem.prep) && pSem)return;
     if(!prereqCheck(ctx,c.c).ok)return;
     if(ctx.offeredOnly&&OFFER_MAJORS.includes(ctx.major)&&notOfferedIn(ctx.term,c.c)){
       notOffered.push(c.c); return;
@@ -2359,9 +2397,10 @@ function suggestNext(ctx){
 
 const LOGIC = {
   PREP_MATH, PREP_MATH_NAME, PREP_EXIT, PREP_GATE_LANG, PREP_GATE_MATH,
+  PREP_LEVELS, PREP_MATH_1,
   FAIL_GRADES, FAIL_GRADES_C, WITHDRAW_GRADES, GRADE_POINTS, GRADE_SKIP,
   INTERN_MIN_CREDITS,
-  hasAltPlan, planKey, planOf, prepSems, semesters, ctxOf, gradPlan,
+  hasAltPlan, planKey, planOf, prepSems, prepFromOf, prepCoreMath, semesters, ctxOf, gradPlan,
   planVerDefault, planVerParse, planVerOf, planVerStore,
   allPlanCourses, findPlanCourse, failGrades, isFailed, isWithdrawn,
   isDone, isPassed, doneCredits, level, prepGate, prepLevelLock,
