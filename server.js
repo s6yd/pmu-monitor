@@ -8500,6 +8500,8 @@ async function aiStudentCtx(userId) {
     prepInferred,               /* true لما تكون مستنتَجة لا محفوظة */
     plan: PLANS_DATA.ctxOf({
       major, planVer, prep, completed, grades,
+      /* من وين بدأ التحضيري (تذكرة #81) — نفس خطة الصفحة؛ NULL أو قبل الـSQL = التأسيسي كما كان */
+      prepFrom: p && p.prep_from,
       term: nextRegTerm(),      /* «الترم الجاي» — لا ترم الدراسة خارج التسجيل */
     }),
   };
@@ -9263,6 +9265,8 @@ const AI_TOOLS = {
         level: PLANS_DATA.level(cr),
         percent: p.total ? Math.round(cr / p.total * 100) : 0,
         prep: ctx.prep, prepInferred: ctx.prepInferred,
+        /* المستوى اللي بدأ منه التحضيري — PP4 = المتقدم: رياضياته الثانية في أول ترم بتخصصه */
+        prepFrom: ctx.prep ? ctx.plan.prepFrom : undefined,
         semesters: ctx.plan.sems.length,
         /* كم مادة علّمها منجزة — صفر يعني ما عبّا خطته، لا إنه ما خلّص شي */
         completedRecorded: (ctx.plan.completed || []).length };

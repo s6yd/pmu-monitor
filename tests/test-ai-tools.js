@@ -1165,6 +1165,29 @@ function fakeModel(ctx) {
     const FRESH = await aiStudentCtx('u-fresh');
     ok(FRESH.prep === false && FRESH.prepInferred === true,
        'طالب بلا مواد تحضيري وبلا قيمة: مستنتَج «لا»');
+
+    /* من وين بدأ التحضيري (تذكرة #81): المساعد يبني نفس خطة الصفحة من الحساب (prep_from).
+       بدأ من المتقدم ⇒ مستواه وحده، ورياضيات تخصصه الثانية أول مادة في أول ترم بتخصصه.
+       كان يعرض المسار المثالي كله، فمقترحه «مستوى تنزّله الإدارة» (التأسيسي) لطالب في المتقدم */
+    DB.profiles['u-prep-adv'] = { id: 'u-prep-adv', major: 'CHEN', plan_ver: 'new', is_pro: true,
+                                  prep: true, prep_from: 'PP4' };
+    DB.completed['u-prep-adv'] = [];
+    const ADV = await aiStudentCtx('u-prep-adv');
+    eq(ADV.plan.sems.slice(0, 2).map(s => s.id), ['PP4', 'F1'],
+       '**بدأ من المتقدم: خطته من المتقدم ثم أول ترم بتخصصه**');
+    eq((ADV.plan.sems[1].courses[0] || {}).c, PLANS_DATA.PREP_MATH.CHEN,
+       'وأول مادة في أول ترم بتخصصه رياضيات التحضيري الثانية (Pre-Calculus)');
+    const povAdv = await fakeModel(ADV)('plan_overview', '{}');
+    eq(povAdv.prepFrom, 'PP4', 'plan_overview تقول من وين بدأ');
+    const nxAdv = await fakeModel(ADV)('next_term_suggestion', '{}');
+    const nxCodes = (nxAdv.critical || []).concat(nxAdv.optional || []).map(c => c.code);
+    ok(nxCodes.includes('PRPM 0011') && nxCodes.includes('PRPL 0012'),
+       'مقترحه مواد المتقدم: Introductory Algebra وStudy Skills II — ' + nxCodes.join(','));
+    ok(!nxCodes.includes(PLANS_DATA.PREP_MATH.CHEN),
+       'وPre-Calculus ما تنزل قبل Introductory Algebra — ' + nxCodes.join(','));
+    /* وبلا قيمة (NULL أو قبل الـSQL) = التأسيسي كما كان */
+    eq(ON.plan.sems.slice(0, 4).map(s => s.id), ['PP1', 'PP2', 'PP3', 'PP4'],
+       'بلا prep_from: المسار المثالي كما كان');
   }
 
   /* ── ٥) أدوات بيانات الطالب ── */
