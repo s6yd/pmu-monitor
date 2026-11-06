@@ -1787,8 +1787,8 @@ function planVerStore(major,ver){
    ما تخصّه. و**من يبدأ من المتقدم**: «need only take study skills II, but they will have to complete the
    second semester of the mathematics requirement in their first semester in Core» — ترمه في التحضيري
    فيه Introductory Algebra (أول ترمين الرياضيات) وبلا Study Skills I، ورياضيات تخصصه الثانية
-   (Pre-Calculus أو Intermediate Algebra) في **أول ترم بتخصصه**. طالبة كيميكال قالتها، وكان الموقع يعرض
-   له المسار المثالي كله ويقفل مستواه لين يعلّم مستويات ما دخلها. الافتراضي PP1 = ما كان. */
+   (Pre-Calculus أو Intermediate Algebra) في **أول ترم بتخصصه**. قالتها تذكرة #81 (كيميكال)، وكان الموقع
+   يعرض المسار المثالي للكل، فيقفل على اللي بدأ من المتقدم مستواه لين يعلّم مستويات ما دخلها. الافتراضي PP1 = ما كان. */
 const PREP_LEVELS=['PP1','PP2','PP3','PP4'];
 const PREP_MATH_1='PRPM 0011';                    /* Introductory Algebra — أول ترمين الرياضيات */
 function prepFromOf(v){ return PREP_LEVELS.includes(v)?v:'PP1' }
