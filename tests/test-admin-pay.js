@@ -122,6 +122,7 @@ const server = http.createServer((req, res) => {
       { kind: 'pushover_test', at: ago(10), n: null, detail: null }] }),
     paidRow(203, { until: inDays(-1), used: [{ kind: 'monitor_course', at: ago(9000), n: null, detail: null }] }),
     paidRow(204, { until: inDays(3), used: [{ kind: 'pushover_test', at: ago(5), n: null, detail: null }] }),
+    paidRow(208, { until: inDays(4), used: [{ kind: 'pushover_self', at: ago(7), n: null, detail: 'self_plain' }] }),
     { id: 205, term: '202720', status: 'pending', amount: 1900, credit: 0, gateway: 'edfapay', note: null, at: ago(2), usage: null }] }));
   let u = await useHTML(201);
   ok(/✅ ما انسجّل له استخدام لميزة مدفوعة/.test(u || '') && /الاسترجاع متاح حتى/.test(u || ''),
@@ -138,6 +139,10 @@ const server = http.createServer((req, res) => {
   u = await useHTML(204);
   ok(/✅ ما انسجّل له استخدام/.test(u || '') && /وصله تنبيه تجربة منك/.test(u || ''),
      '**تنبيه التجربة وحده ما يُعتبر استخدام الطالب** — ' + u);
+  /* الطالب جرّبه بنفسه من الزرّين (طلب محمد ٦ نوفمبر): مو استخدام، ومو «منك» */
+  u = await useHTML(208);
+  ok(/✅ ما انسجّل له استخدام/.test(u || '') && /جرّب التنبيه بنفسه/.test(u || '') && !/تنبيه تجربة منك/.test(u || ''),
+     '**جرّبه الطالب بنفسه: «جرّب التنبيه بنفسه» — لا «وصله تنبيه تجربة منك»، وما يُعتبر استخدام** — ' + u);
   eq(await useHTML(205), null, 'والمعلّق بلا سطر استخدام');
   ok(!/سجل الاستخدام ما يشتغل/.test(t), 'والسجل شغّال: بلا تنبيه');
   t = await card(D({ usageLog: 'ok', recent: [paidRow(206, { until: inDays(6), used: [
