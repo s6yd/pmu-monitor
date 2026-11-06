@@ -1279,6 +1279,12 @@ cursor:pointer;line-height:1;padding:0}
 border-bottom:1px solid var(--border)}
 .nt-row:last-child{border-bottom:none}
 .nt-row.dim{opacity:.42}
+/* زرّا تجربة التنبيه الطارئ تحت سطره (مربوط) — جزء منه، فبلا خط بينهم */
+.nt-row.po-on{border-bottom:none;padding-bottom:4px}
+.po-test{display:flex;gap:8px;padding:2px 0 12px;border-bottom:1px solid var(--border)}
+.po-test:last-child{border-bottom:none}
+.po-test .btn-sm{flex:1 1 0;min-width:0;padding:9px 8px}
+.po-test .btn-sm.arm{border-color:var(--warn);color:var(--warn)}
 .nt-txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
 .nt-txt b{font-size:13px;font-weight:700}
 .nt-txt span{font-size:11.5px;color:var(--text3);line-height:1.6}
@@ -8506,7 +8512,7 @@ function renderPushover(){
   const on=!!(PROFILE&&PROFILE.pushover_key);
   /* المشتري ما يدفع لـPushover — نحن نغطي ترخيص التطبيق لو انتهت تجربته */
   const addonMode=(poConf()||{}).mode==='addon';
-  box.innerHTML=`<div class="nt-row">
+  box.innerHTML=`<div class="nt-row${on?' po-on':''}">
     <div class="nt-txt">
       <b>${ar?'تنبيه طارئ عند فتح الشعبة':'Urgent alert when a section opens'}</b>
       <span>${on
@@ -8526,7 +8532,50 @@ function renderPushover(){
     </div>
     <button class="btn-sm${on?' ghost':''}" onclick="poStart()">${
       on?(ar?'إدارة':'Manage'):(ar?'تفعيل':'Enable')}</button>
-  </div>`;
+  </div>${on?poTestHTML(ar):''}`;
+}
+
+/* زرّا التجربة — طلب محمد (٦ نوفمبر ٢٠٢٦): «زر يوصله تجربة رسالة فقط انه مشبوك وتمام، واذا يبي يجرب التنبيه
+   الي يرن وجوالك صامت يضغط زر ثاني». السيرفر يقرّر ويرسل (/api/me/pushover-test — الحارس والحدود هناك)،
+   والصفحة تقول النتيجة بلغتها. والطارئ بضغطتين: ضغطة غلط في المحاضرة = صفارة تعيد كل 30 ثانية */
+function poTestHTML(ar){
+  const b=(k,l)=>`<button class="btn-sm ghost" data-l="${l}" onclick="poTest('${k}',this)">${l}</button>`;
+  return `<div class="po-test">${b('plain',ar?'📨 رسالة تجربة':'📨 Test message')}${
+    b('urgent',ar?'🚨 جرّب التنبيه الطارئ':'🚨 Test urgent alert')}</div>`;
+}
+let PO_TEST_ARM=0;
+async function poTest(kind,btn){
+  const ar=LANG==='ar';
+  const back=()=>{ if(btn&&btn.isConnected){ btn.textContent=btn.dataset.l||btn.textContent; btn.classList.remove('arm'); btn.disabled=false } };
+  if(kind==='urgent'&&Date.now()>PO_TEST_ARM){
+    PO_TEST_ARM=Date.now()+3500;
+    if(btn){ btn.textContent=ar?'اضغط ثانية — بيرن':'Tap again to ring'; btn.classList.add('arm') }
+    setTimeout(()=>{ if(Date.now()>=PO_TEST_ARM){ PO_TEST_ARM=0; back() } },3600);
+    return;
+  }
+  PO_TEST_ARM=0;
+  if(btn){ btn.textContent=btn.dataset.l||btn.textContent; btn.classList.remove('arm'); btn.disabled=true }
+  const r=await meFetch('/api/me/pushover-test','POST',{kind}).catch(()=>null);
+  back();
+  showToast(poTestSay(r,kind,ar),r&&r.ok?'ok':'err',7000);
+}
+function poTestSay(r,kind,ar){
+  if(r&&r.ok)return kind==='urgent'
+    ?(ar?'🚨 أرسلنا التنبيه الطارئ — يعيد كل 30 ثانية لين تضغط «Acknowledge» في Pushover. ما صفّر وجوالك صامت؟ فعّل Critical Alerts من إعدادات التطبيق.'
+        :'🚨 Urgent alert sent — it repeats every 30 seconds until you tap "Acknowledge" in Pushover. Silent? Enable Critical Alerts in the app settings.')
+    :(ar?'📨 أرسلنا رسالة تجربة — وصلتك؟ يعني مربوط وتمام ✅ ما وصلت خلال دقيقة؟ افتح تطبيق Pushover وتأكد إنك مسجّل دخول.'
+        :'📨 Test message sent — if it arrived, you are all set ✅ Nothing within a minute? Open Pushover and check you are signed in.');
+  const s=Number(r&&r.after)||0, w=s>=60?Math.ceil(s/60):s;
+  const M={
+    wait:ar?`جرّبته قبل شوي — جرّب بعد ${w} ${s>=60?'دقيقة':'ثانية'}`:`You just tried — try again in ${w} ${s>=60?'min':'s'}`,
+    day:ar?'خلصت تجارب اليوم — جرّب بكرة':'No more tests today — try tomorrow',
+    busy:ar?'خلصت تجارب اليوم — جرّب بكرة':'No more tests today — try tomorrow',
+    nokey:ar?'ما ربطت تطبيق Pushover — اضغط «تفعيل»':'Pushover is not linked — tap "Enable"',
+    addon:ar?'التنبيه الطارئ إضافة على اشتراك الترم':'Urgent alerts are an add-on to the term plan',
+    off:ar?'التنبيه الطارئ مو متاح الحين':'Urgent alerts are unavailable right now',
+    fail:ar?'Pushover ما قبل التجربة — اضغط «إدارة» وفعّل من جديد، ولو تكرر راسلنا':'Pushover rejected the test — tap "Manage" and enable again; contact us if it repeats'
+  };
+  return (r&&M[r.why])||(ar?'ما ضبط — جرّب مرة ثانية':'Failed — try again');
 }
 
 function renderNotif(){

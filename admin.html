@@ -2175,7 +2175,8 @@ function payUsageHTML(x){
   const u=x&&x.status==='paid'&&x.usage;
   if(!u)return '';
   const all=Array.isArray(u.used)?u.used:[];
-  const used=all.filter(y=>y.kind!=='pushover_test'), test=all.find(y=>y.kind==='pushover_test');
+  const used=all.filter(y=>y.kind!=='pushover_test'&&y.kind!=='pushover_self'),
+    test=all.find(y=>y.kind==='pushover_test'), self=all.find(y=>y.kind==='pushover_self');
   const ago=y=>`<span style="color:var(--text3)">(${esc(payAgo(y.at))})</span>`;
   const head=used.length
     ?`<b style="color:var(--warn)">⚠️ استخدم ميزة مدفوعة:</b> `+
@@ -2186,6 +2187,7 @@ function payUsageHTML(x){
     :until>Date.now()?`الاسترجاع متاح حتى ${esc(new Date(until).toLocaleDateString('ar-u-ca-gregory-nu-latn',{day:'numeric',month:'long'}))}`
     :'انتهت مدة الاسترجاع (7 أيام من الدفع)';
   return `<div class="pay-use">${head}${test?` · وصله تنبيه تجربة منك ${ago(test)}`:''}${
+    self?` · جرّب التنبيه بنفسه ${ago(self)}`:''}${
     tail?`<br><span style="color:var(--text3)">${tail}</span>`:''}</div>`;
 }
 function payAgo(iso){
