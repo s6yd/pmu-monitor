@@ -1538,6 +1538,15 @@ transform:rotate(45deg)}
 .prep-toggle b{display:block;font-size:13px;font-weight:700;line-height:1.4}
 .prep-toggle em{display:block;font-style:normal;font-size:11px;
 color:var(--text3);margin-top:2px;line-height:1.55}
+/* من وين بدأ التحضيري — تذكرة #81: يطلع تحت الخانة لمن فعّلها وحده */
+.prep-from{display:none;margin-top:10px;padding:11px 13px;background:var(--bg);
+border:1px solid var(--border);border-radius:12px}
+.prep-from.visible{display:block}
+.pf-t{font-size:12.5px;font-weight:700;line-height:1.5}
+.prep-from .pv-btns{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.prep-from .pv-b{font-family:inherit;padding:9px 2px;font-size:12px;min-width:0;
+overflow-wrap:break-word;line-height:1.35}
+.prep-from .pv-n span[dir=ltr]{white-space:nowrap}   /* «Pre-» و«Calculus» كانت تنقسم سطرين */
 .major-flash{animation:majorFlash 1.6s ease}
 @keyframes majorFlash{0%,100%{box-shadow:none}
 20%,60%{box-shadow:0 0 0 3px rgba(77,124,254,.45)}}
@@ -2261,6 +2270,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
         </span>
       </label>
     </div>
+    <div class="prep-from" id="prepFromBox"></div>
     <div class="sync-note" id="syncNote" style="margin-top:12px;margin-bottom:0">
       <span style="font-size:18px">☁️</span>
       <span id="syncText">سجّل دخول عشان تنحفظ خطتك وجدولك ويجونك من أي جهاز</span>
@@ -2391,7 +2401,8 @@ if (!window.PlanLogic) {
     planVerDefault: function () { return 'new' }, planVerParse: _n,
     planVerOf: function () { return 'new' },
     planVerStore: function (m, v) { return v === 'old' ? 'old' : 'new' },
-    prepSems: _e, semesters: _e,
+    prepSems: _e, semesters: _e, PREP_LEVELS: [],
+    prepFromOf: function () { return 'PP1' }, prepCoreMath: _n,
     ctxOf: function (o) {
       return Object.assign({ sems: [], tech: {}, completed: [], grades: {} }, o || {});
     },
@@ -2505,7 +2516,9 @@ function planTaking(){
    الحين ما يهم متى تُطرح، مثل المنتهية) */
 function planCtxNext(tk){ return PlanLogic.withTaking(planCtx(),tk===undefined?planTaking():tk) }
 /* لو غابت الخطط نكمل بقوائم فاضية — العرض يتكفّل بالرسالة، لا انهيار هنا */
-let PLAN=(planOf(MAJOR)||{}).sems||[];
+/* بالتحضيري من أول تحميل: كانت الخطة تنبني بلاه، فطالب التحضيري (غير الميكانيكال والكيميكال —
+   pullCloud تعيد بناءها لهما وحدهما) يفتح «خطتي» بلا مستوياته والخانة مفعّلة، لين يطفيها ويشغّلها */
+let PLAN=PlanLogic.semesters(MAJOR,PLAN_VER,prepOn(),prepFrom());
 let TECH_ELECTIVES=(planOf(MAJOR)||{}).tech||{};
 let TOTAL_CR=(planOf(MAJOR)||{}).total;
 
@@ -2523,13 +2536,15 @@ function applyMajor(code,silent,persist){
   MAJOR=code;
   PLAN_VER=PlanLogic.planVerOf(code,PLAN_VER_RAW);   /* النسخة تتبع التخصص — قبل اشتقاق الخطة */
   const _p=planOf(code);
-  PLAN=prepOn()?prepSems().concat(_p.sems):_p.sems;
+  /* التحضيري من المستوى اللي بدأ منه (تذكرة #81) — الحساب في المشترك لا هنا */
+  PLAN=PlanLogic.semesters(code,PLAN_VER,prepOn(),prepFrom());
   TECH_ELECTIVES=_p.tech||{};
   TOTAL_CR=_p.total;
   if(persist!==false)save('pmu_major',code);
   const el=document.getElementById('majorSelect');
   if(el&&persist!==false&&el.value!==code)el.value=code;
   setPlanTitle();
+  renderPrepFrom();            /* ملاحظة المتقدم تسمّي رياضيات التخصص */
   if(typeof renderPickHints==='function')renderPickHints();
   if(!silent)renderPlan();
 }
@@ -2552,7 +2567,49 @@ const PREP_GATE_MATH=PlanLogic.PREP_GATE_MATH;
 function prepOn(){ return !!load('pmu_prep',false); }
 
 /* مستويات التحضيري — مادة الرياضيات تتغيّر حسب التخصص */
-function prepSems(){return PlanLogic.prepSems(MAJOR)}
+function prepSems(){return PlanLogic.prepSems(MAJOR,prepFrom())}
+
+/* ═══ من وين بدأ التحضيري — تذكرة #81 (٦ نوفمبر ٢٠٢٦) ═══
+   مستواه من اختبار تحديد المستوى وقت القبول: المستويات اللي تحته ما تخصّه، ومن بدأ من
+   المتقدم رياضيات تخصصه الثانية في أول ترم بتخصصه (PlanLogic.semesters — صفحة البرنامج في
+   موقع الجامعة). في المتصفح وفي الحساب (profiles.prep_from) — NULL «ما انضبط» مثل prep،
+   والافتراضي التأسيسي = الخطة كما كانت. */
+function prepFromName(k,ar){
+  const n={PP1:['التأسيسي','Pre-Beginner'],PP2:['المبتدئ','Beginner'],
+           PP3:['المتوسط','Intermediate'],PP4:['المتقدم','Advanced']}[k];
+  return n?n[ar?0:1]:k;
+}
+function prepFrom(){ return PlanLogic.prepFromOf(load('pmu_prep_from','PP1')) }
+function renderPrepFrom(){
+  const box=document.getElementById('prepFromBox');
+  if(!box)return;
+  if(!prepOn()){ box.classList.remove('visible'); box.innerHTML=''; return }
+  const ar=LANG==='ar', cur=prepFrom();
+  const mc=PREP_MATH[MAJOR]||'PRPM 0012', mn=PREP_MATH_NAME[mc]||mc;
+  box.classList.add('visible');
+  box.innerHTML=`<div class="pf-t">${ar?'بدأت التحضيري من أي مستوى؟':'Which level did you start prep at?'}</div>
+    <div class="pv-btns">${['PP1','PP2','PP3','PP4'].map(k=>
+      `<button type="button" class="pv-b${k===cur?' on':''}" data-pf="${k}" aria-pressed="${k===cur}"
+        onclick="setPrepFrom('${k}')">${prepFromName(k,ar)}</button>`).join('')}</div>
+    <div class="pv-n">${cur==='PP4'
+      /* كل اسم لاتيني بـdir="ltr" وكلمة عربية بينهما — اسمان لاتينيان متجاوران ينقلب ترتيبهما */
+      ?(ar?`من بدأ من المتقدم ياخذ فيه <span dir="ltr">Introductory Algebra</span>، وياخذ <span dir="ltr">${escapeHtml(mn)}</span> في أول ترم بتخصصه — كذا في صفحة البرنامج التحضيري بموقع الجامعة.`
+          :`Advanced starters take Introductory Algebra there, and ${escapeHtml(mn)} in their first semester in their major — per the prep program page on the university site.`)
+      :(ar?'مستواك من اختبار تحديد المستوى وقت القبول — خطتك تبدأ منه.'
+          :'Your level comes from the placement test at admission — your plan starts there.')}</div>`;
+}
+function setPrepFrom(k){
+  const v=PlanLogic.prepFromOf(k);
+  if(v===prepFrom())return;
+  save('pmu_prep_from',v);
+  if(USER)pushPrepFrom();
+  if(majorChosen())applyMajor(MAJOR,false,false);
+  renderPrepFrom();
+  planTouched();               /* المستويات بوابة متطلبات — مثل خانة التحضيري */
+  renderPickHints();
+  showToast(LANG==='ar'?`خطتك تبدأ من المستوى ${prepFromName(v,true)}`
+                       :`Your plan starts at ${prepFromName(v,false)}`,'ok');
+}
 
 
 let SCHEDULES=[[],[],[]],SLOT=0;
@@ -6613,7 +6670,8 @@ function renderPlan(){
   const box=document.getElementById('prepProg');
   if(box){
     if(prepOn()){
-      const pc=prepSems().flatMap(x=>x.courses);
+      /* من الخطة المرسومة نفسها: من بدأ من المتقدم رياضياته الثانية في أول ترم بتخصصه */
+      const pc=PLAN.flatMap(x=>x.courses).filter(c=>c.prep);
       const dn=pc.filter(c=>isDone(c.c)&&!isFailed(c.c)).length;
       box.style.display='block';
       box.innerHTML=`<div class="prep-num">${dn}<small> / ${pc.length} ${
@@ -8243,6 +8301,7 @@ function renderSettings(){
   /* نرجّع حالة خانة التحضيري من التخزين */
   const pchk=document.getElementById('prepChk');
   if(pchk)pchk.checked=prepOn();
+  renderPrepFrom();
   const pro=isPro();
   const card=document.getElementById('proCard');
   const set=(id,v)=>{ const el=document.getElementById(id); if(el)el.textContent=v };
@@ -10221,9 +10280,11 @@ function reportPlan(){
     const ta=document.getElementById('fbText');
     if(ta){
       const m=majorChosen()?MAJOR:'—';
+      /* ومن وين بدأ التحضيري — تذكرة #81 جت بلاه */
+      const pf=prepOn()&&prepFrom()!=='PP1'?prepFrom():'';
       ta.value=(LANG==='ar'
-        ?`غلط في الخطة (${m}${prepOn()?' + تحضيري':''}):\n`
-        :`Plan issue (${m}${prepOn()?' + prep':''}):\n`);
+        ?`غلط في الخطة (${m}${prepOn()?' + تحضيري':''}${pf?' من '+prepFromName(pf,true):''}):\n`
+        :`Plan issue (${m}${prepOn()?' + prep':''}${pf?' from '+prepFromName(pf,false):''}):\n`);
       ta.focus();
       if(typeof updateFbCount==='function')updateFbCount();
       ta.scrollIntoView({behavior:'smooth',block:'center'});
@@ -10256,6 +10317,7 @@ function onPrepToggle(){
   if(USER)pushProfile();        /* يتبع التخصص للسحابة — ما يبقى في المتصفح */
   if(majorChosen())applyMajor(MAJOR,false,false);
   else if(el)showToast(LANG==='ar'?'اختر تخصصك أول':'Pick your major first','warn');
+  renderPrepFrom();            /* «بدأت من أي مستوى؟» يطلع تحت الخانة لمن فعّلها */
   planTouched();               /* مفتاح المستوى التحضيري بوابة متطلبات */
   renderPickHints();
 }
@@ -10615,16 +10677,29 @@ async function pullCloud(){
        NULL معناها «ما انضبط بعد» لا «مطفأ»: الطالب الموجود قبل هذا
        التغيير قيمته في متصفحه، فنرفعها مرة وحدة بدل ما نطفيها عليه.
        وقبل applyMajor لأن مواد التحضيري جزء من PLAN. */
+    let planDirty=false;             /* الحساب غيّر التحضيري أو مستواه ⇒ الخطة تنبني من جديد تحت */
     if(prof && typeof prof.prep === 'boolean'){
-      if(prof.prep !== prepOn()) save('pmu_prep', prof.prep);
+      if(prof.prep !== prepOn()){ save('pmu_prep', prof.prep); planDirty=true; }
     } else if(prof && prepOn()){
       pushProfile();                 /* قيمة المتصفح تصعد مرة وحدة */
     }
+    /* من وين بدأ التحضيري (تذكرة #81) — نفس القاعدة: المحفوظ يغلب، وNULL «ما انضبط» فقيمة
+       المتصفح تصعد مرة. وقبل الـSQL العمود ما يرجع أصلاً (undefined) ⇒ ما نرفع شي */
+    if(prof && PlanLogic.PREP_LEVELS.includes(prof.prep_from)){
+      if(prof.prep_from !== prepFrom()){ save('pmu_prep_from', prof.prep_from); planDirty=true; }
+    } else if(prof && prof.prep_from === null && prepFrom() !== 'PP1'){
+      pushPrepFrom();
+    }
     { const pc=document.getElementById('prepChk'); if(pc)pc.checked=prepOn(); }
+    renderPrepFrom();
     /* التخصص من السحابة — يجي معك لأي جهاز */
     if(prof&&prof.major&&PLANS[prof.major]&&prof.major!==MAJOR) applyMajor(prof.major,true);
     else if(prof&&prof.major===MAJOR&&hasAltPlan(MAJOR)) applyMajor(MAJOR,true,false);
-    else if(prof&&!prof.major&&MAJOR!=='MEEN') pushProfile();
+    else{
+      if(prof&&!prof.major&&MAJOR!=='MEEN') pushProfile();
+      /* كانت الخطة تبقى بقيمة المتصفح لين يبدّل الخانة: الحساب true والمتصفح false = بلا مستوياته */
+      if(planDirty) applyMajor(MAJOR,true,false);
+    }
 
     /* تخصص في الحساب = اختيار فعلي منه، مهما طابق القيمة الافتراضية */
     if(prof&&prof.major&&PLANS[prof.major]&&!majorChosen()){
@@ -10718,6 +10793,14 @@ async function pushPlanVer(){
   if(!USER||!PlanLogic.planVerParse(PLAN_VER_RAW))return;
   try{ await sb.from('profiles').update({plan_ver:PLAN_VER_RAW}).eq('id',USER.id); }
   catch(e){ console.log('plan ver sync',e); }
+}
+
+/* من وين بدأ التحضيري للحساب (تذكرة #81) — طلب مستقل مثل pushSlot: قبل الـSQL (عمود
+   prep_from) يفشل وحده وما يوقف رفع التخصص والتحضيري، والاختيار باقٍ في المتصفح */
+async function pushPrepFrom(){
+  if(!USER)return;
+  try{ await sb.from('profiles').update({prep_from:prepFrom()}).eq('id',USER.id); }
+  catch(e){ console.log('prep from sync',e); }
 }
 
 /* الجدول النشط للحساب — طلب مستقل عن pushProfile عمداً: لو العمود ما
