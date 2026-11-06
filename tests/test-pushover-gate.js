@@ -287,6 +287,71 @@ const server = http.createServer((req, res) => {
        '**زائر جا من رابط الإيصال القديم: نافذة الدخول وفيها «عشان تفعّل التنبيه الطارئ: سجّل دخولك بنفس الحساب اللي دفعت منه» (و«افتح في Safari»)، وعلامة ترجّعه للبطاقة** — كانت صفحة عادية بلا شي — ' + g.why.slice(0, 60));
   }
 
+  /* ── ٩) زرّا التجربة تحت «تنبيه طارئ عند فتح الشعبة» — طلب محمد (٦ نوفمبر ٢٠٢٦) ──
+     «زر يوصله تجربة رسالة فقط انه مشبوك وتمام، واذا يبي يجرب التنبيه الي يرن وجوالك صامت يضغط زر ثاني».
+     السيرفر يقرّر ويرسل (test-pushover-selftest)، والصفحة: الزرّان للمربوط وحده · الطارئ بضغطتين · النتيجة بنصّها */
+  {
+    const r = await page.evaluate(async ([c]) => {
+      const seen = [], nap = ms => new Promise(f => setTimeout(f, ms));
+      const fut = new Date(Date.now() + 864e5).toISOString(), KEY = 'u001'.padEnd(30, 'Z');
+      MON_STATE = { pushover: c }; USER = { id: 'u1' };
+      window.__toast = ''; window.showToast = (m) => { window.__toast = m };
+      let next = null;
+      window.meFetch = async (p, m, b) => { seen.push([p, m, b && b.kind]); return next };
+      const btns = () => [...document.querySelectorAll('#poRow .po-test button')];
+      const tap = async i => { const b = btns()[i]; if (b) b.click(); await nap(60) };
+      PROFILE = { pushover_until: fut, telegram_chat_id: '1' };
+      renderPushover();
+      const unlinked = btns().length;
+      PROFILE = { pushover_until: fut, telegram_chat_id: '1', pushover_key: KEY };
+      renderPushover();
+      const labels = btns().map(b => b.textContent.trim());
+      next = { ok: true, kind: 'plain' };
+      await tap(0);
+      const plain = { seen: seen.slice(), toast: window.__toast };
+      next = { ok: true, kind: 'urgent' };
+      await tap(1);
+      const armed = { n: seen.length, label: (btns()[1] || {}).textContent || '' };
+      await tap(1);
+      const urgent = { last: seen[seen.length - 1] || [], n: seen.length, toast: window.__toast, label: (btns()[1] || {}).textContent || '' };
+      await tap(1);                                    /* ضغطة وحدة وما كمّل: يرجع الزر بلا إرسال */
+      await nap(3800);
+      const idle = { n: seen.length, label: (btns()[1] || {}).textContent || '' };
+      const say = async (res) => { next = res; window.__toast = ''; await tap(0); return window.__toast };
+      const waitT = await say({ ok: false, why: 'wait', after: 42 });
+      const failT = await say({ ok: false, why: 'fail' });
+      const nokeyT = await say({ ok: false, why: 'nokey' });
+      const nullT = await say(null);
+      LANG = 'en'; renderPushover();
+      const en = btns().map(b => b.textContent.trim());
+      LANG = 'ar';
+      MON_STATE = { pushover: { mode: 'addon', url: c.url } };
+      PROFILE = { telegram_chat_id: '1', pushover_key: KEY };
+      renderPushover();
+      const locked = btns().length;
+      MON_STATE = { pushover: c };
+      return { unlinked, labels, plain, armed, urgent, idle, waitT, failT, nokeyT, nullT, en, locked };
+    }, [{ mode: 'all', url: SUB }]).catch(e => ({ err: String(e) }));
+    ok(!r.err, 'زرّا التجربة: بلا انهيار — ' + (r.err || ''));
+    ok(r.unlinked === 0, 'ما ربط التطبيق: ما فيه زرّا تجربة (عنده «تفعيل» بس)');
+    ok(JSON.stringify(r.labels) === JSON.stringify(['📨 رسالة تجربة', '🚨 جرّب التنبيه الطارئ']),
+       '**مربوط: زرّان تحت سطره — «📨 رسالة تجربة» و«🚨 جرّب التنبيه الطارئ»** — ' + JSON.stringify(r.labels));
+    ok(JSON.stringify((r.plain || {}).seen) === JSON.stringify([['/api/me/pushover-test', 'POST', 'plain']]) &&
+       /أرسلنا رسالة تجربة/.test(r.plain.toast) && /مربوط وتمام/.test(r.plain.toast),
+       '**«📨 رسالة تجربة»: تطلب من السيرفر وتقول «أرسلنا — وصلتك؟ يعني مربوط وتمام»** — ' + ((r.plain || {}).toast || '').slice(0, 50));
+    ok(r.armed && r.armed.n === 1 && /اضغط ثانية/.test(r.armed.label),
+       '**«🚨 جرّب التنبيه الطارئ» بضغطتين: الأولى «اضغط ثانية — بيرن» وما ترسل** — ' + ((r.armed || {}).label || ''));
+    ok(r.urgent && r.urgent.n === 2 && r.urgent.last[2] === 'urgent' && /أرسلنا التنبيه الطارئ/.test(r.urgent.toast) &&
+       /Acknowledge/.test(r.urgent.toast) && r.urgent.label === '🚨 جرّب التنبيه الطارئ',
+       '**والثانية ترسل، والرسالة «يعيد لين تضغط Acknowledge»، والزر يرجع لاسمه**');
+    ok(r.idle && r.idle.n === 2 && r.idle.label === '🚨 جرّب التنبيه الطارئ', 'وضغطة وحدة بلا ثانية: بعد ثوانٍ يرجع الزر وما انرسل شي');
+    ok(/جرّب بعد 42 ثانية/.test(r.waitT || ''), 'السيرفر قال «انتظر»: «جرّب بعد 42 ثانية» — ' + r.waitT);
+    ok(/فعّل من جديد/.test(r.failT || '') && /ما ربطت/.test(r.nokeyT || '') && /ما ضبط/.test(r.nullT || ''),
+       'وPushover رفض: «فعّل من جديد» · ما ربط: «ما ربطت» · بلا رد: «ما ضبط»');
+    ok(JSON.stringify(r.en) === JSON.stringify(['📨 Test message', '🚨 Test urgent alert']), 'وبالإنجليزي بأسمائها — ' + JSON.stringify(r.en));
+    ok(r.locked === 0, 'وبلا الإضافة (وضع addon): بطاقة «أضفه» بلا زرّي تجربة');
+  }
+
   ok(errs.length === 0, 'بلا أخطاء JS: ' + errs.slice(0, 2).join(' | '));
 
   await browser.close();

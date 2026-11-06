@@ -1453,7 +1453,8 @@ function usageFresh(uid) {
 }
 /* الاستخدام بعد كل دفعة، للوحة: وش استُعمل ومتى، ومتى تنتهي مدة الاسترجاع.
    مراقبة ٢ من ٢ ما هي استخدام مدفوع — حدود المجاني من اللوحة (PRICING).
-   وتنبيه التجربة من اللوحة (`pushover_test`) يُعرض وحده: أرسلته أنت، ما اختاره الطالب.
+   وتنبيه التجربة من اللوحة (`pushover_test`) يُعرض وحده: أرسلته أنت، ما اختاره الطالب — وتجربته بنفسه
+   من الزرّين (`pushover_self`) وحدها كذلك: تثبت إن ربطه اشتغل، وما هي تنبيه حقيقي.
    **null لو السجل ما يُقرأ** (الـSQL ما انشغّل): «ما انسجّل شي» كذبة هنا */
 async function usageOf(orders) {
   const paid = orders.filter(o => o.status === 'paid' && Date.parse(o.paid_at) && isUuid(String(o.user_id || '')));
@@ -1485,7 +1486,9 @@ async function usageOf(orders) {
         if ((x.feature === 'schedule' || x.feature === 'slot') && n > PRICING.freeSchedules) hit('schedule', x);
         if (x.feature === 'ai') hit('ai', x);
       }
-      if (o.pushover && (x.feature === 'pushover' || x.feature === 'pushover_test')) hit(x.feature, x);
+      /* وتجربة الطالب بنفسه (الزرّان — detail self_*) غير تجربتك من اللوحة */
+      if (o.pushover && (x.feature === 'pushover' || x.feature === 'pushover_test'))
+        hit(x.feature === 'pushover_test' && /^self_/.test(x.detail || '') ? 'pushover_self' : x.feature, x);
     }
     out[o.id] = { until: new Date(from + REFUND_DAYS * 864e5).toISOString(),
       used: Object.values(first).sort((a, b) => Date.parse(a.at) - Date.parse(b.at)) };
@@ -1527,7 +1530,8 @@ const PO_LIC = { busy: false, credits: null, creditsAt: 0, creditsErr: null, low
   deciding: new Set() };                        /* ضغطتان على نفس الطالب ما تشتغلان معاً */
 const PO_LIC_DONE_MSG = '🎟 <b>انضافت رخصة Pushover لحسابك</b>\n\n' +
   'التطبيق صار مفعّل لك بلا دفع — لا الحين ولا بعد التجربة، علينا 🤍\n' +
-  'لو طلب منك دفعاً، راسلنا هنا.';
+  'لو طلب منك دفعاً، راسلنا هنا.\n\n' +
+  'جرّبه الحين من الزرّين تحت 👇';
 
 /* نداء لـPushover: { status, j, text } — status 0 = ما وصلنا */
 function poLicReq(method, p, fields) {
@@ -1678,7 +1682,7 @@ async function poLicOne(c) {
   if (!Array.isArray(w) || !w.length) PO_LIC.unsaved.set(c.id, body);
   if (a.credits != null) Object.assign(PO_LIC, { credits: a.credits, creditsAt: Date.now(), creditsErr: null });
   console.log(`رخص Pushover: انضافت (${c.source}) — باقي ${a.credits}`);
-  if (c.chat) sendMsg(c.chat, PO_LIC_DONE_MSG).catch(() => {});
+  if (c.chat) sendMsg(c.chat, PO_LIC_DONE_MSG, poTestKb()).catch(() => {});
   poLicLow(a.credits);
   return { ok: true, credits: a.credits };
 }
@@ -2007,6 +2011,96 @@ async function poLicTgLink(cq, ack, chatId, uid) {
   const who = r.email ? ' — ' + esc(r.email) : '';
   return editMsg(cq, r.ok ? `🎟 📩 <b>أرسلنا له رابط التفعيل</b>${who}\nأول ما يربط التطبيق يوصلك سؤال رخصته.`
     : `🎟 ${r.already ? '✅' : '⚠️'} ${esc(r.error || 'تعذّر')}${who}` + (r.link ? `\n\nرابطه: ${esc(r.link)}` : ''));
+}
+
+/* ═══ التجربة من الطالب نفسه — طلب محمد (٦ نوفمبر ٢٠٢٦) ═══
+   «زر يوصله تجربة رسالة فقط انه مشبوك وتمام، واذا يبي يجرب التنبيه الي يرن وجوالك صامت يضغط زر ثاني».
+   كانت التجربة من اللوحة وحدها (adminPushTest — بإيميله)، والطالب ما يدري هل ربطه زبط لين تنفتح شعبة.
+   زرّان: «📨 رسالة تجربة» (عادية: مربوط ولا لا) · «🚨 جرّب التنبيه الطارئ» (نفس قوة فتح الشعبة: أولوية 2 ·
+   siren · كل 30 ثانية، ويوقف بعد ٥ دقائق مثل تجربة اللوحة). في إعدادات الموقع (`/api/me/pushover-test`)،
+   وفي تلقرام (`pot:plain` · `pot:urgent`) تحت رسالة «انربط» ورسالة الرخصة.
+   الهوية من الجلسة أو من المحادثة — لا معرّف من الطالب. والحارس `pushoverReady` نفسه (الوضع · الإضافة ·
+   مفتاحه): ما نقول «مربوط وتمام» لمن ما يوصله تنبيه حقيقي. وحدود: دقيقة بين رسالة وثانية، وخمس بين تنبيه
+   وثاني (ما تتراكب الصفارات)، وسقف باليوم لكل طالب وللكل (حصة Pushover الشهرية). في الذاكرة. */
+const PO_SELF_GAP = { plain: 60e3, urgent: 5 * 60e3 };
+const PO_SELF_DAY = { plain: 10, urgent: 5 };
+const PO_SELF_ALL = { plain: 300, urgent: 100 };
+const PO_SELF = { day: '', all: { plain: 0, urgent: 0 }, by: new Map(), told: new Map() };
+const PO_SELF_PUSH = {
+  plain: ['✅ جدولك — Pushover مربوط',
+    'هذي رسالة تجربة: تطبيق Pushover مربوط بحسابك في جدولك وتمام.\n' +
+    'تنبيه فتح الشعبة أقوى من هذي: صفارة تعيد كل 30 ثانية لين تأكّده.'],
+  urgent: ['🚨 تجربة التنبيه الطارئ — جدولك',
+    'هذا نفس تنبيه فتح الشعبة: يعيد كل 30 ثانية لين تضغط «Acknowledge».\n' +
+    'ما صفّر وجوالك صامت؟ افتح Pushover ← Settings ← فعّل Critical Alerts.']
+};
+/* { ok, kind } أو { ok:false, why: kind · off · nokey · addon · wait (+after ثواني) · day · busy · fail } */
+async function poSelfTest(p, kind) {
+  if (kind !== 'plain' && kind !== 'urgent') return { ok: false, why: 'kind' };
+  const ready = pushoverReady(p);
+  if (ready !== 'ok') return { ok: false, why: ready };
+  const uid = String(p.id || ''), now = Date.now(), day = riyadhDate();
+  if (PO_SELF.day !== day) Object.assign(PO_SELF, { day, all: { plain: 0, urgent: 0 }, by: new Map() });
+  const me = PO_SELF.by.get(uid) || { plain: { at: 0, n: 0 }, urgent: { at: 0, n: 0 } };
+  const k = me[kind], left = PO_SELF_GAP[kind] - (now - k.at);
+  if (left > 0) return { ok: false, why: 'wait', after: Math.ceil(left / 1000) };
+  if (k.n >= PO_SELF_DAY[kind]) return { ok: false, why: 'day' };
+  if (PO_SELF.all[kind] >= PO_SELF_ALL[kind]) return { ok: false, why: 'busy' };
+  /* الحجز قبل النداء: ضغطتان معاً = تجربة وحدة */
+  k.at = now; k.n++; PO_SELF.all[kind]++; PO_SELF.by.set(uid, me);
+  const [title, msg] = PO_SELF_PUSH[kind], key = String(p.pushover_key).trim();
+  const sent = await pushover(title, msg, kind === 'urgent'
+    ? { priority: 2, sound: 'siren', retry: 30, expire: 300, user: key }
+    : { priority: 0, sound: 'pushover', user: key }).catch(() => false);
+  if (!sent) return { ok: false, why: 'fail' };
+  /* يثبت إن التفعيل على جواله اشتغل (الشروط §٤) — واللوحة تعرضه «جرّبه بنفسه» لا «منك» */
+  usageLog(p, 'pushover_test', 'self_' + kind);
+  return { ok: true, kind };
+}
+const PO_SELF_COLS = '&select=id,telegram_chat_id,pushover_key,is_pro,pushover_until,subscription_expires_at&limit=1';
+const poTestKb = () => kb([[btn('📨 رسالة تجربة', 'pot:plain'), btn('🚨 جرّب التنبيه الطارئ', 'pot:urgent')]]);
+/* ردود الزرّين في تلقرام (نافذة — ≤ ٢٠٠ حرف). الموقع يقولها بلغته من `why` */
+const PO_SELF_TG = {
+  ok_plain: '📨 أرسلنا رسالة تجربة على Pushover — وصلتك؟ يعني مربوط وتمام ✅\n' +
+    'ما وصلت خلال دقيقة؟ افتح تطبيق Pushover وتأكد إنك مسجّل دخول.',
+  ok_urgent: '🚨 أرسلنا التنبيه الطارئ — يعيد كل 30 ثانية لين تضغط «Acknowledge» في Pushover.\n' +
+    'ما صفّر وجوالك صامت؟ فعّل Critical Alerts من إعدادات التطبيق.',
+  wait: s => `جرّبته قبل شوي — جرّب بعد ${s >= 60 ? Math.ceil(s / 60) + ' دقيقة' : s + ' ثانية'}.`,
+  day: 'خلصت تجارب اليوم — جرّب بكرة.',
+  busy: 'خلصت تجارب اليوم — جرّب بكرة.',
+  nokey: 'ما ربطت تطبيق Pushover — من الموقع: ⚙️ الإعدادات ← «تفعيل».',
+  addon: 'التنبيه الطارئ إضافة على اشتراك الترم — تلقاها في الموقع: ⚙️ الإعدادات ← الباقات.',
+  off: 'التنبيه الطارئ مو متاح الحين.',
+  fail: 'Pushover ما قبل التجربة — من الموقع: ⚙️ الإعدادات ← «إدارة» وفعّل من جديد. ولو تكرر راسلنا هنا.',
+  signin: 'ما لقيت حسابك — اربط تيليغرام من الموقع أول.',
+  error: 'تعذّر — جرّب بعد شوي.'
+};
+/* ضغطة من تلقرام: صاحب المحادثة وحده (ما في الزر معرّف أحد) */
+async function poSelfTestTg(cq, chatId, kind) {
+  const say = text => tg('answerCallbackQuery', { callback_query_id: cq.id, text, show_alert: true }).catch(() => {});
+  const pr = await sb('GET', 'profiles', { query: `?telegram_chat_id=eq.${encodeURIComponent(String(chatId))}` +
+    PO_SELF_COLS }).catch(() => null);
+  if (!Array.isArray(pr)) return say(PO_SELF_TG.error);
+  if (!pr.length) return say(PO_SELF_TG.signin);
+  const r = await poSelfTest(pr[0], kind);
+  const t = r.ok ? PO_SELF_TG['ok_' + r.kind] : PO_SELF_TG[r.why];
+  return say(typeof t === 'function' ? t(r.after) : (t || PO_SELF_TG.error));
+}
+/* انربط (الرجوع من Pushover): نقولها له على تلقرام ومعها الزرّين — ردّ على شي سوّاه هو، مو رسالة من عندنا.
+   ومرة كل ١٠ دقائق لنفس الطالب: يعيد الربط؟ ما نكرر */
+function poLinkedTell(p) {
+  if (!p || !p.telegram_chat_id || pushoverReady(p) !== 'ok') return;
+  const uid = String(p.id || ''), now = Date.now();
+  if (now - (PO_SELF.told.get(uid) || 0) < 10 * 60e3) return;
+  if (PO_SELF.told.size > 5000) PO_SELF.told.clear();
+  PO_SELF.told.set(uid, now);
+  sendMsg(p.telegram_chat_id, '🔔 <b>التنبيه الطارئ انربط بحسابك ✅</b>\n\n' +
+    'جرّبه من الزرّين تحت:\n' +
+    '📨 <b>رسالة تجربة</b> — رسالة عادية، بس عشان تتأكد إنه مربوط.\n' +
+    '🚨 <b>التنبيه الطارئ</b> — نفس تنبيه فتح الشعبة: صفارة تعيد كل 30 ثانية لين تضغط «Acknowledge». ' +
+    'وعشان يرن وجوالك صامت: Pushover ← Settings ← فعّل Critical Alerts.' +
+    (hasPushoverAddon(p) ? '\n\nلو طلب منك التطبيق دفعاً أو قال إن تجربته انتهت، لا تدفع — رخصته علينا.' : ''),
+    poTestKb()).catch(() => {});
 }
 /* ═══ نهاية ربط تطبيق Pushover ═══ */
 
@@ -4304,6 +4398,9 @@ async function handleCallback(cq) {
   /* «📩 أرسل له رابط التفعيل» — مشتري ما ربط التطبيق (poLicNoteUnlinked) — للإدارة وحدها */
   const plk = data.match(/^pol:link:([0-9a-f-]{36})$/);
   if (plk && chatId) return poLicTgLink(cq, ack, chatId, plk[1]);
+  /* «📨 رسالة تجربة» · «🚨 جرّب التنبيه الطارئ» — الطالب نفسه بمحادثته (poSelfTestTg) */
+  const pot = data.match(/^pot:(plain|urgent)$/);
+  if (pot && chatId) return poSelfTestTg(cq, chatId, pot[1]);
 
   const mm = data.match(/^(stop|keep):(\d+)$/);
   if (!mm || !chatId) return ack();
@@ -12913,6 +13010,22 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200); res.end(JSON.stringify({ ok: true, url: poSubscribeUrl(user.id, payOrigin(req)) }));
     return;
   }
+  /* «📨 رسالة تجربة» · «🚨 جرّب التنبيه الطارئ» من الإعدادات — صاحب الجلسة وحده (poSelfTest).
+     الردود المنطقية ٢٠٠ بـok:false وسببها، والصفحة تقوله بلغتها */
+  if (parsed.pathname === '/api/me/pushover-test') {
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'no-store');
+    if (req.method !== 'POST') { res.writeHead(405); res.end(JSON.stringify({ error: 'POST' })); return }
+    const user = await sbAuthUser(bearerOf(req));
+    if (!user) { res.writeHead(401); res.end(JSON.stringify({ ok: false, why: 'signin' })); return }
+    const body = await readBody(req);
+    const pr = await sb('GET', 'profiles', { query: `?id=eq.${encodeURIComponent(user.id)}` + PO_SELF_COLS })
+      .catch(() => null);
+    const out = !Array.isArray(pr) ? { ok: false, why: 'error' } : !pr.length ? { ok: false, why: 'signin' }
+      : await poSelfTest(pr[0], String((body && body.kind) || ''));
+    res.writeHead(200); res.end(JSON.stringify(out));
+    return;
+  }
   /* رابط الإيصال ورسالة «📩 أرسل له رابط التفعيل»: صفحة Pushover على طول، بلا دخول */
   if (parsed.pathname === '/api/pushover-go') {
     const origin = payOrigin(req), c = poLinkCheck(parsed.query.t, 'go');
@@ -12937,6 +13050,8 @@ const server = http.createServer(async (req, res) => {
       return back('fail');
     }
     console.log('ربط Pushover: ' + (unsub ? 'انلغى' : 'انربط'));
+    /* «انربط ✅» على تلقرام ومعها زرّا التجربة */
+    if (!unsub) poLinkedTell(r[0]);
     /* سؤال رخصته (لو مستحق) يوصلك الحين، لا بعد دورة الخمس دقائق */
     if (!unsub && PAY_LIVE) poLicTick().catch(() => {});
     return back(unsub ? 'off' : 'on');
