@@ -4,7 +4,7 @@
    المتقدم: «need only take study skills II, but they will have to complete the second semester of the
    mathematics requirement in their first semester in Core» — Introductory Algebra في المتقدم، ورياضيات
    تخصصه الثانية (Pre-Calculus أو Intermediate Algebra) في أول ترم بتخصصه. كان الموقع يعرض المسار
-   المثالي للكل: طالبة بدأت من المتقدم تشوف مستويات ما دخلتها تقفل عليها، وPre-Calculus في المتقدم.
+   المثالي للكل: اللي بدأ من المتقدم يشوف مستويات ما دخلها تقفل عليه، وPre-Calculus في المتقدم.
 
    وخطأ قديم معه: الخطة عند التحميل تنبني **بلا التحضيري** (pullCloud تعيد بناءها للميكانيكال والكيميكال
    وحدهما)، فطالب التحضيري يفتح «خطتي» بلا مستوياته والخانة مفعّلة — لين يطفيها ويشغّلها.
