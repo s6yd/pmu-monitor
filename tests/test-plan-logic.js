@@ -669,7 +669,14 @@ eq(L.level(200), 'Senior', 'level(200)');
   /* ── التحضيري: مستوياته ترمات، ومواد الإدارة فيها ── */
   const gp = L.gradPlan(L.ctxOf({ major: 'COSC', planVer: 'new', prep: true,
     completed: [], grades: {}, term: '202710' }), {});
-  eq(gp.done, true, '**طالب التحضيري: الحساب يكمل** — كان يقف عند أول مستوى تنزّله الإدارة');
+  /* إعلان التسجيل (٩ نوفمبر ٢٠٢٦): مواد ALIS تنتهي من الخطة القديمة، وهذا الطالب (تحضيري من خريف
+     2026/2027) يوصل تخصصه بعد آخر طرح لها — فالحساب يكمل للآخر والباقي مواد ALIS وحدها (phasedOut).
+     كان done:true قبل الإعلان؛ نيّة الاختبار (الحساب ما يقف عند التحضيري) باقية وأدق */
+  ok(!gp.stuck && !gp.truncated, '**طالب التحضيري: الحساب يكمل** — كان يقف عند أول مستوى تنزّله الإدارة');
+  eq(gp.remaining.slice().sort(), ['ALIS 1211', 'ALIS 1212', 'ALIS 2211', 'ALIS 2212'],
+     'والباقي عليه مواد ALIS وحدها — انتهى طرحها قبل ما يوصلها');
+  eq((gp.phasedOut || []).map(x => x.code).sort(), ['ALIS 1211', 'ALIS 1212', 'ALIS 2211', 'ALIS 2212'],
+     'وتُذكر phasedOut لا «وقف الحساب»');
   eq(gp.terms.slice(0, 4).map(t => t.prepLevel), ['PP1', 'PP2', 'PP3', 'PP4'], 'وأول ترماته مستويات التحضيري بالترتيب');
   ok(gp.terms.filter(t => t.prepLevel).every(t => !t.courses.some(c => c.elective)),
      'وما ينزل اختياري تخصص مع التحضيري');
