@@ -526,6 +526,7 @@ padding:9px 11px;margin:9px 0;line-height:1.7}
 .sug-off-when{margin-top:6px;font-weight:600}
 .sug-off{margin-top:2px}
 .sug-off-code{font-family:var(--mono);color:var(--accent2)}
+.sug-phase-tip{margin-top:7px;font-weight:600}
 .sug-item.tappable{cursor:pointer}
 .sug-item.tappable:active{background:var(--bg);border-radius:8px}
 .sug-item.tappable .sug-code::after{content:' ›';color:var(--text3);font-weight:700}
@@ -632,6 +633,9 @@ outline:none;flex-shrink:0;max-width:78px}
 .pc-off{font-size:11px;margin-top:5px;line-height:1.6;font-weight:600}
 .pc-off.last{color:var(--warn)}
 .pc-off.none{color:var(--text3)}
+/* مواد تنتهي من الخطة القديمة (إعلان التسجيل ٩ نوفمبر ٢٠٢٦): قبل آخر طرح معلومة، وبعده انتهت */
+.pc-off.ends{color:var(--accent2)}
+.pc-off.gone{color:var(--close)}
 /* شارة الطرح تتميّز بحدّها عن شارة «يفتح مواد» — نفس اللون يربك */
 .sug-badge.offer{border:1px solid rgba(245,158,11,.45);font-weight:700}
 
@@ -2416,6 +2420,7 @@ if (!window.PlanLogic) {
     calcGPA: function () { return { gpa: null, hrs: 0, n: 0, pts: 0 } },
     calcProjected: function () { return { gpa: null, hrs: 0, n: 0 } },
     OFFER_MAJORS: [], NOT_OFFERED: {}, OFFER_ONLY: {},
+    LAST_OFFER: {}, lastOffer: _n, phasedOutIn: _f,
     nextTermCode: function (c) { return c }, offerKnown: _f, notOfferedIn: _f,
     skipAhead: _0, nextOffered: _n, offerWarn: _n, withTaking: function (c) { return c },
     suggestNext: function () {
@@ -2739,6 +2744,8 @@ function offerBadge(code){
   const w=offerWarn(code);
   /* ما يُطرح في ترم التخطيط ما يوصل المقترح أصلاً (offeredOnly — يُذكر تحته)، فالشارة لـ«آخر فرصة» */
   if(!w||w.kind!=='last')return '';
+  /* آخر طرح لها (مادة تنتهي من الخطة القديمة): ما ترجع أبداً — «ما تُطرح في الربيع» تقول أقل من الحقيقة */
+  if(w.end)return `<span class="sug-badge offer">⚠️ ${LANG==='ar'?'آخر طرح لها':'final offering'}</span>`;
   /* «آخر فرصة» تصف الحالة ولا تفسّرها — الطالب ما يعرف ليش.
      السبب نفسه أوضح، ويقنعه بلا شرح إضافي. والترم باسمه: المقترح صار للترم
      الجاي، فـ«ما تُطرح الترم الجاي» تلخبط — أي جاي؟ */
@@ -2754,6 +2761,19 @@ function offerLine(code){
   if(!w)return '';
   /* الترمان باسميهما: ترم التخطيط (الجاي) غير «هذا الترم» اللي يدرسه */
   const pt=termLabel(planTermCode()), nx=w.next?termLabel(w.next):null;
+  /* مواد تنتهي من الخطة القديمة (إعلان التسجيل ٩ نوفمبر ٢٠٢٦ — LAST_OFFER في المشترك) */
+  if(w.kind==='gone')
+    return `<div class="pc-off gone">${LANG==='ar'
+      ?`⛔ انتهى طرحها — آخر طرح كان ${termLabel(w.last)}. راجع مرشدك`
+      :`⛔ No longer offered — last offered ${termLabel(w.last)}. Talk to your advisor`}</div>`;
+  if(w.kind==='ends')
+    return `<div class="pc-off ends">${LANG==='ar'
+      ?`⏳ آخر طرح لها ${termLabel(w.last)} — بعده تنتهي من الخطة القديمة`
+      :`⏳ Last offered ${termLabel(w.last)} — then phased out of the old plan`}</div>`;
+  if(w.end)
+    return `<div class="pc-off last">${LANG==='ar'
+      ?`⚠️ آخر فرصة: ${pt} — آخر طرح لها، وبعده ما تنطرح أبداً`
+      :`⚠️ Last chance: ${pt} — its final offering`}</div>`;
   if(w.kind==='none')
     return `<div class="pc-off none">${LANG==='ar'
       ?`🚫 ما تُطرح في ${pt}${nx?` — ترجع ${nx}`:''}`
@@ -2761,6 +2781,34 @@ function offerLine(code){
   return `<div class="pc-off last">${LANG==='ar'
     ?`⚠️ آخر فرصة: ${pt}${nx?` — وبعده ما ترجع إلا ${nx}`:''}`
     :`⚠️ Last chance: ${pt}${nx?` — then not until ${nx}`:''}`}</div>`;
+}
+
+/* مواد تنتهي من الخطة القديمة — إعلان التسجيل (٩ نوفمبر ٢٠٢٦): الباقية عليه بآخر ترم لها، واللي
+   انتهى طرحها «راجع مرشدك». من offerWarn نفسها (مواد جدوله الحالي منجزة، والناجح فيها ما يطلع).
+   وفي المقترح لا البطاقة وحدها: ALIS 2211/2212 مثلاً ما تطلع «آخر فرصة» إلا في خريف 2027/2028 */
+function phaseNoteHTML(){
+  const ar=LANG==='ar', by={}, gone=[], seen=new Set();
+  PLAN.forEach(s=>s.courses.forEach(c=>{
+    if(seen.has(c.c)||!PlanLogic.lastOffer(c.c))return;
+    seen.add(c.c);
+    const w=offerWarn(c.c);
+    if(!w)return;
+    if(w.kind==='gone')gone.push(c.c);
+    else if(w.last)(by[w.last]=by[w.last]||[]).push(c.c);
+  }));
+  const keys=Object.keys(by).sort();
+  if(!keys.length&&!gone.length)return '';
+  const list=a=>a.map(c=>`<span class="sug-off-code" dir="ltr">${c}</span>`).join(' · ');
+  return `<div class="sug-note phase">${ar
+      ?'📢 الجامعة أعلنت: مواد ALIS تنتهي من الخطة القديمة'
+      :'📢 The university is phasing ALIS courses out of the old plan'}${
+    keys.map(k=>`<div class="sug-off-when">${ar?'آخر طرح '+termLabel(k)+':':'Last offered '+termLabel(k)+':'}</div>`
+      +`<div class="sug-off">${list(by[k])}</div>`).join('')}${
+    gone.length?`<div class="sug-off-when">${ar?'انتهى طرحها:':'No longer offered:'}</div><div class="sug-off">${list(gone)}</div>`:''}
+    <div class="sug-phase-tip">${keys.length
+      ?(ar?'سجّلها قبل آخر طرح لها — واللي ما تلحق عليه، راجع مرشدك.'
+          :'Register them before their last offering — if you can\'t fit one in, talk to your advisor.')
+      :(ar?'راجع مرشدك.':'Talk to your advisor.')}</div></div>`;
 }
 
 function suggestNext(){
@@ -6728,6 +6776,7 @@ function renderPlan(){
   if(sug.opt.length)html+=`<div class="sug-group">${optLbl}</div>`+sug.opt.map(c=>row(c,0)).join('');
   /* اللي يقدر ياخذه وما يُطرح هالترم ما دخل المقترح — نسمّيه ومتى يرجع، وإلا
      يظن الطالب إن المقترح نساه (وفيها مواد تفتح غيرها) */
+  html+=phaseNoteHTML();
   if(sug.notOffered&&sug.notOffered.length){
     /* بترم رجوعها — غالباً كلها ترجع الترم الجاي، فسطر «ترجع …» واحد فوقها */
     const back={};

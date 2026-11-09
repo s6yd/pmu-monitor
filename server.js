@@ -8887,6 +8887,17 @@ const AI_NOT_IN_PLAN = 'مواد في جدوله مو في خطته (notInPlan) 
   + 'غلط (القديمة/الجديدة في «📋 خطتي»)؟ ولا تفترض.';
 const AI_SUMMER_NOTE = h => `حسبنا الصيفي بحد ${h} ساعات — افتراض لا قاعدة: الحد الفعلي وطرح `
   + 'المواد فيه تحدّدهما الجامعة، قلها له.';
+/* مواد تنتهي من الخطة القديمة — إعلان التسجيل (٩ نوفمبر ٢٠٢٦، LAST_OFFER في shared/plans.js) */
+const AI_PHASE_OUT_NOTE = 'الجامعة أعلنت إن مواد ALIS تنتهي من الخطة القديمة: المادة ما تُطرح بعد آخر ترم لها '
+  + '(lastOfferedTermName). اللي ما يلحق عليها (phasedOut) قلها له بصراحة وانصحه يراجع مرشده — '
+  + 'ولا تخترع بديلاً ولا تقول إنها انشالت من خطته.';
+function aiPhasedOut(ctx, list) {
+  return (list || []).map(x => {
+    const pc = PLANS_DATA.findPlanCourse(ctx.plan, x.code);
+    return { code: x.code, name: pc ? pc.n : null, lastOfferedTerm: x.last || null,
+      lastOfferedTermName: x.last ? payTermName(x.last) : null };
+  });
+}
 /* ليش ترم التخرج هذا بالذات: سلاسل متطلبات **بلا فراغ** تنتهي في آخر ترم —
    كل حلقة في الترم اللي قبل اللي بعدها مباشرة (ترم التدريب الصيفي ما يُعدّ
    فراغاً). هذي اللي ما تنضغط، والمرشد البشري يشرحها: «COMM 2311 الربيع لأن
@@ -9232,7 +9243,9 @@ const AI_TOOLS = {
     tier: 'free',
     description: 'هل تُطرح المادة في ترم التسجيل الجاي (term · termName في الرد — '
       + 'سمّه للطالب باسمه)، ومتى ترجع. جدول الطرح معروف للهندسة الميكانيكية (وثيقة الجامعة) '
-      + 'والكيميائية (مادة CHEN تُطرح في ترمها من الخطة وحده) فقط.',
+      + 'والكيميائية (مادة CHEN تُطرح في ترمها من الخطة وحده)، ومواد ALIS اللي تنتهي من الخطة '
+      + 'القديمة لكل التخصصات (إعلان التسجيل): final_offering = آخر طرح لها ولا ترجع · '
+      + 'offered_until = تُطرح لين lastOfferedTermName · phased_out = انتهى طرحها.',
     input_schema: { type: 'object', properties: {
       code: { type: 'string', description: 'كود المادة' } },
       required: ['code'] },
@@ -9243,6 +9256,11 @@ const AI_TOOLS = {
       const term = ctx.plan.term, termName = payTermName(term);
       if (!w) return { known: true, code: a.code, term, termName,
         status: 'ok', note: 'ما فيه تحذير طرح لهذي المادة' };
+      /* مواد تنتهي من الخطة القديمة (إعلان التسجيل ٩ نوفمبر ٢٠٢٦ — LAST_OFFER): آخر ترم لها، ولا ترجع */
+      if (w.last) return { known: true, code: a.code, term, termName,
+        status: w.kind === 'gone' ? 'phased_out' : w.kind === 'ends' ? 'offered_until' : 'final_offering',
+        lastOfferedTerm: w.last, lastOfferedTermName: payTermName(w.last), returnsTerm: null,
+        note: AI_PHASE_OUT_NOTE };
       return { known: true, code: a.code, term, termName,
         status: w.kind === 'none' ? 'not_offered_now' : 'last_chance',
         skipsTerms: w.n || 0, returnsTerm: w.next || null,
@@ -9318,6 +9336,11 @@ const AI_TOOLS = {
         adminPlacedOnly: !!(first && first.courses.every(c => c.admin)),
         prepLevel: (first && first.prepLevel) || null,
         notInPlan: now.notInPlan };
+      /* مواد ما يلحق عليها قبل ما ينتهي طرحها (الخطة القديمة) — بتسلسلها والطرح نفسه */
+      if (g.phasedOut && g.phasedOut.length) {
+        out.phasedOut = aiPhasedOut(ctx, g.phasedOut);
+        out.phasedOutNote = AI_PHASE_OUT_NOTE;
+      }
       if (summer) out.summerNote = AI_SUMMER_NOTE(g.summerMaxHours);
       /* بلا منجزات المقترح مواد الترم الأول — صحيحة لطالب جديد، وغلط
          لطالب ما عبّا خطته. نقولها ولا نخمّن أيّهما هو */
@@ -9391,12 +9414,15 @@ const AI_TOOLS = {
         /* سلاسل متطلبات بلا فراغ تنتهي بترم التخرج — «ليش ما أتخرج أبكر» */
         whyThisTerm: aiGradChains(ctx.plan, g.terms),
         blocked: g.stuck ? g.remaining : [],
+        /* ما تنحط بعد آخر طرح لها (مواد ALIS للخطة القديمة) — التوقّع بدونها، وما نخترع بديلاً */
+        phasedOut: aiPhasedOut(ctx, g.phasedOut || []),
         notInPlan: now.notInPlan,
         note: (aiPlanEmpty(ctx) ? AI_PLAN_EMPTY + ' ' : '') + (g.stuck
           ? 'وقف الحساب: فيه مواد متطلبها ما ينفتح من الخطة — راجع مرشدك'
           : 'تقدير من خطتك — الطرح الفعلي والمقاعد وقرار مرشدك تغيّره'),
       };
       if (a.summer) out.summerNote = AI_SUMMER_NOTE(g.summerMaxHours);
+      if (out.phasedOut.length) out.phasedOutNote = AI_PHASE_OUT_NOTE;
       if (now.notInPlan.length) out.notInPlanNote = AI_NOT_IN_PLAN;
       return out;
     },

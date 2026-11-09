@@ -2077,6 +2077,9 @@ function gradPlan(ctx,opts){
   let pendingEl=all.filter(c=>c.el&&!completed.includes(c.c));
   const electivesLeft=pendingEl.map(c=>({code:c.c,name:c.n,credits:c.h}));
   const terms=[]; let stuck=false;
+  /* مواد انتهى طرحها وهي باقية عليه (suggestNext ترجّعها gone): ما تنحط بعد آخر ترم لها — تُذكر
+     (phasedOut) ولا توقف الحساب كأنها متطلب مقفول */
+  const goneSeen=new Set();
   const elItem=c=>({code:c.c,name:c.n,credits:c.h,retake:false,elective:true});
   /* خانات الاختياري في ترمات قائمة، الأخير أولاً، بلا تجاوز السقف.
      whole: كلها أو ولا وحدة — للسؤال «تدخل كلها قبل التدريب؟» */
@@ -2110,6 +2113,7 @@ function gradPlan(ctx,opts){
     const summer=isSummer(term);
     const now=ctxOf(Object.assign({},ctx,{completed,grades,term,offeredOnly:true}));
     const s=suggestNext(now);
+    (s.gone||[]).forEach(c=>goneSeen.add(c));
     let picked=[], kind='courses';
     if(summer&&s.intern){ picked=[s.intern]; kind='internship' }
     else if(summer&&!o.summer){ term=nextTermCode(term); continue }
@@ -2172,9 +2176,10 @@ function gradPlan(ctx,opts){
   const list=terms.filter(t=>t.courses.length);
   const left=all.filter(c=>!c.el&&!completed.includes(c.c));
   const remaining=left.map(c=>c.c);
-  /* ما انحطّت وما وصلنا السقف = متطلب ما ينفتح من الخطة */
+  const phasedOut=remaining.filter(c=>goneSeen.has(c)).map(c=>({code:c,last:lastOffer(c)}));
+  /* ما انحطّت وما وصلنا السقف = متطلب ما ينفتح من الخطة — إلا اللي انتهى طرحها */
   const truncated=remaining.length>0&&terms.length>=GRAD_MAXT;
-  if(remaining.length&&!truncated)stuck=true;
+  if(remaining.some(c=>!goneSeen.has(c))&&!truncated)stuck=true;
   const hoursPlanned=list.reduce((n,t)=>n+t.hours,0);
   const hoursUnplaced=left.concat(pendingEl).reduce((n,c)=>n+H(c),0);
   return {
@@ -2182,7 +2187,7 @@ function gradPlan(ctx,opts){
     lastTerm:list.length?list[list.length-1].term:null,
     taking, stuck, truncated,
     done:!remaining.length&&!pendingEl.length&&!stuck,
-    remaining, electivesLeft, electivesTaking, gaps,
+    remaining, phasedOut, electivesLeft, electivesTaking, gaps,
     internTerm:(list.find(t=>t.kind==='internship')||{}).term||null,
     maxHours:cap, summerMaxHours:o.summer?sCap:null,
     /* هالترم (مواد جدوله) + الترمات الجاية = كل اللي باقي عليه */
@@ -2266,6 +2271,21 @@ const OFFER_ONLY={
 };
 const offerOnly=c=>Object.prototype.hasOwnProperty.call(OFFER_ONLY,c);
 
+/* ═══ مواد تنتهي من الخطة القديمة — إعلان التسجيل (٩ نوفمبر ٢٠٢٦) ═══
+   «Phase-Out of ALIS Courses Under the Old Degree Plan» (Registrar Office — صوّره محمد): مواد ALIS
+   «will no longer be offered after the specified semesters». مادة ← **آخر ترم تُطرح فيه**، وبعده ما
+   تُطرح أبداً. **لكل التخصصات** لا OFFER_MAJORS وحدها: المادة في خطته = خطته قديمة (الخطتان الجديدتان
+   — الميكانيكال والكيميكال — فيهما ISLM 1221 بدلها، وعشرون خطة عندنا فيها ALIS). قبل آخر ترم ما نعرف
+   عنها غير إنها تُطرح (مثل أي مادة برّا جدول الطرح)، وآخر ترم = «آخر فرصة» بلا رجعة، وبعده «انتهى
+   طرحها — راجع مرشدك» (الإعلان نفسه يقولها) — **ما نخترع بديلاً ولا نشيلها من الخطة**. */
+const LAST_OFFER={
+  'ALIS 1211':'202720','ALIS 1212':'202720',      /* ربيع 2026/2027 */
+  'ALIS 2211':'202810','ALIS 2212':'202810'       /* خريف 2027/2028 */
+};
+const lastOffer=c=>Object.prototype.hasOwnProperty.call(LAST_OFFER,c)?LAST_OFFER[c]:null;
+/* انتهى طرحها في هالترم؟ (ترم بعد آخر ترم لها) */
+function phasedOutIn(code,c){ const l=lastOffer(c); return !!l&&!!code&&Number(code)>Number(l) }
+
 /* الترم الذي يليه مباشرة — للسؤال: هل تُطرح المرة القادمة؟ */
 function nextTermCode(code){
   const y=String(code).slice(0,4), k=String(code).slice(4);
@@ -2275,9 +2295,10 @@ function nextTermCode(code){
 }
 /* معروف لهالترم؟ ترم في الوثيقة، أو مادة لها ترم وحيد (تُعرف في أي ترم) */
 function offerKnown(code,c){
-  return Object.prototype.hasOwnProperty.call(NOT_OFFERED,String(code))||(c!==undefined&&offerOnly(c));
+  return Object.prototype.hasOwnProperty.call(NOT_OFFERED,String(code))||(c!==undefined&&(offerOnly(c)||!!lastOffer(c)));
 }
 function notOfferedIn(code,c){
+  if(phasedOutIn(code,c))return true;                             /* انتهى طرحها — ولا ترجع */
   if(offerOnly(c))return OFFER_ONLY[c]!==String(code).slice(4);   /* غير ترمها — والصيف منه */
   return (NOT_OFFERED[String(code)]||[]).includes(c);
 }
@@ -2311,11 +2332,20 @@ function nextOffered(ctx,courseCode){
 /* تحذير جاهز للعرض، أو فراغ. يرجع أكواد ترمات لا نصاً — الصياغة
    والترجمة في الصفحة. */
 function offerWarn(ctx,courseCode){
-  if(!OFFER_MAJORS.includes(ctx.major))return null;
+  const last=lastOffer(courseCode);
+  if(!last&&!OFFER_MAJORS.includes(ctx.major))return null;
   /* المادة المنتهية ما يهمّ متى تُطرح — والخطة مليانة منتهيات،
      فالتحذير عليها ضجيج يغطّي التحذير الذي يهم فعلاً. */
   if(isPassed(ctx,courseCode))return null;
   const now=ctx.term;
+  /* مادة تنتهي من الخطة القديمة: 'ends' قبل آخر ترم (معلومة) · 'last' بـend في آخر ترم (آخر فرصة
+     بلا رجعة — next فاضي) · 'gone' بعده. last آخر ترم لها، والصياغة في الصفحة */
+  if(last){
+    if(!now)return null;
+    if(Number(now)>Number(last))return {kind:'gone',last,next:null};
+    if(String(now)===String(last))return {kind:'last',n:0,next:null,end:true,last};
+    return {kind:'ends',last};
+  }
   if(notOfferedIn(now,courseCode)){
     return {kind:'none',next:nextOffered(ctx,courseCode)};
   }
@@ -2343,7 +2373,7 @@ function withTaking(ctx,taking){
    ٢٠٢٦): مادة جدول الطرح يقول ما تُطرح هالترم ما تنحط فيه، فمكانها مادة
    تُطرح، وتُذكر في `notOffered`. وبلاه (الافتراضي) ما يتخطّى شي. */
 function suggestNext(ctx){
-  const cands=[]; let intern=null; const notOffered=[];
+  const cands=[]; let intern=null; const notOffered=[], gone=[];
   /* طالب التحضيري يشوف مستواه الحالي فقط.
      وفي المستوى المتقدم يقدر ينزل معه مواد من تخصصه. */
   /* ما يبدأ مقترح مواد التخصص إلا بعد ما يخلّص التحضيري كامل — يمنع الخربطة */
@@ -2356,6 +2386,9 @@ function suggestNext(ctx){
     /* مواد التخصص تنتظر إنهاء التحضيري — ورياضيات التحضيري الثانية لمن بدأ من المتقدم معها (في
        أول ترم بتخصصه: prepCoreMath)، وتنزل أساسية مثل مواد التحضيري */
     if((!c.prep || !sem.prep) && pSem)return;
+    /* انتهى طرحها (الخطة القديمة): مو «ترجع ترم كذا» — ما ترجع أبداً، فلحالها (gone) وقبل فحص
+       المتطلب: المقفلة كذلك ما عاد يلحق عليها */
+    if(ctx.offeredOnly&&phasedOutIn(ctx.term,c.c)){ gone.push(c.c); return; }
     if(!prereqCheck(ctx,c.c).ok)return;
     if(ctx.offeredOnly&&OFFER_MAJORS.includes(ctx.major)&&notOfferedIn(ctx.term,c.c)){
       notOffered.push(c.c); return;
@@ -2375,7 +2408,7 @@ function suggestNext(ctx){
 
   /* التطبيق العملي ينزل لحاله — ممنوع معه أي مادة */
   if(intern && !cands.length)
-    return {crit:[intern],opt:[],hours:intern.h,internOnly:true,intern,notOffered};
+    return {crit:[intern],opt:[],hours:intern.h,internOnly:true,intern,notOffered,gone};
 
   /* «آخر فرصة» تسبق «يفتح مواد»: تأخير مادة يفتح غيرها يكلّف ترماً،
      وتأخير مادة لا تُطرح الترم الجاي يكلّف سنة. الأثقل أولاً. */
@@ -2392,7 +2425,7 @@ function suggestNext(ctx){
   cands.filter(c=>!c.prep&&!c.retake&&!c.lastChance&&c.unlocks===0).forEach(c=>{if(hrs+c.h<=20){opt.push(c);hrs+=c.h}});
   return {crit,opt,hours:hrs,internAvailable:!!intern,admOnly,
           prepSem:pSem?{id:pSem.id,label:pSem.label}:null,
-          intern:intern||null,notOffered};
+          intern:intern||null,notOffered,gone};
 }
 
 const LOGIC = {
@@ -2406,7 +2439,8 @@ const LOGIC = {
   isDone, isPassed, doneCredits, level, prepGate, prepLevelLock,
   prereqCheck, creditsOf, unlocksCount, unlockedBy, isInternship,
   currentPrepSem, retakeList, calcGPA, calcProjected,
-  OFFER_MAJORS, NOT_OFFERED, OFFER_ONLY, nextTermCode, offerKnown, notOfferedIn,
+  OFFER_MAJORS, NOT_OFFERED, OFFER_ONLY, LAST_OFFER, lastOffer, phasedOutIn,
+  nextTermCode, offerKnown, notOfferedIn,
   skipAhead, nextOffered, offerWarn, withTaking, suggestNext,
 };
 

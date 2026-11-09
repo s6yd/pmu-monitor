@@ -1092,6 +1092,34 @@ function fakeModel(ctx) {
     ok(en.title !== r.title, 'والإنجليزي مختلف عن العربي');
   }
   {
+    /* مواد تنتهي من الخطة القديمة — إعلان التسجيل (٩ نوفمبر ٢٠٢٦): ALIS 1211/1212 آخر طرح ربيع
+       2026/2027، و2211/2212 خريف 2027/2028. كان المساعد يقول «ما فيه تحذير طرح» لطالب حاسب — وهي آخر فرصة */
+    const prevNext = NEXT_REG;
+    DB.profiles['u-alis'] = { id: 'u-alis', major: 'COSC', plan_ver: 'new', is_pro: true };
+    DB.completed['u-alis'] = [{ course_code: 'ALIS 1211', grade: 'A' }];
+    NEXT_REG = '202720';
+    const AL = await aiStudentCtx('u-alis');
+    const runA = (n, j) => fakeModel(AL)(n, j || '{}');
+    let co = await runA('course_offering', '{"code":"ALIS 1212"}');
+    eq([co.status, co.lastOfferedTerm, co.lastOfferedTermName, co.returnsTerm],
+       ['final_offering', '202720', 'ربيع 2026/2027', null],
+       '**ALIS 1212 في الربيع: آخر طرح لها** — كان «ما فيه تحذير طرح»');
+    ok(/راجع مرشده/.test(co.note || '') && /لا تخترع بديلاً/.test(co.note || ''), 'ومعها «راجع مرشده» ولا بديل مخترع');
+    co = await runA('course_offering', '{"code":"ALIS 2211"}');
+    eq([co.status, co.lastOfferedTermName], ['offered_until', 'خريف 2027/2028'], 'ALIS 2211: تُطرح لين خريف 2027/2028');
+    const sugA = await runA('next_term_suggestion');
+    ok(sugA.critical.some(c => c.code === 'ALIS 1212' && c.lastChance), 'مقترح الربيع: ALIS 1212 أساسية «آخر فرصة»');
+    const gfA = await runA('graduation_forecast');
+    eq(gfA.phasedOut, [{ code: 'ALIS 2212', name: 'The Biography of Prophet Mohammad',
+      lastOfferedTerm: '202810', lastOfferedTermName: 'خريف 2027/2028' }],
+       '**التوقّع: ALIS 2212 ما يلحق عليها (متطلبها ALIS 2211 بنفس الترم الأخير) — phasedOut باسمها وآخر طرح**');
+    ok(!!gfA.phasedOutNote && (gfA.blocked || []).length === 0, 'وملاحظتها — لا «وقف الحساب»');
+    NEXT_REG = '202810';                /* السياق يقرأ الترم وقت بنائه — نبنيه من جديد */
+    co = await fakeModel(await aiStudentCtx('u-alis'))('course_offering', '{"code":"ALIS 1212"}');
+    eq([co.status, co.lastOfferedTermName], ['phased_out', 'ربيع 2026/2027'], 'خريف 2027/2028: ALIS 1212 انتهى طرحها');
+    NEXT_REG = prevNext;
+  }
+  {
     /* الطرح: الميكانيكال له جدول، وغيره لا */
     const OTHER = await aiStudentCtx('u-other');
     const co = await fakeModel(OTHER)('course_offering', '{"code":"MEEN 2311"}');
