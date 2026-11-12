@@ -4071,21 +4071,68 @@ async function runMonitorCycle() {
     }
     if (!current()) { stat.superseded = true; return }
 
-    /* ── 3. الحجز ثم تحديث الحالة بالجملة ──
+    /* ── 3. ملفات المستخدمين المعنيين — **قبل** أي حجز ──
+       كانت تنقرأ بعد الحجز: القاعدة تتعثّر بينهما (رد خطأ أو انقطاع) ⇒ الشعبة مكتوبة «مفتوحة» والإشعار
+       ما راح، والدورة الجاية تلقاها «مفتوحة» فما ترسل — ضاع للأبد. ومثلها المادة كاملة: حالتها الجديدة
+       تنكتب بلا إشعار. الحين القراءة أول وبمحاولة ثانية، واللي ما انقرأ ملفه **يتأجّل**: لا حجز ولا كتابة
+       حالة، فالدورة الجاية تلقى نفس الفرق وترسل. */
+    const userIds = [...new Set(toNotify.map(x => x.m.user_id))];
+    const profiles = {}, noProfile = new Set();
+    for (let i = 0; i < userIds.length; i += 100) {
+      const ids = userIds.slice(i, i + 100);
+      const q = { query: `?id=in.(${ids.map(u => `"${u}"`).join(',')})` +
+                         '&select=id,telegram_chat_id,is_pro,subscription_expires_at,pushover_key,pushover_until' };
+      let rows = await sb('GET', 'profiles', q).catch(() => null);
+      if (!Array.isArray(rows)) {
+        await new Promise(r2 => setTimeout(r2, 400));
+        rows = await sb('GET', 'profiles', q).catch(() => null);
+      }
+      if (Array.isArray(rows)) rows.forEach(p => { profiles[p.id] = p });
+      else ids.forEach(u => noProfile.add(u));
+    }
+    const holdSec = new Set(), holdCourse = new Set();
+    if (noProfile.size) {
+      toNotify = toNotify.filter(x => {
+        if (!noProfile.has(x.m.user_id)) return true;
+        (x.courseScope ? holdCourse : holdSec).add(x.m.id);
+        return false;
+      });
+      stat.dbDeferred = holdSec.size + holdCourse.size;
+      console.log(`   القاعدة ما ردّت بملفات ${noProfile.size} طالب — ${stat.dbDeferred} مراقبة تأجّل إشعارها`);
+      alert('db-send', 'القاعدة تعثّرت وقت الإرسال — إشعارات تأجّلت',
+        `ما قدرنا نقرأ ملفات ${noProfile.size} طالب من القاعدة (محاولتين)، فإشعارات «فتحت» لهم تأجّلت للدورة الجاية — ` +
+        `ما انكتب شي على مراقباتهم فما يضيع منها شي.\n\nلو تكرر، شوف حالة Supabase.`);
+    } else if (userIds.length) resolve('db-send', 'القاعدة تعثّرت وقت الإرسال — إشعارات تأجّلت');
+    if (!current()) { stat.superseded = true; return }
+
+    /* ── 4. الحجز ثم تحديث الحالة بالجملة ──
        «فتحت» اللي بنرسلها **تُحجز**: تحديث مشروط (ما كانت OPEN) يرجّع الصفوف اللي
        تغيّرت فعلاً — نسختان شغّالتان معاً (وقت النشر) كانت كل وحدة تقرأ CLOSED وترسل،
        فيوصل الطالب الإشعار مرتين. الحين اللي حجزت ترسل، والثانية ما يرجع لها صف.
        والإرسال اللي يفشل يرجّع الحجز تحت (فتعيده الدورة الجاية) — كانت الحالة تنكتب
        قبل الإرسال وما ترجع، فرسالة رفضها تيليغرام مرة = إشعار ضاع للأبد.
-       الباقي (مقفلة · تصحيح الأساس) بلا شرط: نجمعها حسب الحالة، طلب لكل حالة. */
+       الباقي (مقفلة · تصحيح الأساس) بلا شرط: نجمعها حسب الحالة، طلب لكل حالة.
+       **ورد الحجز اللي ضاع** (انقطاع · مهلة · رد خطأ): ما ندري انكتب أو لا — وكان «ما انحجز» فما نرسل،
+       ولو انكتب فعلاً ضاع الإشعار. نعيد الحجز مرة ثم نقرأ الصفوف: اللي «مفتوحة» الحين حجزناها نحن
+       (قرأناها قبل ثوانٍ مو مفتوحة). والقراءة فشلت كذلك؟ ما نرسل — الدورة الجاية تحاول. */
     const claimIds = toNotify.filter(x => !x.courseScope).map(x => x.m.id);
     const claimSet = new Set(claimIds), claimed = new Set();
     for (let i = 0; i < claimIds.length; i += 200) {
-      const r = await sb('PATCH', 'monitored_courses', {
-        query: `?id=in.(${claimIds.slice(i, i + 200).join(',')})` +
-               '&or=(last_status.is.null,last_status.neq.OPEN)',
+      const ids = claimIds.slice(i, i + 200);
+      const claim = () => sb('PATCH', 'monitored_courses', {
+        query: `?id=in.(${ids.join(',')})` + '&or=(last_status.is.null,last_status.neq.OPEN)',
         body: { last_status: 'OPEN' }, prefer: 'return=representation'
       }).catch(() => null);
+      let r = await claim();
+      if (!Array.isArray(r)) {
+        stat.claimUnsure = (stat.claimUnsure || 0) + ids.length;
+        await new Promise(r2 => setTimeout(r2, 400));
+        await claim();
+        const seen = await sb('GET', 'monitored_courses', {
+          query: `?id=in.(${ids.join(',')})&select=id,last_status`
+        }).catch(() => null);
+        r = Array.isArray(seen) ? seen.filter(x => x.last_status === 'OPEN') : null;
+      }
       (Array.isArray(r) ? r : []).forEach(x => claimed.add(x.id));
     }
     if (claimIds.length > claimed.size) {
@@ -4094,32 +4141,23 @@ async function runMonitorCycle() {
     }
     const byStatus = {};
     changed.forEach(({ m, live }) => {
-      if (claimSet.has(m.id)) return;                     /* انكتبت بالحجز */
+      if (claimSet.has(m.id) || holdSec.has(m.id)) return;   /* انكتبت بالحجز — أو مؤجّلة للدورة الجاية */
       (byStatus[live.status] = byStatus[live.status] || []).push(m.id);
     });
 
     for (const status of Object.keys(byStatus)) {
       const ids = byStatus[status];
-      /* نقسّمها لدفعات عشان الرابط ما يطول أكثر من اللازم */
+      /* نقسّمها لدفعات عشان الرابط ما يطول أكثر من اللازم.
+         وفشل الكتابة ما يوقف الدورة (كان يرميها كلها — والمحجوز فوق يبقى «مفتوحة» بلا إشعار):
+         الحالة ما انكتبت، فالدورة الجاية تلقى نفس الفرق وتكتبه */
       for (let i = 0; i < ids.length; i += 200) {
         const chunk = ids.slice(i, i + 200);
         await sb('PATCH', 'monitored_courses', {
           query: `?id=in.(${chunk.join(',')})`,
           body: { last_status: status },
           prefer: 'return=minimal'
-        });
+        }).catch(() => { stat.writeFails = (stat.writeFails || 0) + 1 });
       }
-    }
-
-    /* ── 4. سحب ملفات المستخدمين المعنيين دفعة واحدة ── */
-    const userIds = [...new Set(toNotify.map(x => x.m.user_id))];
-    const profiles = {};
-    for (let i = 0; i < userIds.length; i += 100) {
-      const chunk = userIds.slice(i, i + 100).map(u => `"${u}"`).join(',');
-      const rows = await sb('GET', 'profiles', {
-        query: `?id=in.(${chunk})&select=id,telegram_chat_id,is_pro,subscription_expires_at,pushover_key,pushover_until`
-      });
-      (Array.isArray(rows) ? rows : []).forEach(p => { profiles[p.id] = p; });
     }
 
     /* ── 5. من يستحق الإشعار فعلاً ──
@@ -4149,12 +4187,22 @@ async function runMonitorCycle() {
     const stateOf = new Map(courseStateUpdates.map(u => [u.id, u.state]));
     const claimAt = new Date().toISOString(), courseLost = new Set();
     for (const [id, m] of courseRows) {
-      const r = await sb('PATCH', 'monitored_courses', {
+      const claim = () => sb('PATCH', 'monitored_courses', {
         query: `?id=eq.${id}&notified_at=` +
                (m.notified_at == null ? 'is.null' : 'eq.' + encodeURIComponent(m.notified_at)),
         body: { sections_state: stateOf.get(id), notified_at: claimAt },
         prefer: 'return=representation'
       }).catch(() => null);
+      let r = await claim();
+      if (!Array.isArray(r)) {
+        /* رد الحجز ضاع: انكتب أو لا؟ notified_at = وقت حجزنا يعني انكتب (وإلا نحجز ثانية) — كان «ما
+           انحجز»، ولو انكتب فعلاً بقيت الحالة الجديدة بلا إشعار */
+        stat.claimUnsure = (stat.claimUnsure || 0) + 1;
+        await new Promise(r2 => setTimeout(r2, 400));
+        const seen = await sb('GET', 'monitored_courses', { query: `?id=eq.${id}&select=id,notified_at` }).catch(() => null);
+        if (Array.isArray(seen) && seen[0] && Date.parse(seen[0].notified_at) === Date.parse(claimAt)) r = seen;
+        else if (Array.isArray(seen) && seen[0]) r = await claim();
+      }
       if (!(Array.isArray(r) && r.length)) courseLost.add(id);
     }
     if (courseLost.size) {
@@ -4251,7 +4299,10 @@ async function runMonitorCycle() {
         }
         if (i) await new Promise(r2 => setTimeout(r2, 1100));   /* رسالة بالثانية للمحادثة */
         const x = items[i], k = x.m.id + '|' + x.live.crn;
-        if (await sendOne(x)) NOTIFY_FAILS.delete(k); else sentFail.push(x);
+        /* رمية غير متوقعة = فشل إرسال: يرجع حجزه مع الباقي بدل ما يبقى «مفتوحة» بلا إشعار */
+        let sent = false;
+        try { sent = await sendOne(x) } catch (e) { console.log('sendOne: ' + e.message) }
+        if (sent) NOTIFY_FAILS.delete(k); else sentFail.push(x);
       }
       await new Promise(r2 => setTimeout(r2, 700));   // تهدئة بين الدفعات
     });
@@ -4312,6 +4363,7 @@ async function runMonitorCycle() {
     /* وحالة باقي صفوف المادة (تغيّرت بلا إشعار يطلع منّا — قفلت · محجوب) بلا شرط */
     for (const u of courseStateUpdates) {
       if (courseRows.has(u.id)) continue;      /* انكتبت مع الحجز — أو حجزتها نسخة ثانية */
+      if (holdCourse.has(u.id)) continue;      /* مؤجّلة (ملف صاحبها ما انقرأ): الدورة الجاية تلقى نفس الفرق */
       await sb('PATCH', 'monitored_courses', {
         query: `?id=eq.${u.id}`,
         body: { sections_state: u.state },
@@ -4326,7 +4378,7 @@ async function runMonitorCycle() {
         query: `?id=in.(${chunk.join(',')})`,
         body: { notified_at: now },
         prefer: 'return=minimal'
-      });
+      }).catch(() => {});
     }
 
     /* ── 7ب. جدولة سؤال المتابعة في القاعدة ──
@@ -12777,7 +12829,9 @@ const server = http.createServer(async (req, res) => {
               : stNow.active
                 ? '▶️ <b>المراقبة رجعت تشتغل</b>\n\nأول فحص خلال دقيقة.'
                 : `▶️ <b>المراقبة مفعّلة</b>\n\nما تفحص الحين: ${escP(stNow.ar)}.\n` +
-                  (stNow.next ? `تبدأ لحالها ${escP(stNow.next.from)} (${escP(stNow.next.ar)}).` : 'تبدأ لحالها أول ما يجي وقتها.')
+                  /* نسخة بلا مراقبة (dev) ما «تبدأ لحالها» أبداً — ما نعد بها */
+                  (stNow.next ? `تبدأ لحالها ${escP(stNow.next.from)} (${escP(stNow.next.ar)}).`
+                    : stNow.reason === 'disabled' ? '' : 'تبدأ لحالها أول ما يجي وقتها.')
             ).catch(() => {});
           }
         }

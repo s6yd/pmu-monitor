@@ -8,6 +8,7 @@
    ٥) stuck  — دورة علقت أكثر من ٨ دقائق ⇒ الحارس يبدأ غيرها وينذر. كان فكّ القفل ما يصير إلا لو أحد نادى دورة،
                والجدولة نفسها تنتظر العالقة — فما ينادي أحد.
    ٦) pause  — الإيقاف نفسه: ولا دورة بعده، وضغطات ورا بعض = دورة وحدة، وما بين دورتين أقل من دقيقة.
+   ٧) offMsg · devMsg — رسالة التشغيل تقول الصدق خارج وقت الفحص (متى تبدأ)، ونسخة بلا مراقبة ما تعد بشي.
 
    node tests/test-cycle-resume.js [server.js] */
 const path = require('path');
@@ -35,6 +36,7 @@ if (process.argv.includes('--child')) {
     SUPABASE_URL: 'https://fake.supabase.co', SUPABASE_SERVICE_KEY: 'k',
     TELEGRAM_TOKEN: 'tg', ADMIN_CHAT_ID: '5555', FREE_BETA: 'false'
   });
+  if (process.argv.includes('--nomon')) process.env.MONITOR_ENABLED = 'false';
   console.log = () => {};
   require(SRV);
   return;
@@ -301,6 +303,33 @@ const SCEN = {
     t.eq(opened(st).length, 1, '**والعالقة لما صحت ما أرسلت ثانية** — إشعار واحد');
     t.eq(adminSays(st, STUCK), 1, 'وإنذار «علقت» مرة وحدة');
     t.eq(adminSays(st, /رجع طبيعي: دورة المراقبة علقت/), 1, 'وبعد الدورة السليمة: «رجع طبيعي»');
+    c.kill('SIGKILL');
+  },
+
+  async offMsg(t) {
+    /* ١ مارس ٢٠٢٧: خارج النوافذ — «شغّل» ما يعني إنها تفحص الحين */
+    const st = await makeOutside({ DB: base({ monitorPaused: true }), pmu: { M1: [row('30011', 'CLOSE')], F1: [frow('40011', 'CLOSE')] } });
+    const c = instance(st, ['--at=2027-03-01T07:00:00Z']); await ready(c);
+    await c.adm('monitor-toggle', { on: true });
+    await until(() => msgsTo(st, 5555).some(m => /▶️/.test(m.text)), 5000);
+    const m = msgsTo(st, 5555).filter(x => /▶️/.test(x.text));
+    t.ok(m.length === 1 && /المراقبة مفعّلة/.test(m[0].text) && /خارج فترات التسجيل/.test(m[0].text) && /تبدأ لحالها 2027-04-11/.test(m[0].text),
+      '**«شغّل» خارج النوافذ: الرسالة تقول ليش ما تفحص ومتى تبدأ لحالها** — ' + (m[0] && m[0].text));
+    t.eq(adminSays(st, /رجعت تشتغل/), 0, 'ولا تقول «رجعت تشتغل» وهي ما تفحص الحين (كانت تقولها)');
+    c.kill('SIGKILL');
+  },
+
+  async devMsg(t) {
+    /* نسخة بلا مراقبة (dev): ما «تبدأ لحالها» أبداً */
+    const st = await makeOutside({ DB: base({ monitorPaused: true }), pmu: { M1: [row('30011', 'CLOSE')], F1: [frow('40011', 'CLOSE')] } });
+    const c = instance(st, ['--at=' + IN_WINDOW, '--nomon']); await ready(c);
+    await c.adm('monitor-toggle', { on: true });
+    await until(() => msgsTo(st, 5555).some(m => /▶️/.test(m.text)), 5000);
+    const m = msgsTo(st, 5555).filter(x => /▶️/.test(x.text));
+    t.ok(m.length === 1 && /معطّلة في هذي النسخة/.test(m[0].text) && !/تبدأ لحالها|رجعت تشتغل/.test(m[0].text),
+      '**نسخة بلا مراقبة: الرسالة تقول إنها معطّلة هنا، بلا وعد إنها تبدأ** — ' + (m[0] && m[0].text));
+    await wait(1500);
+    t.eq([await c.gen(), posts(st)], [0, 0], 'ولا دورة ولا سحبة من نسخة بلا مراقبة');
     c.kill('SIGKILL');
   },
 
