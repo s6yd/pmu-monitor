@@ -123,6 +123,40 @@ const server = http.createServer((req, res) => {
        'ونفس الشيء في مراقبة كل الشعب');
   }
 
+  /* ── «راقب كل الشعب» يرسل أساساً من اللي يشوفه الطالب (السيرفر يقارن أول دورة به) ──
+     بلاه أول دورة تسجيل وبس: شعبة تفتح بين ضغطته وأول دورة تنكتب «مفتوحة» بصمت. بيانات بصيغة الجامعة */
+  {
+    const watchAll = code => page.evaluate(async code => {
+      LANG = 'ar';
+      USER = { id: 'u1' }; PROFILE = { is_pro: true, telegram_chat_id: '9' };
+      const term = document.getElementById('term').value;
+      MON_STATE = { canWatch: true, term, regTerm: term };
+      monitored = [];
+      const mk = (crn, cc, sec, st, title) => ({ crn, courseCode: cc, courseTitle: title || 'Thermodynamics', section: sec,
+        courseDate: 'UT', courseTiming: '0930 - 1045', instructor: 'Smith, John', room: 'M-CORE - G034', status: st, gender: 'M' });
+      allCourses = [
+        mk('30011', 'MEEN 3311', '101', 'CLOSE'),
+        mk('30012', 'MEEN  3311', '102', 'OPEN'),                       /* مسافتان في الكود — نفس المادة */
+        mk('30012', 'MEEN 3311', '102', 'OPEN', 'Thermodynamics LAB'),  /* معمل بنفس CRN */
+        mk('50001', 'MATH 1422', '101', 'CLOSE', 'Calculus II')
+      ];
+      const rows = [], real = sb.from;
+      sb.from = t => t !== 'monitored_courses' ? real.call(sb, t) : {
+        insert(row) { rows.push(row); return { select: async () => ({ data: [Object.assign({ id: rows.length }, row)], error: null }) } },
+        delete() { return { eq: async () => ({ error: null }) } }
+      };
+      try { await toggleMonitorAllGo(code) } finally { sb.from = real }
+      return rows;
+    }, code);
+    const a = await watchAll('MEEN 3311');
+    ok(a.length === 1 && a[0].scope === 'course' && a[0].course_code === 'MEEN 3311' && !('crn' in a[0]),
+       '«راقب كل الشعب»: صف واحد للمادة');
+    ok(JSON.stringify(a[0] && a[0].sections_state) === JSON.stringify({ 30011: 'CLOSE', 30012: 'OPEN', _page: 1 }),
+       '**ومعه حالة شعب المادة اللي يشوفها الطالب الحين، بعلامة الصفحة** — ' + JSON.stringify(a[0] && a[0].sections_state));
+    const b = await watchAll('ACCT 2311');
+    ok(b.length === 1 && !('sections_state' in b[0]), 'مادة مو في قائمته: بلا أساس (السيرفر يسجّل أول دورة كما كان)');
+  }
+
   ok(errs.length === 0, 'بلا أخطاء JS: ' + errs.slice(0, 2).join(' | '));
 
   await browser.close();
