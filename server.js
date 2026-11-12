@@ -3624,6 +3624,9 @@ function heartbeat() {
 }
 
 let cycleRunning = false, cycleStartedAt = 0, CYCLE_GEN = 0, CYCLE_SKIPS = 0;
+/* بيانات الدورة مقابل وقت إنشاء المراقبة (created_at من ساعة القاعدة): هامش لفرق الساعتين، ونسخة
+   الكاش وقتها ناقص مدة سحبها — الدورة تصدّق البيانات على مراقبة أقدم منها وحدها */
+const SNAP_SKEW_MS = 5000, SNAP_CACHE_LAG = 20000;
 /* إشعار فشل إرساله: كم مرة حاولنا (مراقبة|CRN) — نعيده الدورة الجاية بحد ثلاث */
 const NOTIFY_FAILS = new Map(), NOTIFY_MAX_TRIES = 3;
 /* مصدر آخر جدول راقبنا منه: موقع الجدول ('pmu') أو احتياط بانر ('banner') — يُحفظ مع الحالة */
@@ -3815,13 +3818,17 @@ async function runMonitorCycle() {
     const snapshot = {};
     let fetchFailed = false, partial = false;
     let gotFeed = false, usedBanner = false, freshPmu = false;
+    /* وقت بيانات هالدورة: بداية السحبة (الرد يعكس حالة الجامعة بعدها)، أو وقت نسخة الكاش ناقص مدة سحبها */
+    let dataAt = 0;
     for (const term of terms) {
+      const tFetch = Date.now();
       const snap = await fetchTermSnapshot(term);
       if (!current()) { stat.superseded = true; return }
       if (snap.courses) gotFeed = freshPmu = true;
 
       if (snap.courses) {
         const parsed = snap.courses;
+        dataAt = tFetch;
         /* parseHTML ما تضع الترم في المادة، و byCourse يبني مفتاحه من
            c.term — فكان يطلع '|PHYS 1422' بدل '202710|PHYS 1422' ولا
            يتطابق أبداً، فتتعطّل مراقبة المادة كاملة بصمت. نوسمه هنا. */
@@ -3887,6 +3894,7 @@ async function runMonitorCycle() {
             snapshot[term + ':' + cc.crn] = cc;
           });
           stat.fromCache = Math.round(age / 1000);
+          dataAt = hit.at - SNAP_CACHE_LAG;
           console.log(`cycle: نسخة من الكاش عمرها ${stat.fromCache} ثانية`);
         } else {
           const blocked = snap.errs.some(e => e.pmu === 'block') || pmuBlocked();
@@ -3894,8 +3902,10 @@ async function runMonitorCycle() {
           let via = '';
           if (!blocked && BANNER_ON) {
             try {
+              const tBanner = Date.now();
               const b = await fetchBannerTerm(term);
               if (!current()) { stat.superseded = true; return }
+              dataAt = tBanner;
               const sh = pmuShort(term, 'BANNER', b.rows.length);
               b.rows.forEach(c => { c.term = term; snapshot[term + ':' + c.crn] = c; });
               usedBanner = true; gotFeed = true; stat.banner = b.rows.length;
@@ -3977,28 +3987,28 @@ async function runMonitorCycle() {
 
     const changed = [];      // {m, live}
     let toNotify = [];       // {m, live}
-    /* ═══ تصحيح الأساس عند التفعيل ═══
-       last_status يجي من القائمة المعروضة عند الطالب، وقد تكون قديمة
-       بدقائق. فتنشأ حالتان خاطئتان:
-       • عنده CLOSED وعندنا OPEN → إشعار فوري عن شعبة كانت مفتوحة أصلاً.
-       • عنده OPEN وعندنا CLOSED → يُسجَّل OPEN، فحين تفتح فعلاً ما يُرسل
-         شيء — يفوته الإشعار الذي فعّل المراقبة لأجله.
-       فأول دورة بعد التفعيل نصحّح الحالة بلا إشعار. النافذة قصيرة
-       (دقيقتان) فلا تبتلع فتحة حقيقية وقعت بعد التفعيل بوقت. */
-    const BASELINE_GRACE = 2 * 60 * 1000;
+    /* ═══ مراقبة أحدث من البيانات؟ ═══
+       last_status يجي من القائمة المعروضة عند الطالب وقت ما ضغط «راقب». كانت أول دقيقتين من عمر المراقبة
+       «تصحيح أساس» صامتاً: أي فرق ينكتب بلا إشعار (قائمته ممكن تكون قديمة). لكن وقت التسجيل القائمة تتجدد
+       كل دقيقة ونص، فالفرق غالباً **فتحة حقيقية صارت بعد ضغطته** — كانت تنكتب «مفتوحة» بصمت وهو ينتظر
+       إشعاراً ما يجي أبداً. الصح مقارنة الوقتين لا عمر المراقبة:
+       • بيانات انسحبت **بعد** إنشاء المراقبة أحدث من اللي شافه الطالب ⇒ نصدّقها: «مفتوحة» = إشعار.
+       • بيانات **أقدم** منها (نسخة الكاش لما الجامعة ما ترد، أو مراقبة انضافت والسحبة شغّالة) ما تحكم على
+         اللي شافه: لا كتابة ولا إشعار، والدورة الجاية ببيانات أحدث تقرّر — كانت بعد الدقيقتين تطلع «فتحت»
+         كاذبة من نسخة أقدم من ضغطته. */
+    const newerThan = m => {
+      const made = m.created_at ? Date.parse(m.created_at) : NaN;
+      return !Number.isFinite(made) || made + SNAP_SKEW_MS <= dataAt;     /* بلا تاريخ = قديمة */
+    };
     for (const m of sectionMons) {
       const live = snapshot[(m.term || '202630') + ':' + m.crn];
       if (!live) continue;
       if (live.status === m.last_status) continue;
+      if (!newerThan(m)) { stat.tooNew = (stat.tooNew || 0) + 1; continue }
 
-      const age = m.created_at ? (Date.now() - new Date(m.created_at).getTime()) : Infinity;
-      if (age < BASELINE_GRACE || settle) {
-        changed.push({ m, live });          /* نكتب الحالة الصحيحة */
-        if (settle) stat.settled = (stat.settled || 0) + 1;
-        else stat.baselineFixed = (stat.baselineFixed || 0) + 1;
-        continue;                            /* بلا إشعار */
-      }
-      changed.push({ m, live });
+      changed.push({ m, live });          /* نكتب الحالة الصحيحة */
+      /* رجوع الجدول بعد بانر: دورة تسجّل بلا إشعار */
+      if (settle) { stat.settled = (stat.settled || 0) + 1; continue }
       if (live.status === 'OPEN' && m.last_status !== 'OPEN') toNotify.push({ m, live });
     }
 
@@ -4009,8 +4019,7 @@ async function runMonitorCycle() {
         const k = m.id + '|' + m.crn;
         if (snapshot[(m.term || '202630') + ':' + m.crn]) { MON_GONE.delete(k); continue }
         if (MON_GONE_TOLD.has(k) || !m.crn) continue;
-        const age = m.created_at ? (Date.now() - new Date(m.created_at).getTime()) : Infinity;
-        if (age < BASELINE_GRACE) continue;
+        if (!newerThan(m)) continue;
         const n = (MON_GONE.get(k) || 0) + 1;
         MON_GONE.set(k, n);
         if (n >= MON_GONE_AFTER) gone.push(m);
@@ -4036,6 +4045,11 @@ async function runMonitorCycle() {
       list.forEach(c => { cur[String(c.crn)] = c.status; });
       const prev = (m.sections_state && typeof m.sections_state === 'object')
         ? m.sections_state : null;
+      /* أساس من الصفحة (‎_page‎): حالة الشعب اللي شافها الطالب وقت ما ضغط «راقب كل الشعب» — مثل last_status
+         للشعبة. بلاه أول دورة تسجيل وبس، فشعبة تفتح بين ضغطته وأول دورة تنكتب «مفتوحة» بصمت. وهو ناقص
+         بطبعه (قائمته بجنس أو كلية): اللي مو فيه ما هو «شعبة جديدة». وبيانات أقدم من المراقبة ما تحكم عليه */
+      const fromPage = !!(prev && prev._page);
+      if (fromPage && !newerThan(m)) { stat.tooNew = (stat.tooNew || 0) + 1; continue }
 
       /* كانت تُكتب كل دورة حتى بلا تغيير — كتابة لكل مادة مراقَبة كل
          خمس دقائق بلا داعٍ، وهي مصدر رئيسي لتضخّم WAL في القاعدة.
@@ -4052,7 +4066,7 @@ async function runMonitorCycle() {
         const crn = String(c.crn);
         const was = prev[crn];
         const isNew = !(crn in prev);
-        if (isNew && toBanner) continue;
+        if (isNew && (toBanner || fromPage)) continue;
         if (c.status === 'OPEN' && was !== 'OPEN') hits.push({ c, isNew, was });
         else if (isNew) hits.push({ c, isNew, was, closedNew: true });
       }
