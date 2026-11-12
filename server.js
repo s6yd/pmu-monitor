@@ -8091,7 +8091,7 @@ const ACTIVE_FROM_DEFAULT = 7;    // 7 صباحاً بتوقيت الرياض
 const ACTIVE_TO_DEFAULT   = 24;   // حتى منتصف الليل
 
 /* تُعدَّل من اللوحة بدون إعادة تشغيل. null = القيمة الافتراضية.
-   تُصفَّر مع كل إعادة نشر على Render. */
+   تُحفظ مع الحالة (saveState) فتبقى بعد النشر. */
 let HOURS_OVERRIDE = null;        // {from, to}
 let WINDOW_OVERRIDE = null;       // {from:'YYYY-MM-DD', to:'YYYY-MM-DD', ar}
 
@@ -8346,18 +8346,70 @@ function nextDelay() {
   return base * (1 + (Math.random() * 2 - 1) * JITTER);
 }
 
-function scheduleNextCycle() {
-  const delay = nextDelay();
+/* ═══ موعد الدورة الجاية — مؤقّت واحد، وما يعلق على حالة قديمة ═══
+   الموعد يُحسب على الحالة **وقت حسابه**: موقوفة أو خارج ساعات العمل ⇒ «بداية دوام بكرة». كانت «▶️ شغّل
+   المراقبة» في اللوحة تغيّر المفتاح بس والموعد القديم يبقى — اللوحة وتيليغرام يقولان «رجعت تشتغل» ولا
+   دورة لين ٧ الصبح اليوم اللي بعده (شفناها في سجل الإنتاج: «next cycle in 1440 min — paused» كل يوم).
+   وإيقاف ربع ساعة يوم التسجيل = باقي اليوم بلا مراقبة. ثلاثة أشياء:
+   ١) مؤقّت واحد دائماً (CYCLE_TIMER): كل جدولة تلغي اللي قبلها، فما تصير سلسلتان تضاعفان السحب من الجامعة.
+   ٢) replanCycle: أي تغيير من اللوحة (تشغيل/إيقاف · الساعات · النافذة) يحسب الموعد من جديد، والنشطة أول
+      فحصها بعد ثوانٍ — وما بين دورتين أقل من دقيقة مهما انضغط الزر.
+   ٣) cycleWatchdog (كل ربع دقيقة): الحالة «نشطة» والموعد محسوب وهي مو نشطة وبعيد ⇒ نعيد الجدولة (أي طريق
+      يغيّر الحالة بلا ما يمر على ٢)، ودورة عالقة فوق CYCLE_STUCK_MS ⇒ نبدأ غيرها: فكّ القفل داخل
+      runMonitorCycle، والجدولة نفسها تنتظر العالقة — فما كان ينادي أحد دورة تفكّه إلا الفحص اليدوي. */
+let CYCLE_TIMER = null;
+let PLAN_ACTIVE = false;               /* الموعد الحالي انحسب والمراقبة نشطة؟ */
+let PLAN_DUE = 0;                      /* متى يطلق المؤقّت — بساعة العملية (ما تتأثر بتغيّر ساعة النظام) */
+const upMs = () => process.uptime() * 1000;
+const CYCLE_KICK_MS   = 10 * 1000;     /* بعد تغيير من اللوحة: أول فحص (مع تشويش بسيط) */
+const CYCLE_KICK_GAP  = 60 * 1000;     /* وما بين بداية دورتين أقل من هذا */
+const CYCLE_WATCH_MS  = 15 * 1000;     /* فحص الحارس — في الذاكرة، بلا أي طلب */
+/* بداية الدوام العادية موعدها خلال دقيقتين من دخول ساعات العمل — أبعد من هذا والحالة نشطة = موعد قديم */
+const CYCLE_LATE_MS   = 3 * 60 * 1000;
+
+function scheduleNextCycle(firstIn) {
   const st = monitorState();
+  const delay = firstIn != null ? firstIn : nextDelay();
+  if (CYCLE_TIMER) clearTimeout(CYCLE_TIMER);
   NEXT_CYCLE_AT = Date.now() + delay;      /* لعرضه في اللوحة */
+  PLAN_ACTIVE = !!st.active;
+  PLAN_DUE = upMs() + delay;
   console.log(`next cycle in ${(delay / 60000).toFixed(1)} min — ${st.reason}`);
-  setTimeout(async () => {
-    windowsCheck();
+  const timer = CYCLE_TIMER = setTimeout(async () => {
+    if (EVENTS_READY) windowsCheck();      /* بعد الاستعادة: النافذة اليدوية من الحالة */
     if (monitorState().active) {
       try { await runMonitorCycle(); } catch (e) { console.log('cycle err', e.message); }
     }
-    scheduleNextCycle();
+    /* أحد أعاد الجدولة والدورة شغّالة (أو عالقة)؟ موعده هو الساري — ما نحط ثانياً فوقه */
+    if (CYCLE_TIMER === timer) scheduleNextCycle();
   }, delay);
+}
+
+function replanCycle(why) {
+  if (!MONITOR_ENABLED || SHUTTING_DOWN) return;
+  const st = monitorState();
+  let soon = null;
+  /* نشطة وما فيه دورة شغّالة والجامعة ما هي رافضتنا: أول فحص بعد ثوانٍ، لا بعد فاصل كامل */
+  if (st.active && !cycleRunning && !pmuBlocked())
+    soon = Math.max(CYCLE_KICK_MS * (1 + Math.random() * 0.5), CYCLE_KICK_GAP - (Date.now() - cycleStartedAt));
+  OPS.replans = (OPS.replans || 0) + 1;
+  console.log(`replan (${why}) — ${st.reason}`);
+  scheduleNextCycle(soon == null ? undefined : Math.min(soon, nextDelay()));
+}
+
+function cycleWatchdog() {
+  if (!MONITOR_ENABLED || SHUTTING_DOWN) return;
+  if (!monitorState().active) return;
+  if (cycleRunning) {
+    /* علقت: الدورة الجاية تفكّ قفلها وتنذر (runMonitorCycle) — والسلسلة اللي تنتظر العالقة ما تجدول شي */
+    if (Date.now() - cycleStartedAt > CYCLE_STUCK_MS) {
+      OPS.replans = (OPS.replans || 0) + 1;
+      console.log('watchdog: cycle stuck — starting a new one');
+      scheduleNextCycle(0);
+    }
+    return;
+  }
+  if (!PLAN_ACTIVE && PLAN_DUE - upMs() > CYCLE_LATE_MS) replanCycle('watchdog');
 }
 
 /* ============ صفحة الصيانة ============ */
@@ -12680,6 +12732,7 @@ const server = http.createServer(async (req, res) => {
               HOURS_OVERRIDE = { from: f, to: t };
             else return send(400, { error: 'ساعات غير صالحة — لازم "من" أصغر من "إلى"' });
           }
+          replanCycle('hours');            /* الموعد القديم محسوب على الساعات القديمة */
           await saveState().catch(() => {});
         }
         return send(200, { from: activeFrom(), to: activeTo(),
@@ -12699,6 +12752,7 @@ const server = http.createServer(async (req, res) => {
             WINDOW_OVERRIDE = { from: String(b.from), to: String(b.to),
                                 ar: String(b.ar || 'نافذة يدوية من اللوحة') };
           }
+          replanCycle('window');           /* الموعد القديم محسوب على النافذة القديمة */
           await saveState().catch(() => {});
         }
         return send(200, { window: WINDOW_OVERRIDE, custom: !!WINDOW_OVERRIDE,
@@ -12712,11 +12766,20 @@ const server = http.createServer(async (req, res) => {
           const was = MONITOR_PAUSED;
           /* بدون حقل on نرجّع الحالة فقط — ما نغيّر شي بالغلط */
           if ('on' in b) MONITOR_PAUSED = !b.on;   /* on = المراقبة شغالة */
-          if (was !== MONITOR_PAUSED) saveState().catch(() => {});
-          if (was !== MONITOR_PAUSED)
+          if (was !== MONITOR_PAUSED) {
+            saveState().catch(() => {});
+            /* الموعد القديم محسوب على الحالة القديمة: كان «شغّل» يغيّر المفتاح والموعد يبقى ٧ الصبح بكرة */
+            replanCycle('toggle');
+            const stNow = monitorState();
+            /* «رجعت تشتغل» للي تفحص فعلاً — وخارج وقتها نقول ليش ومتى تبدأ، لا وعداً ما يصير الحين */
             sendMsg(ADMIN_CHAT_ID, MONITOR_PAUSED
               ? '⏸️ <b>المراقبة موقوفة يدوياً</b>\n\nما راح يستلم أحد إشعارات فتح شعب حتى تشغّلها.'
-              : '▶️ <b>المراقبة رجعت تشتغل</b>').catch(() => {});
+              : stNow.active
+                ? '▶️ <b>المراقبة رجعت تشتغل</b>\n\nأول فحص خلال دقيقة.'
+                : `▶️ <b>المراقبة مفعّلة</b>\n\nما تفحص الحين: ${escP(stNow.ar)}.\n` +
+                  (stNow.next ? `تبدأ لحالها ${escP(stNow.next.from)} (${escP(stNow.next.ar)}).` : 'تبدأ لحالها أول ما يجي وقتها.')
+            ).catch(() => {});
+          }
         }
         return send(200, { on: !MONITOR_PAUSED, state: monitorState() });
       }
@@ -13720,12 +13783,7 @@ server.listen(PORT, () => {
               ` | monitor: ${st.reason} — ${st.ar}`);
   /* أول دورة بعد 20-60 ثانية عشوائياً، ثم جدولة ذكية. وموعدها معروف من الحين — «الفحص الجاي» في
      بطاقة الطالب واللوحة كان «—» أول دقيقة بعد كل نشر */
-  const firstIn = 20000 + Math.random() * 40000;
-  NEXT_CYCLE_AT = Date.now() + firstIn;
-  setTimeout(async () => {
-    if (monitorState().active) {
-      try { await runMonitorCycle(); } catch (e) { console.log('cycle err', e.message); }
-    }
-    scheduleNextCycle();
-  }, firstIn);
+  scheduleNextCycle(20000 + Math.random() * 40000);
+  /* حارس الموعد: حالة صارت نشطة والموعد قديم، أو دورة عالقة — فحص في الذاكرة كل ربع دقيقة */
+  setInterval(() => { try { cycleWatchdog() } catch (e) { console.log('watchdog: ' + e.message) } }, CYCLE_WATCH_MS);
 });
