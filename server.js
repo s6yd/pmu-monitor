@@ -3544,6 +3544,44 @@ async function inBatches(items, size, fn) {
   }
 }
 
+/* ═══ جنس صاحب مراقبة «كل الشعب» ═══
+   الصف ما يحفظ هل صاحبه طالب أو طالبة. نعرفه من أرقام شعبه بقاعدة tagGender نفسها (1xx طلاب · 2xx
+   طالبات — مثل aiGender): شعب جداوله كلها ومراقبات الشعب. **شعبتان على الأقل وكلها جنس واحد** — وإلا
+   «ما نعرف» (null) وتبقى مراقبته للجنسين: فلترة غلط = إشعار يضيع، وهذا أسوأ من إشعار زايد.
+   في الذاكرة ساعة (و«ما نعرف» عشر دقائق: يمكن يضيف جدوله)، وقراءة فشلت ما تنحفظ «ما نعرف». */
+const MON_GENDER = new Map();        /* user_id → { g, at } */
+const MON_GENDER_TTL = 60 * 60 * 1000, MON_GENDER_RETRY = 10 * 60 * 1000;
+async function monGender(userIds, monitors) {
+  const out = new Map(), now = Date.now(), ask = [];
+  for (const u of new Set(userIds)) {
+    const hit = MON_GENDER.get(u);
+    if (hit && now - hit.at < (hit.g ? MON_GENDER_TTL : MON_GENDER_RETRY)) out.set(u, hit.g);
+    else ask.push(u);
+  }
+  if (!ask.length) return out;
+  const secs = new Map(ask.map(u => [u, []]));
+  (monitors || []).forEach(m => {
+    if (m.scope !== 'course' && secs.has(m.user_id)) secs.get(m.user_id).push(m.section);
+  });
+  let readOk = true;
+  for (let i = 0; i < ask.length; i += 100) {
+    const ids = ask.slice(i, i + 100).map(u => `"${u}"`).join(',');
+    try {
+      const rows = await sbAll('user_schedule', { query: `?user_id=in.(${ids})&select=id,user_id,section`, strict: true });
+      rows.forEach(r => { if (secs.has(r.user_id)) secs.get(r.user_id).push(r.section) });
+    } catch (e) { readOk = false }
+  }
+  if (MON_GENDER.size > 5000) MON_GENDER.clear();
+  for (const [u, list] of secs) {
+    const tagged = tagGender(list.map(x => ({ section: x })), null).map(x => x.gender).filter(Boolean);
+    const kinds = new Set(tagged);
+    const g = kinds.size === 1 && tagged.length >= 2 ? [...kinds][0] : null;
+    out.set(u, g);
+    if (g || readOk) MON_GENDER.set(u, { g, at: now });
+  }
+  return out;
+}
+
 /* حصة المجاني: أقدم N مراقبات شعبة لكل طالب (PRICING.freeMonitors) — المكان الوحيد اللي تنحسب فيه */
 function freeQuota(monitors) {
   const ok = new Set(), perUser = {};
@@ -4034,6 +4072,7 @@ async function runMonitorCycle() {
        أول دورة لأي صف جديد نسجّل الحالة فقط بلا إشعار، عشان ما ننهال
        على الطالب بكل الشعب المفتوحة أصلاً وقت ما فعّل المراقبة. */
     const courseStateUpdates = [];   // {id, state}
+    const courseHits = [];           // {m, hits} — تتفلتر بجنس صاحبها بعد الحلقة
     /* بنصف جدول، شعب الجنس الغائب تُقرأ كأنها اختفت، ثم تعود في الدورة
        التالية كأنها «نزلت جديدة». نتخطّى المقارنة كلها ولا نكتب الحالة. */
     for (const m of (partial ? [] : courseMons)) {
@@ -4070,11 +4109,27 @@ async function runMonitorCycle() {
         if (c.status === 'OPEN' && was !== 'OPEN') hits.push({ c, isNew, was });
         else if (isNew) hits.push({ c, isNew, was, closedNew: true });
       }
-      /* سقف ثلاث شعب في الدورة الواحدة — الباقي يُذكر بالعدد */
-      hits.slice(0, 3).forEach(h => toNotify.push({
-        m, live: h.c, courseScope: true, isNew: h.isNew, closedNew: h.closedNew, was: h.was,
-        more: hits.length > 3 ? hits.length - 3 : 0
-      }));
+      if (hits.length) courseHits.push({ m, hits });
+    }
+
+    /* ── 2ج. «كل الشعب» لشعب جنس صاحبها ──
+       الصف ما يحفظ هل صاحبه طالب أو طالبة، فكان يوصله «فتحت شعبة» عن شعب الجنس الثاني (ما يقدر يسجّل
+       فيها — ومشتري التنبيه الطارئ تجيه صفارة عليها)، وشعبة جنسه ممكن تنخفي ورا سقف الثلاث. نعرف جنسه من
+       أرقام شعبه (monGender)، واللي ما نعرفه تبقى له للجنسين والرسالة تسمّي جنس كل شعبة. حالة المادة
+       (sections_state) تنكتب للجنسين كما هي — الفلترة على الإشعار وحده. */
+    if (courseHits.length) {
+      const gOf = await monGender(courseHits.map(x => x.m.user_id), monitors).catch(() => new Map());
+      if (!current()) { stat.superseded = true; return }
+      for (const { m, hits } of courseHits) {
+        const g = gOf.get(m.user_id) || null;
+        const mine = g ? hits.filter(h => !h.c.gender || h.c.gender === g) : hits;
+        if (mine.length < hits.length) stat.otherGender = (stat.otherGender || 0) + hits.length - mine.length;
+        /* سقف ثلاث شعب في الدورة الواحدة — الباقي يُذكر بالعدد */
+        mine.slice(0, 3).forEach(h => toNotify.push({
+          m, live: h.c, courseScope: true, isNew: h.isNew, closedNew: h.closedNew, was: h.was,
+          more: mine.length > 3 ? mine.length - 3 : 0, g
+        }));
+      }
     }
 
     stat.changed = changed.length;
@@ -4235,7 +4290,8 @@ async function runMonitorCycle() {
     const followups = [];      /* نسأل صاحبها بعد عشر دقائق: سجّلتها؟ */
     const sentFail = [];       /* فشلت ⇒ نرجّع الحجز وتعيدها الدورة الجاية */
     const deferred = [];       /* نشر جديد قطع الإرسال ⇒ نرجّع الحجز بلا عدّ محاولة */
-    const sendOne = async ({ m, live, courseScope, isNew, closedNew, more }) => {
+    const gAr = g => g === 'F' ? 'طالبات' : g === 'M' ? 'طلاب' : '';
+    const sendOne = async ({ m, live, courseScope, isNew, closedNew, more, g }) => {
       const p = profiles[m.user_id];
       /* أربع حالات، والعنوان هو الوحيد الظاهر في إشعار القفل —
          فالتمييز لازم يكون فيه لا في سطر داخلي.
@@ -4248,12 +4304,15 @@ async function runMonitorCycle() {
                  :               '⭐️ <b>الشعبة اللي تبيها فتحت!</b>';
       const tail = closedNew ? '📌 مقفلة حالياً — بنراقبها لك.'
                              : '⚡️ سجّل الحين قبل ما تنسكر!';
+      /* «كل الشعب»: نسمّي جنس الشعبة، ونقول لمن نراقبها — وللي ما عرفنا جنسه كيف نكتفي بشعبه */
+      const secG = courseScope && gAr(live.gender) ? ` · ${gAr(live.gender)}` : '';
       const scopeLine = courseScope
-        ? `\n<i>وصلتك لأنك تراقب ${escP(live.courseCode)} كاملة</i>`
+        ? `\n<i>وصلتك لأنك تراقب ${escP(live.courseCode)} كاملة` + (g ? ` (شعب ال${gAr(g)})` : '') + `</i>` +
+          (g ? '' : `\n<i>نراقبها لك للطلاب والطالبات — أضف موادك في «جدولي» بالموقع ونكتفي بشعبك</i>`)
         : `\n<i>وصلتك لأنك مراقب هذي الشعبة بالذات</i>`;
       const moreLine = more ? `\n<i>+ ${more} شعبة ثانية تغيّرت</i>` : '';
       const text = `${head}\n\n` +
-        `<b>${escP(live.courseCode)}</b> — شعبة ${escP(live.section)}\n` +
+        `<b>${escP(live.courseCode)}</b> — شعبة ${escP(live.section)}${secG}\n` +
         `${escP(live.courseTitle)}\n\n` +
         `🔢 CRN: <code>${escP(live.crn)}</code>\n` +
         `📅 ${escP(live.courseDate)}  ⏰ ${escP(live.courseTiming)}\n` +
@@ -4286,7 +4345,7 @@ async function runMonitorCycle() {
         String(p.telegram_chat_id) === String(ADMIN_CHAT_ID);
       const poKey = (p.pushover_key || '').trim();
       if (PUSHOVER_ON && (isAdmin || pushoverAllowed(p))) {
-        pushover(`${closedNew || isNew ? '🆕' : '🟢'} ${pmuPlain(live.courseCode)} §${pmuPlain(live.section)}`,
+        pushover(`${closedNew || isNew ? '🆕' : '🟢'} ${pmuPlain(live.courseCode)} §${pmuPlain(live.section)}${secG}`,
           `${pmuPlain(live.courseTitle)}\nCRN ${pmuPlain(live.crn)}\n` +
           `${pmuPlain(live.courseDate)} · ${pmuPlain(live.courseTiming)}\n` +
           `${pmuPlain(live.instructor || '—')} · ${pmuPlain(live.room || '—')}`,
