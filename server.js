@@ -4291,6 +4291,7 @@ async function runMonitorCycle() {
     const sentFail = [];       /* فشلت ⇒ نرجّع الحجز وتعيدها الدورة الجاية */
     const deferred = [];       /* نشر جديد قطع الإرسال ⇒ نرجّع الحجز بلا عدّ محاولة */
     const gAr = g => g === 'F' ? 'طالبات' : g === 'M' ? 'طلاب' : '';
+    const sirened = new Set();       /* مستلم|شعبة صفّرنا له في هالدورة */
     const sendOne = async ({ m, live, courseScope, isNew, closedNew, more, g }) => {
       const p = profiles[m.user_id];
       /* أربع حالات، والعنوان هو الوحيد الظاهر في إشعار القفل —
@@ -4344,7 +4345,15 @@ async function runMonitorCycle() {
       const isAdmin = ADMIN_CHAT_ID &&
         String(p.telegram_chat_id) === String(ADMIN_CHAT_ID);
       const poKey = (p.pushover_key || '').trim();
-      if (PUSHOVER_ON && (isAdmin || pushoverAllowed(p))) {
+      /* صفارة وحدة للحدث الواحد: اللي يراقب المادة كاملة **و**الشعبة نفسها توصله رسالتان على تيليغرام
+         (مقصود — النيّتان مختلفتان)، وكانت معهما صفارتان بنفس اللحظة لنفس الشعبة: كل وحدة تعيد نفسها لين
+         يأكّدها لحالها. الثانية **في نفس الدورة** لنفس المستلم والشعبة ما تنرسل (sirened). بالدورة لا بالوقت:
+         قفلت ثم فتحت في دورة بعدها فرصة جديدة وصفارتها كاملة. وصفارة ما وصلت ما تحجب اللي بعدها. */
+      const sirenKey = (poKey || '@admin') + '|' + live.crn;
+      const sirenDup = !closedNew && sirened.has(sirenKey);
+      if (sirenDup) stat.sirenDup = (stat.sirenDup || 0) + 1;
+      if (PUSHOVER_ON && (isAdmin || pushoverAllowed(p)) && !sirenDup) {
+        if (!closedNew) sirened.add(sirenKey);
         pushover(`${closedNew || isNew ? '🆕' : '🟢'} ${pmuPlain(live.courseCode)} §${pmuPlain(live.section)}${secG}`,
           `${pmuPlain(live.courseTitle)}\nCRN ${pmuPlain(live.crn)}\n` +
           `${pmuPlain(live.courseDate)} · ${pmuPlain(live.courseTiming)}\n` +
@@ -4354,7 +4363,10 @@ async function runMonitorCycle() {
                     : { priority: 2, sound: 'siren', retry: 30, expire: 1800,
                         user: poKey || undefined })
           /* وصل لمفتاح الطالب نفسه = «وصول تنبيه طارئ» (الشروط §٤) */
-          .then(sent => { if (sent && poKey) usageLog(p, 'pushover') }).catch(() => {});
+          .then(sent => {
+            if (!sent) sirened.delete(sirenKey);
+            if (sent && poKey) usageLog(p, 'pushover');
+          }).catch(() => {});
       }
       return true;
     };
