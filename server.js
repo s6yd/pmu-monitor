@@ -6559,9 +6559,19 @@ async function adminHealth() {
     add('warn', 'المراقبة متوقفة — خارج فترات التسجيل',
         'Monitoring paused — outside registration periods',
         nw ? `تستأنف تلقائياً في ${nw.ar} (${nw.from}).` : 'ما فيه نافذة قادمة في التقويم — حدّث MONITOR_WINDOWS.');
-  } else if (!ms.active)
+  } else if (ms.reason === 'paused') {
+    /* كانت «تستأنف تلقائياً الساعة 7» لكل سبب — والموقوفة يدوياً ما ترجع لحالها أبداً. وقرب التسجيل حمراء */
+    const risk = pauseRisk();
+    add(risk ? 'bad' : 'warn', 'المراقبة موقوفة يدوياً', 'Monitoring paused manually',
+        (risk ? pauseRiskText(risk) + ' — ' + (risk.open ? 'ولا طالب يوصله إشعار. ' : 'لو بقت كذا يمر بلا إشعارات. ') : '') +
+        'ما ترجع لحالها: شغّلها من زر «▶️ شغّل المراقبة».');
+  } else if (ms.reason === 'disabled')
     add('warn', 'المراقبة متوقفة الآن — ' + ms.ar, 'Monitoring paused — ' + ms.en,
-        'تستأنف تلقائياً الساعة 7 صباحاً بتوقيت الرياض.');
+        SITE_ENV !== 'prod' ? 'نسخة التجربة ما تراقب — المراقبة من الإنتاج وحده.'
+          : 'معطّلة بمتغيّر MONITOR_ENABLED في Render، وما ترجع إلا بتغييره.');
+  else if (!ms.active)
+    add('warn', 'المراقبة متوقفة الآن — ' + ms.ar, 'Monitoring paused — ' + ms.en,
+        `تستأنف تلقائياً الساعة ${activeFrom()}:00 بتوقيت الرياض.`);
   else if (ms.reason === 'idle')
     add('warn', 'المراقبة مخفّفة — خارج فترة التسجيل', 'Reduced monitoring — outside registration',
         'يرجع مكثفاً تلقائياً في نافذة التسجيل القادمة.');
@@ -8331,6 +8341,52 @@ function windowsCheck() {
       'آخر نافذة مراقبة انتهت وما فيه وحدة جاية — التسجيل الجاي بيمر بلا مراقبة.\n\n' +
       `تنضاف نوافذه في MONITOR_WINDOWS وتقويمه في ACAD_CAL بالسيرفر.${manual}`);
   resolve('windows', 'نوافذ المراقبة ناقصة');
+}
+
+/* ═══ موقوفة يدوياً والتسجيل قريب أو شغّال ═══
+   «⏸️ أوقف المراقبة» ما يرجع لحاله: لو بقى لين يوم التسجيل فالتسجيل كله يمر بلا مراقبة — والدورة ما تشتغل
+   أصلاً فما يطلع إنذار، والنبض الخارجي يعدّ الموقوفة «سليمة»، واللوحة كانت تقول «تستأنف تلقائياً».
+   فنذكّر صاحب الموقع لين يشغّلها: قبل النافذة بثلاثة أيام مرة باليوم (من ٩ الصبح)، والنافذة شغّالة كل
+   ساعتين في ساعات العمل (بالليل ما يفوت شي). الإيقاف نفسه يبدأ العدّ (رسالته تقولها)، والتشغيل يمسحه
+   بلا «رجع طبيعي» — رسالة التشغيل تكفي. في الذاكرة: الإقلاع يذكّر من جديد (ووسط نافذة يستاهلها) */
+const PAUSE_NEAR_DAYS = 3, PAUSE_NAG_MS = 2 * 60 * 60 * 1000, PAUSE_NAG_FROM = 9, PAUSE_WATCH_MS = 15 * 1000;
+const PAUSE_NAG = { at: 0, day: '' };
+function pauseRisk() {
+  if (!MONITOR_ENABLED || !MONITOR_PAUSED) return null;
+  const open = currentWindow();
+  if (open) return { open };
+  const soon = nextWindow();
+  if (!soon) return null;
+  const days = Math.round((Date.parse(soon.from + 'T00:00:00Z') - Date.parse(riyadhDate() + 'T00:00:00Z')) / 864e5);
+  return days <= PAUSE_NEAR_DAYS ? { soon, days } : null;
+}
+/* نص عادي (اللوحة تهرّبه بنفسها، ورسائل تيليغرام تمرّره على escP) */
+function pauseRiskText(r) {
+  if (r.open) return `نافذة «${r.open.ar}» شغّالة الحين (لين ${r.open.to})`;
+  const when = r.days <= 1 ? 'بكرة' : r.days === 2 ? 'بعد يومين' : `بعد ${r.days} أيام`;
+  return `«${r.soon.ar}» يبدأ ${when} (${r.soon.from})`;
+}
+const pauseNagEvery = r => r.open ? 'كل ساعتين' : 'كل يوم';
+function pauseClear() {
+  PAUSE_NAG.at = 0; PAUSE_NAG.day = '';
+  if (ALERTS.paused && ALERTS.paused.active)
+    ALERTS.paused = { active: false, at: Date.now(), title: ALERTS.paused.title };
+}
+function pauseWatch() {
+  if (!MONITOR_ENABLED || SHUTTING_DOWN || !EVENTS_READY) return;
+  const r = pauseRisk();
+  if (!r) return pauseClear();
+  const now = Date.now(), day = riyadhDate(), h = riyadhHour();
+  if (r.open) {
+    if (h < activeFrom() || h >= activeTo()) return;
+    if (PAUSE_NAG.at && now - PAUSE_NAG.at < PAUSE_NAG_MS) return;
+  } else if (h < PAUSE_NAG_FROM || PAUSE_NAG.day === day) return;
+  PAUSE_NAG.at = now; PAUSE_NAG.day = day;
+  alert('paused', r.open ? 'المراقبة موقوفة والتسجيل شغّال' : 'المراقبة موقوفة والتسجيل قريب',
+    escP(pauseRiskText(r)) + ' والمراقبة موقوفة يدوياً من اللوحة: ' +
+    (r.open ? 'ولا طالب يوصله إشعار فتح شعبة.' : 'لو بقت كذا يمر التسجيل بلا إشعارات.') +
+    '\n\nما ترجع لحالها — شغّلها من اللوحة ← النظام ← «▶️ شغّل المراقبة».\n' +
+    `بنذكّرك ${pauseNagEvery(r)} لين تشغّلها.`).catch(() => {});
 }
 
 /* هل نحن خلال أسبوع قبل نافذة تسجيل أو أسبوع بعدها؟
@@ -12908,9 +12964,16 @@ const server = http.createServer(async (req, res) => {
             /* الموعد القديم محسوب على الحالة القديمة: كان «شغّل» يغيّر المفتاح والموعد يبقى ٧ الصبح بكرة */
             replanCycle('toggle');
             const stNow = monitorState();
+            /* الإيقاف ما يرجع لحاله: رسالته تقول متى التسجيل الجاي ومتى بنذكّر، والعدّ يبدأ منها
+               (أول تذكير بعد ساعتين والنافذة شغّالة، وبكرة لو قريبة) — والتشغيل يمسحه */
+            const risk = pauseRisk(), nw = !risk && MONITOR_ENABLED && MONITOR_PAUSED ? nextWindow() : null;
+            if (MONITOR_PAUSED) { PAUSE_NAG.at = Date.now(); PAUSE_NAG.day = riyadhDate() } else pauseClear();
             /* «رجعت تشتغل» للي تفحص فعلاً — وخارج وقتها نقول ليش ومتى تبدأ، لا وعداً ما يصير الحين */
             sendMsg(ADMIN_CHAT_ID, MONITOR_PAUSED
-              ? '⏸️ <b>المراقبة موقوفة يدوياً</b>\n\nما راح يستلم أحد إشعارات فتح شعب حتى تشغّلها.'
+              ? '⏸️ <b>المراقبة موقوفة يدوياً</b>\n\nما راح يستلم أحد إشعارات فتح شعب حتى تشغّلها.' +
+                (risk ? `\n\n⚠️ ${escP(pauseRiskText(risk))}. ما ترجع لحالها — بنذكّرك ${pauseNagEvery(risk)} لين تشغّلها.`
+                  : nw ? `\n\nتبقى موقوفة لين تشغّلها بنفسك — ما ترجع لحالها مع «${escP(nw.ar)}» (${escP(nw.from)}). ` +
+                         `بنذكّرك قبله بـ${PAUSE_NEAR_DAYS} أيام.` : '')
               : stNow.active
                 ? '▶️ <b>المراقبة رجعت تشتغل</b>\n\nأول فحص خلال دقيقة.'
                 : `▶️ <b>المراقبة مفعّلة</b>\n\nما تفحص الحين: ${escP(stNow.ar)}.\n` +
@@ -13899,6 +13962,8 @@ server.listen(PORT, () => {
     if (w) sendMsg(ADMIN_CHAT_ID, `🚀 <b>السيرفر اشتغل من جديد وقت التسجيل</b> (${escP(w.ar)})\n\n` +
       `نشر جديد أو إعادة تشغيل. تأكد من اللوحة ← النظام إن الدورات ماشية.\n` +
       `وقت النوافذ: الدمج dev ← main لإصلاح عاجل بس.`).catch(() => {});
+    /* موقوفة يدوياً (من الحالة المحفوظة) والتسجيل قريب أو شغّال؟ — ثم كل ربع دقيقة */
+    try { pauseWatch() } catch (e) { console.log('pauseWatch: ' + e.message) }
   })();
   /* النبض الخارجي (لو HEALTHCHECK_URL مضبوط): بعد الإقلاع بنص دقيقة، ثم كل ٥ دقائق */
   if (HEALTHCHECK_URL) {
@@ -13925,4 +13990,6 @@ server.listen(PORT, () => {
   scheduleNextCycle(20000 + Math.random() * 40000);
   /* حارس الموعد: حالة صارت نشطة والموعد قديم، أو دورة عالقة — فحص في الذاكرة كل ربع دقيقة */
   setInterval(() => { try { cycleWatchdog() } catch (e) { console.log('watchdog: ' + e.message) } }, CYCLE_WATCH_MS);
+  /* موقوفة يدوياً والتسجيل قريب أو شغّال: تذكير لصاحب الموقع (في الذاكرة — ولا طلب لين يحين تذكير) */
+  setInterval(() => { try { pauseWatch() } catch (e) { console.log('pauseWatch: ' + e.message) } }, PAUSE_WATCH_MS);
 });
