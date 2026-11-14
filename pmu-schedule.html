@@ -8262,6 +8262,12 @@ async function toggleMonitorAllGo(code){
     showToast(LANG==='ar'?`وقفت مراقبة كل شعب ${code}`:`Stopped watching all ${code}`);
   }else{
     const row={user_id:USER.id,scope:'course',course_code:code,term};
+    /* أساس من اللي يشوفه الطالب الحين (مثل last_status للشعبة): السيرفر يقارن أول دورة به، فشعبة تفتح
+       بعد ضغطته يوصله إشعارها — بلاه أول دورة تسجيل وبس والفتحة تنكتب بصمت. ‎_page‎ علامة إن الأساس من
+       الصفحة: ناقص بطبعه (قائمته بجنس أو كلية)، فاللي مو فيه ما هو «شعبة جديدة» عند السيرفر */
+    const seen={_page:1};
+    allCourses.forEach(c=>{ if(c&&c.crn&&c.status&&sameCode(c.courseCode,code))seen[String(c.crn)]=c.status });
+    if(Object.keys(seen).length>1)row.sections_state=seen;
     const {data,error}=await sb.from('monitored_courses').insert(row).select();
     if(error){
       if(error.code==='23505'){

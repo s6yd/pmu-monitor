@@ -3544,6 +3544,44 @@ async function inBatches(items, size, fn) {
   }
 }
 
+/* ═══ جنس صاحب مراقبة «كل الشعب» ═══
+   الصف ما يحفظ هل صاحبه طالب أو طالبة. نعرفه من أرقام شعبه بقاعدة tagGender نفسها (1xx طلاب · 2xx
+   طالبات — مثل aiGender): شعب جداوله كلها ومراقبات الشعب. **شعبتان على الأقل وكلها جنس واحد** — وإلا
+   «ما نعرف» (null) وتبقى مراقبته للجنسين: فلترة غلط = إشعار يضيع، وهذا أسوأ من إشعار زايد.
+   في الذاكرة ساعة (و«ما نعرف» عشر دقائق: يمكن يضيف جدوله)، وقراءة فشلت ما تنحفظ «ما نعرف». */
+const MON_GENDER = new Map();        /* user_id → { g, at } */
+const MON_GENDER_TTL = 60 * 60 * 1000, MON_GENDER_RETRY = 10 * 60 * 1000;
+async function monGender(userIds, monitors) {
+  const out = new Map(), now = Date.now(), ask = [];
+  for (const u of new Set(userIds)) {
+    const hit = MON_GENDER.get(u);
+    if (hit && now - hit.at < (hit.g ? MON_GENDER_TTL : MON_GENDER_RETRY)) out.set(u, hit.g);
+    else ask.push(u);
+  }
+  if (!ask.length) return out;
+  const secs = new Map(ask.map(u => [u, []]));
+  (monitors || []).forEach(m => {
+    if (m.scope !== 'course' && secs.has(m.user_id)) secs.get(m.user_id).push(m.section);
+  });
+  let readOk = true;
+  for (let i = 0; i < ask.length; i += 100) {
+    const ids = ask.slice(i, i + 100).map(u => `"${u}"`).join(',');
+    try {
+      const rows = await sbAll('user_schedule', { query: `?user_id=in.(${ids})&select=id,user_id,section`, strict: true });
+      rows.forEach(r => { if (secs.has(r.user_id)) secs.get(r.user_id).push(r.section) });
+    } catch (e) { readOk = false }
+  }
+  if (MON_GENDER.size > 5000) MON_GENDER.clear();
+  for (const [u, list] of secs) {
+    const tagged = tagGender(list.map(x => ({ section: x })), null).map(x => x.gender).filter(Boolean);
+    const kinds = new Set(tagged);
+    const g = kinds.size === 1 && tagged.length >= 2 ? [...kinds][0] : null;
+    out.set(u, g);
+    if (g || readOk) MON_GENDER.set(u, { g, at: now });
+  }
+  return out;
+}
+
 /* حصة المجاني: أقدم N مراقبات شعبة لكل طالب (PRICING.freeMonitors) — المكان الوحيد اللي تنحسب فيه */
 function freeQuota(monitors) {
   const ok = new Set(), perUser = {};
@@ -3624,6 +3662,9 @@ function heartbeat() {
 }
 
 let cycleRunning = false, cycleStartedAt = 0, CYCLE_GEN = 0, CYCLE_SKIPS = 0;
+/* بيانات الدورة مقابل وقت إنشاء المراقبة (created_at من ساعة القاعدة): هامش لفرق الساعتين، ونسخة
+   الكاش وقتها ناقص مدة سحبها — الدورة تصدّق البيانات على مراقبة أقدم منها وحدها */
+const SNAP_SKEW_MS = 5000, SNAP_CACHE_LAG = 20000;
 /* إشعار فشل إرساله: كم مرة حاولنا (مراقبة|CRN) — نعيده الدورة الجاية بحد ثلاث */
 const NOTIFY_FAILS = new Map(), NOTIFY_MAX_TRIES = 3;
 /* مصدر آخر جدول راقبنا منه: موقع الجدول ('pmu') أو احتياط بانر ('banner') — يُحفظ مع الحالة */
@@ -3815,13 +3856,17 @@ async function runMonitorCycle() {
     const snapshot = {};
     let fetchFailed = false, partial = false;
     let gotFeed = false, usedBanner = false, freshPmu = false;
+    /* وقت بيانات هالدورة: بداية السحبة (الرد يعكس حالة الجامعة بعدها)، أو وقت نسخة الكاش ناقص مدة سحبها */
+    let dataAt = 0;
     for (const term of terms) {
+      const tFetch = Date.now();
       const snap = await fetchTermSnapshot(term);
       if (!current()) { stat.superseded = true; return }
       if (snap.courses) gotFeed = freshPmu = true;
 
       if (snap.courses) {
         const parsed = snap.courses;
+        dataAt = tFetch;
         /* parseHTML ما تضع الترم في المادة، و byCourse يبني مفتاحه من
            c.term — فكان يطلع '|PHYS 1422' بدل '202710|PHYS 1422' ولا
            يتطابق أبداً، فتتعطّل مراقبة المادة كاملة بصمت. نوسمه هنا. */
@@ -3887,6 +3932,7 @@ async function runMonitorCycle() {
             snapshot[term + ':' + cc.crn] = cc;
           });
           stat.fromCache = Math.round(age / 1000);
+          dataAt = hit.at - SNAP_CACHE_LAG;
           console.log(`cycle: نسخة من الكاش عمرها ${stat.fromCache} ثانية`);
         } else {
           const blocked = snap.errs.some(e => e.pmu === 'block') || pmuBlocked();
@@ -3894,8 +3940,10 @@ async function runMonitorCycle() {
           let via = '';
           if (!blocked && BANNER_ON) {
             try {
+              const tBanner = Date.now();
               const b = await fetchBannerTerm(term);
               if (!current()) { stat.superseded = true; return }
+              dataAt = tBanner;
               const sh = pmuShort(term, 'BANNER', b.rows.length);
               b.rows.forEach(c => { c.term = term; snapshot[term + ':' + c.crn] = c; });
               usedBanner = true; gotFeed = true; stat.banner = b.rows.length;
@@ -3977,28 +4025,28 @@ async function runMonitorCycle() {
 
     const changed = [];      // {m, live}
     let toNotify = [];       // {m, live}
-    /* ═══ تصحيح الأساس عند التفعيل ═══
-       last_status يجي من القائمة المعروضة عند الطالب، وقد تكون قديمة
-       بدقائق. فتنشأ حالتان خاطئتان:
-       • عنده CLOSED وعندنا OPEN → إشعار فوري عن شعبة كانت مفتوحة أصلاً.
-       • عنده OPEN وعندنا CLOSED → يُسجَّل OPEN، فحين تفتح فعلاً ما يُرسل
-         شيء — يفوته الإشعار الذي فعّل المراقبة لأجله.
-       فأول دورة بعد التفعيل نصحّح الحالة بلا إشعار. النافذة قصيرة
-       (دقيقتان) فلا تبتلع فتحة حقيقية وقعت بعد التفعيل بوقت. */
-    const BASELINE_GRACE = 2 * 60 * 1000;
+    /* ═══ مراقبة أحدث من البيانات؟ ═══
+       last_status يجي من القائمة المعروضة عند الطالب وقت ما ضغط «راقب». كانت أول دقيقتين من عمر المراقبة
+       «تصحيح أساس» صامتاً: أي فرق ينكتب بلا إشعار (قائمته ممكن تكون قديمة). لكن وقت التسجيل القائمة تتجدد
+       كل دقيقة ونص، فالفرق غالباً **فتحة حقيقية صارت بعد ضغطته** — كانت تنكتب «مفتوحة» بصمت وهو ينتظر
+       إشعاراً ما يجي أبداً. الصح مقارنة الوقتين لا عمر المراقبة:
+       • بيانات انسحبت **بعد** إنشاء المراقبة أحدث من اللي شافه الطالب ⇒ نصدّقها: «مفتوحة» = إشعار.
+       • بيانات **أقدم** منها (نسخة الكاش لما الجامعة ما ترد، أو مراقبة انضافت والسحبة شغّالة) ما تحكم على
+         اللي شافه: لا كتابة ولا إشعار، والدورة الجاية ببيانات أحدث تقرّر — كانت بعد الدقيقتين تطلع «فتحت»
+         كاذبة من نسخة أقدم من ضغطته. */
+    const newerThan = m => {
+      const made = m.created_at ? Date.parse(m.created_at) : NaN;
+      return !Number.isFinite(made) || made + SNAP_SKEW_MS <= dataAt;     /* بلا تاريخ = قديمة */
+    };
     for (const m of sectionMons) {
       const live = snapshot[(m.term || '202630') + ':' + m.crn];
       if (!live) continue;
       if (live.status === m.last_status) continue;
+      if (!newerThan(m)) { stat.tooNew = (stat.tooNew || 0) + 1; continue }
 
-      const age = m.created_at ? (Date.now() - new Date(m.created_at).getTime()) : Infinity;
-      if (age < BASELINE_GRACE || settle) {
-        changed.push({ m, live });          /* نكتب الحالة الصحيحة */
-        if (settle) stat.settled = (stat.settled || 0) + 1;
-        else stat.baselineFixed = (stat.baselineFixed || 0) + 1;
-        continue;                            /* بلا إشعار */
-      }
-      changed.push({ m, live });
+      changed.push({ m, live });          /* نكتب الحالة الصحيحة */
+      /* رجوع الجدول بعد بانر: دورة تسجّل بلا إشعار */
+      if (settle) { stat.settled = (stat.settled || 0) + 1; continue }
       if (live.status === 'OPEN' && m.last_status !== 'OPEN') toNotify.push({ m, live });
     }
 
@@ -4009,8 +4057,7 @@ async function runMonitorCycle() {
         const k = m.id + '|' + m.crn;
         if (snapshot[(m.term || '202630') + ':' + m.crn]) { MON_GONE.delete(k); continue }
         if (MON_GONE_TOLD.has(k) || !m.crn) continue;
-        const age = m.created_at ? (Date.now() - new Date(m.created_at).getTime()) : Infinity;
-        if (age < BASELINE_GRACE) continue;
+        if (!newerThan(m)) continue;
         const n = (MON_GONE.get(k) || 0) + 1;
         MON_GONE.set(k, n);
         if (n >= MON_GONE_AFTER) gone.push(m);
@@ -4025,6 +4072,7 @@ async function runMonitorCycle() {
        أول دورة لأي صف جديد نسجّل الحالة فقط بلا إشعار، عشان ما ننهال
        على الطالب بكل الشعب المفتوحة أصلاً وقت ما فعّل المراقبة. */
     const courseStateUpdates = [];   // {id, state}
+    const courseHits = [];           // {m, hits} — تتفلتر بجنس صاحبها بعد الحلقة
     /* بنصف جدول، شعب الجنس الغائب تُقرأ كأنها اختفت، ثم تعود في الدورة
        التالية كأنها «نزلت جديدة». نتخطّى المقارنة كلها ولا نكتب الحالة. */
     for (const m of (partial ? [] : courseMons)) {
@@ -4036,6 +4084,11 @@ async function runMonitorCycle() {
       list.forEach(c => { cur[String(c.crn)] = c.status; });
       const prev = (m.sections_state && typeof m.sections_state === 'object')
         ? m.sections_state : null;
+      /* أساس من الصفحة (‎_page‎): حالة الشعب اللي شافها الطالب وقت ما ضغط «راقب كل الشعب» — مثل last_status
+         للشعبة. بلاه أول دورة تسجيل وبس، فشعبة تفتح بين ضغطته وأول دورة تنكتب «مفتوحة» بصمت. وهو ناقص
+         بطبعه (قائمته بجنس أو كلية): اللي مو فيه ما هو «شعبة جديدة». وبيانات أقدم من المراقبة ما تحكم عليه */
+      const fromPage = !!(prev && prev._page);
+      if (fromPage && !newerThan(m)) { stat.tooNew = (stat.tooNew || 0) + 1; continue }
 
       /* كانت تُكتب كل دورة حتى بلا تغيير — كتابة لكل مادة مراقَبة كل
          خمس دقائق بلا داعٍ، وهي مصدر رئيسي لتضخّم WAL في القاعدة.
@@ -4052,15 +4105,31 @@ async function runMonitorCycle() {
         const crn = String(c.crn);
         const was = prev[crn];
         const isNew = !(crn in prev);
-        if (isNew && toBanner) continue;
+        if (isNew && (toBanner || fromPage)) continue;
         if (c.status === 'OPEN' && was !== 'OPEN') hits.push({ c, isNew, was });
         else if (isNew) hits.push({ c, isNew, was, closedNew: true });
       }
-      /* سقف ثلاث شعب في الدورة الواحدة — الباقي يُذكر بالعدد */
-      hits.slice(0, 3).forEach(h => toNotify.push({
-        m, live: h.c, courseScope: true, isNew: h.isNew, closedNew: h.closedNew, was: h.was,
-        more: hits.length > 3 ? hits.length - 3 : 0
-      }));
+      if (hits.length) courseHits.push({ m, hits });
+    }
+
+    /* ── 2ج. «كل الشعب» لشعب جنس صاحبها ──
+       الصف ما يحفظ هل صاحبه طالب أو طالبة، فكان يوصله «فتحت شعبة» عن شعب الجنس الثاني (ما يقدر يسجّل
+       فيها — ومشتري التنبيه الطارئ تجيه صفارة عليها)، وشعبة جنسه ممكن تنخفي ورا سقف الثلاث. نعرف جنسه من
+       أرقام شعبه (monGender)، واللي ما نعرفه تبقى له للجنسين والرسالة تسمّي جنس كل شعبة. حالة المادة
+       (sections_state) تنكتب للجنسين كما هي — الفلترة على الإشعار وحده. */
+    if (courseHits.length) {
+      const gOf = await monGender(courseHits.map(x => x.m.user_id), monitors).catch(() => new Map());
+      if (!current()) { stat.superseded = true; return }
+      for (const { m, hits } of courseHits) {
+        const g = gOf.get(m.user_id) || null;
+        const mine = g ? hits.filter(h => !h.c.gender || h.c.gender === g) : hits;
+        if (mine.length < hits.length) stat.otherGender = (stat.otherGender || 0) + hits.length - mine.length;
+        /* سقف ثلاث شعب في الدورة الواحدة — الباقي يُذكر بالعدد */
+        mine.slice(0, 3).forEach(h => toNotify.push({
+          m, live: h.c, courseScope: true, isNew: h.isNew, closedNew: h.closedNew, was: h.was,
+          more: mine.length > 3 ? mine.length - 3 : 0, g
+        }));
+      }
     }
 
     stat.changed = changed.length;
@@ -4071,21 +4140,68 @@ async function runMonitorCycle() {
     }
     if (!current()) { stat.superseded = true; return }
 
-    /* ── 3. الحجز ثم تحديث الحالة بالجملة ──
+    /* ── 3. ملفات المستخدمين المعنيين — **قبل** أي حجز ──
+       كانت تنقرأ بعد الحجز: القاعدة تتعثّر بينهما (رد خطأ أو انقطاع) ⇒ الشعبة مكتوبة «مفتوحة» والإشعار
+       ما راح، والدورة الجاية تلقاها «مفتوحة» فما ترسل — ضاع للأبد. ومثلها المادة كاملة: حالتها الجديدة
+       تنكتب بلا إشعار. الحين القراءة أول وبمحاولة ثانية، واللي ما انقرأ ملفه **يتأجّل**: لا حجز ولا كتابة
+       حالة، فالدورة الجاية تلقى نفس الفرق وترسل. */
+    const userIds = [...new Set(toNotify.map(x => x.m.user_id))];
+    const profiles = {}, noProfile = new Set();
+    for (let i = 0; i < userIds.length; i += 100) {
+      const ids = userIds.slice(i, i + 100);
+      const q = { query: `?id=in.(${ids.map(u => `"${u}"`).join(',')})` +
+                         '&select=id,telegram_chat_id,is_pro,subscription_expires_at,pushover_key,pushover_until' };
+      let rows = await sb('GET', 'profiles', q).catch(() => null);
+      if (!Array.isArray(rows)) {
+        await new Promise(r2 => setTimeout(r2, 400));
+        rows = await sb('GET', 'profiles', q).catch(() => null);
+      }
+      if (Array.isArray(rows)) rows.forEach(p => { profiles[p.id] = p });
+      else ids.forEach(u => noProfile.add(u));
+    }
+    const holdSec = new Set(), holdCourse = new Set();
+    if (noProfile.size) {
+      toNotify = toNotify.filter(x => {
+        if (!noProfile.has(x.m.user_id)) return true;
+        (x.courseScope ? holdCourse : holdSec).add(x.m.id);
+        return false;
+      });
+      stat.dbDeferred = holdSec.size + holdCourse.size;
+      console.log(`   القاعدة ما ردّت بملفات ${noProfile.size} طالب — ${stat.dbDeferred} مراقبة تأجّل إشعارها`);
+      alert('db-send', 'القاعدة تعثّرت وقت الإرسال — إشعارات تأجّلت',
+        `ما قدرنا نقرأ ملفات ${noProfile.size} طالب من القاعدة (محاولتين)، فإشعارات «فتحت» لهم تأجّلت للدورة الجاية — ` +
+        `ما انكتب شي على مراقباتهم فما يضيع منها شي.\n\nلو تكرر، شوف حالة Supabase.`);
+    } else if (userIds.length) resolve('db-send', 'القاعدة تعثّرت وقت الإرسال — إشعارات تأجّلت');
+    if (!current()) { stat.superseded = true; return }
+
+    /* ── 4. الحجز ثم تحديث الحالة بالجملة ──
        «فتحت» اللي بنرسلها **تُحجز**: تحديث مشروط (ما كانت OPEN) يرجّع الصفوف اللي
        تغيّرت فعلاً — نسختان شغّالتان معاً (وقت النشر) كانت كل وحدة تقرأ CLOSED وترسل،
        فيوصل الطالب الإشعار مرتين. الحين اللي حجزت ترسل، والثانية ما يرجع لها صف.
        والإرسال اللي يفشل يرجّع الحجز تحت (فتعيده الدورة الجاية) — كانت الحالة تنكتب
        قبل الإرسال وما ترجع، فرسالة رفضها تيليغرام مرة = إشعار ضاع للأبد.
-       الباقي (مقفلة · تصحيح الأساس) بلا شرط: نجمعها حسب الحالة، طلب لكل حالة. */
+       الباقي (مقفلة · تصحيح الأساس) بلا شرط: نجمعها حسب الحالة، طلب لكل حالة.
+       **ورد الحجز اللي ضاع** (انقطاع · مهلة · رد خطأ): ما ندري انكتب أو لا — وكان «ما انحجز» فما نرسل،
+       ولو انكتب فعلاً ضاع الإشعار. نعيد الحجز مرة ثم نقرأ الصفوف: اللي «مفتوحة» الحين حجزناها نحن
+       (قرأناها قبل ثوانٍ مو مفتوحة). والقراءة فشلت كذلك؟ ما نرسل — الدورة الجاية تحاول. */
     const claimIds = toNotify.filter(x => !x.courseScope).map(x => x.m.id);
     const claimSet = new Set(claimIds), claimed = new Set();
     for (let i = 0; i < claimIds.length; i += 200) {
-      const r = await sb('PATCH', 'monitored_courses', {
-        query: `?id=in.(${claimIds.slice(i, i + 200).join(',')})` +
-               '&or=(last_status.is.null,last_status.neq.OPEN)',
+      const ids = claimIds.slice(i, i + 200);
+      const claim = () => sb('PATCH', 'monitored_courses', {
+        query: `?id=in.(${ids.join(',')})` + '&or=(last_status.is.null,last_status.neq.OPEN)',
         body: { last_status: 'OPEN' }, prefer: 'return=representation'
       }).catch(() => null);
+      let r = await claim();
+      if (!Array.isArray(r)) {
+        stat.claimUnsure = (stat.claimUnsure || 0) + ids.length;
+        await new Promise(r2 => setTimeout(r2, 400));
+        await claim();
+        const seen = await sb('GET', 'monitored_courses', {
+          query: `?id=in.(${ids.join(',')})&select=id,last_status`
+        }).catch(() => null);
+        r = Array.isArray(seen) ? seen.filter(x => x.last_status === 'OPEN') : null;
+      }
       (Array.isArray(r) ? r : []).forEach(x => claimed.add(x.id));
     }
     if (claimIds.length > claimed.size) {
@@ -4094,32 +4210,23 @@ async function runMonitorCycle() {
     }
     const byStatus = {};
     changed.forEach(({ m, live }) => {
-      if (claimSet.has(m.id)) return;                     /* انكتبت بالحجز */
+      if (claimSet.has(m.id) || holdSec.has(m.id)) return;   /* انكتبت بالحجز — أو مؤجّلة للدورة الجاية */
       (byStatus[live.status] = byStatus[live.status] || []).push(m.id);
     });
 
     for (const status of Object.keys(byStatus)) {
       const ids = byStatus[status];
-      /* نقسّمها لدفعات عشان الرابط ما يطول أكثر من اللازم */
+      /* نقسّمها لدفعات عشان الرابط ما يطول أكثر من اللازم.
+         وفشل الكتابة ما يوقف الدورة (كان يرميها كلها — والمحجوز فوق يبقى «مفتوحة» بلا إشعار):
+         الحالة ما انكتبت، فالدورة الجاية تلقى نفس الفرق وتكتبه */
       for (let i = 0; i < ids.length; i += 200) {
         const chunk = ids.slice(i, i + 200);
         await sb('PATCH', 'monitored_courses', {
           query: `?id=in.(${chunk.join(',')})`,
           body: { last_status: status },
           prefer: 'return=minimal'
-        });
+        }).catch(() => { stat.writeFails = (stat.writeFails || 0) + 1 });
       }
-    }
-
-    /* ── 4. سحب ملفات المستخدمين المعنيين دفعة واحدة ── */
-    const userIds = [...new Set(toNotify.map(x => x.m.user_id))];
-    const profiles = {};
-    for (let i = 0; i < userIds.length; i += 100) {
-      const chunk = userIds.slice(i, i + 100).map(u => `"${u}"`).join(',');
-      const rows = await sb('GET', 'profiles', {
-        query: `?id=in.(${chunk})&select=id,telegram_chat_id,is_pro,subscription_expires_at,pushover_key,pushover_until`
-      });
-      (Array.isArray(rows) ? rows : []).forEach(p => { profiles[p.id] = p; });
     }
 
     /* ── 5. من يستحق الإشعار فعلاً ──
@@ -4149,12 +4256,22 @@ async function runMonitorCycle() {
     const stateOf = new Map(courseStateUpdates.map(u => [u.id, u.state]));
     const claimAt = new Date().toISOString(), courseLost = new Set();
     for (const [id, m] of courseRows) {
-      const r = await sb('PATCH', 'monitored_courses', {
+      const claim = () => sb('PATCH', 'monitored_courses', {
         query: `?id=eq.${id}&notified_at=` +
                (m.notified_at == null ? 'is.null' : 'eq.' + encodeURIComponent(m.notified_at)),
         body: { sections_state: stateOf.get(id), notified_at: claimAt },
         prefer: 'return=representation'
       }).catch(() => null);
+      let r = await claim();
+      if (!Array.isArray(r)) {
+        /* رد الحجز ضاع: انكتب أو لا؟ notified_at = وقت حجزنا يعني انكتب (وإلا نحجز ثانية) — كان «ما
+           انحجز»، ولو انكتب فعلاً بقيت الحالة الجديدة بلا إشعار */
+        stat.claimUnsure = (stat.claimUnsure || 0) + 1;
+        await new Promise(r2 => setTimeout(r2, 400));
+        const seen = await sb('GET', 'monitored_courses', { query: `?id=eq.${id}&select=id,notified_at` }).catch(() => null);
+        if (Array.isArray(seen) && seen[0] && Date.parse(seen[0].notified_at) === Date.parse(claimAt)) r = seen;
+        else if (Array.isArray(seen) && seen[0]) r = await claim();
+      }
       if (!(Array.isArray(r) && r.length)) courseLost.add(id);
     }
     if (courseLost.size) {
@@ -4173,7 +4290,9 @@ async function runMonitorCycle() {
     const followups = [];      /* نسأل صاحبها بعد عشر دقائق: سجّلتها؟ */
     const sentFail = [];       /* فشلت ⇒ نرجّع الحجز وتعيدها الدورة الجاية */
     const deferred = [];       /* نشر جديد قطع الإرسال ⇒ نرجّع الحجز بلا عدّ محاولة */
-    const sendOne = async ({ m, live, courseScope, isNew, closedNew, more }) => {
+    const gAr = g => g === 'F' ? 'طالبات' : g === 'M' ? 'طلاب' : '';
+    const sirened = new Set();       /* مستلم|شعبة صفّرنا له في هالدورة */
+    const sendOne = async ({ m, live, courseScope, isNew, closedNew, more, g }) => {
       const p = profiles[m.user_id];
       /* أربع حالات، والعنوان هو الوحيد الظاهر في إشعار القفل —
          فالتمييز لازم يكون فيه لا في سطر داخلي.
@@ -4186,12 +4305,15 @@ async function runMonitorCycle() {
                  :               '⭐️ <b>الشعبة اللي تبيها فتحت!</b>';
       const tail = closedNew ? '📌 مقفلة حالياً — بنراقبها لك.'
                              : '⚡️ سجّل الحين قبل ما تنسكر!';
+      /* «كل الشعب»: نسمّي جنس الشعبة، ونقول لمن نراقبها — وللي ما عرفنا جنسه كيف نكتفي بشعبه */
+      const secG = courseScope && gAr(live.gender) ? ` · ${gAr(live.gender)}` : '';
       const scopeLine = courseScope
-        ? `\n<i>وصلتك لأنك تراقب ${escP(live.courseCode)} كاملة</i>`
+        ? `\n<i>وصلتك لأنك تراقب ${escP(live.courseCode)} كاملة` + (g ? ` (شعب ال${gAr(g)})` : '') + `</i>` +
+          (g ? '' : `\n<i>نراقبها لك للطلاب والطالبات — أضف موادك في «جدولي» بالموقع ونكتفي بشعبك</i>`)
         : `\n<i>وصلتك لأنك مراقب هذي الشعبة بالذات</i>`;
       const moreLine = more ? `\n<i>+ ${more} شعبة ثانية تغيّرت</i>` : '';
       const text = `${head}\n\n` +
-        `<b>${escP(live.courseCode)}</b> — شعبة ${escP(live.section)}\n` +
+        `<b>${escP(live.courseCode)}</b> — شعبة ${escP(live.section)}${secG}\n` +
         `${escP(live.courseTitle)}\n\n` +
         `🔢 CRN: <code>${escP(live.crn)}</code>\n` +
         `📅 ${escP(live.courseDate)}  ⏰ ${escP(live.courseTiming)}\n` +
@@ -4223,8 +4345,16 @@ async function runMonitorCycle() {
       const isAdmin = ADMIN_CHAT_ID &&
         String(p.telegram_chat_id) === String(ADMIN_CHAT_ID);
       const poKey = (p.pushover_key || '').trim();
-      if (PUSHOVER_ON && (isAdmin || pushoverAllowed(p))) {
-        pushover(`${closedNew || isNew ? '🆕' : '🟢'} ${pmuPlain(live.courseCode)} §${pmuPlain(live.section)}`,
+      /* صفارة وحدة للحدث الواحد: اللي يراقب المادة كاملة **و**الشعبة نفسها توصله رسالتان على تيليغرام
+         (مقصود — النيّتان مختلفتان)، وكانت معهما صفارتان بنفس اللحظة لنفس الشعبة: كل وحدة تعيد نفسها لين
+         يأكّدها لحالها. الثانية **في نفس الدورة** لنفس المستلم والشعبة ما تنرسل (sirened). بالدورة لا بالوقت:
+         قفلت ثم فتحت في دورة بعدها فرصة جديدة وصفارتها كاملة. وصفارة ما وصلت ما تحجب اللي بعدها. */
+      const sirenKey = (poKey || '@admin') + '|' + live.crn;
+      const sirenDup = !closedNew && sirened.has(sirenKey);
+      if (sirenDup) stat.sirenDup = (stat.sirenDup || 0) + 1;
+      if (PUSHOVER_ON && (isAdmin || pushoverAllowed(p)) && !sirenDup) {
+        if (!closedNew) sirened.add(sirenKey);
+        pushover(`${closedNew || isNew ? '🆕' : '🟢'} ${pmuPlain(live.courseCode)} §${pmuPlain(live.section)}${secG}`,
           `${pmuPlain(live.courseTitle)}\nCRN ${pmuPlain(live.crn)}\n` +
           `${pmuPlain(live.courseDate)} · ${pmuPlain(live.courseTiming)}\n` +
           `${pmuPlain(live.instructor || '—')} · ${pmuPlain(live.room || '—')}`,
@@ -4233,7 +4363,10 @@ async function runMonitorCycle() {
                     : { priority: 2, sound: 'siren', retry: 30, expire: 1800,
                         user: poKey || undefined })
           /* وصل لمفتاح الطالب نفسه = «وصول تنبيه طارئ» (الشروط §٤) */
-          .then(sent => { if (sent && poKey) usageLog(p, 'pushover') }).catch(() => {});
+          .then(sent => {
+            if (!sent) sirened.delete(sirenKey);
+            if (sent && poKey) usageLog(p, 'pushover');
+          }).catch(() => {});
       }
       return true;
     };
@@ -4251,7 +4384,10 @@ async function runMonitorCycle() {
         }
         if (i) await new Promise(r2 => setTimeout(r2, 1100));   /* رسالة بالثانية للمحادثة */
         const x = items[i], k = x.m.id + '|' + x.live.crn;
-        if (await sendOne(x)) NOTIFY_FAILS.delete(k); else sentFail.push(x);
+        /* رمية غير متوقعة = فشل إرسال: يرجع حجزه مع الباقي بدل ما يبقى «مفتوحة» بلا إشعار */
+        let sent = false;
+        try { sent = await sendOne(x) } catch (e) { console.log('sendOne: ' + e.message) }
+        if (sent) NOTIFY_FAILS.delete(k); else sentFail.push(x);
       }
       await new Promise(r2 => setTimeout(r2, 700));   // تهدئة بين الدفعات
     });
@@ -4312,6 +4448,7 @@ async function runMonitorCycle() {
     /* وحالة باقي صفوف المادة (تغيّرت بلا إشعار يطلع منّا — قفلت · محجوب) بلا شرط */
     for (const u of courseStateUpdates) {
       if (courseRows.has(u.id)) continue;      /* انكتبت مع الحجز — أو حجزتها نسخة ثانية */
+      if (holdCourse.has(u.id)) continue;      /* مؤجّلة (ملف صاحبها ما انقرأ): الدورة الجاية تلقى نفس الفرق */
       await sb('PATCH', 'monitored_courses', {
         query: `?id=eq.${u.id}`,
         body: { sections_state: u.state },
@@ -4326,7 +4463,7 @@ async function runMonitorCycle() {
         query: `?id=in.(${chunk.join(',')})`,
         body: { notified_at: now },
         prefer: 'return=minimal'
-      });
+      }).catch(() => {});
     }
 
     /* ── 7ب. جدولة سؤال المتابعة في القاعدة ──
@@ -6422,9 +6559,19 @@ async function adminHealth() {
     add('warn', 'المراقبة متوقفة — خارج فترات التسجيل',
         'Monitoring paused — outside registration periods',
         nw ? `تستأنف تلقائياً في ${nw.ar} (${nw.from}).` : 'ما فيه نافذة قادمة في التقويم — حدّث MONITOR_WINDOWS.');
-  } else if (!ms.active)
+  } else if (ms.reason === 'paused') {
+    /* كانت «تستأنف تلقائياً الساعة 7» لكل سبب — والموقوفة يدوياً ما ترجع لحالها أبداً. وقرب التسجيل حمراء */
+    const risk = pauseRisk();
+    add(risk ? 'bad' : 'warn', 'المراقبة موقوفة يدوياً', 'Monitoring paused manually',
+        (risk ? pauseRiskText(risk) + ' — ' + (risk.open ? 'ولا طالب يوصله إشعار. ' : 'لو بقت كذا يمر بلا إشعارات. ') : '') +
+        'ما ترجع لحالها: شغّلها من زر «▶️ شغّل المراقبة».');
+  } else if (ms.reason === 'disabled')
     add('warn', 'المراقبة متوقفة الآن — ' + ms.ar, 'Monitoring paused — ' + ms.en,
-        'تستأنف تلقائياً الساعة 7 صباحاً بتوقيت الرياض.');
+        SITE_ENV !== 'prod' ? 'نسخة التجربة ما تراقب — المراقبة من الإنتاج وحده.'
+          : 'معطّلة بمتغيّر MONITOR_ENABLED في Render، وما ترجع إلا بتغييره.');
+  else if (!ms.active)
+    add('warn', 'المراقبة متوقفة الآن — ' + ms.ar, 'Monitoring paused — ' + ms.en,
+        `تستأنف تلقائياً الساعة ${activeFrom()}:00 بتوقيت الرياض.`);
   else if (ms.reason === 'idle')
     add('warn', 'المراقبة مخفّفة — خارج فترة التسجيل', 'Reduced monitoring — outside registration',
         'يرجع مكثفاً تلقائياً في نافذة التسجيل القادمة.');
@@ -8091,7 +8238,7 @@ const ACTIVE_FROM_DEFAULT = 7;    // 7 صباحاً بتوقيت الرياض
 const ACTIVE_TO_DEFAULT   = 24;   // حتى منتصف الليل
 
 /* تُعدَّل من اللوحة بدون إعادة تشغيل. null = القيمة الافتراضية.
-   تُصفَّر مع كل إعادة نشر على Render. */
+   تُحفظ مع الحالة (saveState) فتبقى بعد النشر. */
 let HOURS_OVERRIDE = null;        // {from, to}
 let WINDOW_OVERRIDE = null;       // {from:'YYYY-MM-DD', to:'YYYY-MM-DD', ar}
 
@@ -8194,6 +8341,52 @@ function windowsCheck() {
       'آخر نافذة مراقبة انتهت وما فيه وحدة جاية — التسجيل الجاي بيمر بلا مراقبة.\n\n' +
       `تنضاف نوافذه في MONITOR_WINDOWS وتقويمه في ACAD_CAL بالسيرفر.${manual}`);
   resolve('windows', 'نوافذ المراقبة ناقصة');
+}
+
+/* ═══ موقوفة يدوياً والتسجيل قريب أو شغّال ═══
+   «⏸️ أوقف المراقبة» ما يرجع لحاله: لو بقى لين يوم التسجيل فالتسجيل كله يمر بلا مراقبة — والدورة ما تشتغل
+   أصلاً فما يطلع إنذار، والنبض الخارجي يعدّ الموقوفة «سليمة»، واللوحة كانت تقول «تستأنف تلقائياً».
+   فنذكّر صاحب الموقع لين يشغّلها: قبل النافذة بثلاثة أيام مرة باليوم (من ٩ الصبح)، والنافذة شغّالة كل
+   ساعتين في ساعات العمل (بالليل ما يفوت شي). الإيقاف نفسه يبدأ العدّ (رسالته تقولها)، والتشغيل يمسحه
+   بلا «رجع طبيعي» — رسالة التشغيل تكفي. في الذاكرة: الإقلاع يذكّر من جديد (ووسط نافذة يستاهلها) */
+const PAUSE_NEAR_DAYS = 3, PAUSE_NAG_MS = 2 * 60 * 60 * 1000, PAUSE_NAG_FROM = 9, PAUSE_WATCH_MS = 15 * 1000;
+const PAUSE_NAG = { at: 0, day: '' };
+function pauseRisk() {
+  if (!MONITOR_ENABLED || !MONITOR_PAUSED) return null;
+  const open = currentWindow();
+  if (open) return { open };
+  const soon = nextWindow();
+  if (!soon) return null;
+  const days = Math.round((Date.parse(soon.from + 'T00:00:00Z') - Date.parse(riyadhDate() + 'T00:00:00Z')) / 864e5);
+  return days <= PAUSE_NEAR_DAYS ? { soon, days } : null;
+}
+/* نص عادي (اللوحة تهرّبه بنفسها، ورسائل تيليغرام تمرّره على escP) */
+function pauseRiskText(r) {
+  if (r.open) return `نافذة «${r.open.ar}» شغّالة الحين (لين ${r.open.to})`;
+  const when = r.days <= 1 ? 'بكرة' : r.days === 2 ? 'بعد يومين' : `بعد ${r.days} أيام`;
+  return `«${r.soon.ar}» يبدأ ${when} (${r.soon.from})`;
+}
+const pauseNagEvery = r => r.open ? 'كل ساعتين' : 'كل يوم';
+function pauseClear() {
+  PAUSE_NAG.at = 0; PAUSE_NAG.day = '';
+  if (ALERTS.paused && ALERTS.paused.active)
+    ALERTS.paused = { active: false, at: Date.now(), title: ALERTS.paused.title };
+}
+function pauseWatch() {
+  if (!MONITOR_ENABLED || SHUTTING_DOWN || !EVENTS_READY) return;
+  const r = pauseRisk();
+  if (!r) return pauseClear();
+  const now = Date.now(), day = riyadhDate(), h = riyadhHour();
+  if (r.open) {
+    if (h < activeFrom() || h >= activeTo()) return;
+    if (PAUSE_NAG.at && now - PAUSE_NAG.at < PAUSE_NAG_MS) return;
+  } else if (h < PAUSE_NAG_FROM || PAUSE_NAG.day === day) return;
+  PAUSE_NAG.at = now; PAUSE_NAG.day = day;
+  alert('paused', r.open ? 'المراقبة موقوفة والتسجيل شغّال' : 'المراقبة موقوفة والتسجيل قريب',
+    escP(pauseRiskText(r)) + ' والمراقبة موقوفة يدوياً من اللوحة: ' +
+    (r.open ? 'ولا طالب يوصله إشعار فتح شعبة.' : 'لو بقت كذا يمر التسجيل بلا إشعارات.') +
+    '\n\nما ترجع لحالها — شغّلها من اللوحة ← النظام ← «▶️ شغّل المراقبة».\n' +
+    `بنذكّرك ${pauseNagEvery(r)} لين تشغّلها.`).catch(() => {});
 }
 
 /* هل نحن خلال أسبوع قبل نافذة تسجيل أو أسبوع بعدها؟
@@ -8346,18 +8539,70 @@ function nextDelay() {
   return base * (1 + (Math.random() * 2 - 1) * JITTER);
 }
 
-function scheduleNextCycle() {
-  const delay = nextDelay();
+/* ═══ موعد الدورة الجاية — مؤقّت واحد، وما يعلق على حالة قديمة ═══
+   الموعد يُحسب على الحالة **وقت حسابه**: موقوفة أو خارج ساعات العمل ⇒ «بداية دوام بكرة». كانت «▶️ شغّل
+   المراقبة» في اللوحة تغيّر المفتاح بس والموعد القديم يبقى — اللوحة وتيليغرام يقولان «رجعت تشتغل» ولا
+   دورة لين ٧ الصبح اليوم اللي بعده (شفناها في سجل الإنتاج: «next cycle in 1440 min — paused» كل يوم).
+   وإيقاف ربع ساعة يوم التسجيل = باقي اليوم بلا مراقبة. ثلاثة أشياء:
+   ١) مؤقّت واحد دائماً (CYCLE_TIMER): كل جدولة تلغي اللي قبلها، فما تصير سلسلتان تضاعفان السحب من الجامعة.
+   ٢) replanCycle: أي تغيير من اللوحة (تشغيل/إيقاف · الساعات · النافذة) يحسب الموعد من جديد، والنشطة أول
+      فحصها بعد ثوانٍ — وما بين دورتين أقل من دقيقة مهما انضغط الزر.
+   ٣) cycleWatchdog (كل ربع دقيقة): الحالة «نشطة» والموعد محسوب وهي مو نشطة وبعيد ⇒ نعيد الجدولة (أي طريق
+      يغيّر الحالة بلا ما يمر على ٢)، ودورة عالقة فوق CYCLE_STUCK_MS ⇒ نبدأ غيرها: فكّ القفل داخل
+      runMonitorCycle، والجدولة نفسها تنتظر العالقة — فما كان ينادي أحد دورة تفكّه إلا الفحص اليدوي. */
+let CYCLE_TIMER = null;
+let PLAN_ACTIVE = false;               /* الموعد الحالي انحسب والمراقبة نشطة؟ */
+let PLAN_DUE = 0;                      /* متى يطلق المؤقّت — بساعة العملية (ما تتأثر بتغيّر ساعة النظام) */
+const upMs = () => process.uptime() * 1000;
+const CYCLE_KICK_MS   = 10 * 1000;     /* بعد تغيير من اللوحة: أول فحص (مع تشويش بسيط) */
+const CYCLE_KICK_GAP  = 60 * 1000;     /* وما بين بداية دورتين أقل من هذا */
+const CYCLE_WATCH_MS  = 15 * 1000;     /* فحص الحارس — في الذاكرة، بلا أي طلب */
+/* بداية الدوام العادية موعدها خلال دقيقتين من دخول ساعات العمل — أبعد من هذا والحالة نشطة = موعد قديم */
+const CYCLE_LATE_MS   = 3 * 60 * 1000;
+
+function scheduleNextCycle(firstIn) {
   const st = monitorState();
+  const delay = firstIn != null ? firstIn : nextDelay();
+  if (CYCLE_TIMER) clearTimeout(CYCLE_TIMER);
   NEXT_CYCLE_AT = Date.now() + delay;      /* لعرضه في اللوحة */
+  PLAN_ACTIVE = !!st.active;
+  PLAN_DUE = upMs() + delay;
   console.log(`next cycle in ${(delay / 60000).toFixed(1)} min — ${st.reason}`);
-  setTimeout(async () => {
-    windowsCheck();
+  const timer = CYCLE_TIMER = setTimeout(async () => {
+    if (EVENTS_READY) windowsCheck();      /* بعد الاستعادة: النافذة اليدوية من الحالة */
     if (monitorState().active) {
       try { await runMonitorCycle(); } catch (e) { console.log('cycle err', e.message); }
     }
-    scheduleNextCycle();
+    /* أحد أعاد الجدولة والدورة شغّالة (أو عالقة)؟ موعده هو الساري — ما نحط ثانياً فوقه */
+    if (CYCLE_TIMER === timer) scheduleNextCycle();
   }, delay);
+}
+
+function replanCycle(why) {
+  if (!MONITOR_ENABLED || SHUTTING_DOWN) return;
+  const st = monitorState();
+  let soon = null;
+  /* نشطة وما فيه دورة شغّالة والجامعة ما هي رافضتنا: أول فحص بعد ثوانٍ، لا بعد فاصل كامل */
+  if (st.active && !cycleRunning && !pmuBlocked())
+    soon = Math.max(CYCLE_KICK_MS * (1 + Math.random() * 0.5), CYCLE_KICK_GAP - (Date.now() - cycleStartedAt));
+  OPS.replans = (OPS.replans || 0) + 1;
+  console.log(`replan (${why}) — ${st.reason}`);
+  scheduleNextCycle(soon == null ? undefined : Math.min(soon, nextDelay()));
+}
+
+function cycleWatchdog() {
+  if (!MONITOR_ENABLED || SHUTTING_DOWN) return;
+  if (!monitorState().active) return;
+  if (cycleRunning) {
+    /* علقت: الدورة الجاية تفكّ قفلها وتنذر (runMonitorCycle) — والسلسلة اللي تنتظر العالقة ما تجدول شي */
+    if (Date.now() - cycleStartedAt > CYCLE_STUCK_MS) {
+      OPS.replans = (OPS.replans || 0) + 1;
+      console.log('watchdog: cycle stuck — starting a new one');
+      scheduleNextCycle(0);
+    }
+    return;
+  }
+  if (!PLAN_ACTIVE && PLAN_DUE - upMs() > CYCLE_LATE_MS) replanCycle('watchdog');
 }
 
 /* ============ صفحة الصيانة ============ */
@@ -12680,6 +12925,7 @@ const server = http.createServer(async (req, res) => {
               HOURS_OVERRIDE = { from: f, to: t };
             else return send(400, { error: 'ساعات غير صالحة — لازم "من" أصغر من "إلى"' });
           }
+          replanCycle('hours');            /* الموعد القديم محسوب على الساعات القديمة */
           await saveState().catch(() => {});
         }
         return send(200, { from: activeFrom(), to: activeTo(),
@@ -12699,6 +12945,7 @@ const server = http.createServer(async (req, res) => {
             WINDOW_OVERRIDE = { from: String(b.from), to: String(b.to),
                                 ar: String(b.ar || 'نافذة يدوية من اللوحة') };
           }
+          replanCycle('window');           /* الموعد القديم محسوب على النافذة القديمة */
           await saveState().catch(() => {});
         }
         return send(200, { window: WINDOW_OVERRIDE, custom: !!WINDOW_OVERRIDE,
@@ -12712,11 +12959,29 @@ const server = http.createServer(async (req, res) => {
           const was = MONITOR_PAUSED;
           /* بدون حقل on نرجّع الحالة فقط — ما نغيّر شي بالغلط */
           if ('on' in b) MONITOR_PAUSED = !b.on;   /* on = المراقبة شغالة */
-          if (was !== MONITOR_PAUSED) saveState().catch(() => {});
-          if (was !== MONITOR_PAUSED)
+          if (was !== MONITOR_PAUSED) {
+            saveState().catch(() => {});
+            /* الموعد القديم محسوب على الحالة القديمة: كان «شغّل» يغيّر المفتاح والموعد يبقى ٧ الصبح بكرة */
+            replanCycle('toggle');
+            const stNow = monitorState();
+            /* الإيقاف ما يرجع لحاله: رسالته تقول متى التسجيل الجاي ومتى بنذكّر، والعدّ يبدأ منها
+               (أول تذكير بعد ساعتين والنافذة شغّالة، وبكرة لو قريبة) — والتشغيل يمسحه */
+            const risk = pauseRisk(), nw = !risk && MONITOR_ENABLED && MONITOR_PAUSED ? nextWindow() : null;
+            if (MONITOR_PAUSED) { PAUSE_NAG.at = Date.now(); PAUSE_NAG.day = riyadhDate() } else pauseClear();
+            /* «رجعت تشتغل» للي تفحص فعلاً — وخارج وقتها نقول ليش ومتى تبدأ، لا وعداً ما يصير الحين */
             sendMsg(ADMIN_CHAT_ID, MONITOR_PAUSED
-              ? '⏸️ <b>المراقبة موقوفة يدوياً</b>\n\nما راح يستلم أحد إشعارات فتح شعب حتى تشغّلها.'
-              : '▶️ <b>المراقبة رجعت تشتغل</b>').catch(() => {});
+              ? '⏸️ <b>المراقبة موقوفة يدوياً</b>\n\nما راح يستلم أحد إشعارات فتح شعب حتى تشغّلها.' +
+                (risk ? `\n\n⚠️ ${escP(pauseRiskText(risk))}. ما ترجع لحالها — بنذكّرك ${pauseNagEvery(risk)} لين تشغّلها.`
+                  : nw ? `\n\nتبقى موقوفة لين تشغّلها بنفسك — ما ترجع لحالها مع «${escP(nw.ar)}» (${escP(nw.from)}). ` +
+                         `بنذكّرك قبله بـ${PAUSE_NEAR_DAYS} أيام.` : '')
+              : stNow.active
+                ? '▶️ <b>المراقبة رجعت تشتغل</b>\n\nأول فحص خلال دقيقة.'
+                : `▶️ <b>المراقبة مفعّلة</b>\n\nما تفحص الحين: ${escP(stNow.ar)}.\n` +
+                  /* نسخة بلا مراقبة (dev) ما «تبدأ لحالها» أبداً — ما نعد بها */
+                  (stNow.next ? `تبدأ لحالها ${escP(stNow.next.from)} (${escP(stNow.next.ar)}).`
+                    : stNow.reason === 'disabled' ? '' : 'تبدأ لحالها أول ما يجي وقتها.')
+            ).catch(() => {});
+          }
         }
         return send(200, { on: !MONITOR_PAUSED, state: monitorState() });
       }
@@ -13697,6 +13962,8 @@ server.listen(PORT, () => {
     if (w) sendMsg(ADMIN_CHAT_ID, `🚀 <b>السيرفر اشتغل من جديد وقت التسجيل</b> (${escP(w.ar)})\n\n` +
       `نشر جديد أو إعادة تشغيل. تأكد من اللوحة ← النظام إن الدورات ماشية.\n` +
       `وقت النوافذ: الدمج dev ← main لإصلاح عاجل بس.`).catch(() => {});
+    /* موقوفة يدوياً (من الحالة المحفوظة) والتسجيل قريب أو شغّال؟ — ثم كل ربع دقيقة */
+    try { pauseWatch() } catch (e) { console.log('pauseWatch: ' + e.message) }
   })();
   /* النبض الخارجي (لو HEALTHCHECK_URL مضبوط): بعد الإقلاع بنص دقيقة، ثم كل ٥ دقائق */
   if (HEALTHCHECK_URL) {
@@ -13720,12 +13987,9 @@ server.listen(PORT, () => {
               ` | monitor: ${st.reason} — ${st.ar}`);
   /* أول دورة بعد 20-60 ثانية عشوائياً، ثم جدولة ذكية. وموعدها معروف من الحين — «الفحص الجاي» في
      بطاقة الطالب واللوحة كان «—» أول دقيقة بعد كل نشر */
-  const firstIn = 20000 + Math.random() * 40000;
-  NEXT_CYCLE_AT = Date.now() + firstIn;
-  setTimeout(async () => {
-    if (monitorState().active) {
-      try { await runMonitorCycle(); } catch (e) { console.log('cycle err', e.message); }
-    }
-    scheduleNextCycle();
-  }, firstIn);
+  scheduleNextCycle(20000 + Math.random() * 40000);
+  /* حارس الموعد: حالة صارت نشطة والموعد قديم، أو دورة عالقة — فحص في الذاكرة كل ربع دقيقة */
+  setInterval(() => { try { cycleWatchdog() } catch (e) { console.log('watchdog: ' + e.message) } }, CYCLE_WATCH_MS);
+  /* موقوفة يدوياً والتسجيل قريب أو شغّال: تذكير لصاحب الموقع (في الذاكرة — ولا طلب لين يحين تذكير) */
+  setInterval(() => { try { pauseWatch() } catch (e) { console.log('pauseWatch: ' + e.message) } }, PAUSE_WATCH_MS);
 });
