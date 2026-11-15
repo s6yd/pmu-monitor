@@ -46,13 +46,16 @@
 </script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+/* --text3 (النص الثالثي: القاعة · اسم الدكتور · أسماء التبويبات غير المختارة · العناوين الصغيرة · التواريخ) لازم
+   ينقرأ: تباينه ٤٫٥ على الأقل فوق الخلفية والبطاقة بالثيمين. كان ٢٫٤–٣٫١ وأكثر من ثلث نص الموقع به
+   (دراسة الشكل ١٣ نوفمبر ٢٠٢٦) — test-contrast يحرسه، ويحرس إنه يبقى أهدأ من --text2. */
 :root{
 --bg:#080b12;--card:#131928;--border:#1e2740;--border2:#253050;
 --accent:#3d6fff;--accent2:#6b8fff;
 --open:#10b981;--open-bg:rgba(16,185,129,.08);--open-border:rgba(16,185,129,.25);
 --close:#f43f5e;--close-bg:rgba(244,63,94,.08);--close-border:rgba(244,63,94,.25);
 --warn:#f59e0b;--warn-bg:rgba(245,158,11,.1);
---text:#e2e8f8;--text2:#8b96b8;--text3:#4a5580;
+--text:#e2e8f8;--text2:#8b96b8;--text3:#7d89b1;
 --mono:'JetBrains Mono',monospace;--sans:'IBM Plex Sans Arabic',sans-serif;
 --topbar-bg:rgba(8,11,18,.94);--shadow:rgba(0,0,0,.35);}
 
@@ -63,7 +66,7 @@ html.light{
 --open:#0e9f76;--open-bg:rgba(14,159,118,.09);--open-border:rgba(14,159,118,.3);
 --close:#dc2f4e;--close-bg:rgba(220,47,78,.08);--close-border:rgba(220,47,78,.28);
 --warn:#b0700a;--warn-bg:rgba(176,112,10,.1);
---text:#141a26;--text2:#4f5b72;--text3:#8794a8;
+--text:#141a26;--text2:#4f5b72;--text3:#5c687e;
 --topbar-bg:rgba(244,246,251,.95);--shadow:rgba(20,30,60,.09);}
 html.light .card,html.light .set-card,html.light .day-block,
 html.light .pro-card,html.light .finals-card,html.light .cal-card{
@@ -1323,8 +1326,8 @@ overflow:hidden;display:flex;flex-direction:column;gap:1px}
 .gr-item b,.gr-item i,.gr-item u{direction:ltr;unicode-bidi:isolate;text-align:start;
 white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;max-width:100%}
 .gr-item b{font-size:10.5px;font-weight:700;line-height:1.35}
-.gr-item i{font-style:normal;font-size:9px;color:var(--text3);font-family:var(--mono)}
-.gr-item u{text-decoration:none;font-size:9px;color:var(--text3)}
+.gr-item i{font-style:normal;font-size:9px;color:var(--text);opacity:.8;font-family:var(--mono)}
+.gr-item u{text-decoration:none;font-size:9px;color:var(--text);opacity:.8}
 .gr-zoom{display:flex;gap:5px;justify-content:center;margin-bottom:10px}
 .gr-zoom button{background:var(--card);border:1px solid var(--border);color:var(--text3);
 font-family:var(--sans);font-size:11.5px;font-weight:700;padding:6px 14px;
