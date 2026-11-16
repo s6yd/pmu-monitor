@@ -413,6 +413,9 @@ opacity:.75}
 .sched-actions .btn-ghost.danger:active{opacity:1}
 /* استيراد الجدول من بانر — سطر لحاله مثل المسح، بلا لون التحذير */
 .sched-actions .btn-ghost.wide{grid-column:1/-1;padding:9px;font-size:12px}
+/* جدول فاضي: أزرار «أرقام CRN» و«اطبع» و«امسح الكل» ما لها شي تسويه — تختفي. ورقم التعارض بلون التحذير لما فيه تعارض بس */
+.sched-actions.none{display:none}
+#sumClashes.has{color:var(--warn)}
 .state-box .im-open{margin-top:14px}
 .im-steps{margin:0 0 14px;padding:12px 14px;background:var(--card);border:1px solid var(--border);
 border-radius:13px;font-size:12.5px;line-height:1.85;color:var(--text2);list-style:none;counter-reset:im}
@@ -712,8 +715,10 @@ border-radius:8px;padding:6px 4px;font-size:12px;font-family:var(--mono);text-al
 padding-left:4px;background-image:none;flex-shrink:0}
 .grade-sel.empty{color:var(--text3);border-style:dashed}
 .uni-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:15px;margin-bottom:14px}
-.uni-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.uni-field select{font-size:12.5px;padding:10px 12px;padding-left:30px}
+/* الجامعة والتخصص كل واحد بسطره: بعمودين على الجوال كان اسم الجامعة والتخصص ينقصّان («Prince Mohammad Bin F…») */
+.uni-row{display:grid;grid-template-columns:1fr;gap:10px}
+/* ثلاثة تخصصات اسمها بالعربي والإنجليزي أطول من السطر: الاسم العربي (أول النص) يبان كامل والذيل الإنجليزي ينقصّ بنقط */
+.uni-field select{font-size:12.5px;padding:10px 12px;padding-left:30px;text-overflow:ellipsis;white-space:nowrap;overflow:hidden}
 .gpa-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:17px;margin-bottom:15px}
 .gpa-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
 .gpa-val{font-family:var(--mono);font-size:30px;font-weight:500;line-height:1}
@@ -2005,13 +2010,13 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
   <div class="sched-summary">
     <div class="sum-box"><div class="sum-num" id="sumCourses">0</div><div class="sum-label" data-i18n="courses">مادة</div></div>
     <div class="sum-box"><div class="sum-num" id="sumHours">0</div><div class="sum-label" data-i18n="credits">ساعة معتمدة</div></div>
-    <div class="sum-box"><div class="sum-num" id="sumClashes" style="color:var(--warn)">0</div><div class="sum-label" data-i18n="clashes">تعارض</div></div>
+    <div class="sum-box"><div class="sum-num" id="sumClashes">0</div><div class="sum-label" data-i18n="clashes">تعارض</div></div>
   </div>
   <div class="conflict-alert" id="conflictAlert">
     <div class="ca-icon">⚠️</div>
     <div class="ca-text"><h3 data-i18n="clashTitle">يوجد تعارض في الجدول</h3><p id="conflictList"></p></div>
   </div>
-  <div class="sched-actions">
+  <div class="sched-actions none" id="schedActions">
     <button class="btn-ghost" onclick="toggleCrn()" id="crnBtn" data-i18n="crnBtn">🔢 أرقام CRN</button>
     <button class="btn-ghost" onclick="printSchedule()" data-i18n="print">🖨️ اطبع</button>
     <button class="btn-ghost wide" id="imBtn" onclick="openImport()" data-i18n="imOpen" hidden>📥 استورد جدولك من بانر</button>
@@ -4296,6 +4301,8 @@ function renderSchedule(){
   for(let i=0;i<schedule.length;i++)for(let j=i+1;j<schedule.length;j++)
     if(conflicts(schedule[i],schedule[j]))pairs.push([schedule[i],schedule[j]]);
   countTo(document.getElementById('sumClashes'),pairs.length);
+  { const sc=document.getElementById('sumClashes'); if(sc)sc.classList.toggle('has',pairs.length>0);
+    const sa=document.getElementById('schedActions'); if(sa)sa.classList.toggle('none',!schedule.length); }
   const al=document.getElementById('conflictAlert');
   if(pairs.length){al.classList.add('visible');
     document.getElementById('conflictList').innerHTML=pairs.map(p=>`${p[0].courseCode} §${p[0].section} ✕ ${p[1].courseCode} §${p[1].section}`).join('<br>');
