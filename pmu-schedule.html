@@ -1984,7 +1984,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 
   <div class="stale-note" id="staleNote"></div>
   <div class="results-header" id="resultsHeader">
-    <div class="results-count"><span id="visibleCount">0</span> <span data-i18n="courseUnit">مادة</span> · <span id="visibleSecs">0</span> <span data-i18n="secUnit">شعبة</span></div>
+    <div class="results-count"><span id="visibleCount">0</span> <span id="visibleCountU">مواد</span> · <span id="visibleSecs">0</span> <span id="visibleSecsU">شعب</span></div>
     <div class="results-time" id="lastUpdate">—</div>
   </div>
 
@@ -2043,7 +2043,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     <div class="fin-head">
       <div>
         <div class="fin-title" id="regTitle">📋 تواريخ التسجيل</div>
-        <div class="fin-sub" id="regSub">الترم الأول ٢٠٢٦–٢٠٢٧</div>
+        <div class="fin-sub" id="regSub">الترم الأول 2026–2027</div>
       </div>
     </div>
     <div id="regBody"></div>
@@ -2096,8 +2096,8 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
       <div class="gpa-right">
         <div class="gpa-label" data-i18n="countedHrs">ساعات محسوبة</div>
         <div class="gpa-scale">
-          <span class="gpa-pill" id="gpaHrs">0 ساعة</span>
-          <span class="gpa-pill" id="gpaCount">0 مادة</span>
+          <span class="gpa-pill" id="gpaHrs">0 ساعات</span>
+          <span class="gpa-pill" id="gpaCount">0 مواد</span>
         </div>
       </div>
     </div>
@@ -2210,7 +2210,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 
   <div class="set-card" id="notifCard" style="display:none">
     <div class="sc-title" data-i18n="ntTitle">تنبيهات جدولك</div>
-    <div class="sc-sub" data-i18n="ntSub">تصلك على تيليغرام الساعة ٥ العصر</div>
+    <div class="sc-sub" data-i18n="ntSub">تصلك على تيليغرام الساعة 5 العصر</div>
     <div id="notifList"></div>
     <div id="poRow"></div>
   </div>
@@ -2678,8 +2678,7 @@ function creditsOf(code){return PlanLogic.creditsOf(planCtx(),code)}
 function unlocksCount(code){return PlanLogic.unlocksCount(planCtx(),code)}
 /* صياغة "يفتح مادة" / "unlocks 1 course" بشكل صحيح */
 function unlockLabel(n){
-  if(n===1)return t('unlocks1');
-  return `${t('unlocksN')} ${n} ${t('unlocksN2')}`;
+  return `${t('unlocksN')} ${nOf(n,'course')}`;
 }
 /* التطبيق العملي (Internship / Co-op) ينزل لحاله — ممنوع معه مواد */
 const INTERN_MIN_CREDITS=PlanLogic.INTERN_MIN_CREDITS;
@@ -3163,6 +3162,15 @@ function resSections(rows){
 }
 function secOpen(s){ return s.rows.some(r=>statusOf(r)==='OPEN') }
 /* «٤ شعب · وحدة مفتوحة». والمعامل (شعب مستقلة بـCRN خاص) لحالها: الطالب يحتاج محاضرة مفتوحة ومعملاً مفتوحاً */
+/* «مادة وحدة · 3 شعب» فوق النتائج: الرقم في عنصره (اللي يقرأ العدد يقرأه منه) والاسم بصيغته جنبه —
+   و«مادة وحدة» و«مادتين» يحملان العدد فيختفي رقمهما. الاسم يكتبه JS (بلا data-i18n: تبديل اللغة يكتب فوقه) */
+function resCountPaint(nc,ns){
+  [['visibleCount',nc,'course'],['visibleSecs',ns,'sec']].forEach(([id,n,k])=>{
+    const el=document.getElementById(id), u=document.getElementById(id+'U');
+    if(el){el.textContent=n;el.hidden=nWord(n)}
+    if(u)u.textContent=nUnit(n,k);
+  });
+}
 function resSumTxt(n,op,lab){
   if(LANG!=='ar'){
     const w=lab?(n===1?'lab':'labs'):(n===1?'section':'sections');
@@ -3252,7 +3260,7 @@ function resGroupHtml(g,all,expDef,ai,flash){
   return `<div class="course-card cg${exp?' open':''}${ai>=0?' in':''}" data-code="${escapeHtml(g.key)}" data-cc="${escapeHtml(code)}" data-crns="${
       escapeHtml(all.map(s=>s.crn).join(','))}"${ai>=0?` style="--i:${ai}"`:''}>
     <button type="button" class="cg-head" aria-expanded="${exp?'true':'false'}" onclick="resToggle(this)">
-      <span class="cg-l"><span class="cg-code">${escapeHtml(code)}</span><span class="cg-title">${escapeHtml(head.courseTitle)}</span>
+      <span class="cg-l"><span class="cg-code">${escapeHtml(code)}</span><span class="cg-title"><bdi>${escapeHtml(head.courseTitle)}</bdi></span>
         <span class="cg-sums">${resSumsHtml(all)}</span></span>
       <span class="cg-chev" aria-hidden="true">${RES_CHEV}</span>
     </button>${notes?`<div class="cg-notes">${notes}</div>`:''}${tags?`<div class="cg-tags">${tags}</div>`:''}
@@ -3300,9 +3308,7 @@ function renderResults(){
   all.forEach(s=>{ const k=resKey(s.row.courseCode); if(!byKey.has(k))byKey.set(k,[]); byKey.get(k).push(s) });
   secs.forEach(s=>{ const k=resKey(s.row.courseCode); if(!groups.has(k))groups.set(k,{key:k,secs:[]}); groups.get(k).secs.push(s) });
   const list=[...groups.values()];
-  document.getElementById('visibleCount').textContent=list.length;
-  const vs=document.getElementById('visibleSecs');
-  if(vs)vs.textContent=secs.length;
+  resCountPaint(list.length,secs.length);
 
   const el=document.getElementById('resultsList');
   const anim=RES_ANIM, flash=RES_FLASH; RES_ANIM=false; RES_FLASH=null;
@@ -3572,7 +3578,7 @@ function imReviewHtml(){
         :`⚠️ This CRN is another section — the file says ${escapeHtml(read)}`}</span>`:'';
     return `<label class="im-row${x.have?' off':''}" data-crn="${escapeHtml(x.crn)}">
       <input type="checkbox"${x.pick?' checked':''}${x.have?' disabled':''} onchange="imToggle(${i},this.checked)">
-      <div><div class="im-t">${escapeHtml(c.courseCode)} · ${escapeHtml(String(c.section||''))} — ${escapeHtml(decodeEnt(c.courseTitle||''))}</div>
+      <div><div class="im-t"><bdi>${escapeHtml(c.courseCode)} · ${escapeHtml(String(c.section||''))} — ${escapeHtml(decodeEnt(c.courseTitle||''))}</bdi></div>
       <div class="im-s"><span dir="ltr">${escapeHtml(times)}</span> · <span dir="ltr">CRN ${escapeHtml(x.crn)}</span></div>${tag}</div></label>`;
   }).join('');
   const miss=IM.missing.length?`<div class="im-miss" id="imMiss">${ar?`ما لقينا في ${tn}:`:`Not found in ${tn}:`} <span dir="ltr">${
@@ -3759,7 +3765,7 @@ function giReviewHtml(){
     const off=x.same||!x.inPlan;
     return `<label class="im-row${off?' off':''}" data-code="${escapeHtml(x.code)}">
       <input type="checkbox"${x.pick?' checked':''}${off?' disabled':''} onchange="giToggle(${i},this.checked)">
-      <div><div class="im-t"><span dir="ltr">${escapeHtml(x.code)}</span>${x.name?` — ${escapeHtml(x.name)}`:''}</div>${tag}</div>
+      <div><div class="im-t"><span dir="ltr">${escapeHtml(x.code)}</span>${x.name?` — <bdi>${escapeHtml(x.name)}</bdi>`:''}</div>${tag}</div>
       <b class="im-g" dir="ltr">${escapeHtml(x.grade)}</b></label>`;
   }).join('');
   const pick=GI.rows.filter(x=>x.pick&&!x.same);
@@ -4110,8 +4116,8 @@ function renderChgWarn(){
 
     const when=c.changedAt?Math.round((Date.now()-new Date(c.changedAt).getTime())/3600000):null;
     const whenTxt=when===null?'':(when<1?(ar?'قبل أقل من ساعة':'less than an hour ago')
-      :when<24?(ar?`قبل ${when} ساعة`:`${when}h ago`)
-      :(ar?`قبل ${Math.round(when/24)} يوم`:`${Math.round(when/24)}d ago`));
+      :when<24?(ar?`قبل ${nOf(when,'hr')}`:`${when}h ago`)
+      :(ar?`قبل ${nOf(Math.round(when/24),'day')}`:`${Math.round(when/24)}d ago`));
 
     return `<div class="cw-card">
       <div class="cw-head">
@@ -4320,12 +4326,12 @@ function renderSchedule(){
         <div class="slot-time">${t?fmtTime(t.start)+'–'+fmtTime(t.end):'—'}</div>
         <div class="slot-info tap" data-code="${escapeHtml(c.courseCode)}"
           onclick="searchIn(this.dataset.code)"><div class="slot-name">${c.courseCode} §${c.section}</div>
-        ${c.courseTitle?`<div class="slot-title">${escapeHtml(c.courseTitle)}</div>`:''}
+        ${c.courseTitle?`<div class="slot-title"><bdi>${escapeHtml(c.courseTitle)}</bdi></div>`:''}
         <div class="slot-sub">${c.room||'—'} · ${c.instructor||'—'}</div></div>
         <button class="slot-remove" onclick="removeFromSchedule('${c.crn}')">✕</button>
       </div>`).join('')}</div>`:`<div class="empty-day">${t('noClass')}</div>`;
     return `<div class="day-block"><div class="day-head"><span>${t('days')[day]}</span>
-      <span class="cnt">${items.length} ${t('lecture')}</span></div>${body}</div>`;
+      <span class="cnt">${nOf(items.length,'lec')}</span></div>${body}</div>`;
   }).join('');
   applySchedView();
   if(SCHED_VIEW==='grid')renderGrid();
@@ -4444,7 +4450,7 @@ function slotCard(c,t,cls,badge,prog){
       <div class="dc-top">
         <span class="dc-time ltr">${fmtTime(t.start)}–${fmtTime(t.end)}</span>
       </div>
-      <div class="dc-name">${escapeHtml(c.courseTitle||c.courseCode)}</div>
+      <div class="dc-name"><bdi>${escapeHtml(c.courseTitle||c.courseCode)}</bdi></div>
       <div class="dc-sub">${escapeHtml(c.room||'—')}${
         c.instructor?' · '+escapeHtml(c.instructor):''}</div>
       ${badge?`<div class="dc-badge">${badge}</div>`:''}
@@ -5474,7 +5480,7 @@ function openCourse(crn,start,redraw){
   document.getElementById('csSheet').innerHTML=`
     <div class="guide-grip"></div>
     <div class="guide-head">
-      <h2>${escapeHtml(c.courseTitle||c.courseCode)}</h2>
+      <h2><bdi>${escapeHtml(c.courseTitle||c.courseCode)}</bdi></h2>
       <button class="guide-close" onclick="closeCourse()">✕</button>
     </div>
     <div class="guide-lead ltr" style="text-align:start">${c.courseCode} §${c.section}</div>
@@ -6125,7 +6131,7 @@ function renderRegCal(){
     if(me){
       if(dd===0)when=ar?' · اليوم':' · today';
       else if(dd===1)when=ar?' · بكرة':' · tomorrow';
-      else if(dd>1)when=ar?` · بعد ${dd} يوم`:` · in ${dd} days`;
+      else if(dd>1)when=ar?` · بعد ${nOf(dd,'day')}`:` · in ${dd} days`;
     }
     return `<div class="reg-row${me?' me':''}" onclick="pickRegLevel('${r.k}')">
       <div class="reg-name">${escapeHtml(ar?r.ar:r.en)}
@@ -6140,7 +6146,7 @@ function renderRegCal(){
     why=ar?'مستواك مثبّت يدوياً — اضغط عليه مرة ثانية للرجوع للحساب التلقائي.'
           :'Level set manually — tap it again to go back to automatic.';
   else if(auto)
-    why=ar?`محسوب على ${cr} ساعة مكتسبة في خطتك. مو صحيح؟ اضغط على مستواك.`
+    why=ar?`محسوب على ${nOf(cr,'hr')} مكتسبة في خطتك. مو صحيح؟ اضغط على مستواك.`
           :`Based on ${cr} earned credits in your plan. Not right? Tap your level.`;
   else
     why=ar?'اضغط على مستواك عشان يتميّز لك، أو عبّي خطتك ويطلع تلقائياً.'
@@ -6156,7 +6162,7 @@ function renderRegCal(){
       ?'ما فيه تسجيل مبكر هذا الترم لأي مستوى.'
       :'There is no early registration this term for any level.'}</div>
     <div class="reg-note">🎓 ${ar
-      ?'التحضيري: التسجيل ممتد من ٢٣ إلى ٢٧ أغسطس، وتعديل الجدول يكون عن طريق قسم التحضيري.'
+      ?'التحضيري: التسجيل ممتد من 23 إلى 27 أغسطس، وتعديل الجدول يكون عن طريق قسم التحضيري.'
       :'Prep Program: registration runs 23–27 Aug, and schedule adjustment goes through the Prep Department.'}</div>
     <div class="reg-note">🧮 ${ar
       ?'الساعات المكتسبة تستثني D و F و WF و W و WP، وتشمل المواد المعادلة (TR).'
@@ -6322,7 +6328,7 @@ function renderFinals(){
           <div class="fin-time">${escapeHtml(e.hour)}</div>
           <div class="fin-info">
             <div class="fin-code">${escapeHtml(e.code)} §${escapeHtml(e.section)}</div>
-            <div class="fin-meta">${escapeHtml(e.title)}</div>
+            <div class="fin-meta"><bdi>${escapeHtml(e.title)}</bdi></div>
           </div>
           <div class="fin-room">${escapeHtml(e.building)}<br>${escapeHtml(e.room)}</div>
         </div>`;
@@ -6566,7 +6572,7 @@ function buildPrintSheet(clashSet){
         const col=colorOf[c.courseCode]||['#5b6472','#f2f4f7'];
         return `<tr style="--c:${col[0]};--c2:${col[1]}">
         <td class="c-code"><i></i>${escapeHtml(c.courseCode||'')}</td>
-        <td class="c-name">${escapeHtml(c.courseTitle||'—')}</td>
+        <td class="c-name"><bdi>${escapeHtml(c.courseTitle||'—')}</bdi></td>
         <td class="c-mono">${escapeHtml(c.section||'—')}</td>
         <td>${daysLabel(c)}</td>
         <td class="c-mono c-time">${escapeHtml(timeLabel(c))}</td>
@@ -6735,14 +6741,14 @@ function renderPlan(){
     } else box.style.display='none';
   }
   const cr=doneCredits(),pct=TOTAL_CR>0?Math.round(cr/TOTAL_CR*100):0;
-  cntIn(document.getElementById('progDone'),cr,0,` / ${TOTAL_CR} ${t('hrsUnit')}`);
+  cntIn(document.getElementById('progDone'),cr,0,` / ${TOTAL_CR} ${nUnit(TOTAL_CR,'hr')}`);
   countTo(document.getElementById('progPct'),pct,0,'%');
   ringTo(document.getElementById('progRing'),TOTAL_CR>0?cr/TOTAL_CR:0);
-  document.getElementById('progRemain').textContent=(LANG==='ar'?`${t('remain')} ${TOTAL_CR-cr} ${t('hrsUnit')}`:`${TOTAL_CR-cr} ${t('hrsUnit')} ${t('remain')}`);
+  document.getElementById('progRemain').textContent=(LANG==='ar'?`${t('remain')} ${nOf(TOTAL_CR-cr,'hr')}`:`${nOf(TOTAL_CR-cr,'hr')} ${t('remain')}`);
   document.getElementById('progLevel').textContent=level(cr);
 
   const sug=suggestNext();
-  document.getElementById('sugHours').textContent=sug.hours+' '+t('hrsUnit');
+  document.getElementById('sugHours').textContent=nOf(sug.hours,'hr');
   /* لأي ترم المقترح — «الترم الجاي» وحدها ما تقول، والطالب في نص ترم. ومواد جدوله
      اللي حسبناها منجزة نقولها، وإلا يدوّر عليها في المقترح */
   const sf=document.getElementById('sugFor');
@@ -6755,7 +6761,7 @@ function renderPlan(){
   const row=(c,crit)=>`<div class="sug-item${c.el?'':' tappable'}"${
       c.el?'':` onclick="searchSuggested('${c.c}')"`}>
     <span class="sug-code">${c.c}</span>
-    <span class="sug-name">${c.n}${
+    <span class="sug-name"><bdi>${c.n}</bdi>${
       c.retake?`<span class="sug-badge retake">${t('retakeBadge')}</span>`
       :(crit&&c.unlocks>0)?`<span class="sug-badge">${unlockLabel(c.unlocks)}</span>`:''}${
       offerBadge(c.c)}${nowBadge(c.c)}</span>
@@ -6865,7 +6871,7 @@ function renderPlan(){
           <button class="pc-check" onclick="toggleDone('${c.c}')">✓</button>
           <div class="pc-info${tap?' tappable':''}"${tap?` onclick="searchSuggested('${c.c}')"`:''}>
           <div class="pc-code">${c.c}${hrs}${nowBadge(c.c)}</div>
-          <div class="pc-name">${c.n}</div>${adm}${off}${pre}${req}</div>
+          <div class="pc-name"><bdi>${c.n}</bdi></div>${adm}${off}${pre}${req}</div>
           ${gradeSel}</div>`;
       }).join('')}</div></div>`;
   }).join('');
@@ -7735,7 +7741,7 @@ function payUi(q){
     if(terms)terms.hidden=true; if(refund)refund.hidden=true };
   if(!q||!pay.open)return off(payClosedText(pay.why));
   if(!q.base&&!q.po)return off(ar?'اشتراكك فعّال':'Your plan is active');
-  if(q.belowMin)return off(ar?'أقل مبلغ للدفع ٥ ريال':'The minimum payment is 5 SAR');
+  if(q.belowMin)return off(ar?'أقل مبلغ للدفع 5 ريال':'The minimum payment is 5 SAR');
   btn.disabled=PAY_BUSY;
   if(terms)terms.hidden=false;
   if(refund)refund.hidden=false;                /* سياسة الاسترجاع قبل الزر — الجولة الثانية من الشروط */
@@ -8154,7 +8160,7 @@ function renderTgBar(){
   bar.innerHTML='<span>⚠️ '+
     (ar?'<b>تيليغرام غير مربوط</b> — تنبيهات فتح الشعب ما توصلك'
        :'<b>Telegram not linked</b> — you will not receive section alerts')+
-    (n?(ar?` · عندك ${n} مراقبة معطّلة`:` · ${n} inactive watches`):'')+
+    (n?(ar?` · عندك ${nOf(n,'watch')} معطّلة`:` · ${n} inactive ${nUnit(n,'watch')}`):'')+
     '</span><button onclick="linkTelegram()">'+(ar?'🔗 اربط الحين':'🔗 Link now')+'</button>';
 }
 
@@ -8644,7 +8650,7 @@ function renderPushover(){
         : addonMode
           ? (ar?'عبر تطبيق Pushover — إضافتك تغطيه، ولو طلب منك الدفع نحن ندفعه. تنبيهات تيليغرام تستمر في كل الأحوال.'
                :'Via the Pushover app — your add-on covers it; if it asks you to pay, we pay. Telegram alerts continue regardless.')
-          : (ar?'عبر تطبيق Pushover. مجاني ٣٠ يوماً من لحظة الاشتراك، وبعدها شراء مرة واحدة لو حبيت. تنبيهات تيليغرام تستمر في كل الأحوال.'
+          : (ar?'عبر تطبيق Pushover. مجاني 30 يوماً من لحظة الاشتراك، وبعدها شراء مرة واحدة لو حبيت. تنبيهات تيليغرام تستمر في كل الأحوال.'
                :'Via the Pushover app. Free for 30 days, one-time purchase after that. Telegram alerts continue regardless.')}</span>
     </div>
     <button class="btn-sm${on?' ghost':''}" onclick="poStart()">${
@@ -8742,7 +8748,7 @@ function renderTgAndMon(ar){
         'background:var(--warn-bg);border:1px solid rgba(245,158,11,.35);'+
         'font-size:12.5px;line-height:1.85;color:var(--text)';
       d.innerHTML='⚠️ <b>'+(ar?'مراقباتك ما تشتغل':'Your alerts are not active')+'</b><br>'+
-        (ar?`عندك ${monitored.length} مراقبة، وتيليغرام غير مربوط — فما يوصلك أي تنبيه.`
+        (ar?`عندك ${nOf(monitored.length,'watch')}، وتيليغرام غير مربوط — فما يوصلك أي تنبيه.`
            :`You have ${monitored.length} watches but Telegram is not linked.`)+
         '<br><button class="btn-sm" style="margin-top:9px" onclick="linkTelegram()">'+
         (ar?'🔗 اربط تيليغرام':'🔗 Link Telegram')+'</button>';
@@ -9448,7 +9454,7 @@ function renderDocs(){
       <div class="doc-info">
         <div class="doc-name">${n}</div>
         <div class="doc-meta">
-          <span>${st.n?`${st.n} ${ar?'تقييم':'reviews'}`:(ar?'ما فيه تقييمات بعد':'No reviews yet')}</span>
+          <span>${st.n?nOf(st.n,'rev'):(ar?'ما فيه تقييمات بعد':'No reviews yet')}</span>
           ${planTag}
         </div>
       </div>
@@ -9555,7 +9561,7 @@ function renderDocDetail(){
       ${st.n?`
         <div class="hero-score" id="docScore" style="color:var(--warn)">${st.avg.toFixed(1)}</div>
         <div class="hero-stars">${starStr(st.avg)}</div>
-        <div class="hero-count">${st.n} ${ar?'تقييم من الطلاب':'student reviews'}</div>
+        <div class="hero-count">${ar?nOf(st.n,'rev')+' من الطلاب':st.n+' student '+nUnit(st.n,'rev')}</div>
         <div class="bars">
           ${[5,4,3,2,1].map((i,j)=>{
             const c=st.dist[i-1],p=st.n?c/st.n*100:0;
@@ -9860,21 +9866,21 @@ function maybeShowGuide(){
 
 /* ================= i18n ================= */
 const I18N={
-ar:{aiTitle:'مساعد جدولك',aiSub:'يجاوبك من جدولك وخطتك وبيانات الموقع — وما يخترع',
+ar:{aiTitle:'Jadwalik AI',aiSub:'يجاوبك من جدولك وخطتك وبيانات الموقع — وما يخترع',
 aiPh:'اسأل عن جدولك أو خطتك...',aiSend:'إرسال',aiNew:'محادثة جديدة',aiClose:'إغلاق',
 aiThinking:'أفكّر…',aiErr:'ما وصل رد — جرّب بعد شوي',
 aiNote:'ما يغيّر شي إلا بتأكيدك',aiLeft:'باقي لك اليوم',
 aiHello:'اسألني عن جدولك أو خطتك أو الدكاترة.',
 aiHelloGuest:'اسألني عن الشعب والدكاترة والقاعات والتقويم — بلا تسجيل دخول.\nوعشان أشوف جدولك وخطتك، سجّل دخولك بقوقل.',
 aiSignIn:'🔑 تسجيل الدخول',
-aiEx1:'وش عندي بكرة؟',aiEx2:'كم ساعة باقية لي؟',aiEx3:'مين يدرّس ثيرمو ١؟',
+aiEx1:'وش عندي بكرة؟',aiEx2:'كم ساعة باقية لي؟',aiEx3:'مين يدرّس ثيرمو 1؟',
 aiEx4:'كم غياب باقي لي؟',aiEx5:'وش أنزل الترم الجاي؟',aiEx6:'وين قاعة فاضية الحين؟',
 aiEx7:'ركّب لي جدول بدون خميس',
-aiEx8:'ذكّرني بالكويز الأحد ٧ م',
+aiEx8:'ذكّرني بالكويز الأحد 7 م',
 aiEx9:'راقب لي شعبة مقفلة',
 aiEx10:'متى نهائي الفيزياء؟',
-aiG1:'وش شعب ثيرمو ١؟',
-aiG2:'مين يدرّس تفاضل ١؟',
+aiG1:'وش شعب ثيرمو 1؟',
+aiG2:'مين يدرّس تفاضل 1؟',
 aiG3:'وين قاعة فاضية الحين؟',
 aiG4:'متى يبدأ التسجيل؟',
 aiG5:'متى نهائي الفيزياء؟',
@@ -9898,7 +9904,7 @@ crnCopy:'نسخ',crnCopyAll:'📋 انسخ الأرقام كلها',
 crnHint2:'اضغط أي رقم لنسخه لحاله. الأرقام تُطبع كذلك مع الجدول.',grWide:'واسع',grMed:'متوسط',grNarrow:'ضيق',grHint:'صغّرها لتدخل كاملة · ',
 grBack:'للحذف والتعديل ارجع للقائمة',
 crnOrderHint:'رتّبها بأولوية تسجيلك — الأعلى تسجّله أول.',
-ntTitle:'تنبيهات جدولك',ntSub:'تصلك على تيليغرام الساعة ٥ العصر',
+ntTitle:'تنبيهات جدولك',ntSub:'تصلك على تيليغرام الساعة 5 العصر',
 ntAll:'كل التنبيهات',ntAllSub:'المفتاح الرئيسي — يوقفها كلها',
 ntEv:'📝 موعد قادم',ntEvSub:'قبل الكويز أو الواجب بيومين',
 ntCf:'✅ موعد أكّده زملاؤك',ntCfSub:'لما ثلاثة من شعبتك يضيفون نفس الموعد',
@@ -9914,14 +9920,14 @@ flBadType:'نوع الملف مو مدعوم',flBig:'الملف أكبر من',f
 sgTitle:'زملاؤك في الشعبة',sgOk:'من شعبتك أضافوه',sgWeak:'⚠️ غير مؤكد — أضافه طالب واحد أو اثنان',
 sgAdd:'أضفه',sgIgnore:'تجاهل',sgAdded:'✅ انضاف لمواعيدك',
 rpAsk:'تبلّغ عن هذا المحتوى؟ راح يراجعه المشرف.',rpDone:'🚩 وصل البلاغ — شكراً لك',
-rpDup:'بلّغت عنه من قبل',rpErr:'ما انرسل — جرّب مرة ثانية',rpT:'بلّغ',rpDoneT:'بلّغت عنه',evSnoozeT:'ذكّرني بكرة',editT:'عدّل',delT:'احذف',absTitle:'الغياب',absMeta1:'محاضرة في الترم · الحد ١٥٪ =',absMeta2:'غياب',
+rpDup:'بلّغت عنه من قبل',rpErr:'ما انرسل — جرّب مرة ثانية',rpT:'بلّغ',rpDoneT:'بلّغت عنه',evSnoozeT:'ذكّرني بكرة',editT:'عدّل',delT:'احذف',absTitle:'الغياب',absMeta1:'محاضرة في الترم · الحد 15% =',absMeta2:'غياب',
 absOver:'تجاوزت الحد',absNear:'باقي لك واحد',absSibBan:'⚠️ تجاوزت الحد في جلسة أخرى من نفس المادة — الحرمان يشمل الجلستين',
 absAdd:'➕ سجّل غياب',absLog:'سجل الغياب',absChip:'غياب',
 absFuture:'ما تقدر تسجّل غياب ليوم ما جا بعد',absBefore:'هذا قبل بداية الترم',
 absNoClass:'ما عندك محاضرة لهذي المادة في هذا اليوم',absDup:'مسجّل غياب لهذا اليوم أصلاً',
 absDel:'تشيل هذا الغياب؟',
 evTitle:'مواعيد المادة',evAdd:'➕ أضف',evCancel:'إلغاء',evSave:'احفظ',
-evNotePh:'ملاحظة (اختياري) — مثلاً: الفصول ١–٣',evNoneUp:'ما في مواعيد قادمة',
+evNotePh:'ملاحظة (اختياري) — مثلاً: الفصول 1–3',evNoneUp:'ما في مواعيد قادمة',
 evPast:'مواعيد ماضية',evShareNote:'شارك الملاحظة مع زملائك في الشعبة',
 evHint:'📢 الموعد نفسه يظهر لزملائك في الشعبة بلا اسمك. الملاحظة والصور تبقى خاصة إلا لو شاركتها.',
 evPickDate:'اختر التاريخ',evSaved:'✅ انحفظ',evDel:'تحذف هذا الموعد؟',
@@ -10030,21 +10036,21 @@ J1:'السنة الثالثة — الترم الأول',J2:'السنة الثا
 SU:'الصيف — التدريب',R1:'السنة الرابعة — الترم الأول',R2:'السنة الرابعة — الترم الثاني',
 PP1:'المستوى التأسيسي — Pre-Beginner',PP2:'المستوى المبتدئ — Beginner',PP3:'المستوى المتوسط — Intermediate',PP4:'المستوى المتقدم — Advanced',T1:'السنة الخامسة — الترم الأول',T2:'السنة الخامسة — الترم الثاني'}},
 
-en:{aiTitle:'Jadwalik Assistant',aiSub:'Answers from your schedule, plan and site data — it replies in Arabic',
+en:{aiTitle:'Jadwalik AI',aiSub:'Answers from your schedule, plan and site data — it replies in Arabic',
 aiPh:'Ask about your schedule or plan...',aiSend:'Send',aiNew:'New chat',aiClose:'Close',
 aiThinking:'Thinking…',aiErr:'No reply — try again shortly',
 aiNote:'Changes nothing without your confirmation',aiLeft:'left today',
 aiHello:'Ask me about your schedule, plan or instructors. I answer in Arabic.',
 aiHelloGuest:'Ask about sections, instructors, rooms and the calendar — no sign-in needed. Sign in to see your own schedule and plan.',
 aiSignIn:'🔑 Sign in',
-aiEx1:'وش عندي بكرة؟',aiEx2:'كم ساعة باقية لي؟',aiEx3:'مين يدرّس ثيرمو ١؟',
+aiEx1:'وش عندي بكرة؟',aiEx2:'كم ساعة باقية لي؟',aiEx3:'مين يدرّس ثيرمو 1؟',
 aiEx4:'كم غياب باقي لي؟',aiEx5:'وش أنزل الترم الجاي؟',aiEx6:'وين قاعة فاضية الحين؟',
 aiEx7:'ركّب لي جدول بدون خميس',
-aiEx8:'ذكّرني بالكويز الأحد ٧ م',
+aiEx8:'ذكّرني بالكويز الأحد 7 م',
 aiEx9:'راقب لي شعبة مقفلة',
 aiEx10:'متى نهائي الفيزياء؟',
-aiG1:'وش شعب ثيرمو ١؟',
-aiG2:'مين يدرّس تفاضل ١؟',
+aiG1:'وش شعب ثيرمو 1؟',
+aiG2:'مين يدرّس تفاضل 1؟',
 aiG3:'وين قاعة فاضية الحين؟',
 aiG4:'متى يبدأ التسجيل؟',
 aiG5:'متى نهائي الفيزياء؟',
@@ -10298,7 +10304,7 @@ function applyLang(){
   setStateBox('schedEmpty',L.schedEmptyT,L.schedEmptyS);
 
   if(typeof setAuthUI==='function')setAuthUI();
-  if(allCourses.length)renderResults();
+  if(allCourses.length)renderResults();else resCountPaint(0,0);
   renderPlan();
   if(typeof renderSettings==='function')renderSettings();
   if(document.getElementById('guideOverlay').classList.contains('open'))renderGuide();
@@ -10449,6 +10455,29 @@ function hasWhatIf(){ return Object.keys(WHATIF).length>0; }
 
 function calcProjected(){return PlanLogic.calcProjected(planCtx(),WHATIF)}
 
+/* عدد واسمه بصيغة سليمة: «محاضرة وحدة» · «محاضرتين» · «3 محاضرات» · «11 محاضرة» (والمئات على آخر خانتين:
+   «103 ساعات» · «134 ساعة») — وبالإنجليزي «1 class» · «3 classes». كانت «3 محاضرة» · «1 تقييم» · «5 ساعة» ·
+   «يفتح 2 مواد». nUnit الاسم وحده لرقم مكتوب في عنصر لحاله، وnWord: الاسم يحمل العدد («مادتين» لا «2 مادتين»). */
+const N_FORMS={
+  course:[['مادة وحدة','مادتين','مواد','مادة'],['course','courses']],
+  sec:[['شعبة وحدة','شعبتين','شعب','شعبة'],['section','sections']],
+  lec:[['محاضرة وحدة','محاضرتين','محاضرات','محاضرة'],['class','classes']],
+  rev:[['تقييم واحد','تقييمين','تقييمات','تقييم'],['review','reviews']],
+  hr:[['ساعة وحدة','ساعتين','ساعات','ساعة'],['hr','hrs']],
+  day:[['يوم واحد','يومين','أيام','يوم'],['day','days']],
+  watch:[['مراقبة وحدة','مراقبتين','مراقبات','مراقبة'],['watch','watches']],
+};
+function nWord(n){return LANG==='ar'&&(n===1||n===2)}
+function nUnit(n,k){
+  const f=N_FORMS[k];
+  if(LANG!=='ar')return f[1][n===1?0:1];
+  if(n===1)return f[0][0];
+  if(n===2)return f[0][1];
+  const m=n%100;
+  return f[0][n===0||(m>=3&&m<=10)?2:3];
+}
+function nOf(n,k){n=Number(n)||0;return nWord(n)?nUnit(n,k):`${n} ${nUnit(n,k)}`}
+
 /* صيغة عربية سليمة للعدد */
 function n_(x){
   if(LANG!=='ar')return String(x);
@@ -10492,8 +10521,8 @@ function renderGPA(){
   const {gpa,hrs,n}=calcGPA();
   const el=document.getElementById('gpaVal');
   const fill=document.getElementById('gpaFill');
-  document.getElementById('gpaHrs').textContent=hrs+' '+t('hrsUnit');
-  document.getElementById('gpaCount').textContent=n+' '+t('courseUnit');
+  document.getElementById('gpaHrs').textContent=nOf(hrs,'hr');
+  document.getElementById('gpaCount').textContent=nOf(n,'course');
 
   if(gpa===null){
     cntIn(el,'—',2,' / 4.00');
