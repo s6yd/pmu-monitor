@@ -318,11 +318,14 @@ const openSheet = async page => {
     ST.status = { on: true, why: '', used: { day: 0, dayCap: 25 } };
     const { page, errs } = await open(browser, true);
     await openSheet(page);
-    ok(/مساعد جدولك/.test(await page.textContent('#aiSheet')), 'العنوان بالعربي');
+    /* قاعدة تغيّرت عمداً (دراسة الشكل، ١٣ نوفمبر ٢٠٢٦): عنوان اللوح صار «Jadwalik AI» باللغتين مثل المدخل
+       والصفحات الثابتة — كان «مساعد جدولك»/«Jadwalik Assistant». فاللغة تبان من السطر تحته */
+    { const ar0 = await page.textContent('#aiSheet');
+      ok(/Jadwalik AI/.test(ar0) && /يجاوبك من جدولك/.test(ar0), 'العنوان «Jadwalik AI» واللوح بالعربي'); }
     await page.evaluate(() => { LANG = 'en'; applyLang() });
     await page.waitForTimeout(250);
     const sheet = await page.textContent('#aiSheet');
-    ok(/Jadwalik Assistant/.test(sheet), 'وبعد التبديل يصير إنجليزياً');
+    ok(/Jadwalik AI/.test(sheet) && /Answers from your schedule/.test(sheet) && !/يجاوبك من جدولك/.test(sheet), 'وبعد التبديل يصير إنجليزياً (والاسم نفسه)');
     ok(/Send/.test(sheet) && /New chat/.test(sheet), 'وأزراره كذلك');
     ok(/replies in Arabic/.test(sheet), 'ويقول إنه يرد بالعربي — الأمثلة عربية عمداً');
     eq(errs, [], 'بلا أخطاء');
