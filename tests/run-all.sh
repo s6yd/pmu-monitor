@@ -52,6 +52,7 @@ run test-referral       "$S" "$F"
 run test-review-credit  "$S" "$F" "$A"
 run test-import         "$S" "$F"
 run test-import-grades  "$S" "$F"
+run test-ai-rate        "$S" "$F" "$A"
 run test-pushover-addon "$S" "$F" "$A"
 run test-static-pages   "$S"
 run test-legal          .

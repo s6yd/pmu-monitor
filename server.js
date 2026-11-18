@@ -11722,6 +11722,114 @@ async function importSchedule(userId, b) {
 }
 /* ═══ نهاية استيراد الجدول ═══ */
 
+/* ═══ تقييم المساعد بعد المحادثة ═══
+   طلب محمد (١٨ نوفمبر ٢٠٢٦): «ودي الي يستعمل المساعد يجيه تقييم سريع بعد المحادثه». كان يعرف كم سأل الطالب
+   وكم كلّف، ويفتح محادثته ويقرأ — وما يعرف هل أفاده. الحين بعد المحادثة 👍 أو 👎، ومع 👎 «وش كان ناقص؟» (سبب
+   من قائمة وسطر اختياري).
+   - حدث في app_events (kind 'ai_rate' — الجدول موجود، بلا SQL، وينظَّف بعد ٣٠ يوم مثل باقي الأحداث).
+   - **الضغطة تنكتب على طول** (stage 'rate') ويرجع رقمها (ev)، والسبب يلحقها بنفس الرقم (stage 'why') — مثل سجل
+     الاستيراد: طلع بعد 👎 بلا سبب؟ الـ👎 وصل.
+   - الهوية من الجلسة، والزائر (يسأل المساعد بلا حساب) يقيّم كذلك — **عنوان شبكته للسقف وحده، ما ينكتب**.
+   - قائمة مغلقة: التقييم والسبب والقناة من قوائمها · الأدوات من `AI_TOOLS` (اللي اشتغلت في المحادثة) · عدد
+     الأسئلة بحدّه · السطر ٣٠٠ حرف. أي أحد يقدر يرسل لهالنقطة اللي يبي.
+   - تلقرام يكتب نفس الحدث بـ`ch: 'tg'` (`aiRateIn` نفسها). */
+const AI_RATE_VALS = ['up', 'down'];
+const AI_RATE_WHY = ['wrong', 'misread', 'cant', 'slow'];
+const AI_RATE_CH = ['web', 'tg'];
+const AI_RATE_NOTE = 300;
+const AI_RATE_MAX = 12;                        /* لكل طالب (أو شبكة للزائر) بالساعة */
+const AI_RATE_RL = new Map();                  /* مفتاح → [أوقات] */
+function aiRateAllowed(key) {
+  const now = Date.now(), live = t => now - t < 3600e3;
+  const list = (AI_RATE_RL.get(key) || []).filter(live);
+  if (list.length >= AI_RATE_MAX) { AI_RATE_RL.set(key, list); return false }
+  list.push(now); AI_RATE_RL.set(key, list);
+  /* الزوار بعناوينهم: الخريطة ما تكبر بلا حد */
+  if (AI_RATE_RL.size > 2000) for (const [k, v] of AI_RATE_RL) if (!v.some(live)) AI_RATE_RL.delete(k);
+  return true;
+}
+/* السطر نص يكتبه الطالب: بلا حروف تحكّم ولا علامات تقلب اتجاه اللوحة، وبحدّه */
+const aiRateNote = v => String(v == null ? '' : v)
+  .replace(/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g, ' ')
+  .replace(/\s+/g, ' ').trim().slice(0, AI_RATE_NOTE);
+/* b من الطالب (أي شي) · o.key للسقف · o.ch القناة. ترجّع { ok, ev } أو { ok:false, why: bad|limit } */
+function aiRateIn(userId, b, o) {
+  const opt = o || {};
+  const ch = AI_RATE_CH.includes(opt.ch) ? opt.ch : 'web';
+  const base = { at: Date.now(), env: SITE_ENV, ch, user: isUuid(userId) ? String(userId) : null };
+  const rate = AI_RATE_VALS.includes(b && b.rate) ? b.rate : null;
+  if (rate) {
+    if (!aiRateAllowed(opt.key || 'none')) return { ok: false, why: 'limit' };
+    const ev = crypto.randomBytes(6).toString('hex');
+    const tools = [...new Set((Array.isArray(b.tools) ? b.tools : []).map(String)
+      .filter(n => Object.prototype.hasOwnProperty.call(AI_TOOLS, n)))].slice(0, 12);
+    logEvent('ai_rate', Object.assign(base, { ev, stage: 'rate', rate, tools,
+      turns: Math.max(0, Math.min(200, parseInt(b.turns, 10) || 0)) }));
+    return { ok: true, ev };
+  }
+  const ev = /^[0-9a-f]{12}$/.test(String((b && b.ev) || '')) ? String(b.ev) : null;
+  const why = AI_RATE_WHY.includes(b && b.why) ? b.why : null;
+  const note = aiRateNote(b && b.note);
+  if (!ev || (!why && !note)) return { ok: false, why: 'bad' };
+  if (!aiRateAllowed(opt.key || 'none')) return { ok: false, why: 'limit' };
+  logEvent('ai_rate', Object.assign(base, { ev, stage: 'why', why, note }));
+  return { ok: true, ev };
+}
+
+/* اللوحة: سطر لكل تقييم (الضغطة وسببها بنفس الرقم) بإيميل صاحبه، وملخّص. كل بيئة تقييماتها (القاعدة مشتركة).
+   السبب يلحق ضغطة **نفس الشخص** — رقم مزوّر من غيره، أو سبب ضغطته أقدم من المدة، ما يطلع. */
+async function adminAiRate(daysQ) {
+  const days = Math.max(1, Math.min(30, parseInt(daysQ, 10) || 30));
+  const since = new Date(Date.now() - days * 864e5).toISOString();
+  const rows = await sb('GET', 'app_events', { query: `?kind=eq.ai_rate&at=gte.${encodeURIComponent(since)}`
+    + '&select=at,payload&order=at.desc&limit=3000' }).catch(() => null);
+  if (!Array.isArray(rows)) return { ok: false, error: 'تعذّر قراءة التقييمات' };
+  const by = new Map(), whys = [];
+  for (const r of rows) {
+    const p = r && r.payload;
+    if (!p || p.env !== SITE_ENV || !p.ev) continue;
+    const k = p.ev + '|' + (p.user || '');
+    if (p.stage === 'rate' && AI_RATE_VALS.includes(p.rate))
+      by.set(k, { at: Number(p.at) || Date.parse(r.at) || 0, user: p.user || null, ch: p.ch === 'tg' ? 'tg' : 'web',
+        rate: p.rate, turns: p.turns || 0, tools: Array.isArray(p.tools) ? p.tools : [], why: null, note: '' });
+    else if (p.stage === 'why') whys.push([k, p]);
+  }
+  /* الأحدث أول (order=at.desc): لو أرسل أكثر من مرة نعرض آخر سبب وآخر سطر */
+  for (const [k, p] of whys) {
+    const e = by.get(k);
+    if (!e) continue;
+    if (!e.why && AI_RATE_WHY.includes(p.why)) e.why = p.why;
+    if (!e.note && p.note) e.note = String(p.note);
+  }
+  const list = [...by.values()].sort((a, b) => b.at - a.at);
+  const sum = { up: 0, down: 0, pct: null, raters: 0, guest: 0, notes: 0, reasons: {}, tools: {},
+                ch: { web: { up: 0, down: 0 }, tg: { up: 0, down: 0 } } };
+  const people = new Set();
+  for (const e of list) {
+    sum[e.rate]++; sum.ch[e.ch][e.rate]++;
+    if (e.user) people.add(e.user); else sum.guest++;
+    if (e.note) sum.notes++;
+    if (e.rate !== 'down') continue;
+    if (e.why) sum.reasons[e.why] = (sum.reasons[e.why] || 0) + 1;
+    e.tools.forEach(n => { sum.tools[n] = (sum.tools[n] || 0) + 1 });
+  }
+  sum.raters = people.size;
+  if (sum.up + sum.down) sum.pct = Math.round(sum.up * 100 / (sum.up + sum.down));
+  const recent = list.slice(0, 80);
+  const ids = [...new Set(recent.map(e => e.user).filter(isUuid))];
+  const pr = ids.length ? await sb('GET', 'profiles',
+    { query: `?id=in.(${ids.join(',')})&select=id,email,name` }).catch(() => null) : [];
+  const who = new Map((Array.isArray(pr) ? pr : []).map(x => [x.id, x]));
+  return { ok: true, days, env: SITE_ENV, summary: sum,
+    recent: recent.map(e => {
+      const u = who.get(e.user) || null;
+      return { at: new Date(e.at).toISOString(), user: isUuid(e.user) ? e.user : null, guest: !e.user,
+        email: u ? (u.email || null) : null, name: u ? (u.name || null) : null, ch: e.ch, rate: e.rate,
+        why: e.why, note: e.note, turns: e.turns, tools: e.tools };
+    }) };
+}
+/* ═══ نهاية تقييم المساعد ═══ */
+
 /* ═══ المساعد داخل البوت (CLAUDE.md §٩-أ-٥) ═══
    نفس aiChat ونفس السقوف والأوضاع — الجديد هو المدخل فقط.
 
@@ -12880,6 +12988,8 @@ const server = http.createServer(async (req, res) => {
 
       /* سجل الاستيراد (الجدول والدرجات): مين استعمله ونجح ولا فشل وليش */
       if (act === 'import-log') return send(200, await adminImportLog(parsed.query.days));
+      /* تقييم المساعد بعد المحادثة: 👍/👎 وأسبابها، وسطر لكل تقييم بإيميل صاحبه */
+      if (act === 'ai-rate') return send(200, await adminAiRate(parsed.query.days));
 
       /* استهلاك المساعد يوماً بيوم — اللوحة ترسمه */
       if (act === 'ai-usage') {
@@ -13396,6 +13506,18 @@ const server = http.createServer(async (req, res) => {
     if (!user) { res.writeHead(401); res.end(JSON.stringify({ ok: false, why: 'signin' })); return }
     const out = importLogDone(user.id, await readBody(req));
     res.writeHead(out.ok ? 200 : out.why === 'rate' ? 429 : 400); res.end(JSON.stringify(out));
+    return;
+  }
+
+  /* تقييم المساعد بعد المحادثة — الزائر يقيّم كذلك: سقفه بعنوان شبكته، والعنوان ما ينكتب */
+  if (parsed.pathname === '/api/me/ai-rate') {
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'no-store');
+    if (req.method !== 'POST') { res.writeHead(405); res.end(JSON.stringify({ error: 'POST' })); return }
+    const user = await sbAuthUser(bearerOf(req));
+    const out = aiRateIn(user ? user.id : null, await readBody(req),
+      { ch: 'web', key: user ? 'u:' + user.id : 'ip:' + clientIP(req) });
+    res.writeHead(out.ok ? 200 : out.why === 'limit' ? 429 : 400); res.end(JSON.stringify(out));
     return;
   }
 
