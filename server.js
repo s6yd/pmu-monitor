@@ -4526,6 +4526,11 @@ async function handleCallback(cq) {
   /* كلام حر: الطالب اختار المساعد ولا الفريق (aiTgAsk) */
   const ask = data.match(/^ask:(ai|team):(\d+)$/);
   if (ask) return aiTgPick(cq, ack, ask[1], ask[2]);
+  /* تقييم المساعد بعد «🚪 خروج» (aiTgRateAsk) — والسبب برقم التقييم */
+  const ar = data.match(/^air:(up|down)$/);
+  if (ar) return aiTgRatePress(cq, ack, ar[1]);
+  const aw = data.match(/^airw:([0-9a-f]{12}):(wrong|misread|cant|slow|skip)$/);
+  if (aw) return aiTgRateWhy(cq, ack, aw[1], aw[2]);
   /* فعل من المساعد يتأكد من البوت: تذكير أو تذكرة دعم (aiTgAct) */
   const act = data.match(/^act:(ok|no):(\d+)$/);
   if (act) return aiTgAct(cq, ack, act[1] === 'ok', act[2]);
@@ -11992,6 +11997,8 @@ async function aiTgAnswer(chatId, q) {
      الطبيعي («استثني المواد المسجّلة») يروح للدعم **كتذكرة** —
      شفناها تصير على dev: تذكرة #74 كانت جواباً للمساعد لا شكوى.
      من كلّم المساعد قبل دقيقة يقصده، والخروج زر ظاهر أمامه. */
+  /* للتقييم عند الخروج: كم جواب والأدوات — والوضع منتهي قبل هالجواب؟ محادثة جديدة */
+  if (r.ok) aiTgRateCount(key, uid, r.tools, !was);
   let hint = '';
   if (r.ok) {
     if (AI_TG_MODE.size > 3000) AI_TG_MODE.clear();   /* قبل الإضافة لا بعدها */
@@ -12060,6 +12067,7 @@ async function aiTgAct(cq, ack, yes, id) {
       + ` · ترم ${c.term || '—'}]`;
     /* كلّم الفريق: كلامه الجاي لهم، فيطلع من وضع المساعد */
     const wasAi = AI_TG_MODE.delete(key);
+    AI_TG_RATE.delete(key);              /* راح للفريق: ما نسأله عن المساعد */
     return tgToTeam(chatId, cq.from, `${P.p.text}\n\n${line}`, null,
                     wasAi ? AI_TG_KB_OFF : undefined);
   }
@@ -12092,6 +12100,7 @@ async function aiTgAct(cq, ack, yes, id) {
 /* ردّ الفريق على طالب داخل وضع المساعد: جوابه الجاي للفريق لا للمساعد.
    يطلعه من الوضع ويرجّع ما يشيل لوحته مع ردّنا. */
 function aiTgLeaveAi(chatId) {
+  AI_TG_RATE.delete(String(chatId));    /* ردّينا عليه: محادثته صارت مع الفريق */
   return AI_TG_MODE.delete(String(chatId)) ? AI_TG_KB_OFF : undefined;
 }
 
@@ -12135,6 +12144,8 @@ async function aiTgRoute(chatId, text) {
     await sendMsg(chatId,
       '👋 خرجت من المساعد.\n\n'
       + '<i>/ai يرجّعك له أي وقت.</i>', AI_TG_KB_OFF);
+    /* نهاية المحادثة: أفاده؟ (لو جاوبه مرة على الأقل — ومرة باليوم) */
+    await aiTgRateAsk(chatId);
     return true;
   }
   /* الاختصارات: سؤال واحد جاهز بلا دخول وضع — مثل /ai بسؤال تماماً */
@@ -12146,6 +12157,7 @@ async function aiTgRoute(chatId, text) {
       raw === '/اسأل' || raw.startsWith('/اسأل ')) {
     const q = raw.replace(/^\/(ai|اسأل)\s*/i, '').trim();
     if (q) { await aiTgAnswer(chatId, q); return true }
+    if (!inMode) AI_TG_RATE.delete(key);  /* دخول جديد = محادثة جديدة (اللي قبلها انتهت لحالها) */
     if (AI_TG_MODE.size > 3000) AI_TG_MODE.clear();
     AI_TG_MODE.set(key, Date.now() + AI_TG_TTL);
     const guest = !(await aiTgUser(chatId));
@@ -12155,6 +12167,7 @@ async function aiTgRoute(chatId, text) {
   }
   /* ضغطة زر من لوحتنا بعد انتهاء الوضع: نرجّعه للمساعد لا للدعم */
   if (!inMode && AI_TG_KB_TEXTS.has(raw)) {
+    AI_TG_RATE.delete(key);
     AI_TG_MODE.set(key, Date.now() + AI_TG_TTL);
     await aiTgAnswer(chatId, raw);
     return true;
@@ -12264,7 +12277,76 @@ async function aiTgPick(cq, ack, pick, msgId) {
   /* زر قديم ضغطه وهو داخل المساعد: يطلع منه — وإلا راح كلامه الجاي
      للمساعد وهو يظن إنه يكلّم الفريق */
   const wasAi = AI_TG_MODE.delete(String(chatId));
+  AI_TG_RATE.delete(String(chatId));
   return tgToTeam(chatId, cq.from, text, null, wasAi ? AI_TG_KB_OFF : undefined);
+}
+
+/* ═══ تقييم المساعد في البوت (`aiRateIn` نفسها، القناة tg) ═══
+   الموقع يسأل لما يقفل الطالب اللوح، والبوت لما يضغط «🚪 خروج» بعد جواب واحد على الأقل: رسالة لحالها بعد رسالة
+   الخروج (تلك تشيل لوحة الوضع، والرسالة تحمل لوحة وحدة) فيها 👍/👎، ومع 👎 الأسباب الأربعة أزراراً — **بلا سطر
+   يكتبه**: الكتابة هنا تروح للمساعد أو للفريق. مرة لكل محادثة، ومرة باليوم للمحادثة (الذاكرة — النشر يصفّرها).
+   انتهى الوضع لحاله (٢٠ دقيقة) بلا خروج؟ ما نرسل شي من نفسنا — رسالة بعد ثلث ساعة إزعاج — والعدّ يبدأ من جديد
+   مع أول جواب بعد ما انتهى. والضغطة تنحجز بالرسالة نفسها قبل أي await، ورقم التقييم في زر السبب: ينفع بعد نشر. */
+const AI_TG_RATE = new Map();          /* chatId → { n, tools:Set, uid } — المحادثة الجارية */
+const AI_TG_RATE_DAY = new Map();      /* chatId → آخر مرة سألناه */
+const AI_TG_RATE_CTX = new Map();      /* chatId → { turns, tools, uid } — السؤال المعروض */
+const AI_TG_RATE_DONE = new Map();     /* chat:رسالة → 'rate' | 'why' */
+const AI_TG_RATE_WHY = { wrong: 'معلومة غلط', misread: 'ما فهم سؤالي', cant: 'ما قدر يسوي اللي طلبته', slow: 'بطيء' };
+const AI_TG_RATE_THANKS = 'شكراً، رأيك يوصلنا ونحسّن فيه 💙';
+function aiTgRateCount(key, uid, tools, fresh) {
+  if (fresh) AI_TG_RATE.delete(key);
+  if (AI_TG_RATE.size > 3000) AI_TG_RATE.clear();     /* قبل الإضافة لا بعدها */
+  const e = AI_TG_RATE.get(key) || { n: 0, tools: new Set(), uid: null };
+  e.n++; e.uid = uid || null;
+  (Array.isArray(tools) ? tools : []).forEach(t => e.tools.add(String(t)));
+  AI_TG_RATE.set(key, e);
+}
+async function aiTgRateAsk(chatId) {
+  const key = String(chatId), e = AI_TG_RATE.get(key);
+  AI_TG_RATE.delete(key);
+  if (!e || !e.n) return;
+  if (Date.now() - (AI_TG_RATE_DAY.get(key) || 0) < 864e5) return;
+  if (AI_TG_RATE_DAY.size > 5000) AI_TG_RATE_DAY.clear();
+  AI_TG_RATE_DAY.set(key, Date.now());
+  if (AI_TG_RATE_CTX.size > 3000) AI_TG_RATE_CTX.clear();
+  AI_TG_RATE_CTX.set(key, { turns: e.n, tools: [...e.tools].slice(0, 12), uid: e.uid });
+  await sendMsg(chatId, 'أفادك Jadwalik AI في هالمحادثة؟',
+    kb([[btn('👍 أفادني', 'air:up'), btn('👎 ما أفادني', 'air:down')]]));
+}
+async function aiTgRatePress(cq, ack, rate) {
+  const chatId = cq.message && cq.message.chat && cq.message.chat.id;
+  if (!chatId) return ack();
+  const key = String(chatId), mk = key + ':' + cq.message.message_id;
+  if (AI_TG_RATE_DONE.has(mk)) return ack('وصلنا تقييمك');
+  if (AI_TG_RATE_DONE.size > 5000) AI_TG_RATE_DONE.clear();
+  AI_TG_RATE_DONE.set(mk, 'rate');                     /* قبل أي await: ضغطتان معاً = تقييم واحد */
+  const c = AI_TG_RATE_CTX.get(key) || {};
+  AI_TG_RATE_CTX.delete(key);
+  /* بعد نشر الذاكرة فاضية: صاحب المحادثة من ربطها، وعدد الأسئلة والأدوات ما نعرفها */
+  const uid = c.uid !== undefined ? c.uid : await aiTgUser(chatId);
+  const r = aiRateIn(uid, { rate, turns: c.turns || 0, tools: c.tools || [] },
+    { ch: 'tg', key: uid ? 'u:' + uid : 'tg:' + key });
+  await ack();
+  if (!r.ok || rate === 'up') return editMsg(cq, AI_TG_RATE_THANKS);
+  const w = Object.keys(AI_TG_RATE_WHY).map(k => btn(AI_TG_RATE_WHY[k], `airw:${r.ev}:${k}`));
+  return tg('editMessageText', { chat_id: chatId, message_id: cq.message.message_id, parse_mode: 'HTML',
+    text: 'وش كان ناقص؟', reply_markup: kb([[w[0], w[1]], [w[2]], [w[3], btn('✖️ بس كذا', `airw:${r.ev}:skip`)]]) })
+    .catch(() => {});
+}
+async function aiTgRateWhy(cq, ack, ev, why) {
+  const chatId = cq.message && cq.message.chat && cq.message.chat.id;
+  if (!chatId) return ack();
+  const key = String(chatId), mk = key + ':' + cq.message.message_id;
+  if (AI_TG_RATE_DONE.get(mk) === 'why') return ack('وصلنا تقييمك');
+  if (AI_TG_RATE_DONE.size > 5000) AI_TG_RATE_DONE.clear();
+  AI_TG_RATE_DONE.set(mk, 'why');                      /* قبل أي await */
+  await ack();
+  if (why !== 'skip') {
+    /* صاحبه من ربط المحادثة — نفس اللي كتب الضغطة، فاللوحة تربط السبب بها (ev|user) */
+    const uid = await aiTgUser(chatId);
+    aiRateIn(uid, { ev, why }, { ch: 'tg', key: uid ? 'u:' + uid : 'tg:' + key });
+  }
+  return editMsg(cq, AI_TG_RATE_THANKS);
 }
 
 /* ═══ دورة التذكيرات (CLAUDE.md §٩-أ-٤) ═══
