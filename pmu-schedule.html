@@ -1153,6 +1153,36 @@ padding:11px 15px;font-size:13px;font-weight:600;font-family:var(--sans);cursor:
 .ai-bar button:disabled{opacity:.5}
 .ai-foot{display:flex;justify-content:space-between;gap:10px;margin-top:9px;
 font-size:11px;color:var(--text3);line-height:1.7}
+/* تقييم المساعد بعد المحادثة: بطاقة صغيرة تحت (في body)، ما تقفل شي وتختفي لحالها. تحت اللوحات (z-index أقل):
+   لو فتح لوحاً وهي ظاهرة تبقى تحته */
+.ai-rate{position:fixed;left:12px;right:12px;bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:250;
+margin:0 auto;max-width:440px;background:var(--card);border:1px solid var(--border2);border-radius:16px;
+padding:12px 13px 13px;box-shadow:0 10px 30px rgba(4,6,12,.32);
+transform:translateY(16px);opacity:0;transition:transform .28s ease,opacity .22s ease}
+.ai-rate.show{transform:none;opacity:1}
+.ai-rate-h{display:flex;align-items:center;justify-content:space-between;gap:10px;
+font-size:13.5px;font-weight:700;line-height:1.6}
+.ai-rate-ok{justify-content:center;font-weight:600}
+.ai-rate-x{position:relative;flex-shrink:0;background:none;border:none;color:var(--text3);font-size:17px;
+line-height:1;padding:2px 4px;cursor:pointer;font-family:var(--sans)}
+.ai-rate-x::after{content:"";position:absolute;inset:-12px -10px}
+/* الصفوف فوق مساحة ✕ (عنصر موضوع يرسم فوق غير الموضوع): ضغطة طرف 👎 لها لا له */
+.ai-rate-b,.ai-rate-w,.ai-rate-n{position:relative}
+.ai-rate-b{display:flex;gap:8px;margin-top:10px}
+.ai-rate-b button{flex:1;min-height:42px;background:var(--bg);border:1px solid var(--border2);color:var(--text);
+border-radius:12px;font-size:14px;font-weight:700;font-family:var(--sans);cursor:pointer}
+.ai-rate-w{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+.ai-rate-w button{min-height:36px;background:var(--bg);border:1px solid var(--border2);color:var(--text2);
+border-radius:20px;padding:6px 12px;font-size:12.5px;font-family:var(--sans);cursor:pointer}
+.ai-rate-w button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.ai-rate-n{display:flex;gap:8px;margin-top:10px}
+/* 16px: سفاري iOS يزوّم الصفحة على حقل خطه أصغر */
+.ai-rate-n input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--border2);color:var(--text);
+border-radius:12px;padding:10px 12px;font-size:16px;font-family:var(--sans)}
+.ai-rate-n input:focus{outline:none;border-color:var(--accent)}
+.ai-rate-go{flex-shrink:0;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:10px 15px;
+font-size:13px;font-weight:700;font-family:var(--sans);cursor:pointer}
+@media (prefers-reduced-motion:reduce){.ai-rate{transition:none}}
 .ai-foot button{background:none;border:none;color:var(--text3);font-size:11px;
 font-family:var(--sans);cursor:pointer;text-decoration:underline}
 .guide-overlay{position:fixed;inset:0;z-index:300;background:rgba(4,6,12,.82);
@@ -2363,9 +2393,11 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 </div>
 
 </div>
-<div class="guide-overlay" id="aiOv" onclick="if(event.target===this)closeAi()">
+<div class="guide-overlay" id="aiOv" onclick="if(event.target===this)closeAi(true)">
   <div class="guide-sheet" id="aiSheet"></div>
 </div>
+<!-- تقييم المساعد بعد المحادثة — في body (حركة التبويب تحبس position:fixed داخل .page) -->
+<div class="ai-rate" id="aiRate" aria-live="polite" hidden></div>
 <!-- استيراد الجدول من بانر — في body لا داخل .page (حركة التبويب تحبس position:fixed) -->
 <div class="guide-overlay" id="imOv" onclick="if(event.target===this)closeImport()">
   <div class="guide-sheet" id="imSheet"></div>
@@ -7151,10 +7183,12 @@ function openAi(){
   renderAiSheet();
   aiProbe().then(()=>{ if(ov.classList.contains('open'))renderAiSheet(true) });
 }
-function closeAi(){
+/* rate: الطالب قفل اللوح بنفسه (✕ أو برّاه) — نهاية المحادثة، فنسأله عنها. وغيره (الدخول بقوقل من اللوح) ما يسأل */
+function closeAi(rate){
   const ov=document.getElementById('aiOv');
   if(ov)ov.classList.remove('open');
   document.body.style.overflow='';
+  if(rate===true&&aiRateDue())aiRateShow();
 }
 
 /* الأمثلة **تعلّم**: كل واحد يفتح باباً مختلفاً — جدول · خطة ·
@@ -7182,7 +7216,7 @@ function renderAiSheet(keepLog){
     '<div class="guide-grip"></div>'+
     '<div class="ai-head"><div><div class="ai-t">'+escapeHtml(t('aiTitle'))+'</div>'+
     '<div class="ai-sub">'+escapeHtml(t('aiSub'))+'</div></div>'+
-    '<button class="ai-x" onclick="closeAi()" aria-label="'+escapeHtml(t('aiClose'))+'">✕</button></div>'+
+    '<button class="ai-x" onclick="closeAi(true)" aria-label="'+escapeHtml(t('aiClose'))+'">✕</button></div>'+
     '<div class="ai-log" id="aiLog"></div>'+
     '<div class="ai-bar"><input id="aiQ" autocomplete="off" placeholder="'+
       escapeHtml(t('aiPh'))+'" onkeydown="if(event.key===\'Enter\')aiSend()">'+
@@ -7373,8 +7407,105 @@ function aiSkip(i){
 async function aiNew(){
   if(AI_BUSY)return;
   AI_MSGS=[];
+  AI_RATE.asked=false;          /* محادثة جديدة: تقييمها لحاله (وسقف الجهاز باليوم باقٍ) */
   renderAiSheet(true);
   await meFetch('/api/me/ai','POST',{reset:true},true).catch(()=>null);
+}
+
+/* ═══ تقييم المساعد بعد المحادثة — طلب محمد (١٨ نوفمبر ٢٠٢٦: «ودي الي يستعمل المساعد يجيه تقييم سريع بعد المحادثه») ═══
+   يقفل اللوح بعد محادثة فيها جواب واحد على الأقل ⇒ بطاقة صغيرة تحت: 👍 أو 👎، ومع 👎 «وش كان ناقص؟» (سبب من
+   قائمة وسطر اختياري). ما تقفل شي ولا تغطّي إلا طرف الشاشة، وتختفي لحالها.
+   - **مرة لكل محادثة** (`AI_RATE.asked` — «محادثة جديدة» تصفّرها)، و**مرة باليوم على الأكثر** في الجهاز
+     (`pmu_ai_rate_at`)، و✕ قبل ما يقيّم = «لا تسألني» أسبوعاً (`pmu_ai_rate_off`).
+   - الضغطة تروح على طول (`/api/me/ai-rate` — طلع بعدها؟ الـ👎 وصل)، والسبب بـ«إرسال» وحده: ✕ بعد ما كتب
+     ما يرسل نصّه. والسيرفر يكتب، والصفحة ما تقرّر شي غير متى تسأل.
+   - المدد في `AI_RATE_HIDE` (الاختبار يقصّرها). */
+let AI_RATE={asked:false,ev:null,why:null,stage:null,timer:null,p:null};
+const AI_RATE_HIDE={ask:20000,why:90000,thanks:1800};
+const AI_RATE_WHY=['wrong','misread','cant','slow'];
+function aiRateDue(){
+  if(AI_RATE.asked||AI_BUSY)return false;
+  /* جواب فعلي واحد على الأقل — رسالة السقف أو الخطأ ما هي محادثة */
+  if(!AI_MSGS.some(m=>m.role==='bot'&&!m.bad))return false;
+  const now=Date.now();
+  try{
+    if(now-(Number(localStorage.getItem('pmu_ai_rate_at'))||0)<864e5)return false;
+    if(now-(Number(localStorage.getItem('pmu_ai_rate_off'))||0)<7*864e5)return false;
+  }catch(e){}
+  return true;
+}
+function aiRateShow(){
+  AI_RATE.asked=true; AI_RATE.ev=null; AI_RATE.why=null; AI_RATE.p=null;
+  try{ localStorage.setItem('pmu_ai_rate_at',String(Date.now())) }catch(e){}
+  aiRateDraw('ask');
+}
+function aiRateDraw(stage){
+  const box=document.getElementById('aiRate');
+  if(!box)return;
+  AI_RATE.stage=stage;
+  const x='<button class="ai-rate-x" onclick="aiRateClose()" aria-label="'+escapeHtml(t('aiClose'))+'">✕</button>';
+  if(stage==='ask')
+    box.innerHTML='<div class="ai-rate-h"><span>'+escapeHtml(t('aiRateQ'))+'</span>'+x+'</div>'+
+      '<div class="ai-rate-b"><button data-r="up" onclick="aiRatePick(\'up\')">'+escapeHtml(t('aiRateUp'))+'</button>'+
+      '<button data-r="down" onclick="aiRatePick(\'down\')">'+escapeHtml(t('aiRateDown'))+'</button></div>';
+  else if(stage==='why')
+    box.innerHTML='<div class="ai-rate-h"><span>'+escapeHtml(t('aiRateWhyQ'))+'</span>'+x+'</div>'+
+      '<div class="ai-rate-w">'+AI_RATE_WHY.map(w=>'<button data-w="'+w+'" onclick="aiRateWhy(\''+w+'\')">'+
+        escapeHtml(t('aiRateW_'+w))+'</button>').join('')+'</div>'+
+      '<div class="ai-rate-n"><input id="aiRateNote" maxlength="300" autocomplete="off" placeholder="'+
+        escapeHtml(t('aiRateNotePh'))+'" oninput="aiRateKeep()" onkeydown="if(event.key===\'Enter\')aiRateSend()">'+
+      '<button class="ai-rate-go" onclick="aiRateSend()">'+escapeHtml(t('aiSend'))+'</button></div>';
+  else box.innerHTML='<div class="ai-rate-h ai-rate-ok"><span>'+escapeHtml(t('aiRateThanks'))+'</span></div>';
+  box.hidden=false;
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{ if(AI_RATE.stage)box.classList.add('show') }));
+  aiRateKeep();
+}
+/* يلمس البطاقة (يختار سبباً أو يكتب) ⇒ مدتها تبدأ من جديد */
+function aiRateKeep(){
+  clearTimeout(AI_RATE.timer);
+  if(AI_RATE.stage)AI_RATE.timer=setTimeout(aiRateHide,AI_RATE_HIDE[AI_RATE.stage]||20000);
+}
+function aiRateHide(){
+  const box=document.getElementById('aiRate');
+  clearTimeout(AI_RATE.timer);
+  AI_RATE.stage=null;
+  if(!box)return;
+  box.classList.remove('show');
+  setTimeout(()=>{ if(!AI_RATE.stage){ box.hidden=true; box.innerHTML='' } },320);
+}
+function aiRateClose(){
+  /* قبل ما يقيّم: «لا تسألني» أسبوعاً. بعد 👎: إلغاء السبب — ما نرسل نصاً ما ضغط «إرسال» عليه */
+  if(AI_RATE.stage==='ask'){ try{ localStorage.setItem('pmu_ai_rate_off',String(Date.now())) }catch(e){} }
+  aiRateHide();
+}
+function aiRatePick(rate){
+  if(AI_RATE.stage!=='ask'||(rate!=='up'&&rate!=='down'))return;
+  const tools=new Set();
+  AI_MSGS.forEach(m=>(m.tools||[]).forEach(n=>tools.add(n)));
+  const body={rate,turns:AI_MSGS.filter(m=>m.role==='me').length,tools:[...tools].slice(0,12)};
+  AI_RATE.p=meFetch('/api/me/ai-rate','POST',body,true)
+    .then(r=>{ if(r&&r.ev)AI_RATE.ev=r.ev }).catch(()=>{});
+  aiRateDraw(rate==='down'?'why':'thanks');
+}
+function aiRateWhy(w){
+  if(AI_RATE.stage!=='why'||AI_RATE_WHY.indexOf(w)<0)return;
+  AI_RATE.why=AI_RATE.why===w?null:w;
+  document.querySelectorAll('#aiRate .ai-rate-w button').forEach(b=>b.classList.toggle('on',b.dataset.w===AI_RATE.why));
+  aiRateKeep();
+}
+async function aiRateSend(){
+  if(AI_RATE.stage!=='why')return;
+  const i=document.getElementById('aiRateNote');
+  const note=i?String(i.value||'').trim().slice(0,300):'';
+  const why=AI_RATE.why;
+  aiRateDraw('thanks');
+  if(!why&&!note)return;
+  await AI_RATE.p;                      /* الضغطة أول — رقمها يربط السبب بها */
+  if(!AI_RATE.ev)return;
+  const body={ev:AI_RATE.ev};
+  if(why)body.why=why;
+  if(note)body.note=note;
+  meFetch('/api/me/ai-rate','POST',body,true).catch(()=>null);
 }
 
 /* ═══ رصيد تقييم الدكاترة ═══
@@ -9887,6 +10018,10 @@ const I18N={
 ar:{aiTitle:'Jadwalik AI',aiSub:'يجاوبك من جدولك وخطتك وبيانات الموقع — وما يخترع',
 aiPh:'اسأل عن جدولك أو خطتك...',aiSend:'إرسال',aiNew:'محادثة جديدة',aiClose:'إغلاق',
 aiThinking:'أفكّر…',aiErr:'ما وصل رد — جرّب بعد شوي',
+aiRateQ:'أفادك Jadwalik AI في هالمحادثة؟',aiRateUp:'👍 أفادني',aiRateDown:'👎 ما أفادني',
+aiRateWhyQ:'وش كان ناقص؟',aiRateW_wrong:'معلومة غلط',aiRateW_misread:'ما فهم سؤالي',
+aiRateW_cant:'ما قدر يسوي اللي طلبته',aiRateW_slow:'بطيء',aiRateNotePh:'اكتب لنا وش صار (اختياري)',
+aiRateThanks:'شكراً، رأيك يوصلنا ونحسّن فيه 💙',
 aiNote:'ما يغيّر شي إلا بتأكيدك',aiLeft:'باقي لك اليوم',
 aiHello:'اسألني عن جدولك أو خطتك أو الدكاترة.',
 aiHelloGuest:'اسألني عن الشعب والدكاترة والقاعات والتقويم — بلا تسجيل دخول.\nوعشان أشوف جدولك وخطتك، سجّل دخولك بقوقل.',
@@ -10057,6 +10192,10 @@ PP1:'المستوى التأسيسي — Pre-Beginner',PP2:'المستوى ال�
 en:{aiTitle:'Jadwalik AI',aiSub:'Answers from your schedule, plan and site data — it replies in Arabic',
 aiPh:'Ask about your schedule or plan...',aiSend:'Send',aiNew:'New chat',aiClose:'Close',
 aiThinking:'Thinking…',aiErr:'No reply — try again shortly',
+aiRateQ:'Did Jadwalik AI help you in this chat?',aiRateUp:'👍 Helpful',aiRateDown:'👎 Not helpful',
+aiRateWhyQ:'What went wrong?',aiRateW_wrong:'Wrong info',aiRateW_misread:"Didn't get my question",
+aiRateW_cant:"Couldn't do what I asked",aiRateW_slow:'Slow',aiRateNotePh:'Tell us what happened (optional)',
+aiRateThanks:'Thanks — your feedback reaches us 💙',
 aiNote:'Changes nothing without your confirmation',aiLeft:'left today',
 aiHello:'Ask me about your schedule, plan or instructors. I answer in Arabic.',
 aiHelloGuest:'Ask about sections, instructors, rooms and the calendar — no sign-in needed. Sign in to see your own schedule and plan.',
