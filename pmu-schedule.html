@@ -99,6 +99,10 @@ display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px}
 #setBtn{width:30px;height:43px;border-radius:9px;display:flex;align-items:center;
 justify-content:center;padding:0;color:var(--text2)}
 #setBtn svg{width:18px;height:18px;display:block}
+/* زر «؟» (الدليل والمساعد) جنب ⚙️ — كان عائماً يسار تحت فيغطي «أضف» و«راقب» و✕ الحذف (واليمين يغطي ✓ الخطة).
+   دراسة الشكل (١٣ نوفمبر ٢٠٢٦، البند ٤) — test-tap-look */
+#helpBtn{width:30px;height:43px;border-radius:9px;display:flex;align-items:center;justify-content:center;padding:0;
+color:var(--accent2);font-family:var(--sans);font-size:19px;font-weight:700;line-height:1}
 #setBtn:active{color:var(--accent2)}
 .topbar .lang-btn{flex-shrink:0}
 /* الشعار صار زراً يرجّع للرئيسية — نُلغي شكل الزر الافتراضي
@@ -959,6 +963,21 @@ cursor:pointer;display:flex;align-items:center;gap:4px}
 .star-btn{background:none;border:none;font-size:31px;cursor:pointer;
 color:var(--border2);padding:0;line-height:1;transition:transform .12s}
 .star-btn.on{color:var(--warn)}
+/* مساحة ضغط أوسع بلا تغيير الشكل ولا التخطيط (دراسة الشكل ١٣ نوفمبر ٢٠٢٦، البند ٣): طبقة شفافة حول الزر الصغير
+   تستلم الضغطة — ✓ الخطة (22px) · ✕ جدولي (23px) · اللغة والثيم (30×20) · نجوم التقييم · «+ أضف» و«راقب» (ارتفاعها 32)
+   · ✕ لوح المساعد. الأرقام من حد الحشوة (الإطار داخلها)، والطبقة ما تغطي زراً ثانياً: اللغة تطلع لفوق والثيم لتحت
+   والـ3px بينهما تبقى فاضية. test-tap-look */
+.pc-check,.slot-remove,.lang-btn.sm,.star-btn,.sr-btn,.ai-x{position:relative}
+.pc-check::after,.slot-remove::after,.star-btn::after,.lang-btn.sm::after,.sr-btn::after,.ai-x::after{content:"";position:absolute}
+.pc-check::after{inset:-11px}
+.slot-remove::after{inset:-10px}
+.star-btn::after{inset:-7px -3px}
+.sr-btn::after{left:0;right:0;top:-7px;bottom:-7px}
+.lang-btn.sm::after{left:-7px;right:-7px;top:-1px;bottom:-1px}
+#langBtn::after{top:-10px}
+#themeBtn::after{bottom:-10px}
+.ai-x{background:none;border:none;color:var(--text3);font-size:20px;cursor:pointer;padding:0 4px}
+.ai-x::after{inset:-10px -10px}
 .star-btn:active{transform:scale(1.18)}
 .tag-pick{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px}
 .tag-opt{font-size:12px;padding:7px 12px;border-radius:20px;background:var(--bg);
@@ -1056,16 +1075,9 @@ color:var(--text3);display:flex;flex-wrap:wrap;gap:8px;justify-content:center;al
 .legal-note{width:100%;margin-top:9px;font-size:11px;color:var(--text3);line-height:1.6}
 /* الجوال: البريد سطر لحاله — كانت النقطة قبله تبقى معلّقة آخر السطر الأول */
 @media (max-width:440px){.lf-dot-mail{display:none}.legal-foot .lf-mail{width:100%}}
-.guide-fab{position:fixed;bottom:20px;left:16px;z-index:200;
-background:var(--accent);color:#fff;border:none;border-radius:50%;
-width:48px;height:48px;font-size:21px;cursor:pointer;
-box-shadow:0 6px 22px rgba(61,111,255,.45);transition:transform .25s ease,opacity .25s ease}
-/* يتنحّى وقت التمرير (يغطي «أضف» و«راقب» على نفس الطرف) ويرجع أول ما توقف */
-.guide-fab.away{transform:translateY(90px);opacity:0;pointer-events:none}
-@media (prefers-reduced-motion:reduce){.guide-fab{transition:none}}
 
 /* ═══ مساعد جدولك ═══
-   زر عائم فوق زر الدليل (الدليل على 20px وارتفاعه 48)، ولوح يستعمل
+   مدخلان لا زر عائم (أعلى لوح المساعدة · صفحة اليوم)، ولوح يستعمل
    نفس .guide-overlay/.guide-sheet فما نكرّر تنسيقاً. */
 /* مدخل المساعد في أعلى لوح المساعدة */
 .ai-entry{display:flex;width:100%;align-items:center;gap:11px;text-align:start;
@@ -1733,7 +1745,7 @@ margin:0!important;padding:0!important;min-height:0!important}
 /* الشبكة ومبدّل العرض والشريطان يخصّون الشاشة وحدها — بدونهم كانت
    الطباعة تخرج بورقة أولى فيها التطبيق نفسه قبل ورقة الجدول. */
 .topbar,.tabs,.sched-actions,.slot-remove,.conflict-alert,.sched-summary,.lab-warn,
-.guide-fab,.ai-ask,.guide-overlay,.toast,.state-box,.sync-note,.next-check,.reg-card,.crn-panel,
+.ai-ask,.guide-overlay,.toast,.state-box,.sync-note,.next-check,.reg-card,.crn-panel,
 .slot-bar,#slotBar,
 .vw-switch,#schedView,#schedGrid,.gr-zoom,.gr-hint,
 .env-bar,.tg-bar,.pick-hint,#schedPickHint,
@@ -1885,6 +1897,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
       <button class="lang-btn sm" id="langBtn" onclick="toggleLang()">EN</button>
       <button class="lang-btn sm" id="themeBtn" onclick="toggleTheme()">🌙</button>
     </div>
+    <button class="lang-btn" id="helpBtn" onclick="openGuide()" aria-label="help" title="كيف أستخدم الموقع">؟</button>
     <button class="lang-btn" id="setBtn" onclick="switchTab('set')" aria-label="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
   </div>
   <button class="logo" id="brandHome" onclick="switchTab('search')" aria-label="Jadwalik">
@@ -2350,7 +2363,6 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 </div>
 
 </div>
-<button class="guide-fab" onclick="openGuide()" title="كيف أستخدم الموقع">؟</button>
 <div class="guide-overlay" id="aiOv" onclick="if(event.target===this)closeAi()">
   <div class="guide-sheet" id="aiSheet"></div>
 </div>
@@ -7170,8 +7182,7 @@ function renderAiSheet(keepLog){
     '<div class="guide-grip"></div>'+
     '<div class="ai-head"><div><div class="ai-t">'+escapeHtml(t('aiTitle'))+'</div>'+
     '<div class="ai-sub">'+escapeHtml(t('aiSub'))+'</div></div>'+
-    '<button onclick="closeAi()" aria-label="'+escapeHtml(t('aiClose'))+'"'+
-    ' style="background:none;border:none;color:var(--text3);font-size:20px;cursor:pointer">✕</button></div>'+
+    '<button class="ai-x" onclick="closeAi()" aria-label="'+escapeHtml(t('aiClose'))+'">✕</button></div>'+
     '<div class="ai-log" id="aiLog"></div>'+
     '<div class="ai-bar"><input id="aiQ" autocomplete="off" placeholder="'+
       escapeHtml(t('aiPh'))+'" onkeydown="if(event.key===\'Enter\')aiSend()">'+
@@ -11018,22 +11029,12 @@ function redrawTodayAfterAuth(){
 /* ═══ الحركة: مستمعات مرة وحدة ═══
    ‏iOS ما يطبّق :active (الضغطة) إلا لو فيه مستمع touchstart — مستمع فاضٍ يكفي.
    وخط التبويب لمكانه أول ما ينرسم ومع كل تغيّر مقاس (تدوير الجوال).
-   وزر «؟» العائم يتنحّى وقت التمرير — على نفس طرف «أضف» و«راقب» فكان يغطيهم — ويرجع أول ما توقف */
+   (زر «؟» العائم اللي كان يتنحّى وقت التمرير انشال: صار في الشريط فوق جنب ⚙️ — #helpBtn) */
 (function(){
   try{ document.addEventListener('touchstart',function(){},{passive:true}) }catch(e){}
   try{ requestAnimationFrame(()=>moveTabInd(true)) }catch(e){}
   let rz=0;
   window.addEventListener('resize',()=>{ clearTimeout(rz); rz=setTimeout(()=>{ try{ moveTabInd(true) }catch(e){} },120) });
-  const fab=document.querySelector('.guide-fab');
-  if(fab){
-    let y=window.scrollY||0, tm=0;
-    window.addEventListener('scroll',()=>{
-      const ny=window.scrollY||0;
-      if(Math.abs(ny-y)>4)fab.classList.add('away');
-      y=ny; clearTimeout(tm);
-      tm=setTimeout(()=>fab.classList.remove('away'),900);
-    },{passive:true});
-  }
 })();
 
 /* مفتاح المراقبة: من الرابط ?key=xxx أو محفوظ من قبل */

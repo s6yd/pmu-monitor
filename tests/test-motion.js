@@ -255,18 +255,17 @@ const SUPA = 'window.supabase={createClient:()=>({auth:{getSession:async()=>({da
     gb = await run(pg, () => !document.getElementById('tgBar').hidden);
     eq(gb, true, `[${theme}] **وبعد أسبوع يرجع يذكّره** (شغله ممكن يضيع) — **وأول ما تنعرف الجلسة** (كان ينتظر ٤ ثوانٍ وينزل فجأة)`);
 
-    /* ── ٧) الزر العائم ── */
+    /* ── ٧) زر «؟» ما يغطي شي وقت التمرير ── */
     await run(pg, () => { switchTab('search'); doSearch() });
     await pg.waitForFunction(() => document.querySelectorAll('#resultsList .course-card').length > 0, null, { timeout: 8000 }).catch(() => {});
     await pg.waitForTimeout(500);
     await pg.mouse.move(200, 500);
     await pg.mouse.wheel(0, 600);
     await pg.waitForTimeout(250);
-    const f1 = await run(pg, () => { const f = document.querySelector('.guide-fab'); return { away: f.classList.contains('away'), pe: getComputedStyle(f).pointerEvents } });
-    ok(f1.away && f1.pe === 'none', `[${theme}] **وقت التمرير زر «؟» يتنحّى** (كان يغطي «أضف» و«راقب») — ${JSON.stringify(f1)}`);
-    await pg.waitForTimeout(1300);
-    const f2 = await run(pg, () => document.querySelector('.guide-fab').classList.contains('away'));
-    eq(f2, false, `[${theme}] ويرجع أول ما توقف`);
+    /* قاعدة تغيّرت عمداً (دراسة الشكل، ١٣ نوفمبر ٢٠٢٦ — البند ٤): زر «؟» ما عاد عائماً يتنحّى وقت التمرير؛ صار في
+       الشريط فوق جنب ⚙️، فما يغطي «أضف» و«راقب» أصلاً. تفاصيله في test-tap-look */
+    const f1 = await run(pg, () => ({ floating: !!document.querySelector('.guide-fab'), bar: !!document.querySelector('.topbar #helpBtn') }));
+    eq(f1, { floating: false, bar: true }, `[${theme}] **وقت التمرير ما فيه زر عائم يغطي «أضف» و«راقب»** — «؟» صار في الشريط فوق`);
 
     const over = await run(pg, () => document.documentElement.scrollWidth - innerWidth);
     ok(over <= 1, `[${theme}] على ٣٩٠ ما فيه تمرير أفقي — ${over}`);
