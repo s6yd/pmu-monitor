@@ -1129,7 +1129,10 @@ function fakeModel(ctx) {
     const co = await fakeModel(OTHER)('course_offering', '{"code":"MEEN 2311"}');
     ok(co.known === true, 'مادة ميكانيكال معروفة لطالب ميكانيكال');
     const mine = await call('course_offering', '{"code":"ALIS 1211"}');
-    ok(mine.known === true && mine.status === 'ok', 'تخصص بلا جدول طرح: بلا تحذير');
+    /* **قاعدة تغيّرت عمداً (مراجعة المساعد ١٩ نوفمبر ٢٠٢٦):** بلا جدول طرح لتخصصه كان «ok · ما فيه تحذير» فيفهمها
+       النموذج «تُطرح». صار من جدول الجامعة للترم: offered · no_sections · أو unknown لو الجدول مو عندنا */
+    ok(mine.known === true && ['offered', 'no_sections', 'unknown'].includes(mine.status),
+       'تخصص بلا جدول طرح: من جدول الجامعة لا «ما فيه تحذير» — ' + mine.status);
   }
 
   /* ══════ «الترم الجاي» خارج التسجيل = ترم التسجيل الجاي (لقاها محمد) ══════
@@ -1871,14 +1874,19 @@ function fakeModel(ctx) {
       SEC('32002', 'GEEN 2313', 'Statics', '101', 'UT', '1000 - 1115') ] });
     const fall = PLANS_DATA.suggestNext(PLANS_DATA.ctxOf({ major: 'CHEN', planVer: 'old',
       completed: yr1.map(r => r.course_code), term: '202710', offeredOnly: true }));
-    NEXT_REG = '202720'; REG_TERM = '202710';     /* أكتوبر: يبني لترم التسجيل (الخريف هنا) */
+    NEXT_REG = '202710'; REG_TERM = '202710';     /* أغسطس: تسجيل الخريف جاي — يبني له */
     let b = await run('build_schedule', '{}');
-    eq(b.term, '202710', 'يبني لترم التسجيل');
+    eq(b.term, '202710', 'يبني لترم التسجيل الجاي (الخريف هنا)');
     ok(!(b.requested || []).includes('MEEN 2311'),
       '**Materials Engineering (MEEN 2311) ما تُطرح الخريف (وثيقة الميكانيكال) — ما ياخذ خانة** — '
       + (b.requested || []).join(' · '));
     eq(b.requested, fall.crit.concat(fall.opt).map(c => c.c).slice(0, 8),
       '**والمواد = مقترح ترم البناء بجدول الطرح، بترتيبه**');
+    /* **قاعدة تغيّرت عمداً (مراجعة المساعد ١٩ نوفمبر ٢٠٢٦ — قرار محمد ٢٢ أكتوبر على الباني كذلك):** في أكتوبر
+       تسجيل الخريف انقفل (ترم التسجيل خارج النافذة = ترم الدراسة)، وكان يبني للخريف. صار لترم التسجيل الجاي */
+    NEXT_REG = '202720';
+    b = await run('build_schedule', '{}');
+    eq(b.term, '202720', '**أكتوبر: يبني للربيع (ترم التسجيل الجاي) — لا للخريف اللي انقفل تسجيله**');
 
     /* يبني لترم بعد ترم دراسته (التسجيل المبكر للصيفي، أو الربيع قبل ما يتبدّل ترم الدراسة):
        اللي يدرسه الحين بيخلّصه قبله — ما نبني عليه ثانية، ونفتح اللي بعده */
