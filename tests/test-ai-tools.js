@@ -972,8 +972,13 @@ function fakeModel(ctx) {
     eq(await oneM('دوائر'), 'GEEN 3314', 'و«دوائر» ⇒ Electric Circuits');
     eq(await oneM('موائع'), 'GEEN 3311', 'و«موائع» ⇒ Fluid Mechanics');
     eq(await oneM('مشروع التخرج'), 'MEEN 4396', 'و«مشروع التخرج» ⇒ Senior Design');
-    ok((await one('كيمياء')).startsWith('—'),
-       'وما نرجّع مادة مو في خطة الطالب — خطة الحاسب ما فيها كيمياء');
+    /* **قاعدة تغيّرت عمداً (مراجعة المساعد ١٩ نوفمبر ٢٠٢٦ — مادة برّا خطته):** كانت «ما لقيتها» لمادة مو في خطته،
+       فطالب حاسب يسأل عن الكيمياء يوقف والمادة عندنا. صارت من خطط التخصصات الثانية **موسومة إنها برّا خطته** —
+       والقصد الأصلي باقٍ: ما تنعرض كأنها من خطته (test-ai-outside) */
+    const chem = await call('find_course', JSON.stringify({ query: 'كيمياء' }));
+    ok(chem.inYourPlan === false && (chem.matches || []).some(x => x.code === 'CHEM 1421') &&
+       (chem.matches || []).every(x => !!x.fromPlan) && chem.confident === false,
+       'كيمياء لطالب حاسب: مواد الكيمياء من خطط ثانية **موسومة «مو في خطته»** وبلا ثقة (يسأله أيها) — خطة الحاسب ما فيها كيمياء');
     eq(await one('MATH 1422'), 'MATH 1422', 'والكود نفسه يبقى أدق مطابقة');
     /* الهمزة: arNorm يحذفها، فمفاتيح الخريطة تُطبَّع برمجياً لا بيدي */
     ok((await one('مبادئ')).startsWith('—') === false, '«مبادئ» بهمزة تُطابق');
@@ -1815,11 +1820,13 @@ function fakeModel(ctx) {
     const run = async (id, t, a) => fakeModel(await aiStudentCtx(id))(t, a);
     eq((await run('u-chen-def', 'plan_overview', '{}')).planVersion, 'old',
       'plan_overview لطالب الكيميكال الافتراضي: القديمة');
-    eq([(await run('u-chen-def', 'course_info', '{"code":"ALIS 1211"}')).known,
-        (await run('u-chen-def', 'course_info', '{"code":"ISLM 1221"}')).known], [true, false],
+    /* «في خطته» = معروفة وما هي من خطة ثانية — course_info صارت تعرف مواد الخطط الثانية (inYourPlan: false) */
+    const inPlan = r => r.known === true && r.inYourPlan !== false;
+    eq([inPlan(await run('u-chen-def', 'course_info', '{"code":"ALIS 1211"}')),
+        inPlan(await run('u-chen-def', 'course_info', '{"code":"ISLM 1221"}'))], [true, false],
       '**المساعد يجاوب الكيميكال الافتراضي من القديمة** (ALIS 1211 فيها · ISLM 1221 لا)');
-    eq([(await run('u-chen-new', 'course_info', '{"code":"ISLM 1221"}')).known,
-        (await run('u-chen-new', 'course_info', '{"code":"ALIS 1211"}')).known], [true, false],
+    eq([inPlan(await run('u-chen-new', 'course_info', '{"code":"ISLM 1221"}')),
+        inPlan(await run('u-chen-new', 'course_info', '{"code":"ALIS 1211"}'))], [true, false],
       'واللي اختار الجديدة من الجديدة');
     eq((await run('u-chen-def', 'course_info', '{"code":"CHEN 4396"}')).prereqs, ['CHEN 3301', 'CHEN 3494'],
       'متطلبات Senior Design I للقديمة: التدريب وCHEN 3494');

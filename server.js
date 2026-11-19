@@ -9481,6 +9481,37 @@ function aiDayCal(date) {
   return { kind: 'class', term: exam ? start.term : null };
 }
 
+/* ═══ مادة برّا خطته — مراجعة المساعد (١٩ نوفمبر ٢٠٢٦) ═══
+   course_info وfind_course كانت تدوّر في خطته وحدها: «وش متطلبات COSC 3311؟» من طالب ميكانيكا، أو مادة حرة
+   يبيها اختياري ⇒ «ما لقيتها» — والمادة في خطة تخصص ثاني عندنا. صارت تدوّر في خطط التخصصات كلها لو ما لقتها في
+   خطته، وتقول إنها مو في خطته ومن أي خطة — والمتطلبات حسب تلك الخطة (الخطط تختلف). النسخة الثانية من خطة تخصصه أول
+   («موجودة في الخطة القديمة لتخصصك» تفيده أكثر من «في خطة الحاسب» — ويمكن نسخة خطته غلط)، ثم الجديدة قبل القديمة. */
+function aiOtherPlans(code, major) {
+  const want = aiCodeNorm(code);
+  const keys = Object.keys(PLANS_DATA.PLANS);
+  const own = major ? keys.filter(k => k === major || k === (PLANS_DATA.PLAN_ALT || {})[major]) : [];
+  const hits = [];
+  for (const k of own.concat(keys.filter(x => !own.includes(x) && !/_OLD$/.test(x)), keys.filter(x => !own.includes(x) && /_OLD$/.test(x)))) {
+    const p = PLANS_DATA.PLANS[k];
+    for (const sem of (p && p.sems) || []) for (const c of sem.courses || [])
+      if (aiCodeNorm(c.c) === want) hits.push({ key: k, own: own.includes(k), c,
+        plan: (p.ar || p.name) + (/_OLD$/.test(k) ? ' (الخطة القديمة)' : PLANS_DATA.hasAltPlan(k) ? ' (الخطة الجديدة)' : '') });
+  }
+  return hits;
+}
+/* كل مواد الخطط مرة وحدة بالكود — للبحث بالاسم برّا خطته (aiRankCourses تاخذ أي «خطة» فيها sems) */
+let AI_ALL_COURSES = null;
+function aiAllCourses() {
+  if (AI_ALL_COURSES) return AI_ALL_COURSES;
+  const seen = new Map();
+  for (const k of Object.keys(PLANS_DATA.PLANS).sort((a, b) => /_OLD$/.test(a) - /_OLD$/.test(b))) {
+    const p = PLANS_DATA.PLANS[k];
+    for (const sem of (p && p.sems) || []) for (const c of sem.courses || [])
+      if (c && c.c && !c.el && !seen.has(c.c)) seen.set(c.c, Object.assign({}, c, { plan: p.ar || p.name }));
+  }
+  return (AI_ALL_COURSES = { sems: [{ id: 'all', courses: [...seen.values()] }] });
+}
+
 const AI_TOOLS = {
 
   guide: {
@@ -9613,7 +9644,18 @@ const AI_TOOLS = {
       required: ['code'] },
     run: (ctx, a) => {
       const c = aiCourse(ctx, a.code);
-      if (!c) return { known: false, error: AI_UNKNOWN, code: a.code };
+      if (!c) {
+        /* برّا خطته: من خطط التخصصات الثانية — لا «ما لقيتها» والمادة عندنا */
+        const o = aiOtherPlans(a.code, ctx.plan.major);
+        if (!o.length) return { known: false, error: AI_UNKNOWN, code: a.code };
+        const f = o[0].c;
+        return { known: true, inYourPlan: false, code: f.c, name: f.n, credits: f.h, prereqs: f.p || [],
+          fromPlan: o[0].plan, alsoIn: [...new Set(o.slice(1).map(x => x.plan))].slice(0, 5),
+          note: o[0].own
+            ? 'مو في نسخة خطته — موجودة في ' + o[0].plan + ' لتخصصه. لو هو على تلك النسخة يغيّرها من بطاقة «الجديدة/القديمة» في «خطتي»'
+            : 'مو في خطته — من خطة ' + o[0].plan + '، والمتطلبات حسب تلك الخطة. لو يبيها اختياري '
+              + 'يتأكد من مرشده إنها تنحسب له' };
+      }
       const out = { known: true, ...c };
       /* الحالة الشخصية من موادّه ودرجاته — للمشترك */
       if (ctx.pro) {
@@ -9657,8 +9699,12 @@ const AI_TOOLS = {
       code: { type: 'string', description: 'كود المادة' } },
       required: ['code'] },
     run: async (ctx, a) => {
-      if (!PLANS_DATA.findPlanCourse(ctx.plan, a.code))
-        return { known: false, error: AI_UNKNOWN, code: a.code };
+      if (!PLANS_DATA.findPlanCourse(ctx.plan, a.code)) {
+        /* برّا خطته: ما لها جدول طرح عندنا — الجواب من جدول الجامعة للترم (لو المادة في خطة عندنا) */
+        if (!aiOtherPlans(a.code).length) return { known: false, error: AI_UNKNOWN, code: a.code };
+        return Object.assign({ known: true, inYourPlan: false, code: a.code, term: ctx.plan.term,
+          termName: payTermName(ctx.plan.term) }, await aiOfferLive(ctx.plan.term, a.code));
+      }
       const w = PLANS_DATA.offerWarn(ctx.plan, a.code);
       const term = ctx.plan.term, termName = payTermName(term);
       /* بلا جدول طرح لتخصصه: «ما فيه تحذير» كان يفهمها النموذج «تُطرح» — وحنا ما نعرف. الجواب من جدول الجامعة */
@@ -10432,8 +10478,16 @@ const AI_TOOLS = {
       const q = String(a.query || '').trim();
       if (q.length < 2) return { error: 'اكتب اسم المادة' };
       const hits = aiRankCourses(ctx, q);
-      if (!hits.length) return { found: 0, matches: [],
-        error: AI_UNKNOWN + ' — جرّب كود المادة', query: q };
+      if (!hits.length) {
+        /* برّا خطته: خطط التخصصات الثانية — مادة حرة أو اختياري من قسم ثاني */
+        const other = aiRankCourses({ plan: aiAllCourses() }, q);
+        if (!other.length) return { found: 0, matches: [],
+          error: AI_UNKNOWN + ' — جرّب كود المادة', query: q };
+        return { found: other.length, query: q, inYourPlan: false,
+          confident: !other[1] || other[0].sc >= other[1].sc * 2,
+          matches: other.slice(0, 5).map(h => ({ code: h.c.c, name: h.c.n, credits: h.c.h, fromPlan: h.c.plan })),
+          note: 'مو في خطته — من خطط تخصصات ثانية عندنا. قل له إنها برّا خطته، ولو يبيها اختياري يتأكد من مرشده' };
+      }
       /* فرق كبير بين الأول والثاني = مطابقة واثقة */
       const top = hits[0], second = hits[1];
       return { found: hits.length, query: q,
@@ -11119,7 +11173,7 @@ const aiUsedOf = q => ({ day: q.day, dayCap: q.cap.day,
    ما فيها ولا حرف يخص طالباً بعينه — فالبادئة (التعليمات + الأدوات)
    واحدة لكل الطلاب، والتخزين المؤقت مشترك بينهم كلهم. بيانات الطالب
    تروح في رسالته لا هنا. */
-const AI_SYSTEM = `أنت «مساعد جدولك» — مستشار أكاديمي ذكي داخل موقع جدولك لطلاب جامعة الأمير محمد بن فهد (PMU).
+const AI_SYSTEM = `أنت «Jadwalik AI» — مستشار أكاديمي ذكي داخل موقع جدولك لطلاب جامعة الأمير محمد بن فهد (PMU).
 هدفك الأول: **يتخرّج الطالب بأسرع وقت ممكن وبلا مفاجآت.** وأي سؤال ثاني — جدوله، يومه،
 قاعة، دكتور، تذكير، استعمال الموقع — تجاوبه بنفس الإتقان.
 
