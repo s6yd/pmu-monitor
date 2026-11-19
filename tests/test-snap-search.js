@@ -56,16 +56,27 @@ const T = name => ({
 /* ═══ قاعدة PostgREST-ية (نفس محاكي test-pmu-fallbacks) ═══ */
 function filt(rows, qs) {
   let r = rows.slice();
-  for (const m of qs.matchAll(/(?:^|&)([a-z_]+)=(eq|neq|in|is)\.([^&]*)/g)) {
+  const test = (x, col, op, v) => {
+    const a = x[col];
+    if (op === 'eq') return a != null && String(a) === v;
+    if (op === 'neq') return a != null && String(a) !== v;
+    if (op === 'is') return v === 'null' ? a == null : String(a) === v;
+    if (op === 'not.is') return v === 'null' ? a != null : String(a) !== v;
+    if (op === 'in') return new Set(v.replace(/^\(|\)$/g, '').split(',').map(s => s.replace(/"/g, ''))).has(String(a));
+    if (a == null) return false;
+    const A = Date.parse(a), V = Date.parse(v);
+    const c = Number.isFinite(A) && Number.isFinite(V) ? A - V : (String(a) < v ? -1 : String(a) > v ? 1 : 0);
+    return op === 'lt' ? c < 0 : op === 'lte' ? c <= 0 : op === 'gt' ? c > 0 : c >= 0;
+  };
+  for (const m of qs.matchAll(/(?:^|&)([a-z_]+)=(eq|neq|lt|lte|gt|gte|in|is|not\.is)\.([^&]*)/g)) {
     const [, col, op, v] = m;
     if (['select', 'order', 'limit', 'offset'].includes(col)) continue;
-    r = r.filter(x => {
-      const a = x[col];
-      if (op === 'eq') return a != null && String(a) === v;
-      if (op === 'neq') return a != null && String(a) !== v;
-      if (op === 'is') return v === 'null' ? a == null : String(a) === v;
-      return new Set(v.replace(/^\(|\)$/g, '').split(',').map(s => s.replace(/"/g, ''))).has(String(a));
-    });
+    r = r.filter(x => test(x, col, op, v));
+  }
+  const or = /(?:^|&)or=\(([^)]*)\)/.exec(qs);
+  if (or) {
+    const conds = or[1].split(',').map(c => /^([a-z_]+)\.(eq|neq|is|lt|gt)\.(.*)$/.exec(c)).filter(Boolean);
+    r = r.filter(x => conds.some(([, col, op, v]) => test(x, col, op, v)));
   }
   return r;
 }

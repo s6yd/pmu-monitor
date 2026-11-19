@@ -1,7 +1,7 @@
 /* احتياط المراقبة من بانر — اختبار سلوكي بنسخ سيرفر حقيقية و«خارج» مشترك.
    بانر هنا يحاكي بحث Browse Classes العام (Banner 9 SSB): جلسة · ترم · نتائج JSON مقسّمة صفحات.
    ١) backup  — موقع الجدول ما يرد ⇒ نراقب من بانر، والطالب يوصله «فتحت»، والإدارة تعرف — وبيانات بانر
-                ما تدخل كاش البحث.
+                ما تدخل كاش البحث (والبحث يخدم منها موسوماً — قرار محمد ١٩ نوفمبر: test-banner-search).
    ٢) pages   — ١١٤٠ شعبة على ثلاث صفحات، والمحاضرة والمعمل بنفس CRN صفّان.
    ٣) settle  — رجوع الجدول بعد بانر: دورة تسجّل بلا «فتحت» (الجدول ممكن يتأخر)، وبعدها طبيعي.
       course  — المادة كاملة عند الذهاب لبانر: «فتحت» توصل، و«نزلت شعبة» ما تطلع من التبديل نفسه.
@@ -194,9 +194,9 @@ function instance(st) {
     const r = http.request({ host: '127.0.0.1', port, path: p, method: method || 'GET',
       headers: Object.assign({}, h || {}, data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {}) }, res => {
       let b = ''; res.setEncoding('utf8'); res.on('data', x => b += x);
-      res.on('end', () => { let j = null; try { j = JSON.parse(b) } catch (e) {} resolve({ status: res.statusCode, j, body: b }) });
+      res.on('end', () => { let j = null; try { j = JSON.parse(b) } catch (e) {} resolve({ status: res.statusCode, headers: res.headers, j, body: b }) });
     });
-    r.on('error', () => resolve({ status: 0, j: null, body: '' })); if (data) r.write(data); r.end();
+    r.on('error', () => resolve({ status: 0, headers: {}, j: null, body: '' })); if (data) r.write(data); r.end();
   });
   const A = { 'X-Admin-Token': ADMIN };
   c.check = () => call('/api/run-check', 'GET', A).then(r => r.status);
@@ -263,10 +263,14 @@ const SCEN = {
       'والإدارة تعرف: «ما يستجيب» ومعها «المراقبة مستمرة من بانر»');
     t.eq(DB.monitored_courses.find(x => x.crn === '30012').last_status, 'CLOSE',
       '**المقفلة من بانر تنكتب CLOSE — بصيغة جدول الجامعة** (كانت CLOSED: كل تبديل للمصدر «تغيّرت حالتها»، والصفحة تعرف CLOSE)');
+    /* البحث من بانر — قرار محمد (١٩ نوفمبر ٢٠٢٦): كان البحث هنا يفشل (بانر للمراقبة وحدها). صار يخدم من نسخة الدورة
+       **موسوماً** (X-Source) والصفحة تقفل «+ أضف» فيه — والمهم باقٍ: ما يدخل كاش البحث (test-banner-search) */
     const s = await c.search('M1');
-    t.ok(s.status !== 200 || !(s.j && s.j.courses && s.j.courses.length),
-      '**وبيانات بانر ما دخلت كاش البحث** (صياغتها ممكن تفرق — تنحفظ في جدول طالب فتطلع «تغيّر جدولك» كاذبة)');
+    t.ok(s.status === 200 && s.headers['x-source'] === 'banner' && (s.j.courses || []).length === 2,
+      'البحث وقت عطل الجدول من بانر **موسوماً** (X-Source: banner — الصفحة تقفل «+ أضف» فيه)');
     const h = await c.health();
+    t.ok(!(h.cache || []).length,
+      '**وبيانات بانر ما دخلت كاش البحث** (صياغتها ممكن تفرق — تنحفظ في جدول طالب فتطلع «تغيّر جدولك» كاذبة)');
     t.eq([h.monitorInfo && h.monitorInfo.source, (h.warnings || []).some(w => /بانر/.test(w.ar))], ['banner', true],
       'واللوحة: المصدر «بانر» وتحذير «المراقبة من بانر (احتياط)»');
     c.kill('SIGKILL');

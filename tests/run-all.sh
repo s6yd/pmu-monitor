@@ -35,7 +35,7 @@ for t in test-notif-repeat test-notif-approval test-cycle-recovery test-gender-s
 
 echo "— الصفحة —"
 for t in test-plan-regress test-guest-theme test-build-reload test-term-ui \
-         test-pushover-gate test-watch-gate test-slot-sync test-pay-page test-search-age test-motion test-search-cards test-plan-look test-sched-look test-doc-look test-contrast test-text-look test-empty-look test-tap-look test-today-term test-finals-share; do run "$t" "$F"; done
+         test-pushover-gate test-watch-gate test-slot-sync test-pay-page test-search-age test-motion test-search-cards test-plan-look test-sched-look test-doc-look test-contrast test-text-look test-empty-look test-tap-look test-today-term test-finals-share test-banner-page; do run "$t" "$F"; done
 
 echo "— اللوحة —"
 run test-admin-season "$A"
@@ -90,6 +90,7 @@ run test-snap-search   "$S"
 run test-cycle-resume "$S"
 run test-pause-nag    "$S"
 run test-banner-backup "$S"
+run test-banner-search "$S"
 run test-mon-live     "$S" "$F"
 run test-tg-ai          "$S" "$F"
 run test-tg-ask         "$S"

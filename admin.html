@@ -2865,6 +2865,7 @@ function renderSys(){
           d.hitPct===null?'— لا بحث':d.hitPct+'%'} <span style="color:var(--text3);font-weight:400">(${d.cached}/${d.rate})</span></b></div>`;
     })()}
     <div class="kv"><span>من نسخة قديمة</span><b class="${h.searchStale?'warn':'good'}">${h.searchStale}</b></div>
+    <div class="kv"><span>من بانر (موقع الجدول متعطّل)</span><b class="${h.searchBanner?'warn':'good'}">${h.searchBanner||0}</b></div>
     <div class="kv"><span>نسخ من دورة المراقبة</span><b class="good">${h.cacheFromMonitor||0}</b></div>
     ${h.ttl?`<div class="kv"><span>مدة الصلاحية الحالية</span>
       <b class="${h.ttl.tier==='peak'?'bad':h.ttl.tier==='near'?'warn':'good'}">${
