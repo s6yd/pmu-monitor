@@ -41,6 +41,7 @@ function makeServer(state) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       if (u.endsWith('/health')) return res.end(JSON.stringify({
         telegramOk: true, monitorInfo: state.mi, pmuBlock: state.block || null, cache: state.cache || [], warnings: [],
+        searches: 40, searchStale: 2, searchBanner: state.searchBanner || 0,
         uptimeHours: 1, memMB: 90, memPct: 19, cycles: [], lastCycle: {}
       }));
       if (u.endsWith('/banner-ping')) { state.pings = (state.pings || 0) + 1;
@@ -79,7 +80,7 @@ const sysText = page => page.evaluate(() => { go('sys'); renderSys(); return doc
 
   /* ── ١) بانر احتياط · عطل طويل · النبض فاشل · يوم تسجيل · نافذة ── */
   {
-    const st = { mi: monitorInfo(), cache: [
+    const st = { mi: monitorInfo(), searchBanner: 7, cache: [
       { key: '202710|ALL|M1', ageSec: 2700, ttlSec: 21600, valid: true, courses: 1100, restored: true },
       { key: '202710|EN|M1', ageSec: 40, ttlSec: 21600, valid: true, courses: 300 }] };
     const c = await open(browser, st);
@@ -97,6 +98,7 @@ const sysText = page => page.evaluate(() => { go('sys'); renderSys(); return doc
       .map(x => x.innerText.replace(/\s+/g, ' ').trim()).filter(x => /\|ALL\||\|EN\|/.test(x)));
     ok(rows.length === 2 && /202710\|ALL\|M1 ↺ 45 د ✓/.test(rows.join(' # ')) && !/↺/.test(rows.find(x => /\|EN\|/.test(x)) || '↺'),
       '**النسخة اللي رجعت من القاعدة عليها «↺» واللي من بحث بعد النشر بلاها** — ' + rows.join(' # '));
+    ok(/من بانر \(موقع الجدول متعطّل\)\s*7/.test(txt), '**«البحث والكاش»: كم بحث خدمه بانر** (البحث من بانر — قرار محمد ١٩ نوفمبر)');
     ok(/يرجع على طول من آخر نسخة محفوظة في القاعدة/.test(txt) && /والباقي يرجع مع أول بحث/.test(txt),
       'وتحت القائمة: جدول الترم يرجع من القاعدة والباقي مع أول بحث (كانت «تُمسح كلها» وبس)');
     /* «جرّب بانر» */
