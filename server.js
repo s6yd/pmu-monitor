@@ -3118,7 +3118,7 @@ const sendMsg = async (chatId, text, markup, extra) => {
    ضبطتها dev غلبت قائمة الإنتاج وهو يشتغل بكود أقدم — نفس درس
    «مفتاح لوحة dev يغلب الإنتاج» (§٦). */
 const BOT_COMMANDS = [
-  { command: 'ai',     description: '✨ اسأل مساعد جدولك — جدولك وخطتك والدكاترة' },
+  { command: 'ai',     description: '✨ اسأل Jadwalik AI — جدولك وخطتك والدكاترة' },
   { command: 'today',  description: '📅 وش عندك اليوم' },
   { command: 'rooms',  description: '🚪 قاعة فاضية الحين' },
   { command: 'plan',   description: '🎓 خطتك وكم باقي لك تتخرج' },
@@ -11483,7 +11483,7 @@ async function aiSpendAlert() {
   AI_ALERTED = ym;
   await saveState().catch(() => {});
   await sendMsg(ADMIN_CHAT_ID,
-    '⚠️ <b>مساعد جدولك — ٧٥٪ من سقف الشهر</b>\n\n'
+    '⚠️ <b>Jadwalik AI — ٧٥٪ من سقف الشهر</b>\n\n'
     + `انصرف ${aiSar(AI_MONTH.micro)} ريال من ${AI_CAPS.monthSar}.\n`
     + 'عند ١٠٠٪ يتوقف المساعد ويشرح للطلاب بهدوء، وباقي الموقع يكمّل عادي.\n\n'
     + '📊 jadwalik.com/admin').catch(() => {});
@@ -12382,7 +12382,7 @@ function aiTgLeaveAi(chatId) {
 /* مقدمة /ai: «اكتب سؤالك بكلامك» أولاً — والأمثلة نصاً لا أزراراً (قرار محمد:
    أزرار الأمثلة توهم إنه يضغط وبس) — وإن جدوله وخطته من اللي عبّاه، فالفاضي
    ما يُفهم غلطاً */
-const AI_TG_INTRO = '✨ <b>مساعد جدولك</b>\n\n'
+const AI_TG_INTRO = '✨ <b>Jadwalik AI</b>\n\n'
   + '<b>اكتب سؤالك هنا بكلامك</b> — أي شي عن دراستك، وأنا أجاوبك.\n\n'
   + 'أمثلة تقدر تكتبها:\n'
   + '🎓 وش أنزل الترم الجاي عشان أتخرج أسرع؟\n'
@@ -12395,7 +12395,7 @@ const AI_TG_INTRO = '✨ <b>مساعد جدولك</b>\n\n'
   + '📌 جدولك وخطتك من اللي عبّيته في jadwalik.com — لو ما عبّيتها، عبّها أول '
   + 'عشان يطلع كلامي صح.\n\n'
   + '<i>🚪 زر «خروج» تحت يطلّعك متى ما خلصت.</i>';
-const AI_TG_INTRO_GUEST = '✨ <b>مساعد جدولك</b>\n\n'
+const AI_TG_INTRO_GUEST = '✨ <b>Jadwalik AI</b>\n\n'
   + 'أساعدك الحين في استعمال الموقع: كيف تراقب شعبة، كيف تضيف جدولك، '
   + 'كيف تعبّي خطتك — اسألني أي شي عنه.\n\n'
   + AI_TG_LINK + '\n\n'
@@ -12676,7 +12676,7 @@ async function remindersTick() {
       OPS.remindersSent = (OPS.remindersSent || 0) + 1;
       await sendMsg(p.telegram_chat_id,
         '⏰ <b>تذكير</b>\n\n' + esc(String(r.body || '').slice(0, 300))
-        + '\n\n<i>طلبته من مساعد جدولك</i>').catch(() => {});
+        + '\n\n<i>طلبته من Jadwalik AI</i>').catch(() => {});
       /* ومعه التنبيه الطارئ لو طلبه (قرار محمد) — الحارس هنا وقت الإرسال: الطالب
          يكتب صفّه بنفسه، فـurgent منه ما يكفي. pushoverAllowed وحدها (الوضع ·
          الإضافة · مفتاحه). يرن ولو صامت ويعيد لين يأكّده — ربع ساعة أقصى */
