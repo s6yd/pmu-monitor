@@ -2751,12 +2751,21 @@ function notOfferedIn(code,c){return PlanLogic.notOfferedIn(code,c)}
    وما ذُكر في الوثيقة أصلاً — فعدّه «ترماً متاحاً» يعطي الطالب
    انطباعاً كاذباً بأن الفرصة قريبة. */
 function skipAhead(courseCode){return PlanLogic.skipAhead(planCtxNext(),courseCode)}
-/* الترم المعروض حالياً في البحث — للغياب والمواعيد ووسم «في جدولك». «خطتي» على
-   planTermCode (ترم التسجيل الجاي) لا عليه */
+/* الترم المعروض حالياً في البحث — لوسم «في جدولك». «خطتي» على planTermCode (ترم التسجيل الجاي)،
+   وبيانات «اليوم» على studyTermCode (ترم الدراسة) — لا عليه */
 function activeTermCode(){
   const el=document.getElementById('term');
   return (el&&el.value)||'202710';
 }
+/* ترم الدراسة — لبيانات «اليوم»: الغياب والمواعيد والصور والملفات والمشاركات. كانت بترم البحث المعروض
+   (activeTermCode)، فوقت التسجيل المبكر للصيفي (أبريل) — البحث على الصيفي والدراسة ربيع — ينحفظ غياب الربيع
+   للصيفي ويختفي من عدّاده، وتصفّح ترم ثاني في البحث يخفي غيابك ومواعيدك. من السيرفر (term في حالة الموقع) */
+function studyTermCode(){ return serverTerm() }
+/* وتحميلها ينتظر حالة الموقع (فيها ترم الدراسة) — بحد ٤ ثوانٍ، وبعدها الاحتياط كما كان: قبلها كانت تتحمّل
+   بالترم الافتراضي في القائمة لو سبق الدخولُ حالةَ الموقع */
+let MON_READY_RES=null;
+const MON_READY=new Promise(r=>{MON_READY_RES=r});
+function studyTermReady(){ return Promise.race([MON_READY,new Promise(r=>setTimeout(r,4000))]).then(studyTermCode) }
 /* هل المادة في الجدول المفتوح الآن؟ نستخدمها لوسم الخطة.
    قيدان مقصودان:
    1) الترم المعروض لازم يكون ترم التسجيل الحالي — الطالب قد يتصفّح ترماً
@@ -4803,7 +4812,7 @@ async function loadAbs(){
   ABS_TRIED=true;                          /* بلا هذا نعيد المحاولة كل ثانية لو فشلت */
   try{
     const {data,error}=await sb.from('absences').select('id,crn,term,on_date')
-      .eq('term',activeTermCode());
+      .eq('term',await studyTermReady());
     if(error)return;                       /* الجدول قد لا يكون منشأً بعد */
     ABS=data||[]; ABS_LOADED=true;
   }catch(e){}
@@ -4829,7 +4838,7 @@ async function markAbsent(crn,date){
       showToast(t('absNoClass')); return false }
   }
   if(absOf(crn).some(a=>a.on_date===on)){ showToast(t('absDup')); return false }
-  const row={user_id:USER.id,term:activeTermCode(),crn:String(crn),on_date:on};
+  const row={user_id:USER.id,term:studyTermCode(),crn:String(crn),on_date:on};
   const {data,error}=await sb.from('absences').insert(row).select().single();
   if(error){ showToast(t('errSave')); return false }
   ABS.push(data);
@@ -4918,7 +4927,7 @@ async function loadEvs(){
   try{
     const {data,error}=await sb.from('course_events')
       .select('id,crn,term,kind,on_date,note,note_shared,snooze_to')
-      .eq('term',activeTermCode());
+      .eq('term',await studyTermReady());
     if(error)return;
     EVS=data||[];
   }catch(e){}
@@ -4938,7 +4947,7 @@ function nextEv(crn){
 async function addEvDirect(crn,kind,date,note,share){
   if(!USER)return false;
   if(!date){ showToast(t('evPickDate')); return false }
-  const row={user_id:USER.id,term:activeTermCode(),crn:String(crn),
+  const row={user_id:USER.id,term:studyTermCode(),crn:String(crn),
              kind,on_date:date,note:(note||'').trim().slice(0,300)||null,
              note_shared:!!share};
   const {data,error}=await sb.from('course_events').insert(row).select().single();
@@ -5110,7 +5119,7 @@ async function loadSharedPhotos(){
          وبدونها تجي undefined فما يظهر أي ملف مشارك أبداً، وتتسرّب
          الملفات إلى شبكة الصور. */
       .select('id,crn,term,on_date,path,note,kind,filename,size_kb,mine')
-      .eq('term',activeTermCode());
+      .eq('term',await studyTermReady());
     if(error)return;
     SH_PHOTOS=(data||[]).filter(p=>!p.mine);   /* صوري تظهر في قسمي */
   }catch(e){}
@@ -5147,7 +5156,7 @@ async function loadPhotos(){
          القفل مهما شاركت، وبدون kind تسقط كل الملفات في شبكة الصور
          ويبقى قسم «ملفات المادة» فاضياً أبداً. */
       .select('id,crn,term,on_date,event_id,path,note,shared,kind,filename,size_kb')
-      .eq('term',activeTermCode());
+      .eq('term',await studyTermReady());
     if(error)return;
     PHOTOS=data||[];
   }catch(e){}
@@ -5225,7 +5234,7 @@ async function pickFile(crn,eventId){
       const name=`${USER.id}/${crn}/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
       const up=await sb.storage.from(PH_BUCKET).upload(name,f,{contentType:f.type||'application/octet-stream'});
       if(up.error)throw up.error;
-      const row={user_id:USER.id,term:activeTermCode(),crn:String(crn),
+      const row={user_id:USER.id,term:studyTermCode(),crn:String(crn),
                  on_date:ksaNow().date,event_id:eventId||null,path:name,
                  kind:'file',filename:f.name.slice(0,160),
                  size_kb:Math.round(f.size/1024)};
@@ -5261,7 +5270,7 @@ async function pickPhoto(crn,eventId){
       const name=`${USER.id}/${crn}/${Date.now()}-${Math.random().toString(36).slice(2,8)}.jpg`;
       const up=await sb.storage.from(PH_BUCKET).upload(name,blob,{contentType:'image/jpeg'});
       if(up.error)throw up.error;
-      const row={user_id:USER.id,term:activeTermCode(),crn:String(crn),
+      const row={user_id:USER.id,term:studyTermCode(),crn:String(crn),
                  on_date:ksaNow().date,event_id:eventId||null,path:name};
       const {data,error}=await sb.from('course_photos').insert(row).select().single();
       if(error){
@@ -5438,7 +5447,7 @@ async function loadShared(){
   SH_TRIED=true;
   try{
     const {data,error}=await sb.from('shared_events')
-      .select('id,crn,term,kind,on_date,note,mine').eq('term',activeTermCode());
+      .select('id,crn,term,kind,on_date,note,mine').eq('term',await studyTermReady());
     if(error)return;
     SHARED=data||[];
   }catch(e){}
@@ -5463,7 +5472,7 @@ function suggestionsFor(crn){
 /* الاقتراح يُضاف بضغطة منه — لا إضافة صامتة مهما كثر المؤكدون */
 async function acceptSuggestion(crn,kind,date){
   if(!USER)return;
-  const row={user_id:USER.id,term:activeTermCode(),crn:String(crn),
+  const row={user_id:USER.id,term:studyTermCode(),crn:String(crn),
              kind,on_date:date,note:null};
   const {data,error}=await sb.from('course_events').insert(row).select().single();
   if(error){ showToast(t('errSave')); return }
@@ -5943,6 +5952,7 @@ let MONLIVE_PREVIEW=/[?&]monpreview=1(?:&|$)/.test(location.search);
 async function loadMonitorState(){
   try{ MON_STATE=await (await fetch(API_BASE+'/api/monitor-status')).json(); }
   catch(e){ MON_STATE=null; }
+  if(MON_READY_RES){ MON_READY_RES(); MON_READY_RES=null }
   poCheckUnlock();
   poHandleReturn().catch(()=>{});
   /* بطاقة التنبيه الطارئ تعتمد على هالحالة — الإعدادات المفتوحة قبل وصولها
