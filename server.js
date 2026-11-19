@@ -3559,8 +3559,9 @@ async function bannerSearchRows(term) {
 }
 const bannerSearchFor = (rows, gender) => gender === 'M1' ? rows.filter(r => r.gender === 'M')
   : gender === 'F1' ? rows.filter(r => r.gender === 'F') : rows;
-/* موقع الجدول ما رد قبل أقل من دقيقة: البحث ما ينتظره ثانية (٢٠ ثانية للرمز مع كل بحث) — على طول للاحتياط
-   (آخر نسخة أو بانر). أول بحث بعد الدقيقة يجرّبه، والتسخين (force) يجرّبه دائماً */
+/* موقع الجدول ما رد (مهلة أو انقطاع) قبل أقل من دقيقة: البحث ما ينتظره ثانية (٢٠ ثانية للرمز مع كل بحث) — على طول
+   للاحتياط (آخر نسخة أو بانر). أول بحث بعد الدقيقة يجرّبه، والتسخين (force) يجرّبه دائماً. والرد السريع (شكل ما نفهمه ·
+   5xx) ما يشغّله */
 const PMU_SEARCH_DOWN_MS = 60 * 1000;
 let PMU_SEARCH_DOWN_UNTIL = 0;
 
@@ -13330,8 +13331,9 @@ const server = http.createServer(async (req, res) => {
       }
       /* لو الجامعة تعطلت، نخدم آخر نسخة محفوظة بدل ما نفشل — وبلاها (أو قديمة وقت التسجيل) من بانر (فوق) */
       OPS.lastError = { at: Date.now(), where: 'search', msg: err.message };
-      if (!err.local && (err.pmu === 'down' || err.pmu === 'format' || !err.pmu))
-        PMU_SEARCH_DOWN_UNTIL = Date.now() + PMU_SEARCH_DOWN_MS;
+      /* القاطع لـ«ما رد» وحده (مهلة · انقطاع — خطأ بلا نوع من pmuReq): هو اللي ينتظر ٢٠ ثانية. ورد سريع بشكل ما
+         نفهمه (format) أو 5xx ما ننتظره — والبحث اللي بعده يجرّب الموقع على طول (test-pmu-signals) */
+      if (!err.local && !err.pmu) PMU_SEARCH_DOWN_UNTIL = Date.now() + PMU_SEARCH_DOWN_MS;
       const stale = coursesCache.get(`${term}|${college}|${gender}`);
       const staleOld = !stale || (!!currentWindow() && Date.now() - stale.at > SEARCH_OLD_MS);
       let ban = null, banErr = null;
