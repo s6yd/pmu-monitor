@@ -1647,6 +1647,7 @@ sections:[
  {t:'«مراقبتك» فوق البحث',isNew:1,d:'وقت التسجيل تطلع فوق <b>🔍 البحث</b> بطاقة <b>مراقبتك</b>: كم مادة <b>تراقبها</b>، وكم منها <b>مفتوحة الحين</b>، ومتى <b>الفحص الجاي</b> — وتوقف أي مراقبة منها.'},
  {t:'اربط تيليغرام',d:'من <b>⚙️ الإعدادات</b> اضغط «ربط» → يفتح البوت → Start. أول ما تنفتح مادتك يوصلك إشعار فيه الـCRN والوقت والقاعة.'},
  {t:'لو تغيّر جدولك',isNew:1,d:'غيّرت الجامعة دكتور أو قاعة أو وقت مادة عندك؟ يوصلك إشعار، ويظهر تنبيه على المادة في جدولك يبيّن لك <b>وش كان ووش صار</b>.'},
+ {t:'لو تغيّر موعد اختبارك',isNew:1,d:'غيّرت الجامعة موعد اختبار نهائي أو قاعته لمادة في جدولك؟ يوصلك على تيليغرام <b>وش كان ووش صار</b>، وتنبيه لو صار بنفس وقت اختبار ثاني عندك.'},
  {t:'تحكّم بالتنبيهات',isNew:1,d:'من <b>⚙️ الإعدادات</b> اختر أي إشعار تبيه وأيهم لا — كل نوع بمفتاح مستقل.'}]},
 
 {ic:'👨‍🏫',name:'الدكاترة ورأيك',items:[
@@ -1702,6 +1703,7 @@ sections:[
  {t:'“Your watches” above Search',isNew:1,d:'During registration a <b>Your watches</b> card sits above <b>🔍 Search</b>: how many you are <b>Watching</b>, how many are <b>Open now</b>, and the <b>Next check</b> — and you can stop any watch from there.'},
  {t:'Link Telegram',d:'In <b>⚙️ Settings</b> tap “Link” → the bot opens → Start. When your course opens you get an alert with the CRN, time and room.'},
  {t:'If your schedule changes',isNew:1,d:'Did the university change an instructor, room or time on one of your courses? You get an alert, and a notice appears on that course showing <b>what it was and what it became</b>.'},
+ {t:'If an exam moves',isNew:1,d:'Did the university move a final exam, or change its room, for a course in your schedule? You get a Telegram message showing <b>what it was and what it became</b>, and a warning if it now clashes with another exam of yours.'},
  {t:'Control your alerts',isNew:1,d:'In <b>⚙️ Settings</b> choose which notifications you want and which you do not — each type has its own switch.'}]},
 
 {ic:'👨‍🏫',name:'Faculty and feedback',items:[

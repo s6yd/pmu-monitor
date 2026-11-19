@@ -38,6 +38,13 @@ ok(/data\.match\(\/\^fin:\(ok\|no\):\(\[0-9a-f\]\{8\}\)\$\/\)/.test(src) && /fin
 ok(/async function getOne\(g, maxAge\)/.test(src) && /async function getFinals\(opt\)/.test(src),
    'getFinals تقبل عمراً أقصى للكاش (الفحص يبي سحبة طازجة لا نسخة عمرها ٦ ساعات)');
 ok(/تغيّر في اختباراتك/.test((/function msgKind[\s\S]*?\n}\n/.exec(src) || [''])[0]), 'سجل الرسائل يصنّفها «تغيّر اختبار»');
+/* والدليل يقولها — المساعد يجاوب «يجيني تنبيه لو تغيّر موعد الاختبار؟» من الدليل */
+try {
+  const SH = path.join(path.dirname(SRV), 'shared', 'plans.js');
+  delete require.cache[require.resolve(SH)];
+  const G = require(SH).GUIDE, has = (L2, t) => G[L2].sections.some(x => x.items.some(it => it.t === t));
+  ok(has('ar', 'لو تغيّر موعد اختبارك') && has('en', 'If an exam moves'), '**الدليل فيه «لو تغيّر موعد اختبارك»** بالعربي والإنجليزي');
+} catch (e) { ok(false, 'الدليل انقرأ — ' + e.message) }
 if (i0 < 0 || i1 <= i0) done();
 const REGION = L.slice(i0, i1 + 1).join('\n');
 
