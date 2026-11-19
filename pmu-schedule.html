@@ -1760,9 +1760,34 @@ padding-top:10px;border-top:1px solid var(--border)}
 .fin-empty{font-size:12.5px;color:var(--text3);padding:14px 0;line-height:1.7}
 .fin-spin{width:20px;height:20px;border:2px solid var(--border2);border-top-color:var(--accent);
 border-radius:50%;animation:spin .8s linear infinite;margin:18px auto}
+/* ── مشاركة جدول الاختبارات (صورة لقروبه) ── */
+.fin-share{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;margin-top:14px;
+padding:11px 14px;border-radius:12px;border:1px solid rgba(61,111,255,.4);background:rgba(61,111,255,.13);
+color:var(--text);font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer}
+html.light .fin-share{border-color:rgba(47,95,232,.35);background:rgba(47,95,232,.08)}
+.fs-sub{font-size:12.5px;color:var(--text2);line-height:1.7;margin:2px 0 10px}
+.fs-theme{display:flex;gap:8px;justify-content:center;margin-bottom:10px}
+.fs-theme button{position:relative;background:var(--card);border:1px solid var(--border2);color:var(--text2);
+font-family:inherit;font-size:12.5px;font-weight:600;padding:7px 15px;border-radius:20px;cursor:pointer}
+.fs-theme button::after{content:'';position:absolute;inset:-6px -3px}
+.fs-theme button.on{border-color:var(--accent);color:var(--text);background:rgba(61,111,255,.13)}
+.fs-prev{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:10px;
+display:flex;align-items:center;justify-content:center;min-height:180px}
+.fs-prev img{display:block;max-width:100%;max-height:44dvh;width:auto;height:auto;border-radius:9px;
+box-shadow:0 4px 18px var(--shadow)}
+.fs-hint{font-size:11.5px;color:var(--text3);text-align:center;margin-top:7px;line-height:1.6}
+.fs-btns{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+.fs-row{display:flex;gap:8px}
+.fs-row .fs-b{flex:1;min-width:0}
+.fs-b{min-height:44px;padding:10px 8px;border-radius:12px;border:1px solid var(--border2);background:var(--card);
+color:var(--text);font-family:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.fs-b.pri{background:var(--accent);border-color:var(--accent);color:#fff;font-size:14.5px;font-weight:700}
+.fs-note{font-size:11.5px;color:var(--text2);line-height:1.7;margin-top:12px;padding:9px 11px;
+background:var(--card);border:1px solid var(--border);border-radius:11px}
 
 /* ---- ورقة الطباعة (مخفية على الشاشة) ---- */
 #printSheet{display:none}
+#finPrint{display:none}
 
 @media print{
 @page{size:A4 portrait;margin:9mm}
@@ -1784,6 +1809,10 @@ margin:0!important;padding:0!important;min-height:0!important}
 .main{padding:0!important;max-width:none!important;margin:0!important}
 #pageSched{display:block!important}
 #printSheet{display:block!important}
+/* «🖨️ اطبعها» من لوح مشاركة الاختبارات: ورقة الاختبارات وحدها (صورة فاتحة على صفحة وحدة) */
+html.fin-printing #printSheet{display:none!important}
+html.fin-printing #finPrint{display:block!important}
+#finPrint img{display:block;max-width:100%;max-height:275mm;width:auto;height:auto;margin:0 auto}
 
 /* ترويسة الورقة */
 .ps-head{display:flex;justify-content:space-between;align-items:flex-end;
@@ -2122,6 +2151,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
   </div>
 
   <div id="printSheet"></div>
+  <div id="finPrint"></div>
 </div>
 
 <!-- PLAN -->
@@ -6300,8 +6330,23 @@ function finMinutes(h){
   return hh*60+parseInt(m[2],10);
 }
 function finDateKey(d){
-  const t=Date.parse(d);
-  return isNaN(t)?0:t;
+  const o=finDate(d);
+  return o?o.getTime():0;
+}
+/* «Dec 20, 2026» (صيغة الجامعة) ⇒ تاريخ. بلا Date.parse وحده: الصيغ غير القياسية تختلف بين المتصفحات */
+const FIN_MON=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+function finDate(s){
+  const m=String(s||'').trim().match(/^([A-Za-z]{3})[A-Za-z]*\.?\s+(\d{1,2}),?\s+(\d{4})$/);
+  if(m){ const i=FIN_MON.indexOf(m[1].toLowerCase()); if(i>=0)return new Date(+m[3],i,+m[2]) }
+  const t=Date.parse(s);
+  return isNaN(t)?null:new Date(t);
+}
+/* «12:00PM» ⇒ «12:00 م» (والإنجليزي «12:00 PM»). صيغة ثانية تبقى كما جات */
+function finClock(h){
+  const m=String(h||'').trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if(!m)return String(h||'').trim();
+  const pm=m[3].toUpperCase()==='PM';
+  return parseInt(m[1],10)+':'+m[2]+' '+(LANG==='ar'?(pm?'م':'ص'):(pm?'PM':'AM'));
 }
 
 async function loadFinals(manual){
@@ -6337,76 +6382,410 @@ async function loadFinals(manual){
   renderFinals();
 }
 
-function renderFinals(){
-  const body=document.getElementById('finBody');
-  const btn=document.getElementById('finBtn');
-  if(!FINALS)return;
-
-  /* المطابقة بالـ CRN أولاً، ثم بكود المادة والشعبة احتياطاً */
-  const byCrn={},byCodeSec={};
-  FINALS.forEach(e=>{
-    byCrn[String(e.crn).trim()]=e;
-    byCodeSec[(e.code+'|'+e.section).replace(/\s+/g,'').toUpperCase()]=e;
-  });
-
-  const found=[],missing=[];
+/* اختباراتك من جدول الجامعة — للبطاقة وورقة الطباعة والمشاركة (كانت المطابقة منسوخة في البطاقة والطباعة).
+   المطابقة بالـCRN ثم بالكود والشعبة. **وكل اختبار مرة**: المحاضرة والمعمل بنفس CRN صفّان في جدولك، فكان
+   اختبارها يطلع مرتين ومعه «اختبارين بنفس الوقت» كاذب. **والتعارض بين مادتين مختلفتين** (الكود الأم): جدولك
+   مخطِّط، وشعبتان بديلتان لنفس المادة بنفس الموعد مو تعارض. */
+function finalsMine(){
+  if(!FINALS)return null;
+  const key=(c,s)=>(String(c||'')+'|'+String(s||'')).replace(/\s+/g,'').toUpperCase();
+  const byCrn={},byCS={};
+  FINALS.forEach(e=>{ byCrn[String(e.crn).trim()]=e; byCS[key(e.code,e.section)]=e });
+  const found=[],missing=[],seenE=new Set(),seenM=new Set();
   schedule.forEach(c=>{
-    const k=(c.courseCode+'|'+(c.section||'')).replace(/\s+/g,'').toUpperCase();
-    const e=byCrn[String(c.crn).trim()]||byCodeSec[k];
-    if(e)found.push({...e,mine:c}); else missing.push(c);
+    const e=byCrn[String(c.crn).trim()]||byCS[key(c.courseCode,c.section)];
+    if(e){ if(!seenE.has(e)){ seenE.add(e); found.push({...e,mine:c}) } return }
+    const k=String(c.crn||'').trim()||key(c.courseCode,c.section);
+    if(!seenM.has(k)){ seenM.add(k); missing.push(c) }
   });
-
-  if(!found.length){
-    body.innerHTML=`<div class="fin-empty">${t('finNone')}</div>`;
-    btn.textContent=t('finReload');
-    return;
-  }
-
-  /* ترتيب زمني */
   found.sort((a,b)=>finDateKey(a.date)-finDateKey(b.date)||finMinutes(a.hour)-finMinutes(b.hour));
-
-  /* تعارض: اختباران في نفس اليوم ونفس الساعة */
   const slot={};
-  found.forEach(e=>{const k=e.date+'|'+e.hour;(slot[k]=slot[k]||[]).push(e)});
-  const clashKeys=Object.keys(slot).filter(k=>slot[k].length>1);
-
-  /* تجميع بالأيام */
+  found.forEach(e=>{ const k=e.date+'|'+e.hour; (slot[k]=slot[k]||new Set()).add(baseCourseCode(e.code)) });
+  found.forEach(e=>{ e.clash=slot[e.date+'|'+e.hour].size>1 });
   const days=[];
   found.forEach(e=>{
     let d=days.find(x=>x.date===e.date);
-    if(!d){d={date:e.date,day:e.day,items:[]};days.push(d)}
+    if(!d){ d={date:e.date,day:e.day,items:[]}; days.push(d) }
     d.items.push(e);
   });
+  return {found,missing,days,clash:found.some(e=>e.clash)};
+}
 
-  const dayName=d=>LANG==='ar'?(FIN_DAY_AR[d]||d):d;
+function renderFinals(){
+  const body=document.getElementById('finBody');
+  const btn=document.getElementById('finBtn');
+  if(!FINALS||!body)return;
+  const M=finalsMine(), ar=LANG==='ar';
 
-  let html=days.map(d=>`
+  if(!M.found.length){
+    body.innerHTML=`<div class="fin-empty">${t('finNone')}</div>`;
+    if(btn)btn.textContent=t('finReload');
+    return;
+  }
+
+  const dayName=d=>ar?(FIN_DAY_AR[d]||d):d;
+
+  let html=`<button class="fin-share" id="finShareBtn" onclick="openFinShare()">${ar?'📤 شارك جدول اختباراتك':'📤 Share your exam schedule'}</button>`
+  +M.days.map(d=>`
     <div class="fin-day">
       <div class="fin-daylabel">${dayName(d.day)} <span class="dd">${escapeHtml(d.date)}</span></div>
-      ${d.items.map(e=>{
-        const clash=slot[e.date+'|'+e.hour].length>1;
-        return `<div class="fin-row${clash?' clash':''}">
+      ${d.items.map(e=>`<div class="fin-row${e.clash?' clash':''}">
           <div class="fin-time">${escapeHtml(e.hour)}</div>
           <div class="fin-info">
             <div class="fin-code">${escapeHtml(e.code)} §${escapeHtml(e.section)}</div>
             <div class="fin-meta"><bdi>${escapeHtml(e.title)}</bdi></div>
           </div>
           <div class="fin-room">${escapeHtml(e.building)}<br>${escapeHtml(e.room)}</div>
-        </div>`;
-      }).join('')}
+        </div>`).join('')}
     </div>`).join('');
 
-  if(clashKeys.length){
+  if(M.clash){
     html+=`<div class="fin-warn">⚠️ ${t('finClash')}</div>`;
   }
-  if(missing.length){
+  if(M.missing.length){
     html+=`<div class="fin-note">${t('finMissing')} <b>${
-      missing.map(c=>escapeHtml(c.courseCode)+' §'+escapeHtml(c.section||'')).join('، ')}</b></div>`;
+      M.missing.map(c=>escapeHtml(c.courseCode)+' §'+escapeHtml(c.section||'')).join('، ')}</b></div>`;
   }
   html+=`<div class="fin-note">${t('finSource')}</div>`;
 
   body.innerHTML=html;
-  btn.textContent=t('finReload');
+  if(btn)btn.textContent=t('finReload');
+}
+
+/* ═══ مشاركة جدول الاختبارات — طلب محمد (١٩ نوفمبر ٢٠٢٦: «طريقة افضل لطباعة او نشر جدول الاختبارات بحيث
+   الطالب يقدر ينشره لقروبه … ويكون افضل شكله ومنها ينشر موقعنا») ═══
+   صورة تنرسم في المتصفح (canvas — بلا سيرفر ولا مكتبة): كل يوم بتاريخه، وكل اختبار بلون مادته في «جدولي» ووقته
+   وقاعته، و«jadwalik.com» تحت. **بلا اسم الطالب ولا شي من حسابه** — الصورة تنتشر في قروب.
+   ومن اللوح: مشاركة الصورة (قائمة المشاركة في الجوال ⇒ واتساب) · حفظها · نصّها للنسخ · وطباعتها **فاتحة** على ورقة
+   وحدة (الداكنة تاكل الحبر). ونص الرسالة فيه **رابط دعوته** لو عنده كود (`inviteLink` — نفس «ادعُ صديقك»).
+   **الصورة تنرسم أول ما يفتح اللوح، ونسخة الطباعة بعدها**: المشاركة والطباعة في سفاري لازم تطلعان من الضغطة نفسها،
+   ولو انتظرنا الرسم بعدها يرفضها. */
+let FS={theme:'',dataUrl:'',url:'',file:null,gen:0,pgen:0,purl:'',printReady:false,printing:false};
+const FS_PAL={
+  dark:{bg1:'#121a33',bg2:'#080b12',glow:'rgba(61,111,255,.22)',card:'#131928',line:'#253050',tile:'#0e1424',
+        text:'#e2e8f8',text2:'#a7b1cf',text3:'#7d89b1',accent:'#5b84ff',logo:'#3d6fff'},
+  light:{bg1:'#ffffff',bg2:'#edf1fa',glow:'rgba(47,95,232,.10)',card:'#ffffff',line:'#dbe2ef',tile:'#f4f6fb',
+        text:'#141a26',text2:'#4f5b72',text3:'#5c687e',accent:'#2f5fe8',logo:'#2f5fe8'}
+};
+const FS_SANS='"IBM Plex Sans Arabic",system-ui,sans-serif', FS_MONO='"JetBrains Mono",ui-monospace,monospace';
+
+/* اللي ينرسم — نفس البيانات للصورة والنص */
+function finShareModel(){
+  const M=finalsMine();
+  if(!M||!M.found.length)return null;
+  const ar=LANG==='ar', loc=ar?'ar-u-ca-gregory-nu-latn':'en-GB', cmap=courseColors(schedule);
+  const clean=v=>decodeEnt(String(v==null?'':v)).replace(/\s+/g,' ').trim();
+  return {
+    dir:ar?'rtl':'ltr',
+    title:ar?'جدول اختباراتي النهائية':'My final exams',
+    sub:[termLabel(serverTerm()),nOf(M.found.length,'exam')].join(' · '),
+    count:M.found.length,
+    days:M.days.map(d=>{
+      const o=finDate(d.date);
+      return {
+        day:d.day?(ar?(FIN_DAY_AR[d.day]||d.day):d.day):(o?o.toLocaleDateString(loc,{weekday:'long'}):''),
+        num:o?String(o.getDate()):'',
+        month:o?o.toLocaleDateString(loc,{month:'long'}):clean(d.date),
+        items:d.items.map(e=>({
+          time:finClock(e.hour), code:clean(e.code), sec:clean(e.section), title:clean(e.title),
+          where:[e.building,e.room].map(clean).filter(Boolean).join(' · '),
+          color:cmap[baseCourseCode(e.code)]||COURSE_HUES[0]
+        }))
+      };
+    })
+  };
+}
+
+/* نص يقصّ من آخره بـ«…» لين يدخل */
+function fsFit(x,str,max){
+  str=String(str||'');
+  if(x.measureText(str).width<=max)return str;
+  let lo=0,hi=str.length;
+  while(lo<hi){ const mid=(lo+hi+1)>>1; if(x.measureText(str.slice(0,mid).trimEnd()+'…').width<=max)lo=mid; else hi=mid-1 }
+  return str.slice(0,lo).trimEnd()+'…';
+}
+function fsRound(x,px,py,w,h,r){
+  r=Math.min(r,w/2,h/2);
+  x.beginPath(); x.moveTo(px+r,py); x.arcTo(px+w,py,px+w,py+h,r); x.arcTo(px+w,py+h,px,py+h,r);
+  x.arcTo(px,py+h,px,py,r); x.arcTo(px,py,px+w,py,r); x.closePath();
+}
+/* المقاسات — الارتفاع يتبع عدد الاختبارات */
+const FS_W=1080, FS_PAD=64, FS_HEAD=300, FS_FOOT=236, FS_TILE=156, FS_CARD=156, FS_GAP=14, FS_DAYGAP=24;
+function fsHeight(m){
+  return FS_HEAD+m.days.reduce((h,d)=>h+d.items.length*FS_CARD+(d.items.length-1)*FS_GAP+FS_DAYGAP,0)-FS_DAYGAP+FS_FOOT;
+}
+function finDraw(m,theme,scale){
+  const P=FS_PAL[theme]||FS_PAL.dark, W=FS_W, PAD=FS_PAD, rtl=m.dir==='rtl', H=fsHeight(m);
+  const cv=document.createElement('canvas');
+  cv.width=Math.round(W*scale); cv.height=Math.round(H*scale);
+  const x=cv.getContext('2d');
+  x.scale(scale,scale);
+  x.textBaseline='alphabetic';
+  /* مكان من بداية السطر (اليمين بالعربي) ⇒ إحداثي فعلي */
+  const RX=(off,w)=>rtl?W-off-w:off;
+  /* نص: من نقطة على بُعد off من البداية (اليمين بالعربي)، يمتد للنهاية (start) أو للبداية (end) */
+  const T=(str,off,y,o)=>{
+    x.font=o.font; x.fillStyle=o.color; x.direction=o.dir||(rtl?'rtl':'ltr');
+    x.textAlign=((o.align||'start')==='start')===rtl?'right':'left';
+    str=fsFit(x,str,o.max||W);
+    x.fillText(str,rtl?W-off:off,y);
+    return x.measureText(str).width;
+  };
+  const F=(wt,px,mono)=>`${wt} ${px}px ${mono?FS_MONO:FS_SANS}`;
+
+  /* الخلفية */
+  const g=x.createLinearGradient(0,0,0,H); g.addColorStop(0,P.bg1); g.addColorStop(1,P.bg2);
+  x.fillStyle=g; x.fillRect(0,0,W,H);
+  const gx=rtl?W-120:120, rg=x.createRadialGradient(gx,40,0,gx,40,520);
+  rg.addColorStop(0,P.glow); rg.addColorStop(1,'rgba(0,0,0,0)');
+  x.fillStyle=rg; x.fillRect(0,0,W,H);
+
+  /* الشعار */
+  fsRound(x,RX(PAD,60),58,60,60,16); x.fillStyle=P.logo; x.fill();
+  x.font=F(400,30); x.direction='ltr'; x.fillStyle='#fff'; x.textAlign='center';
+  x.fillText('🎓',RX(PAD,60)+30,99);
+  T('Jadwalik',PAD+78,86,{font:F(700,30),color:P.text,dir:'ltr'});
+  T('PMU',PAD+78,114,{font:F(500,19,true),color:P.text3,dir:'ltr'});
+
+  /* العنوان */
+  T(m.title,PAD,212,{font:F(700,54),color:P.text,max:W-2*PAD});
+  T(m.sub,PAD,258,{font:F(500,27),color:P.text2,max:W-2*PAD});
+
+  /* الأيام */
+  let y=FS_HEAD;
+  const CX=PAD+FS_TILE+18, CW=W-PAD-CX;
+  m.days.forEach(d=>{
+    const rowH=d.items.length*FS_CARD+(d.items.length-1)*FS_GAP;
+    /* بلاطة اليوم */
+    fsRound(x,RX(PAD,FS_TILE),y,FS_TILE,rowH,22); x.fillStyle=P.tile; x.fill();
+    x.lineWidth=2; x.strokeStyle=P.line; x.stroke();
+    const tc=PAD+FS_TILE/2, mid=y+rowH/2, tcx=rtl?W-tc:tc;
+    const TC=(str,yy,o)=>{ x.font=o.font; x.fillStyle=o.color; x.direction=rtl?'rtl':'ltr'; x.textAlign='center'; x.fillText(fsFit(x,str,FS_TILE-20),tcx,yy) };
+    if(d.num){
+      TC(d.day,mid-38,{font:F(600,24),color:P.text2});
+      TC(d.num,mid+24,{font:F(700,62),color:P.accent});
+      TC(d.month,mid+60,{font:F(500,23),color:P.text2});
+    }else{
+      TC(d.day,mid-6,{font:F(600,24),color:P.text2});
+      TC(d.month,mid+26,{font:F(500,20),color:P.text2});
+    }
+    /* الاختبارات */
+    d.items.forEach((e,i)=>{
+      const cy=y+i*(FS_CARD+FS_GAP), cx=RX(CX,CW);
+      x.save(); fsRound(x,cx,cy,CW,FS_CARD,22); x.clip();
+      x.fillStyle=P.card; x.fillRect(cx,cy,CW,FS_CARD);
+      x.fillStyle=e.color; x.fillRect(rtl?cx+CW-9:cx,cy,9,FS_CARD);
+      x.restore();
+      fsRound(x,cx,cy,CW,FS_CARD,22); x.lineWidth=2; x.strokeStyle=P.line; x.stroke();
+      const s0=CX+34, inner=CW-34-30;
+      const tw=T(e.time,CX+CW-30,cy+58,{font:F(700,34),color:P.accent,align:'end',max:260});
+      T(e.code+(e.sec?' · '+e.sec:''),s0,cy+58,{font:F(700,33),color:P.text,dir:'ltr',max:inner-tw-24});
+      T(e.title,s0,cy+100,{font:F(500,26),color:P.text2,dir:'ltr',max:inner});
+      if(e.where)T('📍 '+e.where,s0,cy+136,{font:F(500,23,true),color:P.text3,dir:'ltr',max:inner});
+    });
+    y+=rowH+FS_DAYGAP;
+  });
+
+  /* التذييل — اسم موقعنا */
+  y+=-FS_DAYGAP+44;
+  x.fillStyle=P.line; x.fillRect(PAD,y,W-2*PAD,2);
+  T('jadwalik.com',PAD,y+70,{font:F(700,40),color:P.accent,dir:'ltr'});
+  T(rtl?'جدولك واختباراتك وخطتك الدراسية — في مكان واحد':'Your schedule, exams and study plan — in one place',
+    PAD,y+114,{font:F(500,25),color:P.text2,max:W-2*PAD});
+  T(rtl?'من جدول الاختبارات المعلن في موقع الجامعة — راجعه قبل كل اختبار':'From the exam schedule published by the university — check it before each exam',
+    PAD,y+156,{font:F(400,20),color:P.text3,max:W-2*PAD});
+  return cv;
+}
+
+/* الخط قبل الرسم — بلاه ينرسم بخط النظام */
+function fsFonts(){
+  if(!document.fonts||!document.fonts.load)return Promise.resolve();
+  const want=['700 54px "IBM Plex Sans Arabic"','600 24px "IBM Plex Sans Arabic"','500 26px "IBM Plex Sans Arabic"',
+    '400 20px "IBM Plex Sans Arabic"','500 23px "JetBrains Mono"'];
+  return Promise.race([Promise.all(want.map(f=>document.fonts.load(f,'جدول ABC 123').catch(()=>{}))),
+    new Promise(r=>setTimeout(r,2500))]);
+}
+/* سقف بكسلات الصورة: سفاري القديم يرفض canvas فوق ١٦ مليون بكسل */
+function fsScale(m,want){ return Math.max(1,Math.min(want,Math.sqrt(16e6/(FS_W*fsHeight(m))))) }
+/* PNG بلا تعليق للصفحة (toBlob)، و«data:» للمعاينة وحدها: الضغط المطوّل على الصورة يحفظها في الصور */
+async function fsRender(theme,scale,withData){
+  await fsFonts();
+  const m=finShareModel();
+  if(!m)return null;
+  const cv=finDraw(m,theme,fsScale(m,scale||1));
+  const blob=await new Promise(r=>{ try{ cv.toBlob(r,'image/png') }catch(e){ r(null) } });
+  return {blob,dataUrl:withData?cv.toDataURL('image/png'):''};
+}
+function fsName(){ return 'jadwalik-finals-'+serverTerm()+'.png' }
+function fsCode(){ return (USER&&ACCOUNT&&ACCOUNT.invite&&ACCOUNT.invite.code)||'' }
+function fsLink(){ const c=fsCode(); return c?inviteLink(c):'https://jadwalik.com' }
+function fsCaption(){
+  return LANG==='ar'?`📝 جدول اختباراتي النهائية — طلّعته من «جدولك»: ${fsLink()}`
+                    :`📝 My final exams — made with Jadwalik: ${fsLink()}`;
+}
+/* نفس الصورة نصاً — للقروب اللي يبي ينسخ (والنجوم عريض في واتساب) */
+function fsText(){
+  const m=finShareModel();
+  if(!m)return '';
+  const ar=m.dir==='rtl', out=[`📝 ${m.title} — ${m.sub}`,''];
+  m.days.forEach(d=>{
+    out.push(`*${[d.day,d.num,d.month].filter(Boolean).join(' ')}*`);
+    d.items.forEach(e=>{
+      out.push(`⏰ ${e.time} — ${e.code}${e.sec?' ('+e.sec+')':''}`);
+      if(e.title)out.push(e.title);
+      if(e.where)out.push('📍 '+e.where);
+    });
+    out.push('');
+  });
+  out.push(ar?'طلّعته من «جدولك» — جدولك واختباراتك وخطتك في مكان واحد:':'Made with Jadwalik — your schedule, exams and plan in one place:');
+  out.push(fsLink());
+  return out.join('\n');
+}
+function fsCanShare(){
+  try{
+    return !!(navigator.share&&navigator.canShare&&typeof File==='function'&&
+      navigator.canShare({files:[new File(['x'],'x.png',{type:'image/png'})]}));
+  }catch(e){ return false }
+}
+
+function openFinShare(){
+  if(!finShareModel())return;
+  let ov=document.getElementById('fsOv');
+  if(!ov){
+    ov=document.createElement('div');
+    ov.className='guide-overlay'; ov.id='fsOv';
+    ov.onclick=e=>{ if(e.target===ov)closeFinShare() };
+    ov.innerHTML='<div class="guide-sheet" id="fsSheet"></div>';
+    document.body.appendChild(ov);
+  }
+  /* لوحان مفتوحان معاً ما ينفع — الدليل يفتح تلقائياً أول زيارة */
+  if(typeof closeGuide==='function')closeGuide();
+  FS.theme=FS.theme||(document.documentElement.classList.contains('light')?'light':'dark');
+  FS.dataUrl=''; FS.file=null;
+  ov.classList.add('open');
+  document.body.style.overflow='hidden';
+  fsPaint(); fsBuild();
+  /* كود الدعوة للرابط — لو ما وصل الحساب بعد */
+  if(USER&&!fsCode())loadAccount().then(()=>{ if(fsOpen())fsPaint() }).catch(()=>{});
+}
+function fsOpen(){ const ov=document.getElementById('fsOv'); return !!(ov&&ov.classList.contains('open')) }
+function closeFinShare(){
+  const ov=document.getElementById('fsOv');
+  if(ov)ov.classList.remove('open');
+  document.body.style.overflow='';
+  if(!FS.printing)fsPrintClear();             /* نسخة الطباعة كبيرة — ما تبقى بلا داعي */
+}
+function fsPaint(){
+  const el=document.getElementById('fsSheet');
+  if(!el)return;
+  const ar=LANG==='ar', P=planInfo(), code=fsCode(), share=fsCanShare();
+  const save=`<button class="fs-b${share?'':' pri'}" onclick="fsSave()">${ar?(share?'⬇️ احفظها':'⬇️ احفظ الصورة'):(share?'⬇️ Save':'⬇️ Save image')}</button>`;
+  el.innerHTML=`<div class="guide-grip"></div>
+    <div class="guide-head"><h2>${ar?'📤 شارك جدول اختباراتك':'📤 Share your exam schedule'}</h2>
+      <button class="guide-close" onclick="closeFinShare()" aria-label="${ar?'إغلاق':'Close'}">✕</button></div>
+    <div class="fs-sub">${ar?'صورة مرتبة لقروبك: أيام اختباراتك وأوقاتها وقاعاتها — بدون اسمك.'
+      :'A clean image for your group: your exam days, times and rooms — without your name.'}</div>
+    <div class="fs-theme">
+      <button class="${FS.theme==='dark'?'on':''}" onclick="fsTheme('dark')">🌙 ${ar?'داكن':'Dark'}</button>
+      <button class="${FS.theme==='light'?'on':''}" onclick="fsTheme('light')">☀️ ${ar?'فاتح':'Light'}</button>
+    </div>
+    <div class="fs-prev" id="fsPrev">${FS.dataUrl?fsImgHtml():'<div class="fin-spin"></div>'}</div>
+    <div class="fs-hint">${ar?'وتقدر تضغط مطوّلاً على الصورة وتحفظها في الصور.':'You can also long-press the image to save it to Photos.'}</div>
+    <div class="fs-btns">
+      ${share?`<button class="fs-b pri" id="fsShareBtn" onclick="fsShare()">${ar?'📤 شارك الصورة':'📤 Share image'}</button>`:save}
+      <div class="fs-row">
+        ${share?save:''}
+        <button class="fs-b" onclick="fsCopy()">${ar?'📋 انسخ نص':'📋 Copy text'}</button>
+        <button class="fs-b" onclick="fsPrint()">${ar?'🖨️ اطبعها':'🖨️ Print'}</button>
+      </div>
+    </div>
+    ${code?`<div class="fs-note">🎁 ${ar
+      ?`الرابط في رسالتك فيه كود دعوتك: صديقك يوفّر ${sarTxt(P.friend)} ريال، وأنت تكسب ${sarTxt(P.referrer)} ريال رصيداً لما يدفع.`
+      :`The link in your message carries your invite code: your friend saves ${sarTxt(P.friend)} SAR; you earn ${sarTxt(P.referrer)} SAR credit when they pay.`}</div>`:''}`;
+}
+function fsImgHtml(){
+  return `<img id="fsImg" src="${FS.dataUrl}" alt="${LANG==='ar'?'صورة جدول اختباراتك':'Your exam schedule image'}">`;
+}
+async function fsBuild(){
+  const gen=++FS.gen, th=FS.theme;
+  let r=null;
+  try{ r=await fsRender(th,1,true) }catch(e){}
+  if(gen!==FS.gen)return;                       /* تبدّل الثيم وهي ترسم — الأحدث يكمل */
+  const box=document.getElementById('fsPrev');
+  if(!r||!r.blob){
+    if(box)box.innerHTML=`<div class="fin-empty">${LANG==='ar'?'ما قدرنا نرسم الصورة — جرّب «📋 انسخ نص»':'Could not draw the image — try “📋 Copy text”'}</div>`;
+    return;
+  }
+  if(FS.url)try{ URL.revokeObjectURL(FS.url) }catch(e){}
+  FS.dataUrl=r.dataUrl; FS.url=URL.createObjectURL(r.blob);
+  FS.file=new File([r.blob],fsName(),{type:'image/png'});
+  if(box)box.innerHTML=fsImgHtml();
+  if(!FS.printReady)fsPrep();
+}
+function fsTheme(th){
+  if(th===FS.theme)return;
+  FS.theme=th; FS.dataUrl=''; FS.file=null;
+  fsPaint(); fsBuild();
+}
+async function fsShare(){
+  const ar=LANG==='ar';
+  if(!FS.file){ showToast(ar?'الصورة تجهز — ثانية وجرّب':'The image is still drawing — try again in a second','warn'); return }
+  try{
+    await navigator.share({files:[FS.file],text:fsCaption()});
+  }catch(e){
+    if(e&&e.name==='AbortError')return;          /* قفل قائمة المشاركة */
+    fsSave();                                     /* الجهاز رفضها ⇒ نحفظها له */
+  }
+}
+function fsSave(){
+  const ar=LANG==='ar';
+  if(!FS.url){ showToast(ar?'الصورة تجهز — ثانية وجرّب':'The image is still drawing — try again in a second','warn'); return }
+  const a=document.createElement('a');
+  a.href=FS.url; a.download=fsName(); a.rel='noopener';
+  document.body.appendChild(a); a.click(); a.remove();
+  showToast(ar?'⬇️ نزلت الصورة':'⬇️ Image downloaded','ok');
+}
+function fsCopy(){
+  copyText(fsText(),LANG==='ar'?'✅ نسخت النص — الصقه في قروبك':'✅ Copied — paste it in your group');
+}
+/* الطباعة: نفس الصورة فاتحة (الداكنة تاكل الحبر) وبدقة أعلى، على صفحة وحدة — تنجهز في الخلفية بعد صورة المشاركة */
+async function fsPrep(){
+  const box=document.getElementById('finPrint');
+  if(!box)return;
+  const pg=++FS.pgen;
+  FS.printReady=false;
+  let r=null;
+  try{ r=await fsRender('light',2) }catch(e){}
+  if(pg!==FS.pgen||!r||!r.blob)return;
+  FS.purl=URL.createObjectURL(r.blob);
+  box.innerHTML=`<img alt="" src="${FS.purl}">`;
+  const img=box.querySelector('img');
+  try{ if(img.decode)await img.decode() }catch(e){}
+  if(pg===FS.pgen)FS.printReady=true;
+}
+function fsPrintClear(){
+  FS.pgen++; FS.printReady=false;
+  const box=document.getElementById('finPrint');
+  if(box)box.innerHTML='';
+  if(FS.purl){ try{ URL.revokeObjectURL(FS.purl) }catch(e){} FS.purl='' }
+}
+function fsPrint(){
+  const box=document.getElementById('finPrint');
+  if(!FS.printReady||!box||!box.querySelector('img')){
+    showToast(LANG==='ar'?'الطباعة تجهز — ثانية وجرّب':'The print is getting ready — try again in a second','warn');
+    if(FS.dataUrl&&!FS.printReady)fsPrep();
+    return;
+  }
+  FS.printing=true;
+  closeFinShare();
+  document.documentElement.classList.add('fin-printing');
+  window.addEventListener('afterprint',fsPrintDone,{once:true});
+  window.print();
+}
+function fsPrintDone(){
+  document.documentElement.classList.remove('fin-printing');
+  FS.printing=false;
+  fsPrintClear();
 }
 
 /* لو تغيّر الجدول بعد العرض، نعيد الحساب بدون طلب جديد */
@@ -6555,42 +6934,19 @@ function buildPrintSheet(clashSet){
     ?'⚠ يوجد تعارض في الأوقات — المواد المتعارضة معلّمة بالأحمر.'
     :'⚠ Time conflict detected — clashing classes are marked in red.'}</div>`:'';
 
-  /* الاختبارات النهائية — تُطبع مع الجدول لو كانت معروضة */
+  /* الاختبارات النهائية — تُطبع مع الجدول لو كانت معروضة (نفس اختبارات البطاقة: finalsMine) */
   let finals='';
-  if(FINALS && FINALS.length){
-    const byCrn={},byCS={};
-    FINALS.forEach(e=>{byCrn[String(e.crn).trim()]=e;
-      byCS[(e.code+'|'+e.section).replace(/\s+/g,'').toUpperCase()]=e});
-    const mine=[];
-    schedule.forEach(c=>{
-      const e=byCrn[String(c.crn).trim()]||
-              byCS[(c.courseCode+'|'+(c.section||'')).replace(/\s+/g,'').toUpperCase()];
-      if(e)mine.push(e);
-    });
-    if(mine.length){
-      mine.sort((a,b)=>finDateKey(a.date)-finDateKey(b.date)||finMinutes(a.hour)-finMinutes(b.hour));
-      /* تعارض الاختبارات */
-      const eslot={};
-      mine.forEach(e=>{const k=e.date+'|'+e.hour;(eslot[k]=eslot[k]||[]).push(e)});
-
-      /* تجميع بالأيام — نفس ترتيب العرض على الشاشة */
-      const fdays=[];
-      mine.forEach(e=>{
-        let d=fdays.find(x=>x.date===e.date);
-        if(!d){d={date:e.date,day:e.day,items:[]};fdays.push(d)}
-        d.items.push(e);
-      });
-
+  const FM=finalsMine();
+  if(FM&&FM.found.length){
       finals=`<div class="ps-finals">
         <div class="ps-fin-t">${t('finPrint')}</div>
-        <div class="ps-fin-days">${fdays.map(d=>`
+        <div class="ps-fin-days">${FM.days.map(d=>`
           <div class="ps-fin-day">
             <div class="ps-fin-dl">${escapeHtml(LANG==='ar'?(FIN_DAY_AR[d.day]||d.day):d.day)}
               <span>${escapeHtml(d.date)}</span></div>
             ${d.items.map(e=>{
               const col=colorOf[e.code]||PS_COLORS[0];
-              const cl=eslot[e.date+'|'+e.hour].length>1;
-              return `<div class="ps-fin${cl?' cl':''}" style="--c:${col[0]};--c2:${col[1]}">
+              return `<div class="ps-fin${e.clash?' cl':''}" style="--c:${col[0]};--c2:${col[1]}">
                 <span class="ps-fin-h">${escapeHtml(e.hour)}</span>
                 <span class="ps-fin-code">${escapeHtml(e.code)} §${escapeHtml(e.section)}</span>
                 <span class="ps-fin-where">${escapeHtml(e.building)} · ${escapeHtml(e.room)}</span>
@@ -6599,7 +6955,6 @@ function buildPrintSheet(clashSet){
           </div>`).join('')}
         </div>
       </div>`;
-    }
   }
 
   /* جدول المواد بالتفصيل — بين الشبكة وأرقام التسجيل */
@@ -6655,6 +7010,7 @@ function printSchedule(){
     return;
   }
   renderSchedule();                 // يضمن أن الورقة محدّثة قبل الطباعة
+  if(document.documentElement.classList.contains('fin-printing'))fsPrintDone();   /* «🖨️ اطبعها» من لوح الاختبارات لو ما انشال */
   setTimeout(()=>window.print(),60);
 }
 
@@ -10486,6 +10842,7 @@ function applyLang(){
   termHint();
   setPlanTitle();
   if(FINALS)renderFinals();
+  if(typeof fsOpen==='function'&&fsOpen()){ FS.dataUrl=''; FS.file=null; fsPrintClear(); fsPaint(); fsBuild() }
   try{ moveTabInd(true) }catch(e){}           /* الاتجاه انقلب (عربي ⇄ إنجليزي) — الخط لمكانه */
 }
 
@@ -10633,6 +10990,7 @@ const N_FORMS={
   hr:[['ساعة وحدة','ساعتين','ساعات','ساعة'],['hr','hrs']],
   day:[['يوم واحد','يومين','أيام','يوم'],['day','days']],
   watch:[['مراقبة وحدة','مراقبتين','مراقبات','مراقبة'],['watch','watches']],
+  exam:[['اختبار واحد','اختبارين','اختبارات','اختبار'],['exam','exams']],
 };
 function nWord(n){return LANG==='ar'&&(n===1||n===2)}
 function nUnit(n,k){
