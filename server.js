@@ -2887,6 +2887,7 @@ function msgKind(text) {
   const t = String(text || '');
   if (/فتحت مادة|نزلت شعبة|فتحت شعبة|الشعبة اللي تبيها/.test(t)) return 'شعبة فتحت';
   if (/تغيّر في جدولك/.test(t)) return 'تغيّر جدول';
+  if (/تغيّر في اختباراتك/.test(t)) return 'تغيّر اختبار';
   if (/سجّلت .*؟|أوقف المراقبة عشان/.test(t)) return 'متابعة';
   if (/تم الربط بنجاح/.test(t)) return 'ربط';
   if (/رد من فريق جدولك/.test(t)) return 'رد شخصي';
@@ -4522,6 +4523,9 @@ async function handleCallback(cq) {
   /* قرار البثّ العام — للإدارة وحدها */
   const am = data.match(/^n(ok|no):(\d+)$/);
   if (am && chatId) return acadDecision(cq, ack, chatId, am[1], am[2]);
+  /* عاصفة في جدول الاختبارات (finAskStorm) — للإدارة وحدها */
+  const fw = data.match(/^fin:(ok|no):([0-9a-f]{8})$/);
+  if (fw && chatId) return finStormDecide(cq, ack, chatId, fw[1] === 'ok', fw[2]);
 
   /* كلام حر: الطالب اختار المساعد ولا الفريق (aiTgAsk) */
   const ask = data.match(/^ask:(ai|team):(\d+)$/);
@@ -6929,9 +6933,9 @@ function parseFinals(html) {
   return rows;
 }
 
-async function getOne(g) {
+async function getOne(g, maxAge) {
   const c = finalsCache[g];
-  if (c && Date.now() - c.at < FINALS_TTL) return c;
+  if (c && Date.now() - c.at < (maxAge == null ? FINALS_TTL : maxAge)) return c;
   const page = FINALS_PAGES[g];
   if (!page) return { at: Date.now(), exams: [] };
   const exams = parseFinals(await fetchPage(page));
@@ -6942,19 +6946,372 @@ async function getOne(g) {
 }
 
 /* نسحب جدولي الطلاب والطالبات ونضمّهم.
-   الـ CRN فريد على مستوى الجامعة، فالمطابقة تظل دقيقة بدون ما نخمّن جنس الطالب. */
-async function getFinals() {
-  const [m, f] = await Promise.all([
-    getOne('M').catch(() => ({ at: Date.now(), exams: [] })),
-    getOne('F').catch(() => ({ at: Date.now(), exams: [] }))
-  ]);
+   الـ CRN فريد على مستوى الجامعة، فالمطابقة تظل دقيقة بدون ما نخمّن جنس الطالب.
+   `maxAge` لتنبيه تغيّر الاختبارات: سحبة أطزج من كاش الست ساعات. و`byG` حالة كل جنس — الفاشل ‹ok:false› غير الفاضي
+   (جدول ما نُشر)، ويرجع آخر نسخة عندنا بدل لا شي (كانت السحبة الفاشلة تخفي اختبارات جنس كامل عن الصفحة). */
+async function getFinals(opt) {
+  const maxAge = opt && opt.maxAge;
+  const one = g => getOne(g, maxAge).then(r => Object.assign({ ok: true }, r),
+    e => ({ ok: false, at: Date.now(), exams: (finalsCache[g] && finalsCache[g].exams) || [],
+            err: String(e && e.message || e).slice(0, 120) }));
+  const [m, f] = await Promise.all([one('M'), one('F')]);
   const exams = m.exams.concat(f.exams);
   return {
     at: Math.min(m.at, f.at),
     exams,
-    unavailable: exams.length === 0
+    unavailable: exams.length === 0,
+    byG: { M: m, F: f }
   };
 }
+
+/* ═══ تنبيه تغيّر الاختبارات النهائية ═══
+   طلب محمد (١٩ نوفمبر ٢٠٢٦): «لو صار فيه تغيير في موعد او مكان اختبار موجود في جدول الطالب هل يجيه تنبيه؟» — ما كان
+   يجيه، و«اي ابدأ فيه». جدول الاختبارات كان يُسحب لما يفتح طالب البطاقة وبس: ما شي يقارن، فتغيّر موعد أو قاعة ما يوصل
+   أحداً، وصورة القروب («📤 شارك جدول اختباراتك») تبقى على القديم. صار مثل «تغيّر في جدولك»:
+   ١) **نقارن مع كل تجديد للكاش، وما نسحب زيادة — قرار محمد** («خليه اذا الكاش صار اقدم من ٢٤ ساعه يسحب نسخة جديدة
+      ويتاكد غير كذا يتاكد مع كل تجديد للكاش»): الكاش يتجدّد لما يفتح طالب البطاقة بعد ٦ ساعات (أو المساعد)، والدورة
+      (كل ٥ دقائق، **الإنتاج وحده**) تقارن أي نسخة ما قارنّاها (`seenAt`). وما فتحها أحد يوماً ⇒ تسحب هي (getFinals
+      نفسها — طبقة الكاش). وسحبة فشلت ⇒ ساعة قبل ما تعيد.
+   ٢) نقارنها بآخر نسخة محفوظة (app_state ‹finals-watch› — النشر ما يضيّعها): نفس CRN **ونفس المادة والشعبة** (الجامعة
+      تعيد أرقام CRN بين الترمات)، وتغيّر الموعد (اليوم · الساعة) أو المكان (المبنى · القاعة).
+   ٣) **ما نصدّق جدولاً ما نثق فيه**: جنس رجع بخطأ أو فاضي أو أقل من ٦٠٪ من نسخته، أو شكل التاريخ والوقت تغيّر (عمود
+      انزاح) ⇒ ما نقارنه ولا نحفظه. وأول جدول (أو ترم دراسة جديد) مرجع بلا رسائل.
+   ٤) **نتأكد بسحبة ثانية بعد ربع ساعة** (السحبة الزايدة الوحيدة — لما يبان فرق بس): نفس الفرق ⇒ يوصل، رجع ⇒ ينرمى.
+   ٥) المستلم: الشعبة في جدوله (user_schedule بترم الدراسة — أي جدول من الثلاثة، مثل «تغيّر في جدولك») بنفس المادة
+      والشعبة، ومربوط بتيليغرام. رسالة وحدة لكل محادثة، و**تنبيه لو صار بنفس وقت اختبار ثاني له**.
+      وكل رسالة تنحجز في notif_approvals (‹fin›) قبل ما تروح: نسختان وقت النشر ما ترسلان مرتين، ونشر وسط الإرسال
+      يكمّل الباقين (النسخة تنحفظ بعد الإرسال، فالجديدة تلقى نفس الفرق ولا تعيد على من وصله). والقاعدة ما ردّت وقت
+      الإرسال ⇒ نعيد التأكيد والإرسال بعد ربع ساعة (لين ٦ مرات).
+   ٦) **عاصفة** (أكثر من ثلث الاختبارات المطابقة من ١٠ وفوق، أو فوق ٤٠): ما نرسل — نسأل محمد بزرّين، و«لا» تعتمد الجدول
+      الجديد بلا رسائل.
+   ٧) وبعد كل إرسال سطر لمحمد: كم طالب عنده المادة وكم وصلته. */
+const FIN_STALE_MS = 24 * 60 * 60 * 1000;     /* ما تجدّد الكاش يوماً ⇒ نسحب بأنفسنا */
+const FIN_RETRY_MS = 60 * 60 * 1000;          /* سحبتنا فشلت ⇒ ساعة قبل ما نعيد */
+const FIN_CONFIRM_MS = 15 * 60 * 1000;
+const FIN_FRESH_MS = 10 * 60 * 1000;          /* سحبة التأكيد ما تاخذ من كاش أقدم من كذا */
+const FIN_TICK_MS = 5 * 60 * 1000;
+const FIN_MIN_RATIO = 0.6;
+const FIN_STORM_RATIO = 1 / 3, FIN_STORM_MIN = 10, FIN_STORM_MAX = 40;
+const FIN_HELD_MAX = 24 * 60 * 60 * 1000;     /* سؤال العاصفة بلا جواب يوم ⇒ نتركه، والتجديد الجاي يسأل من جديد */
+const FIN_SEND_RETRY = 6;
+const FIN_SEND_GAP = 700;
+const FIN_STATE_KEY = 'finals-watch';
+/* [key, date, hour, building, room, title] — والمقارنة على الأربعة الوسط */
+const FIN_FIELDS = ['date', 'hour', 'building', 'room'];
+const FIN_WATCH = { snap: null, loaded: false, seenAt: { M: 0, F: 0 }, failAt: 0, pending: null, busy: false,
+  stat: { checks: 0, baseline: 0, detected: 0, confirmed: 0, flapped: 0, sent: 0, storms: 0, skipped: [], lastErr: null } };
+
+const finNorm = v => String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
+const finKey = (code, sec) => (finNorm(code) + '|' + finNorm(sec)).toUpperCase();
+/* الشكل اللي نعرفه: «Dec 20, 2026» و«12:00PM» لـ٩٠٪ من الصفوف — عمود انزاح يطلّعها غيرها */
+function finShapeOk(exams) {
+  if (!exams.length) return false;
+  const good = exams.filter(e => /^[A-Za-z]{3,9}\.? \d{1,2}, \d{4}$/.test(finNorm(e.date)) &&
+                                 /^\d{1,2}:\d{2}\s*(AM|PM)$/i.test(finNorm(e.hour))).length;
+  return good >= exams.length * 0.9;
+}
+function finPack(exams) {
+  const out = {};
+  for (const e of exams) {
+    const crn = finNorm(e.crn);
+    if (/^\d{4,6}$/.test(crn)) out[crn] = [finKey(e.code, e.section), finNorm(e.date), finNorm(e.hour),
+      finNorm(e.building), finNorm(e.room), finNorm(e.title)];
+  }
+  return out;
+}
+/* «Dec 20, 2026» ⇒ «الأحد 20 ديسمبر» · «12:00PM» ⇒ «12:00 م» — وغير المعروف كما هو */
+const FIN_MON = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+const FIN_MON_AR = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+const FIN_DAY_AR = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+function finDateAr(s) {
+  const m = finNorm(s).match(/^([A-Za-z]{3})[A-Za-z]*\.? (\d{1,2}), (\d{4})$/);
+  const i = m ? FIN_MON.indexOf(m[1].toLowerCase()) : -1;
+  if (i < 0) return finNorm(s);
+  const d = new Date(Date.UTC(+m[3], i, +m[2]));
+  return `${FIN_DAY_AR[d.getUTCDay()]} ${+m[2]} ${FIN_MON_AR[i]}`;
+}
+function finHourAr(h) {
+  const m = finNorm(h).match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  return m ? `${+m[1]}:${m[2]} ${m[3].toUpperCase() === 'PM' ? 'م' : 'ص'}` : finNorm(h);
+}
+
+async function finLoad() {
+  const rows = await sb('GET', 'app_state', {
+    query: `?key=eq.${encodeURIComponent(FIN_STATE_KEY)}&select=value&limit=1`
+  });
+  if (!Array.isArray(rows)) throw new Error('app_state ما انقرأ');   /* ما نبدأ بمرجع فاضي ونحسب كل شي جديداً */
+  const v = rows[0] && rows[0].value;
+  FIN_WATCH.snap = v && v.term && v.M && v.F ? v : null;
+  FIN_WATCH.loaded = true;
+}
+async function finSave(snap) {
+  const r = await sb('POST', 'app_state', {
+    body: { key: FIN_STATE_KEY, value: snap, updated_at: new Date().toISOString() },
+    prefer: 'resolution=merge-duplicates,return=minimal'
+  }).catch(e => ({ message: String(e && e.message || e) }));
+  if (r && !Array.isArray(r) && (r.code || r.message)) return false;
+  FIN_WATCH.snap = snap;
+  return true;
+}
+
+/* الجدول من الكاش (أو سحبة لو أقدم من maxAge) لكل جنس — ونقول وش ما نثق فيه.
+   onlyNew: النسخة اللي قارنّاها قبل ما نعيدها */
+async function finFetch(snap, maxAge, onlyNew) {
+  const d = await getFinals({ maxAge });
+  const out = { M: null, F: null, why: [], seen: {}, failed: false };
+  for (const g of ['M', 'F']) {
+    const r = d && d.byG && d.byG[g];
+    if (!r || !r.ok) { out.failed = true; out.why.push(`${g}: ما وصل`); continue }
+    if (onlyNew && !(r.at > (FIN_WATCH.seenAt[g] || 0))) continue;
+    out.seen[g] = r.at;
+    const exams = Array.isArray(r.exams) ? r.exams : [];
+    const before = snap && snap[g] ? Object.keys(snap[g]).length : 0;
+    if (!exams.length) out.why.push(`${g}: فاضي`);
+    else if (!finShapeOk(exams)) out.why.push(`${g}: شكل التاريخ أو الوقت تغيّر`);
+    else if (before && exams.length < before * FIN_MIN_RATIO) out.why.push(`${g}: ناقص (${exams.length} من ${before})`);
+    else out[g] = finPack(exams);
+  }
+  return out;
+}
+
+/* الفروق: نفس CRN ونفس المادة والشعبة، والموعد أو المكان تغيّر */
+function finDiff(snap, fresh) {
+  const out = [];
+  let matched = 0;
+  for (const g of ['M', 'F']) {
+    const A = (snap && snap[g]) || {}, B = fresh[g];
+    if (!B) continue;
+    for (const crn of Object.keys(B)) {
+      const a = A[crn], b = B[crn];
+      if (!a || a[0] !== b[0]) continue;
+      matched++;
+      if (FIN_FIELDS.every((k, i) => a[i + 1] === b[i + 1])) continue;
+      out.push({ g, crn, key: b[0], title: b[5], from: a.slice(1, 5), to: b.slice(1, 5),
+                 sig: crn + '|' + b[0] + '|' + b.slice(1, 5).join('|') });
+    }
+  }
+  return { changes: out, matched };
+}
+/* النسخة الجديدة: الجدول الجديد للجنس اللي وثقنا فيه — إلا الفروق تحت التأكيد تبقى بقيمتها القديمة */
+function finMerge(snap, fresh, keepOld, term, now) {
+  const same = snap && snap.term === term;
+  const next = { term, at: now, M: Object.assign({}, same ? snap.M : {}), F: Object.assign({}, same ? snap.F : {}) };
+  for (const g of ['M', 'F']) {
+    if (!fresh[g]) continue;
+    const merged = Object.assign({}, fresh[g]);
+    for (const c of keepOld || []) if (c.g === g && next[g][c.crn]) merged[c.crn] = next[g][c.crn];
+    next[g] = merged;
+  }
+  return next;
+}
+function finStorm(changes, matched) {
+  return changes.length > FIN_STORM_MAX ||
+         (changes.length >= FIN_STORM_MIN && changes.length > matched * FIN_STORM_RATIO);
+}
+
+async function finalsWatchTick(now) {
+  now = now || Date.now();
+  if (SITE_ENV !== 'prod' || !FINALS_ON || FIN_WATCH.busy || SHUTTING_DOWN) return;
+  if (!SB_URL || !SB_SERVICE_KEY) return;
+  FIN_WATCH.busy = true;
+  try {
+    if (!FIN_WATCH.loaded) await finLoad();
+    const P = FIN_WATCH.pending;
+    if (P && P.held) {
+      if (now - P.askedAt > FIN_HELD_MAX) FIN_WATCH.pending = null;
+      return;
+    }
+    if (P) {
+      if (now - P.at >= FIN_CONFIRM_MS) await finConfirm(now);
+      return;
+    }
+    await finCheck(now);
+  } catch (e) {
+    FIN_WATCH.stat.lastErr = { at: now, msg: String(e && e.message || e).slice(0, 200) };
+  } finally {
+    FIN_WATCH.busy = false;
+  }
+}
+
+/* نسخة جديدة في الكاش (أو أقدم من يوم ⇒ نسحبها) ⇒ نقارنها */
+async function finCheck(now) {
+  if (now - FIN_WATCH.failAt < FIN_RETRY_MS) return;
+  const term = activeTerm();
+  const snap = FIN_WATCH.snap;
+  const fresh = await finFetch(snap && snap.term === term ? snap : null, FIN_STALE_MS, true);
+  if (fresh.failed) FIN_WATCH.failAt = now;
+  if (!Object.keys(fresh.seen).length) return;              /* ما فيه نسخة ما قارنّاها */
+  FIN_WATCH.stat.checks++;
+  FIN_WATCH.stat.skipped = fresh.why;
+  if (fresh.M || fresh.F) {
+    if (!snap || snap.term !== term) {
+      /* أول جدول، أو ترم دراسة جديد: مرجع بلا رسائل */
+      await finSave(finMerge(null, fresh, [], term, now));
+      FIN_WATCH.stat.baseline = now;
+    } else {
+      const { changes, matched } = finDiff(snap, fresh);
+      /* جنس ما نشر جدوله قبل (نسخته فاضية) يصير مرجعاً كذلك — ما فيه شي يتغيّر عنه */
+      const next = finMerge(snap, fresh, changes, term, now);
+      if (JSON.stringify([next.M, next.F]) !== JSON.stringify([snap.M, snap.F])) await finSave(next);
+      if (changes.length) {
+        FIN_WATCH.stat.detected += changes.length;
+        FIN_WATCH.pending = { at: now, term, changes, matched };
+      }
+    }
+  }
+  Object.assign(FIN_WATCH.seenAt, fresh.seen);
+}
+
+/* ربع ساعة بعد: سحبة ثانية — نفس الفرق بنفس القيم الجديدة ⇒ مؤكد */
+async function finConfirm(now) {
+  const P = FIN_WATCH.pending;
+  const term = activeTerm();
+  const snap = FIN_WATCH.snap;
+  if (!P || !snap || P.term !== term || snap.term !== term) { FIN_WATCH.pending = null; return }
+  const fresh = await finFetch(snap, FIN_FRESH_MS, false);
+  FIN_WATCH.stat.skipped = fresh.why;
+  /* الجنس اللي فيه الفروق ما وصل هالمرة ⇒ ننتظر ربع ساعة ثانية بلا حكم */
+  if ([...new Set(P.changes.map(c => c.g))].some(g => !fresh[g])) { P.at = now; return }
+  Object.assign(FIN_WATCH.seenAt, fresh.seen);
+  const { changes, matched } = finDiff(snap, fresh);
+  const was = new Set(P.changes.map(c => c.sig));
+  const ok = changes.filter(c => was.has(c.sig));
+  const again = changes.filter(c => !was.has(c.sig));        /* تغيّر مرة ثانية ⇒ يبدأ تأكيده من جديد */
+  if (!P.tries) FIN_WATCH.stat.flapped += P.changes.length - ok.length;
+  const later = again.length ? { at: now, term, changes: again, matched } : null;
+  if (!ok.length) { FIN_WATCH.pending = later; return }
+  if (!P.tries) FIN_WATCH.stat.confirmed += ok.length;
+  if (finStorm(ok, matched)) return finAskStorm(ok, matched, term, now);
+  /* الإرسال تعثّر (القاعدة) ⇒ يبقى تحت التأكيد ونعيد بعد ربع ساعة — لين ٦ مرات */
+  const tries = (P.tries || 0) + 1;
+  FIN_WATCH.pending = tries < FIN_SEND_RETRY ? { at: now, term, changes: ok, matched, tries } : later;
+  await finDeliver(ok, term, now);
+  FIN_WATCH.pending = later;
+}
+
+/* عاصفة: نسأل محمد قبل ما نرسل لأحد */
+async function finAskStorm(changes, matched, term, now) {
+  const id = crypto.randomBytes(4).toString('hex');
+  FIN_WATCH.stat.storms++;
+  FIN_WATCH.pending = { at: now, term, changes, matched, held: true, id, askedAt: now };
+  if (!ADMIN_CHAT_ID) return;
+  /* بلا سهم: القيم لاتينية والوصف عربي فينقلب الاتجاه (نفس «تغيّر في جدولك») */
+  const when = v => `${escP(finDateAr(v[0]))} · ${escP(finHourAr(v[1]))} · ${escP([v[2], v[3]].filter(Boolean).join(' '))}`;
+  const sample = changes.slice(0, 5).map(c => `• ${escP(c.key.replace('|', ' §'))}\n   كان: ${when(c.from)}\n   صار: ${when(c.to)}`).join('\n');
+  await sendMsg(ADMIN_CHAT_ID,
+    `⚠️ <b>جدول الاختبارات تغيّر كثير مرة وحدة</b>\n\n` +
+    `${changes.length} اختبار تغيّر موعده أو مكانه من ${matched} — ممكن تغيير حقيقي (تأجيل مثلاً) أو خلل في صفحة الجامعة.\n\n` +
+    `${sample}\n\nما أرسلنا لأحد. تبي نرسل للطلاب؟`,
+    kb([[btn('✅ أرسل للطلاب', `fin:ok:${id}`), btn('🚫 لا — اعتمده بلا رسائل', `fin:no:${id}`)]]));
+}
+async function finStormDecide(cq, ack, chatId, yes, id) {
+  if (!ADMIN_CHAT_ID || String(chatId) !== String(ADMIN_CHAT_ID)) return ack();
+  const P = FIN_WATCH.pending;
+  if (!P || !P.held || P.id !== id) return ack('انتهى — ما عاد قائماً');
+  if (FIN_WATCH.busy) return ack('شغّال — ثواني');
+  FIN_WATCH.busy = true;
+  FIN_WATCH.pending = null;
+  try {
+    await ack(yes ? 'نرسل الحين' : 'اعتمدناه بلا رسائل');
+    if (yes) await finDeliver(P.changes, P.term, Date.now());
+    else await finSave(finAccept(P.changes, P.term, Date.now()));
+  } catch (e) {
+    FIN_WATCH.stat.lastErr = { at: Date.now(), msg: String(e && e.message || e).slice(0, 200) };
+  } finally { FIN_WATCH.busy = false }
+}
+/* النسخة بعد ما وصل الفرق: القيمة الجديدة مكان القديمة */
+function finAccept(changes, term, now) {
+  const s = FIN_WATCH.snap;
+  const next = { term, at: now, M: Object.assign({}, s.M), F: Object.assign({}, s.F) };
+  for (const c of changes) if (next[c.g][c.crn]) next[c.g][c.crn] = [c.key, ...c.to, c.title];
+  return next;
+}
+
+/* المستلمون والرسائل — والنسخة تنحفظ بعد الإرسال */
+async function finDeliver(changes, term, now) {
+  const crns = [...new Set(changes.map(c => c.crn))];
+  const rows = await sbAll('user_schedule', {
+    query: `?term=eq.${encodeURIComponent(term)}&crn=in.(${crns.join(',')})&select=user_id,crn,section,course_code`,
+    strict: true
+  });
+  if (!Array.isArray(rows)) throw new Error('الجداول ما انقرأت');
+  const byCrn = new Map(changes.map(c => [c.crn, c]));
+  const users = new Map();                     /* user_id ⇒ Set(crn) */
+  for (const r of rows) {
+    const c = byCrn.get(finNorm(r.crn));
+    if (!c || !isUuid(String(r.user_id)) || finKey(r.course_code, r.section) !== c.key) continue;
+    if (!users.has(r.user_id)) users.set(r.user_id, new Set());
+    users.get(r.user_id).add(c.crn);
+  }
+  let sent = 0;
+  if (users.size) {
+    const ids = [...users.keys()];
+    const profs = await sb('GET', 'profiles', { query: `?id=in.(${ids.join(',')})&select=id,telegram_chat_id` });
+    if (!Array.isArray(profs)) throw new Error('الملفات ما انقرأت');   /* بلا حفظ النسخة: نعيد بعد ربع ساعة */
+    /* اختباراته الثانية — لتنبيه «صار بنفس وقت اختبار ثاني» */
+    const all = await sbAll('user_schedule', {
+      query: `?term=eq.${encodeURIComponent(term)}&user_id=in.(${ids.join(',')})&select=user_id,crn,section,course_code`,
+      strict: true
+    }).catch(() => []);
+    const snap = FIN_WATCH.snap || {};
+    const row = crn => (snap.M || {})[crn] || (snap.F || {})[crn] || null;
+    const examOf = crn => (byCrn.get(crn) ? byCrn.get(crn).to : (row(crn) || []).slice(1, 5));
+    const keyOf = crn => (byCrn.get(crn) ? byCrn.get(crn).key : (row(crn) || [])[0]);
+    const byChat = new Map();
+    for (const p of profs) {
+      const chat = p && p.telegram_chat_id ? String(p.telegram_chat_id) : '';
+      if (!chat || !users.has(p.id)) continue;
+      if (!byChat.has(chat)) byChat.set(chat, { crns: new Set(), users: new Set() });
+      users.get(p.id).forEach(x => byChat.get(chat).crns.add(x));
+      byChat.get(chat).users.add(p.id);
+    }
+    const day = new Date(now + 3 * 3600 * 1000).toISOString().slice(0, 10);
+    for (const [chat, v] of byChat) {
+      if (SHUTTING_DOWN) return;                 /* النسخة ما تنحفظ ⇒ الجديدة تكمّل الباقين، والحجز يمنع التكرار */
+      const mine = [...v.crns].map(crn => byCrn.get(crn)).sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+      const ref = 'fin:' + crypto.createHash('sha1').update(mine.map(c => c.sig).join('\n')).digest('hex').slice(0, 20) + ':' + chat;
+      let claim;
+      try {
+        claim = await sb('POST', 'notif_approvals', { body: { send_date: day, kind: 'fin', ref, body: '', status: 'sent' },
+                                                       prefer: 'return=minimal' });
+      } catch (e) { continue }
+      if (claim && claim.code) continue;         /* 23505: نسخة ثانية أرسلتها · غيره: ما نرسل بلا حجز */
+      /* اختباراته الثانية بنفس اليوم والساعة — مادة ثانية لا شعبة بديلة لنفس المادة */
+      const other = [...new Set((Array.isArray(all) ? all : []).filter(r => v.users.has(r.user_id)).map(r => finNorm(r.crn)))];
+      const lines = mine.map(c => {
+        const f = c.from, t = c.to;
+        const out = [`📌 <b>${escP(c.key.replace('|', ' §'))}</b>` + (c.title ? ` — ${escP(c.title)}` : '')];
+        if (f[0] !== t[0] || f[1] !== t[1])
+          out.push(`الموعد\n   كان: <s>${escP(finDateAr(f[0]))} · ${escP(finHourAr(f[1]))}</s>\n` +
+                   `   صار: <b>${escP(finDateAr(t[0]))} · ${escP(finHourAr(t[1]))}</b>`);
+        if (f[2] !== t[2] || f[3] !== t[3])
+          out.push(`المكان\n   كان: <s>${escP([f[2], f[3]].filter(Boolean).join(' · ') || '—')}</s>\n` +
+                   `   صار: <b>${escP([t[2], t[3]].filter(Boolean).join(' · ') || '—')}</b>`);
+        const base = c.key.split('|')[0];
+        const clash = other.filter(crn => crn !== c.crn).filter(crn => {
+          const e = examOf(crn), k = keyOf(crn);
+          return k && k.split('|')[0] !== base && e[0] === t[0] && e[1] === t[1];
+        }).map(crn => keyOf(crn).split('|')[0]);
+        if (clash.length) out.push(`⚠️ <b>صار بنفس وقت اختبار ${escP([...new Set(clash)].join('، '))}</b> — راجع القبول والتسجيل`);
+        return out.join('\n');
+      });
+      const r = await sendMsg(chat,
+        `📝 <b>تغيّر في اختباراتك النهائية</b>\n\n${lines.join('\n\n')}\n\n` +
+        `التغيير من جدول الاختبارات في موقع الجامعة — راجعه قبل اختبارك.\n` +
+        `📤 لو نشرت جدول اختباراتك لقروبك، شارك الجديد من «جدولي» في jadwalik.com`);
+      if (r && r.ok) sent++;
+      await new Promise(x => setTimeout(x, FIN_SEND_GAP));
+    }
+  }
+  await finSave(finAccept(changes, term, now));
+  FIN_WATCH.stat.sent += sent;
+  if (ADMIN_CHAT_ID) {
+    const what = changes.slice(0, 6).map(c => escP(c.key.replace('|', ' §'))).join('، ');
+    await sendMsg(ADMIN_CHAT_ID, `📝 <b>تغيّر في جدول الاختبارات</b>: ${what}${changes.length > 6 ? '…' : ''}\n` +
+      `عندهم المادة في جدولهم: ${users.size} · وصلتهم الرسالة على تيليغرام: ${sent}`).catch(() => {});
+  }
+}
+/* ═══ نهاية تنبيه الاختبارات ═══ */
 
 /* ================================================================
    ============   كاش البحث + منع الطلبات المكرّرة   ============
@@ -14403,6 +14760,8 @@ server.listen(PORT, () => {
   setInterval(() => { prewarmTick().catch(() => {}) }, 20000);
   /* ساعة التأكيد: تفحص الطابور كل 5 دقائق، وما تسحب إلا لو نضج صفّ */
   setInterval(() => { confirmTick().catch(() => {}) }, CONFIRM_TICK);
+  /* تنبيه تغيّر الاختبارات النهائية — الإنتاج وحده (الحارس داخلها) */
+  setInterval(() => { finalsWatchTick().catch(() => {}) }, FIN_TICK_MS);
   /* تنبيهات جدولك: فحص كل 10 دقائق، وما ترسل إلا الساعة 5 العصر مرة واحدة */
   setInterval(() => { notifyTick().catch(() => {}) }, 10 * 60 * 1000);
   /* البلاغات: فحص خفيف كل 3 دقائق — صف واحد لا أكثر */
