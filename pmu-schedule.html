@@ -361,6 +361,8 @@ font-size:12.5px;font-weight:600;font-family:var(--sans);cursor:pointer;white-sp
 .sr-btn.added{background:var(--accent);color:#fff}
 .sr-btn.blocked{border-color:var(--warn);color:var(--warn)}
 .sr-btn.locked{border-color:var(--close-border);color:var(--close)}
+/* النتائج من بانر (موقع الجدول متعطّل): «+ أضف» مقفولة — صياغة بانر ممكن تفرق (البحث من بانر في السيرفر) */
+.sr-btn.add.banner-off{border-color:var(--border2);color:var(--text3);opacity:.6}
 .sr-btn.bell{border-color:var(--border2);color:var(--text2)}
 .sr-btn.bell.on{border-color:var(--warn);color:var(--warn);background:var(--warn-bg)}
 .sr-btn.bell.locked{opacity:.5}
@@ -2701,6 +2703,8 @@ function setPrepFrom(k){
 
 let SCHEDULES=[[],[],[]],SLOT=0;
 let allCourses=[],schedule=[],completed=[],grades={},filterMode='all';
+/* مصدر النتائج: '' موقع الجدول · 'banner' احتياط بانر (X-Source) — الإضافة لجدوله مقفولة فيه لين بحث من الموقع */
+let RES_SRC='', RES_ALLCOL=false;
 let PRO_KEY=null;
 const DAY_KEYS=['U','M','T','W','R'];
 const DAY_AR={U:'الأحد',M:'الاثنين',T:'الثلاثاء',W:'الأربعاء',R:'الخميس',F:'الجمعة',S:'السبت'};
@@ -3088,6 +3092,8 @@ async function doSearch(){
     const r=await fetch(`${API}?term=${term}&college=${college}&gender=${gender}&filter=${encodeURIComponent(filter)}${kq}`);
     const d=await r.json();
     if(!d.success){ const er=new Error(d.error); er.fromServer=!!d.error; throw er }
+    RES_SRC=r.headers.get('X-Source')==='banner'?'banner':'';
+    RES_ALLCOL=RES_SRC==='banner'&&r.headers.get('X-Banner-Colleges')==='all';
     allCourses=d.courses;RES_ANIM=true;RES_EXP.clear();renderResults();setStatus(`${d.count} ${t('courseUnit')}`);
     dataAge(r);
   }catch(e){
@@ -3112,6 +3118,15 @@ function dataAge(r){
   const ago=!old?'':(ar?` · قبل ${mins} د`:` · ${mins} min ago`);
   if(lu)lu.textContent=r?new Date(Date.now()-age).toLocaleTimeString(ar?'ar-u-nu-latn':'en-GB',{hour:'2-digit',minute:'2-digit'})+ago:'—';
   if(!note)return;
+  /* النتائج من بانر: الطالب يعرف من وين وليش «+ أضف» مقفولة (يغلب سطر العمر) */
+  if(RES_SRC==='banner'){
+    note.classList.add('show');
+    note.textContent=(ar
+      ?'🛟 موقع جدول الجامعة ما يرد الحين — النتائج من بانر (نظام التسجيل). تقدر تراقب الشعب، والإضافة لجدولك ترجع لما يرجع الموقع.'
+      :'🛟 The university schedule site isn’t responding — these results come from Banner (the registration system). You can watch sections; adding to your schedule returns when the site is back.')
+      +(RES_ALLCOL?(ar?' بانر ما يفرز بالكلية، فهذي مواد كل الكليات.':' Banner can’t filter by college, so these are all colleges.'):'');
+    return;
+  }
   note.classList.toggle('show',old);
   note.textContent=!old?'':(ar
     ?`⚠️ آخر بيانات وصلتنا من موقع الجامعة قبل ${mins} دقيقة — الحالات ممكن تكون تغيّرت.`
@@ -3153,13 +3168,21 @@ async function quietRefresh(){
   const term=document.getElementById('term').value;
   const col=document.getElementById('college').value;
   const gen=document.getElementById('gender').value;
-  let fresh;
+  let fresh, banner=false;
   try{
     const r=await fetch(`${API}?term=${term}&college=${col}&gender=${gen}`);
     const d=await r.json();
     if(!d||!d.success||!Array.isArray(d.courses))return;
     fresh=d.courses;
-    dataAge(r);
+    /* من بانر: الحالات بس — القاعة والدكتور بصياغته ما تدخل صفوف نقدر نضيفها لجدوله */
+    banner=r.headers.get('X-Source')==='banner';
+    if(RES_SRC!=='banner')dataAge(r);
+    else if(!banner){
+      /* الموقع رجع والنتائج المعروضة من بانر: «+ أضف» ترجع مع بحث جديد (صفوف بصياغة الجدول) */
+      const note=document.getElementById('staleNote');
+      if(note)note.textContent=LANG==='ar'?'✅ موقع جدول الجامعة رجع — اضغط «ابحث» عشان تقدر تضيف لجدولك.'
+        :'✅ The university schedule site is back — tap Search to add sections to your schedule.';
+    }
   }catch(e){ return }
 
   /* نبدّل الحالة فقط — الترتيب والفلاتر ما تتغيّر فما يقفز المكان */
@@ -3172,7 +3195,7 @@ async function quietRefresh(){
       c.status=n.status; c.seats=n.seats; flips++;
     }
     /* بيانات قد تتغيّر بلا أن تُعدّ «تبديل حالة» */
-    c.instructor=n.instructor; c.room=n.room;
+    if(!banner){ c.instructor=n.instructor; c.room=n.room; }
     c.courseDate=n.courseDate; c.courseTiming=n.courseTiming;
   });
   if(!flips)return;
@@ -3289,7 +3312,8 @@ function resTime(x){ const p=parseTime(x); return p?fmtTime(p.start)+'–'+fmtTi
 /* «+ أضف» و«🔕 راقب» بكلمة بدل أيقونات صغيرة. الـCRN من سطرها (data-crn) لا نص داخل onclick */
 function secActsHtml(s,inSch,lock,clash){
   const ar=LANG==='ar', on=isMonitored(s.crn);
-  const add=`<button type="button" class="sr-btn add${inSch?' added':lock?' locked':clash?' blocked':''}" onclick="toggleCourse(this.closest('.sec-row').dataset.crn)">${
+  const off=RES_SRC==='banner'&&!inSch;
+  const add=`<button type="button" class="sr-btn add${inSch?' added':off?' banner-off':lock?' locked':clash?' blocked':''}"${off?' aria-disabled="true"':''} onclick="toggleCourse(this.closest('.sec-row').dataset.crn)">${
     inSch?(ar?'✓ في جدولك':'✓ Added'):lock?(ar?'🔒 أضف':'🔒 Add'):(ar?'+ أضف':'+ Add')}</button>`;
   /* المراقبة للمقفلة — والمراقَبة تبقى ظاهرة ولو فتحت، يوقفها من هنا */
   const bell=`<button type="button" class="sr-btn bell${on?' on':''}${(!on&&monCapReached())?' locked':''}" onclick="toggleMonitorCourse(this.closest('.sec-row').dataset.crn)"${
@@ -3430,6 +3454,12 @@ function toggleCourse(crn){
     for(let k=schedule.length-1;k>=0;k--) if(schedule[k].crn===crn) schedule.splice(k,1);
     saveSchedules();pushSchedule();updateBadge();renderResults();
     showToast(`${t('removed')} ${r.courseCode}`);return;
+  }
+  /* النتائج من بانر (موقع الجدول متعطّل): ما نضيف بصياغته — «تغيّر في جدولك» كاذبة بعدين */
+  if(RES_SRC==='banner'){
+    showToast(LANG==='ar'?'الإضافة لجدولك ترجع لما يرجع موقع جدول الجامعة — النتائج الحين من بانر'
+      :'Adding returns when the university schedule site is back — results are from Banner now','warn');
+    return;
   }
   const ok=addSessionsDirect(sessionsOf(crn));
   if(ok===null)return;
@@ -3631,6 +3661,9 @@ async function imMatch(rows,term){
     const kq=PRO_KEY?`&key=${encodeURIComponent(PRO_KEY)}`:'';
     const res=await fetch(`${API}?term=${encodeURIComponent(term)}&college=ALL&gender=${g}&filter=${kq}`);
     d=await res.json();
+    /* من بانر (موقع الجدول متعطّل): ما نضيف بصياغته — نفس «ما وصلت بيانات الجامعة» */
+    if(d&&d.success&&res.headers.get('X-Source')==='banner')d={success:false,error:ar
+      ?'موقع جدول الجامعة ما يرد الحين — جرّب الاستيراد بعد شوي.':''};
   }catch(e){ d=null }
   if(!d||!d.success){ imLog('nodata',{missing:rows.length}); return imFail((ar&&d&&d.error)?d.error
     :(ar?'ما قدرت أجيب بيانات الجامعة الحين — جرّب بعد شوي.':'Couldn’t load the university data right now — try again shortly.')) }
@@ -9812,7 +9845,7 @@ async function loadInstructors(force){
         const r=await fetch(`${API}?term=${serverTerm()}&college=ALL&gender=ALL`,
                             {signal:ctrl.signal});
         const d=await r.json();
-        if(d && d.success){
+        if(d && d.success && r.headers.get('X-Source')!=='banner'){
           const map={};
           d.courses.forEach(c=>{
             const nm=cleanName(c.instructor);

@@ -2999,7 +2999,7 @@ async function saveState() {
       ops: { searches: OPS.searches, feedback: OPS.feedback,
              pmuFails: OPS.pmuFails, tgFails: OPS.tgFails,
              searchesCached: OPS.searchesCached, searchStale: OPS.searchStale,
-             cacheFromMonitor: OPS.cacheFromMonitor }
+             searchBanner: OPS.searchBanner || 0, cacheFromMonitor: OPS.cacheFromMonitor }
     },
     updated_at: new Date().toISOString()
   };
@@ -3528,6 +3528,43 @@ async function fetchBannerTerm(term, opts) {
   }
 }
 
+/* ═══ البحث من بانر — قرار محمد (١٩ نوفمبر ٢٠٢٦) ═══
+   «في مشكلة في موقع الكورس اوفرينق من الجامعة بس ليش ما راح جاب من البديل الي هو البانر» ثم «بحث البانر شغال»
+   (جرّبه من اللوحة). كان بانر للمراقبة وحدها، فموقع الجدول متعطّل وما عندنا نسخة = البحث «فشل» للكل. صار: موقع
+   الجدول ما رد أو رد بشكل ما نفهمه (**لا لو رفضنا** — رفض متعمّد ما نلتف عليه) **وما عندنا نسخة** (أو وقت التسجيل
+   ونسختنا فوق ربع ساعة — الحالات تتقلب) ⇒ البحث من بانر **موسوماً** (X-Source: banner): الصفحة تقول من وين وتقفل
+   «+ أضف» — صياغة بانر (القاعة مثلاً) ممكن تفرق، فتنحفظ في جدول طالب وتطلع «تغيّر في جدولك» كاذبة — و«راقب» تشتغل.
+   **وما يدخل كاش البحث** (اللي يغذّي المزامنة والنسخة المحفوظة والمساعد): نسخة بانر لحالها لكل ترم، وسحبة وحدة لكل
+   ترم مهما كثر الطلاب، وفشلها ⇒ ما نعيد قبل خمس دقائق، ولترمات الدراسة والتسجيل والجاي وحدها (snapTerms). والدورة
+   لما تراقب من بانر تحط نسختها هنا — البحث ما يسحب ثانية. الجنس من رقم الشعبة (tagGender)، والكلية ما يعطيها بانر:
+   بحث بكلية = كل الكليات (X-Banner-Colleges: all — والصفحة تقولها) */
+const BANNER_SEARCH = new Map();          /* ترم → {at, rows} */
+const BANNER_SEARCH_FLIGHT = new Map();   /* ترم → وعد السحبة الجارية */
+const BANNER_SEARCH_COOL = 5 * 60 * 1000, BANNER_SEARCH_MIN_TTL = 2 * 60 * 1000;
+let BANNER_SEARCH_FAIL = 0;
+function bannerSearchKeep(term, rows, at) {
+  BANNER_SEARCH.delete(term);
+  BANNER_SEARCH.set(term, { at: at || Date.now(), rows });
+  while (BANNER_SEARCH.size > 3) BANNER_SEARCH.delete(BANNER_SEARCH.keys().next().value);
+}
+async function bannerSearchRows(term) {
+  const hit = BANNER_SEARCH.get(term);
+  if (hit && Date.now() - hit.at < Math.max(coursesTTL(), BANNER_SEARCH_MIN_TTL)) return hit;
+  if (BANNER_SEARCH_FLIGHT.has(term)) return BANNER_SEARCH_FLIGHT.get(term);
+  if (Date.now() - BANNER_SEARCH_FAIL < BANNER_SEARCH_COOL) throw pmuErr('down', 'بانر فشل قبل شوي', { local: true });
+  const p = fetchBannerTerm(term).then(b => { bannerSearchKeep(term, b.rows); return BANNER_SEARCH.get(term) },
+    e => { BANNER_SEARCH_FAIL = Date.now(); throw e });
+  BANNER_SEARCH_FLIGHT.set(term, p);
+  try { return await p } finally { BANNER_SEARCH_FLIGHT.delete(term) }
+}
+const bannerSearchFor = (rows, gender) => gender === 'M1' ? rows.filter(r => r.gender === 'M')
+  : gender === 'F1' ? rows.filter(r => r.gender === 'F') : rows;
+/* موقع الجدول ما رد (مهلة أو انقطاع) قبل أقل من دقيقة: البحث ما ينتظره ثانية (٢٠ ثانية للرمز مع كل بحث) — على طول
+   للاحتياط (آخر نسخة أو بانر). أول بحث بعد الدقيقة يجرّبه، والتسخين (force) يجرّبه دائماً. والرد السريع (شكل ما نفهمه ·
+   5xx) ما يشغّله */
+const PMU_SEARCH_DOWN_MS = 60 * 1000;
+let PMU_SEARCH_DOWN_UNTIL = 0;
+
 const pmuWhy = e => e.pmu === 'format'
   ? (e.shape ? `وصل جدول ${e.shape.n} صف، لكن ${Math.round(100 * e.shape.crn / e.shape.n)}٪ منها رقم الشعبة ` +
                `أرقام و${Math.round(100 * e.shape.st / e.shape.n)}٪ حالتها OPEN/CLOSE — الأعمدة تغيّرت`
@@ -3945,11 +3982,14 @@ async function runMonitorCycle() {
               const b = await fetchBannerTerm(term);
               if (!current()) { stat.superseded = true; return }
               dataAt = tBanner;
+              /* البحث وقت العطل يخدم منها (البحث من بانر) — نسخة، والدورة تكتب على صفوفها */
+              bannerSearchKeep(term, b.rows.map(r => Object.assign({}, r)), tBanner);
               const sh = pmuShort(term, 'BANNER', b.rows.length);
               b.rows.forEach(c => { c.term = term; snapshot[term + ':' + c.crn] = c; });
               usedBanner = true; gotFeed = true; stat.banner = b.rows.length;
               if (sh) { partial = true; stat.short = Object.assign({ g: 'BANNER' }, sh) }
-              via = '🛟 المراقبة مستمرة من صفحة بحث بانر العامة (احتياط) لين يرجع — والبحث للطلاب يخدم آخر نسخة عندنا.';
+              via = '🛟 المراقبة مستمرة من صفحة بحث بانر العامة (احتياط) لين يرجع — والبحث للطلاب يخدم آخر نسخة عندنا، ' +
+                    'وبلاها من بانر (موسوماً — «+ أضف» موقوفة فيه).';
               resolve('banner-down', 'احتياط بانر ما اشتغل');
             } catch (e) {
               stat.bannerErr = String(e.message || e).slice(0, 120);
@@ -6617,6 +6657,7 @@ async function adminHealth() {
     feedbackCount: OPS.feedback,
     cacheHitPct: cacheHitRate === null ? null : Math.round(cacheHitRate * 100),
     searchStale: OPS.searchStale,
+    searchBanner: OPS.searchBanner || 0,
     cacheFromMonitor: OPS.cacheFromMonitor,
 
     /* الحمل */
@@ -7429,7 +7470,8 @@ function cacheSnapshot() {
     ageSec: Math.round((now - v.at) / 1000),
     ttlSec: Math.round(ttl / 1000),
     valid: (now - v.at) < ttl,
-    courses: v.courses.length
+    courses: v.courses.length,
+    restored: !!v.restored              /* رجعت من آخر جدول محفوظ في القاعدة بعد الإقلاع */
   })).sort((a, b) => a.ageSec - b.ageSec);
 }
 /* ================================================================
@@ -8023,42 +8065,108 @@ function pmuShort(term, g, n) {
    للعطل بس (X-Stale)، والدورة ما تستعمله (أقدم من ٣ دقائق). صف `snapshot-<ترم>` في app_state —
    بيانات الجامعة العامة، ما فيها شي يخص بيئة ولا طالب */
 const SNAP_EVERY = 30 * 60 * 1000, SNAP_MAX_AGE = 7 * 864e5;
+/* نفس الجدول ما ننكتبه ثانية — إلا مرة باليوم نجدّد عمره: خارج التسجيل الجدول يثبت أسابيع، وبلا التجديد يتعدّى
+   النسخة أسبوعها (SNAP_MAX_AGE) وما ترجع بعد نشر وهي صحيحة */
+const SNAP_REFRESH = 864e5;
 const SNAP_COLS = ['crn', 'courseCode', 'courseTitle', 'section', 'courseDate', 'courseTiming', 'instructor', 'room', 'status'];
-let SNAP_SAVED = { at: 0, fp: '' };
-async function snapSave(term, byG) {
-  if (SITE_ENV !== 'prod' || !byG || !byG.M1 || !byG.F1) return false;
-  if (Date.now() - SNAP_SAVED.at < SNAP_EVERY) return false;
-  const pack = rows => rows.map(r => SNAP_COLS.map(k => (r[k] == null ? '' : String(r[k]))));
-  const M1 = pack(byG.M1), F1 = pack(byG.F1);
-  const fp = crypto.createHash('sha1').update(JSON.stringify([M1, F1])).digest('hex');
-  SNAP_SAVED.at = Date.now();
-  if (fp === SNAP_SAVED.fp) return false;               /* نفسه — ما نكتب */
+/* صفّان لكل ترم: `snapshot-<ترم>` بالجنس من فلتر الجامعة (M1 · F1 — الدورة، أو بحث الجنسين) و`snapshot-all-<ترم>`
+   من سحبة «الكل» (ALL — بحث الصفحة الافتراضي). كل واحد بحاله فما يكتب واحد فوق الثاني، والجنس ما نخمّنه من رقم
+   الشعبة عشان نوزّعه (سحبة الدورة بالجنس عشان هذا بالضبط — fetchTermSnapshot) */
+const SNAP_SAVED = new Map();          /* صف → {tried, fp, at} — المحاولة كل نص ساعة لكل صف، والكتابة لو تغيّر */
+const snapFp = v => crypto.createHash('sha1').update(JSON.stringify(['M1', 'F1', 'ALL'].map(k => v[k] || null))).digest('hex');
+const snapPack = rows => rows.map(r => SNAP_COLS.map(k => (r[k] == null ? '' : String(r[k]))));
+/* at: وقت البيانات (الأقدم بين الجنسين لو من سحبتين) — بلاه وقت الحفظ */
+async function snapWrite(key, term, parts, at) {
+  if (SITE_ENV !== 'prod') return false;
+  const was = SNAP_SAVED.get(key) || { tried: 0, fp: '', at: 0 };
+  if (Date.now() - was.tried < SNAP_EVERY) return false;
+  const packed = {};
+  for (const [g, rows] of Object.entries(parts)) packed[g] = snapPack(rows);
+  const fp = snapFp(packed), dataAt = Number(at) > 0 ? Number(at) : Date.now();
+  SNAP_SAVED.set(key, Object.assign({}, was, { tried: Date.now() }));
+  if (dataAt < was.at) return false;                                   /* أقدم من المحفوظ */
+  if (fp === was.fp && dataAt - was.at < SNAP_REFRESH) return false;   /* نفسه — ما نكتب */
   const r = await sb('POST', 'app_state', {
-    body: { key: 'snapshot-' + term, value: { term, at: Date.now(), cols: SNAP_COLS, M1, F1 },
+    body: { key, value: Object.assign({ term, at: dataAt, cols: SNAP_COLS }, packed),
             updated_at: new Date().toISOString() },
     prefer: 'resolution=merge-duplicates,return=minimal'
   }).catch(() => null);
   if (r && !Array.isArray(r) && (r.code || r.message)) return false;
-  SNAP_SAVED.fp = fp;
+  SNAP_SAVED.set(key, { tried: Date.now(), fp, at: dataAt });
   return true;
 }
+async function snapSave(term, byG, at) {
+  if (!byG || !byG.M1 || !byG.F1) return false;
+  return snapWrite('snapshot-' + term, term, { M1: byG.M1, F1: byG.F1 }, at);
+}
+/* الترمات اللي لها نسخة: الدراسة والتسجيل والجاي — ترم قديم يبحث فيه أحد ما يصير صفاً في القاعدة */
+const snapTerms = () => [...new Set([regTerm(), activeTerm(), nextRegTerm()])];
+/* البحث يحفظه كذلك — لقاها محمد (١٩ نوفمبر ٢٠٢٦: «انمسحت النسخ الي في الكاش بعد ما نزلت اخر تحديث للموقع
+   ما نقدر نسترجعها؟»): الدورة وحدها كانت تحفظ، وهي ما تسحب إلا وقت التسجيل ولما مو موقوفة — فما انحفظت نسخة في
+   الإنتاج من يوم بنيناها، وكل نشر يبدأ بكاش فاضي. صار: سحبة «الكل» (بحث الصفحة الافتراضي) تنحفظ لحالها، والجنسان
+   في الكاش من سحبة حقيقية (لا من النسخة المحفوظة) وصالحان ⇒ نحفظهما بعمر الأقدم. وجدول ناقص عن أكبر ما شفناه
+   (FEED_PEAK · PMU_PART_PEAK — قراءة بس) ما ينحفظ */
+function snapFromSearch(term, gender, rows) {
+  if (SITE_ENV !== 'prod' || !snapTerms().includes(term)) return;
+  const peakOf = g => PMU_PART_PEAK.get(term + '|' + g) || 0;
+  if (gender === 'ALL') {
+    const peak = FEED_PEAK.get(term) || (peakOf('M1') + peakOf('F1'));
+    if (!Array.isArray(rows) || !rows.length || (peak && rows.length < peak * FEED_MIN_RATIO)) return;
+    snapWrite('snapshot-all-' + term, term, { ALL: rows }).catch(() => {});
+    return;
+  }
+  const ttl = coursesTTL(), now = Date.now(), byG = {};
+  let at = now;
+  for (const g of ['M1', 'F1']) {
+    const h = coursesCache.get(`${term}|ALL|${g}`);
+    if (!h || h.restored || !Array.isArray(h.courses) || !h.courses.length || now - h.at >= ttl) return;
+    if (peakOf(g) && h.courses.length < peakOf(g) * FEED_MIN_RATIO) return;
+    byG[g] = h.courses;
+    at = Math.min(at, h.at);
+  }
+  snapSave(term, byG, at).catch(() => {});
+}
 async function snapRestore() {
-  for (const term of [...new Set([regTerm(), activeTerm()])]) {
-    const rows = await sb('GET', 'app_state', {
-      query: `?key=eq.${encodeURIComponent('snapshot-' + term)}&select=value&limit=1`
-    }).catch(() => null);
-    const v = Array.isArray(rows) && rows[0] && rows[0].value;
-    if (!v || !Array.isArray(v.M1) || !Array.isArray(v.F1) || !(Number(v.at) > 0) ||
-        Date.now() - Number(v.at) > SNAP_MAX_AGE) continue;
-    const cols = Array.isArray(v.cols) ? v.cols : SNAP_COLS;
-    const unpack = (arr, g) => tagGender(arr.filter(Array.isArray)
-      .map(a => Object.fromEntries(cols.map((k, i) => [k, a[i] == null ? '' : String(a[i])]))), g);
-    const M1 = unpack(v.M1, 'M1'), F1 = unpack(v.F1, 'F1');
-    if (!M1.length && !F1.length) continue;
-    for (const [k, courses] of [[`${term}|ALL|M1`, M1], [`${term}|ALL|F1`, F1], [`${term}|ALL|ALL`, M1.concat(F1)]])
-      if (!coursesCache.has(k)) coursesCache.set(k, { at: Number(v.at), lastHit: 0, courses, restored: true });
-    OPS.snapRestored = { term, at: Number(v.at), n: M1.length + F1.length };
-    console.log(`snapshot: رجّعنا ${M1.length + F1.length} شعبة للترم ${term} (عمرها ${Math.round((Date.now() - v.at) / 60000)} دقيقة)`);
+  for (const term of snapTerms()) {
+    const got = {};
+    for (const key of ['snapshot-' + term, 'snapshot-all-' + term]) {
+      const rows = await sb('GET', 'app_state', {
+        query: `?key=eq.${encodeURIComponent(key)}&select=value&limit=1`
+      }).catch(() => null);
+      const v = Array.isArray(rows) && rows[0] && rows[0].value;
+      if (v && Number(v.at) > 0 && Date.now() - Number(v.at) <= SNAP_MAX_AGE) got[key] = v;
+    }
+    const unpack = (v, arr, g) => {
+      const cols = Array.isArray(v.cols) ? v.cols : SNAP_COLS;
+      return tagGender(arr.filter(Array.isArray)
+        .map(a => Object.fromEntries(cols.map((k, i) => [k, a[i] == null ? '' : String(a[i])]))), g);
+    };
+    const put = (k, at, courses) => {
+      if (!coursesCache.has(k)) coursesCache.set(k, { at, lastHit: 0, courses, restored: true });
+    };
+    let all = null;
+    const g = got['snapshot-' + term];
+    if (g && Array.isArray(g.M1) && Array.isArray(g.F1)) {
+      const M1 = unpack(g, g.M1, 'M1'), F1 = unpack(g, g.F1, 'F1');
+      if (M1.length || F1.length) {
+        put(`${term}|ALL|M1`, Number(g.at), M1);
+        put(`${term}|ALL|F1`, Number(g.at), F1);
+        all = { at: Number(g.at), courses: M1.concat(F1) };
+      }
+    }
+    const a = got['snapshot-all-' + term];
+    if (a && Array.isArray(a.ALL)) {
+      const ALL = unpack(a, a.ALL, 'ALL');
+      if (ALL.length && (!all || Number(a.at) > all.at)) all = { at: Number(a.at), courses: ALL };
+    }
+    if (!all) continue;
+    put(`${term}|ALL|ALL`, all.at, all.courses);
+    /* بصمة المحفوظ: نفس الجدول بعد النشر ما ننكتبه ثانية (إلا تجديد عمره مرة باليوم) */
+    for (const [key, v] of Object.entries(got))
+      if (JSON.stringify(v.cols || SNAP_COLS) === JSON.stringify(SNAP_COLS) && !SNAP_SAVED.has(key))
+        SNAP_SAVED.set(key, { tried: 0, fp: snapFp(v), at: Number(v.at) });
+    OPS.snapRestored = { term, at: all.at, n: all.courses.length };
+    console.log(`snapshot: رجّعنا ${all.courses.length} شعبة للترم ${term} (عمرها ${Math.round((Date.now() - all.at) / 60000)} دقيقة)`);
   }
 }
 
@@ -8527,6 +8635,9 @@ async function getCourses(term, college, gender, force, opts) {
     throw pmuErr('block', 'PMU backoff', { status: PMU_BLOCK.status, local: true });
   }
 
+  /* موقع الجدول ما رد قبل شوي: ما ننتظره ثانية — الاحتياط في /api/courses (آخر نسخة أو بانر) */
+  if (!force && Date.now() < PMU_SEARCH_DOWN_UNTIL) throw pmuErr('down', 'موقع الجامعة ما رد قبل شوي', { local: true });
+
   /* البحث العام فوق السقف: آخر نسخة عندنا مهما كان عمرها، وبلاها «زحمة — جرّب بعد دقيقة» */
   if (opts && opts.capped && !pmuSearchTake()) {
     OPS.searchCapped = (OPS.searchCapped || 0) + 1;
@@ -8553,7 +8664,10 @@ async function getCourses(term, college, gender, force, opts) {
       throw pmuErr('format', `شكل الجدول تغيّر (${sh.n} صف)`, { shape: sh });
     }
     coursesCache.set(key, { at: Date.now(), lastHit: (hit && hit.lastHit) || Date.now(), courses });
+    PMU_SEARCH_DOWN_UNTIL = 0;
     resolve('search', 'البحث ما يشتغل');
+    /* آخر جدول محفوظ في القاعدة يتجدّد من البحث كذلك (snapFromSearch): «الكل» لحاله، والجنس لما يكتمل الثاني */
+    if (college === 'ALL') snapFromSearch(term, gender, courses);
     /* قائمة ALL/ALL هي الأشمل — نصحّح بها جداول الطلاب المحفوظة */
     if (college === 'ALL' && gender === 'ALL')
       syncSchedules(term, courses).catch(() => {});
@@ -13215,12 +13329,31 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ success: false, error: 'موقع الجامعة مو متاح لنا الحين — جرّب بعد شوي' }));
         return;
       }
-      /* لو الجامعة تعطلت، نخدم آخر نسخة محفوظة بدل ما نفشل */
+      /* لو الجامعة تعطلت، نخدم آخر نسخة محفوظة بدل ما نفشل — وبلاها (أو قديمة وقت التسجيل) من بانر (فوق) */
       OPS.lastError = { at: Date.now(), where: 'search', msg: err.message };
+      /* القاطع لـ«ما رد» وحده (مهلة · انقطاع — خطأ بلا نوع من pmuReq): هو اللي ينتظر ٢٠ ثانية. ورد سريع بشكل ما
+         نفهمه (format) أو 5xx ما ننتظره — والبحث اللي بعده يجرّب الموقع على طول (test-pmu-signals) */
+      if (!err.local && !err.pmu) PMU_SEARCH_DOWN_UNTIL = Date.now() + PMU_SEARCH_DOWN_MS;
+      const stale = coursesCache.get(`${term}|${college}|${gender}`);
+      const staleOld = !stale || (!!currentWindow() && Date.now() - stale.at > SEARCH_OLD_MS);
+      let ban = null, banErr = null;
+      if (staleOld && BANNER_ON && snapTerms().includes(String(term))) {
+        try { ban = await bannerSearchRows(String(term)) }
+        catch (e) { banErr = e; if (!stale) ban = BANNER_SEARCH.get(String(term)) || null }  /* أقدم نسخة بانر خير من لا شي */
+      }
       alert('search', 'البحث ما يشتغل',
         `فشل جلب المواد من موقع الجامعة.\nالسبب: ${escP(err.message)}\n\n` +
-        (coursesCache.size ? 'نخدم النسخة المحفوظة مؤقتاً.' : 'ما فيه نسخة محفوظة — البحث معطّل.'));
-      const stale = coursesCache.get(`${term}|${college}|${gender}`);
+        (ban ? '🛟 البحث يخدم من بانر (احتياط) لين يرجع — «+ أضف» موقوفة فيه، و«راقب» شغّالة.'
+         : stale ? 'نخدم النسخة المحفوظة مؤقتاً.' + (banErr ? `\nوبانر ما اشتغل: ${escP(banErr.message)}` : '')
+         : 'ما فيه نسخة محفوظة' + (banErr ? ` وبانر ما اشتغل (${escP(banErr.message)})` : '') + ' — البحث معطّل.'));
+      if (ban) {
+        OPS.searchBanner = (OPS.searchBanner || 0) + 1;
+        res.setHeader('X-Source', 'banner');
+        if (college !== 'ALL') res.setHeader('X-Banner-Colleges', 'all');
+        sendCourses({ courses: bannerSearchFor(ban.rows, gender), cached: true,
+                      age: Date.now() - ban.at, at: ban.at }, null);
+        return;
+      }
       if (stale) {
         OPS.searchStale++;
         /* نادر جداً فلا نخزّنه (بلا مفتاح) — لكن نوحّد الشكل والترويسات */

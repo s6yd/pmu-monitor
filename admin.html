@@ -2865,6 +2865,7 @@ function renderSys(){
           d.hitPct===null?'— لا بحث':d.hitPct+'%'} <span style="color:var(--text3);font-weight:400">(${d.cached}/${d.rate})</span></b></div>`;
     })()}
     <div class="kv"><span>من نسخة قديمة</span><b class="${h.searchStale?'warn':'good'}">${h.searchStale}</b></div>
+    <div class="kv"><span>من بانر (موقع الجدول متعطّل)</span><b class="${h.searchBanner?'warn':'good'}">${h.searchBanner||0}</b></div>
     <div class="kv"><span>نسخ من دورة المراقبة</span><b class="good">${h.cacheFromMonitor||0}</b></div>
     ${h.ttl?`<div class="kv"><span>مدة الصلاحية الحالية</span>
       <b class="${h.ttl.tier==='peak'?'bad':h.ttl.tier==='near'?'warn':'good'}">${
@@ -3045,10 +3046,10 @@ function renderSys(){
   ${h.cache&&h.cache.length?`<div class="sec-title">النسخ المحفوظة الآن</div>
   <div class="gauge">
     ${h.cache.map(c=>`<div class="kv"><span class="ltr" style="font-family:var(--mono);font-size:11px">${esc(c.key)}</span>
-      <b class="${c.valid?'good':'warn'}">${c.ageSec<90?c.ageSec+' ث':Math.round(c.ageSec/60)+' د'} ${c.valid?'✓':'منتهية'}</b></div>`).join('')}
-    <div class="gauge-sub">تُمسح كلها مع كل إعادة تشغيل للسيرفر.</div>
+      <b class="${c.valid?'good':'warn'}">${c.restored?'↺ ':''}${c.ageSec<90?c.ageSec+' ث':Math.round(c.ageSec/60)+' د'} ${c.valid?'✓':'منتهية'}</b></div>`).join('')}
+    <div class="gauge-sub">تنمسح مع كل إعادة تشغيل للسيرفر (نشر). جدول الترم كامل يرجع على طول من آخر نسخة محفوظة في القاعدة (↺ — بعمرها الحقيقي)، والباقي يرجع مع أول بحث.</div>
   </div>`:`<div class="sec-title">النسخ المحفوظة الآن</div>
-  <div class="gauge"><div class="fin-empty" style="padding:6px 0">الكاش فاضي — ما صار بحث بعد آخر إعادة تشغيل.</div></div>`}
+  <div class="gauge"><div class="fin-empty" style="padding:6px 0">الكاش فاضي — ما صار بحث بعد آخر إعادة تشغيل، وما فيه نسخة محفوظة في القاعدة ترجع (أقدم من أسبوع أو ما انحفظت). يرجع مع أول بحث.</div></div>`}
 
   <div class="sec-title">السيرفر</div>
   <div class="gauge">
