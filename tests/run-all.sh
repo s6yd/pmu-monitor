@@ -35,7 +35,7 @@ for t in test-notif-repeat test-notif-approval test-cycle-recovery test-gender-s
 
 echo "— الصفحة —"
 for t in test-plan-regress test-guest-theme test-build-reload test-term-ui \
-         test-pushover-gate test-watch-gate test-slot-sync test-pay-page test-search-age test-motion test-search-cards test-plan-look test-sched-look test-doc-look test-contrast test-text-look test-empty-look test-tap-look; do run "$t" "$F"; done
+         test-pushover-gate test-watch-gate test-slot-sync test-pay-page test-search-age test-motion test-search-cards test-plan-look test-sched-look test-doc-look test-contrast test-text-look test-empty-look test-tap-look test-today-term test-finals-share; do run "$t" "$F"; done
 
 echo "— اللوحة —"
 run test-admin-season "$A"
@@ -53,6 +53,7 @@ run test-review-credit  "$S" "$F" "$A"
 run test-import         "$S" "$F"
 run test-import-grades  "$S" "$F"
 run test-ai-rate        "$S" "$F" "$A"
+run test-finals-watch   "$S"
 run test-pushover-addon "$S" "$F" "$A"
 run test-static-pages   "$S"
 run test-legal          .
@@ -62,6 +63,11 @@ run test-chen-plan      "$S" "$F"
 run test-sched-builder  "$S"
 run test-ai-tools       "$S"
 run test-ai-chat        "$S"
+run test-ai-dates       "$S"
+run test-ai-nextterm    "$S"
+run test-ai-day         "$S"
+run test-ai-outside     "$S"
+run test-guide-new      "$S"
 run test-ai-caps        "$S"
 run test-reminders      "$S"
 run test-pay            "$S"

@@ -972,8 +972,13 @@ function fakeModel(ctx) {
     eq(await oneM('دوائر'), 'GEEN 3314', 'و«دوائر» ⇒ Electric Circuits');
     eq(await oneM('موائع'), 'GEEN 3311', 'و«موائع» ⇒ Fluid Mechanics');
     eq(await oneM('مشروع التخرج'), 'MEEN 4396', 'و«مشروع التخرج» ⇒ Senior Design');
-    ok((await one('كيمياء')).startsWith('—'),
-       'وما نرجّع مادة مو في خطة الطالب — خطة الحاسب ما فيها كيمياء');
+    /* **قاعدة تغيّرت عمداً (مراجعة المساعد ١٩ نوفمبر ٢٠٢٦ — مادة برّا خطته):** كانت «ما لقيتها» لمادة مو في خطته،
+       فطالب حاسب يسأل عن الكيمياء يوقف والمادة عندنا. صارت من خطط التخصصات الثانية **موسومة إنها برّا خطته** —
+       والقصد الأصلي باقٍ: ما تنعرض كأنها من خطته (test-ai-outside) */
+    const chem = await call('find_course', JSON.stringify({ query: 'كيمياء' }));
+    ok(chem.inYourPlan === false && (chem.matches || []).some(x => x.code === 'CHEM 1421') &&
+       (chem.matches || []).every(x => !!x.fromPlan) && chem.confident === false,
+       'كيمياء لطالب حاسب: مواد الكيمياء من خطط ثانية **موسومة «مو في خطته»** وبلا ثقة (يسأله أيها) — خطة الحاسب ما فيها كيمياء');
     eq(await one('MATH 1422'), 'MATH 1422', 'والكود نفسه يبقى أدق مطابقة');
     /* الهمزة: arNorm يحذفها، فمفاتيح الخريطة تُطبَّع برمجياً لا بيدي */
     ok((await one('مبادئ')).startsWith('—') === false, '«مبادئ» بهمزة تُطابق');
@@ -1081,9 +1086,13 @@ function fakeModel(ctx) {
     ok(!!bad.error, 'ترم غير موجود: «ما لقيتها» لا اختراع');
   }
   {
+    /* **قاعدة تغيّرت عمداً — لقاها محمد (١٩ نوفمبر ٢٠٢٦):** كانت الأداة ترجّع REG_CAL كما هو (`rows`: أيام
+       مستويات الخريف) لأي سؤال، فـ«متى يبدأ التسجيل؟» في نوفمبر طلع «ما عندي تواريخ الربيع». صارت المواعيد من
+       ACAD_CAL لترم التسجيل الجاي، وأيام المستويات (`levels`) لو هي لنفس الترم وحده (test-ai-dates). هنا ترم
+       التسجيل الجاي الخريف (NEXT_REG) — فنفس الفحص: مستويات بتاريخ واسم */
     const r = await call('registration_calendar', '{}');
-    ok(Array.isArray(r.rows) && r.rows.length > 0, 'تقويم التسجيل يرجع مستويات');
-    ok(r.rows.every(x => x.date && x.ar), 'لكل مستوى تاريخ واسم');
+    ok(Array.isArray(r.levels) && r.levels.length > 0, 'تقويم التسجيل يرجع مستويات');
+    ok(Array.isArray(r.levels) && r.levels.every(x => x.date && x.ar), 'لكل مستوى تاريخ واسم');
   }
   {
     const r = await callFree('guide', '{"lang":"ar"}');
@@ -1125,7 +1134,10 @@ function fakeModel(ctx) {
     const co = await fakeModel(OTHER)('course_offering', '{"code":"MEEN 2311"}');
     ok(co.known === true, 'مادة ميكانيكال معروفة لطالب ميكانيكال');
     const mine = await call('course_offering', '{"code":"ALIS 1211"}');
-    ok(mine.known === true && mine.status === 'ok', 'تخصص بلا جدول طرح: بلا تحذير');
+    /* **قاعدة تغيّرت عمداً (مراجعة المساعد ١٩ نوفمبر ٢٠٢٦):** بلا جدول طرح لتخصصه كان «ok · ما فيه تحذير» فيفهمها
+       النموذج «تُطرح». صار من جدول الجامعة للترم: offered · no_sections · أو unknown لو الجدول مو عندنا */
+    ok(mine.known === true && ['offered', 'no_sections', 'unknown'].includes(mine.status),
+       'تخصص بلا جدول طرح: من جدول الجامعة لا «ما فيه تحذير» — ' + mine.status);
   }
 
   /* ══════ «الترم الجاي» خارج التسجيل = ترم التسجيل الجاي (لقاها محمد) ══════
@@ -1808,11 +1820,13 @@ function fakeModel(ctx) {
     const run = async (id, t, a) => fakeModel(await aiStudentCtx(id))(t, a);
     eq((await run('u-chen-def', 'plan_overview', '{}')).planVersion, 'old',
       'plan_overview لطالب الكيميكال الافتراضي: القديمة');
-    eq([(await run('u-chen-def', 'course_info', '{"code":"ALIS 1211"}')).known,
-        (await run('u-chen-def', 'course_info', '{"code":"ISLM 1221"}')).known], [true, false],
+    /* «في خطته» = معروفة وما هي من خطة ثانية — course_info صارت تعرف مواد الخطط الثانية (inYourPlan: false) */
+    const inPlan = r => r.known === true && r.inYourPlan !== false;
+    eq([inPlan(await run('u-chen-def', 'course_info', '{"code":"ALIS 1211"}')),
+        inPlan(await run('u-chen-def', 'course_info', '{"code":"ISLM 1221"}'))], [true, false],
       '**المساعد يجاوب الكيميكال الافتراضي من القديمة** (ALIS 1211 فيها · ISLM 1221 لا)');
-    eq([(await run('u-chen-new', 'course_info', '{"code":"ISLM 1221"}')).known,
-        (await run('u-chen-new', 'course_info', '{"code":"ALIS 1211"}')).known], [true, false],
+    eq([inPlan(await run('u-chen-new', 'course_info', '{"code":"ISLM 1221"}')),
+        inPlan(await run('u-chen-new', 'course_info', '{"code":"ALIS 1211"}'))], [true, false],
       'واللي اختار الجديدة من الجديدة');
     eq((await run('u-chen-def', 'course_info', '{"code":"CHEN 4396"}')).prereqs, ['CHEN 3301', 'CHEN 3494'],
       'متطلبات Senior Design I للقديمة: التدريب وCHEN 3494');
@@ -1867,14 +1881,19 @@ function fakeModel(ctx) {
       SEC('32002', 'GEEN 2313', 'Statics', '101', 'UT', '1000 - 1115') ] });
     const fall = PLANS_DATA.suggestNext(PLANS_DATA.ctxOf({ major: 'CHEN', planVer: 'old',
       completed: yr1.map(r => r.course_code), term: '202710', offeredOnly: true }));
-    NEXT_REG = '202720'; REG_TERM = '202710';     /* أكتوبر: يبني لترم التسجيل (الخريف هنا) */
+    NEXT_REG = '202710'; REG_TERM = '202710';     /* أغسطس: تسجيل الخريف جاي — يبني له */
     let b = await run('build_schedule', '{}');
-    eq(b.term, '202710', 'يبني لترم التسجيل');
+    eq(b.term, '202710', 'يبني لترم التسجيل الجاي (الخريف هنا)');
     ok(!(b.requested || []).includes('MEEN 2311'),
       '**Materials Engineering (MEEN 2311) ما تُطرح الخريف (وثيقة الميكانيكال) — ما ياخذ خانة** — '
       + (b.requested || []).join(' · '));
     eq(b.requested, fall.crit.concat(fall.opt).map(c => c.c).slice(0, 8),
       '**والمواد = مقترح ترم البناء بجدول الطرح، بترتيبه**');
+    /* **قاعدة تغيّرت عمداً (مراجعة المساعد ١٩ نوفمبر ٢٠٢٦ — قرار محمد ٢٢ أكتوبر على الباني كذلك):** في أكتوبر
+       تسجيل الخريف انقفل (ترم التسجيل خارج النافذة = ترم الدراسة)، وكان يبني للخريف. صار لترم التسجيل الجاي */
+    NEXT_REG = '202720';
+    b = await run('build_schedule', '{}');
+    eq(b.term, '202720', '**أكتوبر: يبني للربيع (ترم التسجيل الجاي) — لا للخريف اللي انقفل تسجيله**');
 
     /* يبني لترم بعد ترم دراسته (التسجيل المبكر للصيفي، أو الربيع قبل ما يتبدّل ترم الدراسة):
        اللي يدرسه الحين بيخلّصه قبله — ما نبني عليه ثانية، ونفتح اللي بعده */

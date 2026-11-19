@@ -2887,6 +2887,7 @@ function msgKind(text) {
   const t = String(text || '');
   if (/فتحت مادة|نزلت شعبة|فتحت شعبة|الشعبة اللي تبيها/.test(t)) return 'شعبة فتحت';
   if (/تغيّر في جدولك/.test(t)) return 'تغيّر جدول';
+  if (/تغيّر في اختباراتك/.test(t)) return 'تغيّر اختبار';
   if (/سجّلت .*؟|أوقف المراقبة عشان/.test(t)) return 'متابعة';
   if (/تم الربط بنجاح/.test(t)) return 'ربط';
   if (/رد من فريق جدولك/.test(t)) return 'رد شخصي';
@@ -3118,7 +3119,7 @@ const sendMsg = async (chatId, text, markup, extra) => {
    ضبطتها dev غلبت قائمة الإنتاج وهو يشتغل بكود أقدم — نفس درس
    «مفتاح لوحة dev يغلب الإنتاج» (§٦). */
 const BOT_COMMANDS = [
-  { command: 'ai',     description: '✨ اسأل مساعد جدولك — جدولك وخطتك والدكاترة' },
+  { command: 'ai',     description: '✨ اسأل Jadwalik AI — جدولك وخطتك والدكاترة' },
   { command: 'today',  description: '📅 وش عندك اليوم' },
   { command: 'rooms',  description: '🚪 قاعة فاضية الحين' },
   { command: 'plan',   description: '🎓 خطتك وكم باقي لك تتخرج' },
@@ -4522,6 +4523,9 @@ async function handleCallback(cq) {
   /* قرار البثّ العام — للإدارة وحدها */
   const am = data.match(/^n(ok|no):(\d+)$/);
   if (am && chatId) return acadDecision(cq, ack, chatId, am[1], am[2]);
+  /* عاصفة في جدول الاختبارات (finAskStorm) — للإدارة وحدها */
+  const fw = data.match(/^fin:(ok|no):([0-9a-f]{8})$/);
+  if (fw && chatId) return finStormDecide(cq, ack, chatId, fw[1] === 'ok', fw[2]);
 
   /* كلام حر: الطالب اختار المساعد ولا الفريق (aiTgAsk) */
   const ask = data.match(/^ask:(ai|team):(\d+)$/);
@@ -6929,9 +6933,9 @@ function parseFinals(html) {
   return rows;
 }
 
-async function getOne(g) {
+async function getOne(g, maxAge) {
   const c = finalsCache[g];
-  if (c && Date.now() - c.at < FINALS_TTL) return c;
+  if (c && Date.now() - c.at < (maxAge == null ? FINALS_TTL : maxAge)) return c;
   const page = FINALS_PAGES[g];
   if (!page) return { at: Date.now(), exams: [] };
   const exams = parseFinals(await fetchPage(page));
@@ -6942,19 +6946,372 @@ async function getOne(g) {
 }
 
 /* نسحب جدولي الطلاب والطالبات ونضمّهم.
-   الـ CRN فريد على مستوى الجامعة، فالمطابقة تظل دقيقة بدون ما نخمّن جنس الطالب. */
-async function getFinals() {
-  const [m, f] = await Promise.all([
-    getOne('M').catch(() => ({ at: Date.now(), exams: [] })),
-    getOne('F').catch(() => ({ at: Date.now(), exams: [] }))
-  ]);
+   الـ CRN فريد على مستوى الجامعة، فالمطابقة تظل دقيقة بدون ما نخمّن جنس الطالب.
+   `maxAge` لتنبيه تغيّر الاختبارات: سحبة أطزج من كاش الست ساعات. و`byG` حالة كل جنس — الفاشل ‹ok:false› غير الفاضي
+   (جدول ما نُشر)، ويرجع آخر نسخة عندنا بدل لا شي (كانت السحبة الفاشلة تخفي اختبارات جنس كامل عن الصفحة). */
+async function getFinals(opt) {
+  const maxAge = opt && opt.maxAge;
+  const one = g => getOne(g, maxAge).then(r => Object.assign({ ok: true }, r),
+    e => ({ ok: false, at: Date.now(), exams: (finalsCache[g] && finalsCache[g].exams) || [],
+            err: String(e && e.message || e).slice(0, 120) }));
+  const [m, f] = await Promise.all([one('M'), one('F')]);
   const exams = m.exams.concat(f.exams);
   return {
     at: Math.min(m.at, f.at),
     exams,
-    unavailable: exams.length === 0
+    unavailable: exams.length === 0,
+    byG: { M: m, F: f }
   };
 }
+
+/* ═══ تنبيه تغيّر الاختبارات النهائية ═══
+   طلب محمد (١٩ نوفمبر ٢٠٢٦): «لو صار فيه تغيير في موعد او مكان اختبار موجود في جدول الطالب هل يجيه تنبيه؟» — ما كان
+   يجيه، و«اي ابدأ فيه». جدول الاختبارات كان يُسحب لما يفتح طالب البطاقة وبس: ما شي يقارن، فتغيّر موعد أو قاعة ما يوصل
+   أحداً، وصورة القروب («📤 شارك جدول اختباراتك») تبقى على القديم. صار مثل «تغيّر في جدولك»:
+   ١) **نقارن مع كل تجديد للكاش، وما نسحب زيادة — قرار محمد** («خليه اذا الكاش صار اقدم من ٢٤ ساعه يسحب نسخة جديدة
+      ويتاكد غير كذا يتاكد مع كل تجديد للكاش»): الكاش يتجدّد لما يفتح طالب البطاقة بعد ٦ ساعات (أو المساعد)، والدورة
+      (كل ٥ دقائق، **الإنتاج وحده**) تقارن أي نسخة ما قارنّاها (`seenAt`). وما فتحها أحد يوماً ⇒ تسحب هي (getFinals
+      نفسها — طبقة الكاش). وسحبة فشلت ⇒ ساعة قبل ما تعيد.
+   ٢) نقارنها بآخر نسخة محفوظة (app_state ‹finals-watch› — النشر ما يضيّعها): نفس CRN **ونفس المادة والشعبة** (الجامعة
+      تعيد أرقام CRN بين الترمات)، وتغيّر الموعد (اليوم · الساعة) أو المكان (المبنى · القاعة).
+   ٣) **ما نصدّق جدولاً ما نثق فيه**: جنس رجع بخطأ أو فاضي أو أقل من ٦٠٪ من نسخته، أو شكل التاريخ والوقت تغيّر (عمود
+      انزاح) ⇒ ما نقارنه ولا نحفظه. وأول جدول (أو ترم دراسة جديد) مرجع بلا رسائل.
+   ٤) **نتأكد بسحبة ثانية بعد ربع ساعة** (السحبة الزايدة الوحيدة — لما يبان فرق بس): نفس الفرق ⇒ يوصل، رجع ⇒ ينرمى.
+   ٥) المستلم: الشعبة في جدوله (user_schedule بترم الدراسة — أي جدول من الثلاثة، مثل «تغيّر في جدولك») بنفس المادة
+      والشعبة، ومربوط بتيليغرام. رسالة وحدة لكل محادثة، و**تنبيه لو صار بنفس وقت اختبار ثاني له**.
+      وكل رسالة تنحجز في notif_approvals (‹fin›) قبل ما تروح: نسختان وقت النشر ما ترسلان مرتين، ونشر وسط الإرسال
+      يكمّل الباقين (النسخة تنحفظ بعد الإرسال، فالجديدة تلقى نفس الفرق ولا تعيد على من وصله). والقاعدة ما ردّت وقت
+      الإرسال ⇒ نعيد التأكيد والإرسال بعد ربع ساعة (لين ٦ مرات).
+   ٦) **عاصفة** (أكثر من ثلث الاختبارات المطابقة من ١٠ وفوق، أو فوق ٤٠): ما نرسل — نسأل محمد بزرّين، و«لا» تعتمد الجدول
+      الجديد بلا رسائل.
+   ٧) وبعد كل إرسال سطر لمحمد: كم طالب عنده المادة وكم وصلته. */
+const FIN_STALE_MS = 24 * 60 * 60 * 1000;     /* ما تجدّد الكاش يوماً ⇒ نسحب بأنفسنا */
+const FIN_RETRY_MS = 60 * 60 * 1000;          /* سحبتنا فشلت ⇒ ساعة قبل ما نعيد */
+const FIN_CONFIRM_MS = 15 * 60 * 1000;
+const FIN_FRESH_MS = 10 * 60 * 1000;          /* سحبة التأكيد ما تاخذ من كاش أقدم من كذا */
+const FIN_TICK_MS = 5 * 60 * 1000;
+const FIN_MIN_RATIO = 0.6;
+const FIN_STORM_RATIO = 1 / 3, FIN_STORM_MIN = 10, FIN_STORM_MAX = 40;
+const FIN_HELD_MAX = 24 * 60 * 60 * 1000;     /* سؤال العاصفة بلا جواب يوم ⇒ نتركه، والتجديد الجاي يسأل من جديد */
+const FIN_SEND_RETRY = 6;
+const FIN_SEND_GAP = 700;
+const FIN_STATE_KEY = 'finals-watch';
+/* [key, date, hour, building, room, title] — والمقارنة على الأربعة الوسط */
+const FIN_FIELDS = ['date', 'hour', 'building', 'room'];
+const FIN_WATCH = { snap: null, loaded: false, seenAt: { M: 0, F: 0 }, failAt: 0, pending: null, busy: false,
+  stat: { checks: 0, baseline: 0, detected: 0, confirmed: 0, flapped: 0, sent: 0, storms: 0, skipped: [], lastErr: null } };
+
+const finNorm = v => String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
+const finKey = (code, sec) => (finNorm(code) + '|' + finNorm(sec)).toUpperCase();
+/* الشكل اللي نعرفه: «Dec 20, 2026» و«12:00PM» لـ٩٠٪ من الصفوف — عمود انزاح يطلّعها غيرها */
+function finShapeOk(exams) {
+  if (!exams.length) return false;
+  const good = exams.filter(e => /^[A-Za-z]{3,9}\.? \d{1,2}, \d{4}$/.test(finNorm(e.date)) &&
+                                 /^\d{1,2}:\d{2}\s*(AM|PM)$/i.test(finNorm(e.hour))).length;
+  return good >= exams.length * 0.9;
+}
+function finPack(exams) {
+  const out = {};
+  for (const e of exams) {
+    const crn = finNorm(e.crn);
+    if (/^\d{4,6}$/.test(crn)) out[crn] = [finKey(e.code, e.section), finNorm(e.date), finNorm(e.hour),
+      finNorm(e.building), finNorm(e.room), finNorm(e.title)];
+  }
+  return out;
+}
+/* «Dec 20, 2026» ⇒ «الأحد 20 ديسمبر» · «12:00PM» ⇒ «12:00 م» — وغير المعروف كما هو */
+const FIN_MON = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+const FIN_MON_AR = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+const FIN_DAY_AR = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+function finDateAr(s) {
+  const m = finNorm(s).match(/^([A-Za-z]{3})[A-Za-z]*\.? (\d{1,2}), (\d{4})$/);
+  const i = m ? FIN_MON.indexOf(m[1].toLowerCase()) : -1;
+  if (i < 0) return finNorm(s);
+  const d = new Date(Date.UTC(+m[3], i, +m[2]));
+  return `${FIN_DAY_AR[d.getUTCDay()]} ${+m[2]} ${FIN_MON_AR[i]}`;
+}
+function finHourAr(h) {
+  const m = finNorm(h).match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  return m ? `${+m[1]}:${m[2]} ${m[3].toUpperCase() === 'PM' ? 'م' : 'ص'}` : finNorm(h);
+}
+
+async function finLoad() {
+  const rows = await sb('GET', 'app_state', {
+    query: `?key=eq.${encodeURIComponent(FIN_STATE_KEY)}&select=value&limit=1`
+  });
+  if (!Array.isArray(rows)) throw new Error('app_state ما انقرأ');   /* ما نبدأ بمرجع فاضي ونحسب كل شي جديداً */
+  const v = rows[0] && rows[0].value;
+  FIN_WATCH.snap = v && v.term && v.M && v.F ? v : null;
+  FIN_WATCH.loaded = true;
+}
+async function finSave(snap) {
+  const r = await sb('POST', 'app_state', {
+    body: { key: FIN_STATE_KEY, value: snap, updated_at: new Date().toISOString() },
+    prefer: 'resolution=merge-duplicates,return=minimal'
+  }).catch(e => ({ message: String(e && e.message || e) }));
+  if (r && !Array.isArray(r) && (r.code || r.message)) return false;
+  FIN_WATCH.snap = snap;
+  return true;
+}
+
+/* الجدول من الكاش (أو سحبة لو أقدم من maxAge) لكل جنس — ونقول وش ما نثق فيه.
+   onlyNew: النسخة اللي قارنّاها قبل ما نعيدها */
+async function finFetch(snap, maxAge, onlyNew) {
+  const d = await getFinals({ maxAge });
+  const out = { M: null, F: null, why: [], seen: {}, failed: false };
+  for (const g of ['M', 'F']) {
+    const r = d && d.byG && d.byG[g];
+    if (!r || !r.ok) { out.failed = true; out.why.push(`${g}: ما وصل`); continue }
+    if (onlyNew && !(r.at > (FIN_WATCH.seenAt[g] || 0))) continue;
+    out.seen[g] = r.at;
+    const exams = Array.isArray(r.exams) ? r.exams : [];
+    const before = snap && snap[g] ? Object.keys(snap[g]).length : 0;
+    if (!exams.length) out.why.push(`${g}: فاضي`);
+    else if (!finShapeOk(exams)) out.why.push(`${g}: شكل التاريخ أو الوقت تغيّر`);
+    else if (before && exams.length < before * FIN_MIN_RATIO) out.why.push(`${g}: ناقص (${exams.length} من ${before})`);
+    else out[g] = finPack(exams);
+  }
+  return out;
+}
+
+/* الفروق: نفس CRN ونفس المادة والشعبة، والموعد أو المكان تغيّر */
+function finDiff(snap, fresh) {
+  const out = [];
+  let matched = 0;
+  for (const g of ['M', 'F']) {
+    const A = (snap && snap[g]) || {}, B = fresh[g];
+    if (!B) continue;
+    for (const crn of Object.keys(B)) {
+      const a = A[crn], b = B[crn];
+      if (!a || a[0] !== b[0]) continue;
+      matched++;
+      if (FIN_FIELDS.every((k, i) => a[i + 1] === b[i + 1])) continue;
+      out.push({ g, crn, key: b[0], title: b[5], from: a.slice(1, 5), to: b.slice(1, 5),
+                 sig: crn + '|' + b[0] + '|' + b.slice(1, 5).join('|') });
+    }
+  }
+  return { changes: out, matched };
+}
+/* النسخة الجديدة: الجدول الجديد للجنس اللي وثقنا فيه — إلا الفروق تحت التأكيد تبقى بقيمتها القديمة */
+function finMerge(snap, fresh, keepOld, term, now) {
+  const same = snap && snap.term === term;
+  const next = { term, at: now, M: Object.assign({}, same ? snap.M : {}), F: Object.assign({}, same ? snap.F : {}) };
+  for (const g of ['M', 'F']) {
+    if (!fresh[g]) continue;
+    const merged = Object.assign({}, fresh[g]);
+    for (const c of keepOld || []) if (c.g === g && next[g][c.crn]) merged[c.crn] = next[g][c.crn];
+    next[g] = merged;
+  }
+  return next;
+}
+function finStorm(changes, matched) {
+  return changes.length > FIN_STORM_MAX ||
+         (changes.length >= FIN_STORM_MIN && changes.length > matched * FIN_STORM_RATIO);
+}
+
+async function finalsWatchTick(now) {
+  now = now || Date.now();
+  if (SITE_ENV !== 'prod' || !FINALS_ON || FIN_WATCH.busy || SHUTTING_DOWN) return;
+  if (!SB_URL || !SB_SERVICE_KEY) return;
+  FIN_WATCH.busy = true;
+  try {
+    if (!FIN_WATCH.loaded) await finLoad();
+    const P = FIN_WATCH.pending;
+    if (P && P.held) {
+      if (now - P.askedAt > FIN_HELD_MAX) FIN_WATCH.pending = null;
+      return;
+    }
+    if (P) {
+      if (now - P.at >= FIN_CONFIRM_MS) await finConfirm(now);
+      return;
+    }
+    await finCheck(now);
+  } catch (e) {
+    FIN_WATCH.stat.lastErr = { at: now, msg: String(e && e.message || e).slice(0, 200) };
+  } finally {
+    FIN_WATCH.busy = false;
+  }
+}
+
+/* نسخة جديدة في الكاش (أو أقدم من يوم ⇒ نسحبها) ⇒ نقارنها */
+async function finCheck(now) {
+  if (now - FIN_WATCH.failAt < FIN_RETRY_MS) return;
+  const term = activeTerm();
+  const snap = FIN_WATCH.snap;
+  const fresh = await finFetch(snap && snap.term === term ? snap : null, FIN_STALE_MS, true);
+  if (fresh.failed) FIN_WATCH.failAt = now;
+  if (!Object.keys(fresh.seen).length) return;              /* ما فيه نسخة ما قارنّاها */
+  FIN_WATCH.stat.checks++;
+  FIN_WATCH.stat.skipped = fresh.why;
+  if (fresh.M || fresh.F) {
+    if (!snap || snap.term !== term) {
+      /* أول جدول، أو ترم دراسة جديد: مرجع بلا رسائل */
+      await finSave(finMerge(null, fresh, [], term, now));
+      FIN_WATCH.stat.baseline = now;
+    } else {
+      const { changes, matched } = finDiff(snap, fresh);
+      /* جنس ما نشر جدوله قبل (نسخته فاضية) يصير مرجعاً كذلك — ما فيه شي يتغيّر عنه */
+      const next = finMerge(snap, fresh, changes, term, now);
+      if (JSON.stringify([next.M, next.F]) !== JSON.stringify([snap.M, snap.F])) await finSave(next);
+      if (changes.length) {
+        FIN_WATCH.stat.detected += changes.length;
+        FIN_WATCH.pending = { at: now, term, changes, matched };
+      }
+    }
+  }
+  Object.assign(FIN_WATCH.seenAt, fresh.seen);
+}
+
+/* ربع ساعة بعد: سحبة ثانية — نفس الفرق بنفس القيم الجديدة ⇒ مؤكد */
+async function finConfirm(now) {
+  const P = FIN_WATCH.pending;
+  const term = activeTerm();
+  const snap = FIN_WATCH.snap;
+  if (!P || !snap || P.term !== term || snap.term !== term) { FIN_WATCH.pending = null; return }
+  const fresh = await finFetch(snap, FIN_FRESH_MS, false);
+  FIN_WATCH.stat.skipped = fresh.why;
+  /* الجنس اللي فيه الفروق ما وصل هالمرة ⇒ ننتظر ربع ساعة ثانية بلا حكم */
+  if ([...new Set(P.changes.map(c => c.g))].some(g => !fresh[g])) { P.at = now; return }
+  Object.assign(FIN_WATCH.seenAt, fresh.seen);
+  const { changes, matched } = finDiff(snap, fresh);
+  const was = new Set(P.changes.map(c => c.sig));
+  const ok = changes.filter(c => was.has(c.sig));
+  const again = changes.filter(c => !was.has(c.sig));        /* تغيّر مرة ثانية ⇒ يبدأ تأكيده من جديد */
+  if (!P.tries) FIN_WATCH.stat.flapped += P.changes.length - ok.length;
+  const later = again.length ? { at: now, term, changes: again, matched } : null;
+  if (!ok.length) { FIN_WATCH.pending = later; return }
+  if (!P.tries) FIN_WATCH.stat.confirmed += ok.length;
+  if (finStorm(ok, matched)) return finAskStorm(ok, matched, term, now);
+  /* الإرسال تعثّر (القاعدة) ⇒ يبقى تحت التأكيد ونعيد بعد ربع ساعة — لين ٦ مرات */
+  const tries = (P.tries || 0) + 1;
+  FIN_WATCH.pending = tries < FIN_SEND_RETRY ? { at: now, term, changes: ok, matched, tries } : later;
+  await finDeliver(ok, term, now);
+  FIN_WATCH.pending = later;
+}
+
+/* عاصفة: نسأل محمد قبل ما نرسل لأحد */
+async function finAskStorm(changes, matched, term, now) {
+  const id = crypto.randomBytes(4).toString('hex');
+  FIN_WATCH.stat.storms++;
+  FIN_WATCH.pending = { at: now, term, changes, matched, held: true, id, askedAt: now };
+  if (!ADMIN_CHAT_ID) return;
+  /* بلا سهم: القيم لاتينية والوصف عربي فينقلب الاتجاه (نفس «تغيّر في جدولك») */
+  const when = v => `${escP(finDateAr(v[0]))} · ${escP(finHourAr(v[1]))} · ${escP([v[2], v[3]].filter(Boolean).join(' '))}`;
+  const sample = changes.slice(0, 5).map(c => `• ${escP(c.key.replace('|', ' §'))}\n   كان: ${when(c.from)}\n   صار: ${when(c.to)}`).join('\n');
+  await sendMsg(ADMIN_CHAT_ID,
+    `⚠️ <b>جدول الاختبارات تغيّر كثير مرة وحدة</b>\n\n` +
+    `${changes.length} اختبار تغيّر موعده أو مكانه من ${matched} — ممكن تغيير حقيقي (تأجيل مثلاً) أو خلل في صفحة الجامعة.\n\n` +
+    `${sample}\n\nما أرسلنا لأحد. تبي نرسل للطلاب؟`,
+    kb([[btn('✅ أرسل للطلاب', `fin:ok:${id}`), btn('🚫 لا — اعتمده بلا رسائل', `fin:no:${id}`)]]));
+}
+async function finStormDecide(cq, ack, chatId, yes, id) {
+  if (!ADMIN_CHAT_ID || String(chatId) !== String(ADMIN_CHAT_ID)) return ack();
+  const P = FIN_WATCH.pending;
+  if (!P || !P.held || P.id !== id) return ack('انتهى — ما عاد قائماً');
+  if (FIN_WATCH.busy) return ack('شغّال — ثواني');
+  FIN_WATCH.busy = true;
+  FIN_WATCH.pending = null;
+  try {
+    await ack(yes ? 'نرسل الحين' : 'اعتمدناه بلا رسائل');
+    if (yes) await finDeliver(P.changes, P.term, Date.now());
+    else await finSave(finAccept(P.changes, P.term, Date.now()));
+  } catch (e) {
+    FIN_WATCH.stat.lastErr = { at: Date.now(), msg: String(e && e.message || e).slice(0, 200) };
+  } finally { FIN_WATCH.busy = false }
+}
+/* النسخة بعد ما وصل الفرق: القيمة الجديدة مكان القديمة */
+function finAccept(changes, term, now) {
+  const s = FIN_WATCH.snap;
+  const next = { term, at: now, M: Object.assign({}, s.M), F: Object.assign({}, s.F) };
+  for (const c of changes) if (next[c.g][c.crn]) next[c.g][c.crn] = [c.key, ...c.to, c.title];
+  return next;
+}
+
+/* المستلمون والرسائل — والنسخة تنحفظ بعد الإرسال */
+async function finDeliver(changes, term, now) {
+  const crns = [...new Set(changes.map(c => c.crn))];
+  const rows = await sbAll('user_schedule', {
+    query: `?term=eq.${encodeURIComponent(term)}&crn=in.(${crns.join(',')})&select=user_id,crn,section,course_code`,
+    strict: true
+  });
+  if (!Array.isArray(rows)) throw new Error('الجداول ما انقرأت');
+  const byCrn = new Map(changes.map(c => [c.crn, c]));
+  const users = new Map();                     /* user_id ⇒ Set(crn) */
+  for (const r of rows) {
+    const c = byCrn.get(finNorm(r.crn));
+    if (!c || !isUuid(String(r.user_id)) || finKey(r.course_code, r.section) !== c.key) continue;
+    if (!users.has(r.user_id)) users.set(r.user_id, new Set());
+    users.get(r.user_id).add(c.crn);
+  }
+  let sent = 0;
+  if (users.size) {
+    const ids = [...users.keys()];
+    const profs = await sb('GET', 'profiles', { query: `?id=in.(${ids.join(',')})&select=id,telegram_chat_id` });
+    if (!Array.isArray(profs)) throw new Error('الملفات ما انقرأت');   /* بلا حفظ النسخة: نعيد بعد ربع ساعة */
+    /* اختباراته الثانية — لتنبيه «صار بنفس وقت اختبار ثاني» */
+    const all = await sbAll('user_schedule', {
+      query: `?term=eq.${encodeURIComponent(term)}&user_id=in.(${ids.join(',')})&select=user_id,crn,section,course_code`,
+      strict: true
+    }).catch(() => []);
+    const snap = FIN_WATCH.snap || {};
+    const row = crn => (snap.M || {})[crn] || (snap.F || {})[crn] || null;
+    const examOf = crn => (byCrn.get(crn) ? byCrn.get(crn).to : (row(crn) || []).slice(1, 5));
+    const keyOf = crn => (byCrn.get(crn) ? byCrn.get(crn).key : (row(crn) || [])[0]);
+    const byChat = new Map();
+    for (const p of profs) {
+      const chat = p && p.telegram_chat_id ? String(p.telegram_chat_id) : '';
+      if (!chat || !users.has(p.id)) continue;
+      if (!byChat.has(chat)) byChat.set(chat, { crns: new Set(), users: new Set() });
+      users.get(p.id).forEach(x => byChat.get(chat).crns.add(x));
+      byChat.get(chat).users.add(p.id);
+    }
+    const day = new Date(now + 3 * 3600 * 1000).toISOString().slice(0, 10);
+    for (const [chat, v] of byChat) {
+      if (SHUTTING_DOWN) return;                 /* النسخة ما تنحفظ ⇒ الجديدة تكمّل الباقين، والحجز يمنع التكرار */
+      const mine = [...v.crns].map(crn => byCrn.get(crn)).sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+      const ref = 'fin:' + crypto.createHash('sha1').update(mine.map(c => c.sig).join('\n')).digest('hex').slice(0, 20) + ':' + chat;
+      let claim;
+      try {
+        claim = await sb('POST', 'notif_approvals', { body: { send_date: day, kind: 'fin', ref, body: '', status: 'sent' },
+                                                       prefer: 'return=minimal' });
+      } catch (e) { continue }
+      if (claim && claim.code) continue;         /* 23505: نسخة ثانية أرسلتها · غيره: ما نرسل بلا حجز */
+      /* اختباراته الثانية بنفس اليوم والساعة — مادة ثانية لا شعبة بديلة لنفس المادة */
+      const other = [...new Set((Array.isArray(all) ? all : []).filter(r => v.users.has(r.user_id)).map(r => finNorm(r.crn)))];
+      const lines = mine.map(c => {
+        const f = c.from, t = c.to;
+        const out = [`📌 <b>${escP(c.key.replace('|', ' §'))}</b>` + (c.title ? ` — ${escP(c.title)}` : '')];
+        if (f[0] !== t[0] || f[1] !== t[1])
+          out.push(`الموعد\n   كان: <s>${escP(finDateAr(f[0]))} · ${escP(finHourAr(f[1]))}</s>\n` +
+                   `   صار: <b>${escP(finDateAr(t[0]))} · ${escP(finHourAr(t[1]))}</b>`);
+        if (f[2] !== t[2] || f[3] !== t[3])
+          out.push(`المكان\n   كان: <s>${escP([f[2], f[3]].filter(Boolean).join(' · ') || '—')}</s>\n` +
+                   `   صار: <b>${escP([t[2], t[3]].filter(Boolean).join(' · ') || '—')}</b>`);
+        const base = c.key.split('|')[0];
+        const clash = other.filter(crn => crn !== c.crn).filter(crn => {
+          const e = examOf(crn), k = keyOf(crn);
+          return k && k.split('|')[0] !== base && e[0] === t[0] && e[1] === t[1];
+        }).map(crn => keyOf(crn).split('|')[0]);
+        if (clash.length) out.push(`⚠️ <b>صار بنفس وقت اختبار ${escP([...new Set(clash)].join('، '))}</b> — راجع القبول والتسجيل`);
+        return out.join('\n');
+      });
+      const r = await sendMsg(chat,
+        `📝 <b>تغيّر في اختباراتك النهائية</b>\n\n${lines.join('\n\n')}\n\n` +
+        `التغيير من جدول الاختبارات في موقع الجامعة — راجعه قبل اختبارك.\n` +
+        `📤 لو نشرت جدول اختباراتك لقروبك، شارك الجديد من «جدولي» في jadwalik.com`);
+      if (r && r.ok) sent++;
+      await new Promise(x => setTimeout(x, FIN_SEND_GAP));
+    }
+  }
+  await finSave(finAccept(changes, term, now));
+  FIN_WATCH.stat.sent += sent;
+  if (ADMIN_CHAT_ID) {
+    const what = changes.slice(0, 6).map(c => escP(c.key.replace('|', ' §'))).join('، ');
+    await sendMsg(ADMIN_CHAT_ID, `📝 <b>تغيّر في جدول الاختبارات</b>: ${what}${changes.length > 6 ? '…' : ''}\n` +
+      `عندهم المادة في جدولهم: ${users.size} · وصلتهم الرسالة على تيليغرام: ${sent}`).catch(() => {});
+  }
+}
+/* ═══ نهاية تنبيه الاختبارات ═══ */
 
 /* ================================================================
    ============   كاش البحث + منع الطلبات المكرّرة   ============
@@ -8998,6 +9355,8 @@ function aiRemindNote(ctx) {
 
 /* تاريخ اليوم بتوقيت الرياض — تستعمله أدوات الاقتراح وكتلة المحادثة */
 const aiToday = () => riyadhNow().toISOString().slice(0, 10);
+/* أسماء الأيام بترتيب getUTCDay — سطر السياق (كتلة المحادثة) وmy_day */
+const AI_DAYS_AR = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 
 /* نص «ما أعرف» موحّد — الأداة تقولها، والنموذج ينقلها */
 const AI_UNKNOWN = 'ما لقيتها في بيانات جدولك';
@@ -9070,18 +9429,37 @@ function aiCourse(ctx, code) {
    الـSQL) أول جدول **فيه مواد** — كان الأول دائماً ولو فاضياً، فطالب
    جدوله كله في الثاني يجيه «جدولك فاضي».
    ورقم صريح من الطالب («جدول ٢») يغلب الاثنين. */
-async function aiSchedule(ctx, slot) {
+async function aiSchedule(ctx, slot, term) {
   const id = encodeURIComponent(ctx.userId);
   const rows = await sb('GET', 'user_schedule',
     { query: `?user_id=eq.${id}&select=*&order=crn.asc` });
   if (!Array.isArray(rows)) return [];
   const want = Number.isFinite(slot) ? Number(slot) : null;
   const saved = Number(ctx.profile && ctx.profile.active_slot);
-  const pick = want !== null ? want
+  let pick = want !== null ? want
     : (saved >= 1 && saved <= 3) ? saved
     : Math.min(...rows.map(r => Number(r.slot) || 1).concat([3]));
-  const out = rows.filter(r => (Number(r.slot) || 1) === pick);
+  const inSlot = n => rows.filter(r => (Number(r.slot) || 1) === n);
+  /* يوم بتاريخه (my_day): الجدول المختار ما فيه ترم اليوم وجدول ثانٍ فيه ⇒ ذاك. طالب حط الربيع في جدوله الأول
+     (النشط) والخريف في الثاني، وسأل في نوفمبر «وش عندي بكرة؟» — ورقم صريح منه يغلب */
+  let moved = false;
+  if (want === null && term && !inSlot(pick).some(r => r.term === term)) {
+    const alt = rows.filter(r => r.term === term).map(r => Number(r.slot) || 1);
+    if (alt.length) { pick = Math.min(...alt); moved = true }
+  }
+  let out = inSlot(pick);
+  /* بترم: صفوف ترمه وحدها — وجدول كله لترم ثاني ⇒ فاضي ومعه otherTerm: محاضرات الربيع ليوم في الخريف كذبة،
+     وغياب الخريف ما ينقرأ بترم الربيع */
+  let other = null;
+  if (term && out.length) {
+    const terms = [...new Set(out.map(r => r.term).filter(Boolean))];
+    if (terms.length && !terms.includes(term)) other = terms[0];
+    out = out.filter(r => !r.term || r.term === term);
+  }
   out.slot = pick;          /* عشان الأداة تقول «من جدولك ٢» لا تسكت */
+  out.moved = moved;
+  out.term = term || null;
+  out.otherTerm = other;
   /* كل صفوفه في الجداول الثلاثة: صفر = ما أضاف مواده في موقعنا أصلاً،
      وهذا غير «جدولك هذا فاضي» وغير «ما عندك محاضرات هذا اليوم» */
   out.total = rows.length;
@@ -9170,7 +9548,14 @@ function aiGradChains(plan, terms) {
     .map(ch => ch.map(c => ({ code: c, term: name(c) })));
 }
 /* جدول فاضي: أي الحالتين؟ */
-const aiSchedEmptyNote = rows => rows.total ? AI_SLOT_EMPTY : AI_SCHED_EMPTY;
+const aiSchedEmptyNote = rows => rows.otherTerm
+  ? 'جدوله في موقعنا (جدول ' + rows.slot + ') لـ' + payTermName(rows.otherTerm) + ' — ما عندنا جدوله لـ'
+    + payTermName(rows.term) + '. قل له يضيفه: أسرع طريقة «📥 استورد جدولك من بانر» في «جدولي». ولا تقل '
+    + '«ما عندك …» كأنها حقيقة'
+  : rows.total ? AI_SLOT_EMPTY : AI_SCHED_EMPTY;
+/* حقول الجدول الفاضي في نتيجة الأداة — بنفس الشكل في كلها */
+const aiSchedEmpty = rows => Object.assign({ scheduleEmpty: !rows.total, note: aiSchedEmptyNote(rows) },
+  rows.otherTerm ? { slot: rows.slot, otherTerm: { term: rows.otherTerm, termName: payTermName(rows.otherTerm) } } : {});
 
 /* صف جدول → ما يراه النموذج. ولا حقل يخصّ طالباً آخر. */
 function aiSchedRow(r) {
@@ -9365,12 +9750,131 @@ function aiExam(e) {
 /* ═══ سجل الأدوات ═══
    كل أداة: وصفها للنموذج · مخطط وسائطها · حصتها · ودالتها.
    المخطط هو نفسه اللي يُرسل للنموذج في §٩-أ-٣. */
+/* ═══ المواعيد: فات · الحين · جاي — وكم باقي ═══
+   لقاها محمد (١٩ نوفمبر ٢٠٢٦): «متى يبدأ التسجيل؟» ⇒ «ما عندي تواريخ تسجيل الربيع، اللي رجع لي جدول الخريف وقد
+   انتهى» — والتقويم الموحّد (ACAD_CAL) فيه تسجيل الربيع ١٠–١٤ يناير. registration_calendar كانت ترجّع REG_CAL كما
+   هو (أيام المستويات لتسجيل الخريف — أغسطس، ثابتة في الكود)، فالنموذج قال الصدق عن بيانات غلط. صارت المواعيد من
+   ACAD_CAL (المصدر الوحيد) ولترم التسجيل الجاي، وكل موعد معه حالته وكم باقي — النموذج ما يحسب تواريخ بنفسه. */
+function aiWhen(s, e, today) {
+  return today < s ? 'upcoming' : today > (e || s) ? 'past' : 'now';
+}
+function aiDaysTo(s, today) {
+  return Math.round((Date.parse(s + 'T00:00:00Z') - Date.parse(today + 'T00:00:00Z')) / 864e5);
+}
+function aiCalEvent(e, today) {
+  const o = { term: e.term, termName: payTermName(e.term), start: e.s, end: e.e || null, kind: e.t, ar: e.ar,
+    when: aiWhen(e.s, e.e, today) };
+  if (o.when === 'upcoming') o.daysLeft = aiDaysTo(e.s, today);
+  if (o.when === 'now' && e.e) o.daysToEnd = aiDaysTo(e.e, today);
+  return o;
+}
+/* ═══ «الترم الجاي» في الشعب والدكاترة والباني والطرح — مراجعة المساعد (١٩ نوفمبر ٢٠٢٦) ═══
+   كانت الشعب ومين يدرّس المادة تقرأ ترم الدراسة وحده (بلا وسيط ترم)، والباني ترم التسجيل اللي خارج النافذة = ترم
+   الدراسة: «وش شعب الماث الترم الجاي؟» في نوفمبر ⇒ شعب الخريف الشغّال كأنها للربيع، و«ابن لي جدول» ⇒ جدول للخريف اللي
+   انقفل تسجيله. صار للأدوات ترم (رمز الجامعة)، والباني افتراضه ترم التسجيل الجاي (مثل المقترح — قرار محمد ٢٢ أكتوبر).
+   وجدول ترم مو عندنا ما نعوّضه بغيره: نقول إنه ما نزل عندنا (aiTermMissing) — وشعب ترم ثاني تبان كأنها هو. */
+/* الترم من قائمة قصيرة لا أي رمز: كل ترم جديد سحبة من الجامعة (aiCacheWarm)، وترم ما له جدول عندهم يرجع فاضي
+   فيُحسب «ما يستجيب». الحالي وترم التسجيل والجاي — هذي اللي يسأل عنها الطالب. */
+const aiTermsOk = () => [...new Set([activeTerm(), regTerm(), nextRegTerm()])];
+const aiTermArg = v => { const x = String(v == null ? '' : v).trim(); return aiTermsOk().includes(x) ? x : null };
+const aiTermBad = v => ({ error: 'نشوف جدول ' + aiTermsOk().map(payTermName).join(' و') + ' بس', term: String(v) });
+function aiTermMissing(c, t) {
+  if (!t || t === activeTerm()) return c;
+  return { available: false, term: t, termName: payTermName(t),
+    error: 'جدول ' + payTermName(t) + ' ما عندنا للحين — يمكن ما نزل من الجامعة بعد. '
+      + 'وشعب الترم الحالي (' + payTermName(activeTerm()) + ') موجودة لو تبيها.' };
+}
+/* الطرح لتخصص ما عندنا جدول طرحه: من جدول الجامعة للترم نفسه لو نزل — لا «ما فيه تحذير» (يفهمها «تُطرح») */
+async function aiOfferLive(term, code) {
+  const c = await aiCacheWarm(term);
+  if (!c.available) return { status: 'unknown',
+    note: 'جدول الطرح لتخصصه ما عندنا، وجدول ' + payTermName(term) + (term === activeTerm() ? ' مو متاح عندنا الحين'
+      : ' ما نزل عندنا للحين') + ' — ما نقدر نقول تُطرح ولا لا.' };
+  const want = aiCodeNorm(code);
+  const n = new Set(c.courses.filter(x => aiCodeNorm(x.courseCode) === want).map(x => String(x.crn))).size;
+  return n ? { status: 'offered', sections: n, source: 'جدول الجامعة' }
+    : { status: 'no_sections', source: 'جدول الجامعة',
+        note: 'ما لها شعب في جدول ' + payTermName(term) + ' الحين — يمكن ما تنطرح، أو تنضاف شعبها بعدين.' };
+}
+
+/* فترة النهائيات الجاية من التقويم — لما جدول النهائيات بالمواد ما نزل أو ما فيه المادة */
+function aiExamPeriod(today) {
+  const x = ACAD_CAL.filter(e => e.t === 'exam' && (e.e || e.s) >= today)
+    .sort((a, b) => (a.s < b.s ? -1 : a.s > b.s ? 1 : 0))[0];
+  return x ? { examPeriod: aiCalEvent(x, today) } : {};
+}
+
+/* ═══ «وش عندي بكرة؟» بالتاريخ — مراجعة المساعد (١٩ نوفمبر ٢٠٢٦) ═══
+   my_day كانت تاخذ حرف اليوم وحده، فما تعرف التاريخ: «وش عندي بكرة؟» والأحد إجازة منتصف الترم ⇒ محاضرات يوم عادي،
+   ووقت النهائيات وبين الترمين كذلك. صار اليوم بتاريخه (date — أو أقرب يوم بالحرف من اليوم)، والتاريخ يُفحص في التقويم
+   (ACAD_CAL — نفس اللي تقرأه صفحة «اليوم»). وتاريخ برّا التقويم يوم عادي بلا ترم: ما نعرف عنه شي. */
+const AI_WD = 'UMTWRFS';
+/* تاريخ من النموذج: YYYY-MM-DD حقيقي وحده (٣٠ فبراير يُرفض) */
+const aiDateArg = v => {
+  const x = String(v == null ? '' : v).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(x)) return null;
+  const d = new Date(x + 'T00:00:00Z');
+  return !isNaN(d) && d.toISOString().slice(0, 10) === x ? x : null;
+};
+/* أقرب تاريخ بهالحرف من اليوم — اليوم نفسه لو هو */
+function aiDateOf(day, today) {
+  const d = new Date(today + 'T00:00:00Z');
+  return new Date(d.getTime() + ((AI_WD.indexOf(day) - d.getUTCDay() + 7) % 7) * 864e5).toISOString().slice(0, 10);
+}
+/* اليوم في التقويم: off إجازة · exam نهائيات · break بين ترمين (e = بداية الدراسة الجاية) · class يوم دراسة بترمه */
+function aiDayCal(date) {
+  let start = null, next = null, exam = null;
+  for (const e of ACAD_CAL) if (e.t === 'start') {
+    if (e.s <= date && (!start || e.s > start.s)) start = e;
+    if (e.s > date && (!next || e.s < next.s)) next = e;
+  }
+  if (start) for (const e of ACAD_CAL)
+    if (e.t === 'exam' && e.s > start.s && (!exam || e.s < exam.s)) exam = e;
+  if (exam && exam.s <= date && date <= (exam.e || exam.s)) return { kind: 'exam', e: exam };
+  const off = ACAD_CAL.find(e => e.t === 'off' && e.s <= date && date <= (e.e || e.s));
+  if (off) return { kind: 'off', e: off };
+  /* قبل أول ترم في التقويم، أو بعد نهائيات ترم وقبل اللي بعده */
+  if (!start || (exam && date > (exam.e || exam.s))) return next ? { kind: 'break', e: next } : { kind: 'class', term: null };
+  return { kind: 'class', term: exam ? start.term : null };
+}
+
+/* ═══ مادة برّا خطته — مراجعة المساعد (١٩ نوفمبر ٢٠٢٦) ═══
+   course_info وfind_course كانت تدوّر في خطته وحدها: «وش متطلبات COSC 3311؟» من طالب ميكانيكا، أو مادة حرة
+   يبيها اختياري ⇒ «ما لقيتها» — والمادة في خطة تخصص ثاني عندنا. صارت تدوّر في خطط التخصصات كلها لو ما لقتها في
+   خطته، وتقول إنها مو في خطته ومن أي خطة — والمتطلبات حسب تلك الخطة (الخطط تختلف). النسخة الثانية من خطة تخصصه أول
+   («موجودة في الخطة القديمة لتخصصك» تفيده أكثر من «في خطة الحاسب» — ويمكن نسخة خطته غلط)، ثم الجديدة قبل القديمة. */
+function aiOtherPlans(code, major) {
+  const want = aiCodeNorm(code);
+  const keys = Object.keys(PLANS_DATA.PLANS);
+  const own = major ? keys.filter(k => k === major || k === (PLANS_DATA.PLAN_ALT || {})[major]) : [];
+  const hits = [];
+  for (const k of own.concat(keys.filter(x => !own.includes(x) && !/_OLD$/.test(x)), keys.filter(x => !own.includes(x) && /_OLD$/.test(x)))) {
+    const p = PLANS_DATA.PLANS[k];
+    for (const sem of (p && p.sems) || []) for (const c of sem.courses || [])
+      if (aiCodeNorm(c.c) === want) hits.push({ key: k, own: own.includes(k), c,
+        plan: (p.ar || p.name) + (/_OLD$/.test(k) ? ' (الخطة القديمة)' : PLANS_DATA.hasAltPlan(k) ? ' (الخطة الجديدة)' : '') });
+  }
+  return hits;
+}
+/* كل مواد الخطط مرة وحدة بالكود — للبحث بالاسم برّا خطته (aiRankCourses تاخذ أي «خطة» فيها sems) */
+let AI_ALL_COURSES = null;
+function aiAllCourses() {
+  if (AI_ALL_COURSES) return AI_ALL_COURSES;
+  const seen = new Map();
+  for (const k of Object.keys(PLANS_DATA.PLANS).sort((a, b) => /_OLD$/.test(a) - /_OLD$/.test(b))) {
+    const p = PLANS_DATA.PLANS[k];
+    for (const sem of (p && p.sems) || []) for (const c of sem.courses || [])
+      if (c && c.c && !c.el && !seen.has(c.c)) seen.set(c.c, Object.assign({}, c, { plan: p.ar || p.name }));
+  }
+  return (AI_ALL_COURSES = { sems: [{ id: 'all', courses: [...seen.values()] }] });
+}
+
 const AI_TOOLS = {
 
   guide: {
     tier: 'free',
-    description: 'دليل استخدام جدولك — الأقسام وعناوينها وشرح كل ميزة. '
-      + 'استعملها لأسئلة «كيف أسوي كذا في الموقع».',
+    description: 'دليل استخدام جدولك — الأقسام وعناوينها وشرح كل ميزة، ومنها تثبيته على الجوال مثل التطبيق. '
+      + 'استعملها لأسئلة «كيف أسوي كذا في الموقع» و«فيه تطبيق؟».',
     input_schema: { type: 'object', properties: {
       lang: { type: 'string', enum: ['ar', 'en'], description: 'لغة الدليل' } },
       required: [] },
@@ -9385,32 +9889,73 @@ const AI_TOOLS = {
 
   academic_calendar: {
     tier: 'free',
-    description: 'التقويم الأكاديمي: بداية الدراسة، الإجازات، النهائيات، '
-      + 'الحذف والإضافة. معلومة عامة لكل الطلاب.',
+    description: 'التقويم الأكاديمي: التسجيل · بداية الدراسة · الحذف والإضافة · الإجازات · آخر يوم انسحاب · '
+      + 'النهائيات · التظلم. كل موعد معه when (past · now · upcoming) وكم باقي عليه (daysLeft)، '
+      + 'و next = أقرب موعد جاي من كل نوع. بلا ترم: كل الترمات اللي عندنا.',
     input_schema: { type: 'object', properties: {
-      term: { type: 'string', description: 'كود الترم مثل 202710 — اتركه لترم الدراسة الحالي' } },
+      term: { type: 'string', description: 'كود الترم مثل 202720 — اتركه للكل' } },
       required: [] },
     run: (ctx, a) => {
       const t = a.term ? String(a.term) : null;
       const rows = ACAD_CAL.filter(e => !t || e.term === t);
       if (!rows.length) return { error: AI_UNKNOWN, term: t };
-      return { term: t || 'الكل', events: rows.map(e => ({
-        start: e.s, end: e.e || null, kind: e.t, ar: e.ar, en: e.en })) };
+      const today = aiToday();
+      const events = rows.slice().sort((x, y) => (x.s < y.s ? -1 : x.s > y.s ? 1 : 0))
+        .map(e => aiCalEvent(e, today));
+      const next = {};
+      for (const e of events) if (e.when !== 'past' && !next[e.kind]) next[e.kind] = e;
+      return { term: t || 'الكل', today,
+        currentTerm: activeTerm(), currentTermName: payTermName(activeTerm()),
+        nextRegTerm: nextRegTerm(), nextRegTermName: payTermName(nextRegTerm()), next, events };
     },
   },
 
   registration_calendar: {
     tier: 'free',
-    description: 'تواريخ التسجيل حسب المستوى (سينيور/جونيور/سوفومور/فريشمان) '
-      + 'وفترات الحذف والإضافة للترم القادم.',
-    input_schema: { type: 'object', properties: {}, required: [] },
-    run: () => {
+    description: 'التسجيل: متى يفتح ويقفل وكم باقي، وبداية الدراسة، والحذف والإضافة، وأيام المستويات '
+      + '(سينيور/جونيور/سوفومور/فريشمان) لو نزلت، ومستوى الطالب ويومه من ساعاته. افتراضياً ترم التسجيل الجاي، '
+      + 'وأي ترم برمزه (مثل 202730 للصيفي).',
+    input_schema: { type: 'object', properties: {
+      term: { type: 'string', description: 'كود الترم — اتركه لترم التسجيل الجاي' } },
+      required: [] },
+    run: (ctx, a) => {
+      const today = aiToday();
+      const want = String((a && a.term) || '').trim();
+      if (want && !/^\d{4}(10|20|30)$/.test(want)) return { error: AI_UNKNOWN, term: want };
+      const term = want || nextRegTerm();
+      const ev = ACAD_CAL.filter(e => e.term === term);
+      /* الصيفي فيه موعدان (التسجيل المبكر في أبريل · التأكيد في يونيو): الأقرب اللي ما فات، والكل معه */
+      const regs = ev.filter(e => e.t === 'reg').map(e => aiCalEvent(e, today));
+      if (!regs.length) return { error: AI_UNKNOWN, term, termName: payTermName(term) };
+      const start = ev.find(e => e.t === 'start');
+      const out = { term, termName: payTermName(term), today,
+        registration: regs.find(r => r.when !== 'past') || regs[regs.length - 1],
+        classesStart: start ? start.s : null,
+        addDrop: ev.filter(e => e.t === 'add').map(e => aiCalEvent(e, today)) };
+      if (regs.length > 1) out.registrations = regs;
+      /* أيام المستويات من REG_CAL **لو هي لنفس الترم** — كانت ترجع جدول ترم خلص كأنه الجاي */
       const R = PLANS_DATA.REG_CAL;
-      if (!R || !Array.isArray(R.rows)) return { error: AI_UNKNOWN };
-      return { termAr: R.termAr, termEn: R.termEn, hideAfter: R.hideAfter,
-        rows: R.rows.map(r => ({ key: r.k, date: r.d, minCredits: r.min,
-          ar: r.ar, en: r.en, hintAr: r.hAr, hintEn: r.hEn })),
-        addDrop: R.addDrop || null, drop: R.drop || null };
+      const lv = R && R.term === term && Array.isArray(R.rows) ? R.rows : null;
+      if (lv) out.levels = lv.map(r => ({ key: r.k, date: r.d, minCredits: r.min, ar: r.ar, hintAr: r.hAr }));
+      else {
+        out.levels = null;
+        out.levelsNote = 'توزيع أيام التسجيل على المستويات لهذا الترم ما نزل عندنا للحين — التسجيل كله داخل '
+          + 'فترة التسجيل فوق، والأيام حسب المستوى تنعلن قبلها.';
+        /* الترتيب من آخر إعلان عندنا — بلا تواريخ: ما نخترع يوماً */
+        if (R && Array.isArray(R.rows))
+          out.lastOrder = { termAr: R.termAr, order: R.rows.map(r => r.ar + ' (' + r.hAr + ')') };
+      }
+      /* مستواه من ساعاته في «خطتي» (اللي علّمها هو) — ويومه لو أيام المستويات معروفة */
+      if (ctx && ctx.plan && ctx.majorSet !== false && !aiPlanEmpty(ctx)) {
+        const cr = PLANS_DATA.doneCredits(ctx.plan);
+        out.you = { credits: cr, level: PLANS_DATA.level(cr), source: 'من المواد اللي علّمها في «خطتي»' };
+        if (lv) {
+          const day = ctx.prep ? lv.find(r => r.k === 'eve')
+            : lv.filter(r => typeof r.min === 'number').sort((x, y) => y.min - x.min).find(r => cr >= r.min);
+          if (day) out.you.day = day.d;
+        }
+      }
+      return out;
     },
   },
 
@@ -9456,7 +10001,18 @@ const AI_TOOLS = {
       required: ['code'] },
     run: (ctx, a) => {
       const c = aiCourse(ctx, a.code);
-      if (!c) return { known: false, error: AI_UNKNOWN, code: a.code };
+      if (!c) {
+        /* برّا خطته: من خطط التخصصات الثانية — لا «ما لقيتها» والمادة عندنا */
+        const o = aiOtherPlans(a.code, ctx.plan.major);
+        if (!o.length) return { known: false, error: AI_UNKNOWN, code: a.code };
+        const f = o[0].c;
+        return { known: true, inYourPlan: false, code: f.c, name: f.n, credits: f.h, prereqs: f.p || [],
+          fromPlan: o[0].plan, alsoIn: [...new Set(o.slice(1).map(x => x.plan))].slice(0, 5),
+          note: o[0].own
+            ? 'مو في نسخة خطته — موجودة في ' + o[0].plan + ' لتخصصه. لو هو على تلك النسخة يغيّرها من بطاقة «الجديدة/القديمة» في «خطتي»'
+            : 'مو في خطته — من خطة ' + o[0].plan + '، والمتطلبات حسب تلك الخطة. لو يبيها اختياري '
+              + 'يتأكد من مرشده إنها تنحسب له' };
+      }
       const out = { known: true, ...c };
       /* الحالة الشخصية من موادّه ودرجاته — للمشترك */
       if (ctx.pro) {
@@ -9499,13 +10055,20 @@ const AI_TOOLS = {
     input_schema: { type: 'object', properties: {
       code: { type: 'string', description: 'كود المادة' } },
       required: ['code'] },
-    run: (ctx, a) => {
-      if (!PLANS_DATA.findPlanCourse(ctx.plan, a.code))
-        return { known: false, error: AI_UNKNOWN, code: a.code };
+    run: async (ctx, a) => {
+      if (!PLANS_DATA.findPlanCourse(ctx.plan, a.code)) {
+        /* برّا خطته: ما لها جدول طرح عندنا — الجواب من جدول الجامعة للترم (لو المادة في خطة عندنا) */
+        if (!aiOtherPlans(a.code).length) return { known: false, error: AI_UNKNOWN, code: a.code };
+        return Object.assign({ known: true, inYourPlan: false, code: a.code, term: ctx.plan.term,
+          termName: payTermName(ctx.plan.term) }, await aiOfferLive(ctx.plan.term, a.code));
+      }
       const w = PLANS_DATA.offerWarn(ctx.plan, a.code);
       const term = ctx.plan.term, termName = payTermName(term);
+      /* بلا جدول طرح لتخصصه: «ما فيه تحذير» كان يفهمها النموذج «تُطرح» — وحنا ما نعرف. الجواب من جدول الجامعة */
+      if (!w && !PLANS_DATA.OFFER_MAJORS.includes(ctx.plan.major))
+        return Object.assign({ known: true, code: a.code, term, termName }, await aiOfferLive(term, a.code));
       if (!w) return { known: true, code: a.code, term, termName,
-        status: 'ok', note: 'ما فيه تحذير طرح لهذي المادة' };
+        status: 'ok', note: 'تُطرح في ' + termName + ' حسب جدول الطرح' };
       /* مواد تنتهي من الخطة القديمة (إعلان التسجيل ٩ نوفمبر ٢٠٢٦ — LAST_OFFER): آخر ترم لها، ولا ترجع */
       if (w.last) return { known: true, code: a.code, term, termName,
         status: w.kind === 'gone' ? 'phased_out' : w.kind === 'ends' ? 'offered_until' : 'final_offering',
@@ -9749,30 +10312,58 @@ const AI_TOOLS = {
 
   my_day: {
     tier: 'pro',
-    description: 'محاضرات الطالب في يوم معيّن بالترتيب، ومعها الفراغات بينها '
-      + 'بالدقائق. للسؤال عن «وش عندي اليوم» أو «كم فراغ عندي الثلاثاء».',
+    description: 'محاضرات الطالب في يوم بتاريخه، بالترتيب ومعها الفراغات بينها بالدقائق — ويقول لو '
+      + 'اليوم إجازة أو نهائيات أو بين ترمين (من التقويم الأكاديمي). للسؤال عن «وش عندي اليوم/بكرة» '
+      + 'أو «كم فراغ عندي الثلاثاء».',
     input_schema: { type: 'object', properties: {
+      date: { type: 'string', description: 'التاريخ YYYY-MM-DD — «بكرة» = تاريخ اليوم في سياقك + 1. يغلب day' },
       day: { type: 'string', enum: ['U', 'M', 'T', 'W', 'R', 'F', 'S'],
-             description: 'U أحد · M اثنين · T ثلاثاء · W أربعاء · R خميس' },
+             description: 'بدل التاريخ: حرف اليوم (U أحد · M اثنين · T ثلاثاء · W أربعاء · R خميس) = أقرب يوم '
+               + 'بهالحرف من اليوم' },
       slot: { type: 'integer', description: 'رقم الجدول ١–٣' } },
-      required: ['day'] },
+      required: [] },
     run: async (ctx, a) => {
-      const day = String(a.day || '').toUpperCase();
-      if (!'UMTWRFS'.includes(day) || day.length !== 1)
-        return { error: 'يوم غير معروف — استعمل U M T W R F S' };
-      const rows = await aiSchedule(ctx, a.slot);
+      const now = aiToday();
+      let date = now;
+      let day = AI_WD[new Date(now + 'T00:00:00Z').getUTCDay()];
+      if (a.date != null && String(a.date).trim() !== '') {
+        date = aiDateArg(a.date);
+        if (!date) return { error: 'تاريخ غير معروف — بصيغة YYYY-MM-DD (اليوم ' + now + ')' };
+        day = AI_WD[new Date(date + 'T00:00:00Z').getUTCDay()];
+      } else if (a.day != null && String(a.day).trim() !== '') {
+        day = String(a.day).toUpperCase();
+        if (!AI_WD.includes(day) || day.length !== 1)
+          return { error: 'يوم غير معروف — استعمل U M T W R F S' };
+        date = aiDateOf(day, now);
+      }
+      const head = { date, day, dayName: AI_DAYS_AR[AI_WD.indexOf(day)] };
+      const none = extra => Object.assign(head, { count: 0, lectures: [], gaps: [] }, extra);
+      /* التقويم قبل الجدول: الإجازة حقيقة ولو جدوله فاضي */
+      const cal = aiDayCal(date);
+      if (cal.kind === 'off') return none({
+        holiday: { name: cal.e.ar, start: cal.e.s, end: cal.e.e || cal.e.s },
+        note: 'إجازة في التقويم الأكاديمي — ما فيه محاضرات هاليوم' });
+      if (cal.kind === 'exam') return none({
+        examPeriod: { start: cal.e.s, end: cal.e.e || cal.e.s, termName: payTermName(cal.e.term) },
+        note: 'فترة النهائيات — المحاضرات العادية وقفت. نهائياته بالمواد من أداة finals' });
+      if (cal.kind === 'break') return none({
+        classesStart: { date: cal.e.s, term: cal.e.term, termName: payTermName(cal.e.term) },
+        note: 'ما فيه دراسة في هالتاريخ (بين ترمين) — الدراسة تبدأ ' + cal.e.s });
+      const rows = await aiSchedule(ctx, a.slot, cal.term);
       /* جدول فاضي غير «يوم فاضي»: «ما عندك محاضرات بكرة» لطالب ما
-         أضاف جدوله أصلاً كذبة تخلّيه يظن الموقع غلطان */
-      if (!rows.length) return { day, count: 0, lectures: [], gaps: [],
-        scheduleEmpty: !rows.total, note: aiSchedEmptyNote(rows) };
+         أضاف جدوله أصلاً كذبة تخلّيه يظن الموقع غلطان — ومثله جدوله لترم ثاني (otherTerm) */
+      if (!rows.length) return none(aiSchedEmpty(rows));
+      const slotNote = rows.moved ? { note: 'من جدوله رقم ' + rows.slot + ' — جدول ' + payTermName(cal.term)
+        + ' (جدوله النشط في الموقع لترم ثاني)' } : {};
       const today = rows
         .filter(r => schedDays(r.course_date).includes(day))
         .map(r => ({ row: r, t: schedTime(r.course_timing) }))
         .filter(x => x.t)
         .sort((x, y) => x.t.start - y.t.start);
 
-      if (!today.length) return { day, count: 0, lectures: [], gaps: [],
-        note: 'ما فيه محاضرات هذا اليوم في جدوله على موقعنا' };
+      if (!today.length) return none(Object.assign({ slot: rows.slot,
+        note: 'ما فيه محاضرات هذا اليوم في جدوله على موقعنا' }, rows.moved ? { note: slotNote.note
+          + ' — وما فيه محاضرات هذا اليوم' } : {}));
 
       /* الفراغ بين نهاية محاضرة وبداية اللي بعدها — بالدقيقة لا بالساعة،
          فمحاضرة تنتهي ٨:٥٠ وأخرى تبدأ ٩:٠٠ فراغها ١٠ دقائق لا صفر. */
@@ -9786,13 +10377,13 @@ const AI_TOOLS = {
           minutes: mins });
       }
       const first = today[0].t.start, last = today[today.length - 1].t.end;
-      return { day, count: today.length,
+      return Object.assign(head, { slot: rows.slot, count: today.length,
         firstAt: aiHHMM(first), lastEndsAt: aiHHMM(last),
         onCampusMinutes: last - first,
         gapMinutes: gaps.reduce((s, g) => s + g.minutes, 0),
         lectures: today.map(x => Object.assign(aiSchedRow(x.row),
           { startsAt: aiHHMM(x.t.start), endsAt: aiHHMM(x.t.end) })),
-        gaps };
+        gaps }, slotNote);
     },
   },
 
@@ -9804,11 +10395,12 @@ const AI_TOOLS = {
       code: { type: 'string', description: 'كود مادة بعينها — اتركه لكل المواد' } },
       required: [] },
     run: async (ctx, a) => {
-      const rows = await aiSchedule(ctx);
-      if (!rows.length) return { count: 0, courses: [],
-        scheduleEmpty: !rows.total, note: aiSchedEmptyNote(rows) };
+      /* بترم الدراسة مثل الصفحة (activeTermCode): كان ترم أول صف في الجدول النشط — طالب حط الربيع في جدوله
+         الأول يجيه «ما غبت ولا مرة» وغيابه كله في الخريف */
+      const term = activeTerm();
+      const rows = await aiSchedule(ctx, undefined, term);
+      if (!rows.length) return Object.assign({ count: 0, courses: [] }, aiSchedEmpty(rows));
       const id = encodeURIComponent(ctx.userId);
-      const term = rows[0].term || regTerm();
       const abs = await sb('GET', 'absences',
         { query: `?user_id=eq.${id}&term=eq.${encodeURIComponent(term)}&select=crn,on_date` });
       const A = Array.isArray(abs) ? abs : [];
@@ -9840,8 +10432,9 @@ const AI_TOOLS = {
       code: { type: 'string', description: 'كود مادة بعينها' } },
       required: [] },
     run: async (ctx, a) => {
-      const rows = await aiSchedule(ctx);
-      const term = (rows[0] && rows[0].term) || regTerm();
+      /* بترم الدراسة مثل الصفحة — نفس خطأ الغياب */
+      const term = activeTerm();
+      const rows = await aiSchedule(ctx, undefined, term);
       const id = encodeURIComponent(ctx.userId);
       const ev = await sb('GET', 'course_events',
         { query: `?user_id=eq.${id}&term=eq.${encodeURIComponent(term)}`
@@ -9883,13 +10476,17 @@ const AI_TOOLS = {
     input_schema: { type: 'object', properties: {
       code: { type: 'string', description: 'كود المادة مثل "MATH 1422"' },
       instructor: { type: 'string', description: 'اسم الدكتور أو جزء منه — بدل كود المادة' },
+      term: { type: 'string', description: 'كود الترم — اتركه للترم الحالي. سأل عن «الترم الجاي»؟ '
+        + 'حط ترم التسجيل الجاي من سياقك' },
       openOnly: { type: 'boolean', description: 'المفتوحة فقط' } },
       required: [] },
     run: async (ctx, a) => {
       if (!a.code && !a.instructor)
         return { error: 'حدّد كود مادة أو اسم دكتور' };
-      const c = await aiCacheWarm();
-      if (!c.available) return c;
+      const t = aiTermArg(a.term);
+      if (a.term && !t) return aiTermBad(a.term);
+      const c = await aiCacheWarm(t || undefined);
+      if (!c.available) return aiTermMissing(c, t);
       const want = String(a.code || '').toUpperCase().replace(/\s+/g, ' ').trim();
       const who = String(a.instructor || '').trim();
       /* اسم الدكتور في كاش الجامعة لاتيني والطالب يكتبه عربياً */
@@ -9908,8 +10505,8 @@ const AI_TOOLS = {
       });
       if (a.openOnly) rows = rows.filter(x => String(x.status || '').toUpperCase() !== 'CLOSE');
       if (!rows.length) return { found: 0, sections: [],
-        note: AI_UNKNOWN + ' في جدول ' + c.term, term: c.term };
-      return { found: rows.length, term: c.term, ...(aiStatusOld(c) ? { statusOld: true } : {}),
+        note: AI_UNKNOWN + ' في جدول ' + payTermName(c.term), term: c.term, termName: payTermName(c.term) };
+      return { found: rows.length, term: c.term, termName: payTermName(c.term), ...(aiStatusOld(c) ? { statusOld: true } : {}),
         sections: rows.slice(0, 40).map(x => ({
           crn: x.crn, code: x.courseCode, title: x.courseTitle, section: x.section,
           instructor: x.instructor, days: x.courseDate, time: x.courseTiming,
@@ -9942,15 +10539,20 @@ const AI_TOOLS = {
       labs: { type: 'boolean', description: 'يضمّ المعمل مع المادة اللي لها معمل — الافتراضي نعم' },
       openOnly: { type: 'boolean', description: 'المفتوحة فقط — الافتراضي نعم' },
       keepCurrent: { type: 'boolean',
-        description: 'يبني حول مواد جدوله الحالي بدل ما يبدأ من فاضي' } },
+        description: 'يبني حول مواد جدوله الحالي بدل ما يبدأ من فاضي' },
+      term: { type: 'string', description: 'كود الترم — اتركه لترم التسجيل الجاي' } },
       required: [] },
     run: async (ctx, a) => {
       /* ترم **التسجيل** هو اللي يبني له، لا ترم الدراسة — ويختلفان في
          التسجيل المبكر للصيفي. وإن كان كاشه بارداً رجعنا لترم الدراسة،
          والترم يرجع في الرد فالنموذج يقوله للطالب. */
-      let c = await aiCacheWarm(regTerm());
-      if (!c.available && regTerm() !== activeTerm()) c = await aiCacheWarm();
-      if (!c.available) return c;
+      /* ترم التسجيل الجاي (مثل المقترح) — لا ترم الدراسة الشغّال خارج النافذة. وجدوله ما نزل؟ نقولها، ولا نبني
+         على جدول ترم ثاني (كان يرجع لترم الدراسة: جدول لترم انقفل تسجيله) */
+      const want = aiTermArg(a.term);
+      if (a.term && !want) return aiTermBad(a.term);
+      const target = want || nextRegTerm();
+      const c = await aiCacheWarm(target);
+      if (!c.available) return aiTermMissing(c, target);
 
       let codes = (Array.isArray(a.codes) ? a.codes : []).map(String)
         .map(x => x.trim()).filter(Boolean);
@@ -10233,8 +10835,16 @@ const AI_TOOLS = {
       const q = String(a.query || '').trim();
       if (q.length < 2) return { error: 'اكتب اسم المادة' };
       const hits = aiRankCourses(ctx, q);
-      if (!hits.length) return { found: 0, matches: [],
-        error: AI_UNKNOWN + ' — جرّب كود المادة', query: q };
+      if (!hits.length) {
+        /* برّا خطته: خطط التخصصات الثانية — مادة حرة أو اختياري من قسم ثاني */
+        const other = aiRankCourses({ plan: aiAllCourses() }, q);
+        if (!other.length) return { found: 0, matches: [],
+          error: AI_UNKNOWN + ' — جرّب كود المادة', query: q };
+        return { found: other.length, query: q, inYourPlan: false,
+          confident: !other[1] || other[0].sc >= other[1].sc * 2,
+          matches: other.slice(0, 5).map(h => ({ code: h.c.c, name: h.c.n, credits: h.c.h, fromPlan: h.c.plan })),
+          note: 'مو في خطته — من خطط تخصصات ثانية عندنا. قل له إنها برّا خطته، ولو يبيها اختياري يتأكد من مرشده' };
+      }
       /* فرق كبير بين الأول والثاني = مطابقة واثقة */
       const top = hits[0], second = hits[1];
       return { found: hits.length, query: q,
@@ -10322,12 +10932,16 @@ const AI_TOOLS = {
       + 'وتقييم أو تقييمين ما يكفي حكماً. وللتعليقات نفسها: instructor_reviews.',
     input_schema: { type: 'object', properties: {
       codes: { type: 'array', items: { type: 'string' },
-        description: 'أكواد المواد مثل ["MEEN 4392","COMM 2311"] — حتى 15' } },
+        description: 'أكواد المواد مثل ["MEEN 4392","COMM 2311"] — حتى 15' },
+      term: { type: 'string', description: 'كود الترم لمين يدرّسها — اتركه للترم الحالي، '
+        + 'و«الترم الجاي» = ترم التسجيل الجاي من سياقك' } },
       required: ['codes'] },
     run: async (ctx, a) => {
       const codes = [...new Set((Array.isArray(a.codes) ? a.codes : [a.codes])
         .map(aiCodeNorm).filter(c => /^[A-Z]{2,5} \d{3,4}[A-Z]?$/.test(c)))].slice(0, 15);
       if (!codes.length) return { error: 'مرّر أكواد المواد، مثل ["MEEN 4392"]' };
+      const t = aiTermArg(a.term);
+      if (a.term && !t) return aiTermBad(a.term);
       const q = v => encodeURIComponent('"' + String(v).replace(/"/g, '') + '"');
       /* بلا user_id في select ولا في الناتج — التقييم مجهول للقارئ */
       const COLS = 'select=instructor_name,rating,course_code,tags';
@@ -10335,7 +10949,7 @@ const AI_TOOLS = {
         `?course_code=in.(${codes.map(q).join(',')})&hidden=is.false&${COLS}&limit=1000` });
       if (!Array.isArray(inCourse)) return { error: 'تعذّر قراءة التقييمات' };
       /* مين يدرّسها في جدول الترم — الكاش بحرّاس تسخينه، وما توفّر؟ نكمل بالتقييمات */
-      const c = await aiCacheWarm();
+      const c = await aiCacheWarm(t || undefined);
       let gender = null;
       if (!ctx.guest && ctx.userId) { try { gender = aiGender(await aiSchedule(ctx)) } catch (e) {} }
       const teaching = {};
@@ -10382,7 +10996,8 @@ const AI_TOOLS = {
         campus: gender, courses,
         note: 'ترتيب بتقييم الطلاب — رأيهم لا رأينا. قل عدد التقييمات، وتقييم أو تقييمين ما '
           + 'يكفي حكماً. teaching من جدول الترم المذكور، والترم الجاي ممكن يتغيّر' };
-      if (!c.available) out.scheduleNote = 'جدول الترم مو متاح الحين — القائمة من التقييمات وحدها';
+      if (!c.available) out.scheduleNote = (t && t !== activeTerm() ? 'جدول ' + payTermName(t) + ' ما نزل عندنا للحين'
+        : 'جدول الترم مو متاح الحين') + ' — القائمة من التقييمات وحدها';
       return out;
     },
   },
@@ -10471,7 +11086,9 @@ const AI_TOOLS = {
       mine: { type: 'boolean', description: 'نهائيات مواد جدولي — للمشتركين' } },
       required: [] },
     run: async (ctx, a) => {
-      if (!FINALS_ON) return { available: false, error: 'جدول النهائيات مو معروضاً الآن' };
+      /* جدول المواد ما نزل؟ فترة النهائيات من التقويم على الأقل — كانت «مو معروض» وبس */
+      if (!FINALS_ON) return Object.assign({ available: false, error: 'جدول النهائيات بالمواد مو معروض الحين' },
+        aiExamPeriod(aiToday()));
       /* بارد ⇒ نسحبه مرة (بحرّاس aiWarmOnce) */
       await aiFinalsWarm();
       const all = [];
@@ -10479,12 +11096,14 @@ const AI_TOOLS = {
         const c = finalsCache[g];
         if (c && Array.isArray(c.exams)) all.push(...c.exams);
       }
-      if (!all.length) return { available: false, error: AI_CACHE_COLD };
+      if (!all.length) return Object.assign({ available: false, error: AI_CACHE_COLD }, aiExamPeriod(aiToday()));
 
       if (a.mine) {
         if (ctx.guest) return { error: AI_SIGN_IN, signIn: true };
         if (!ctx.pro) return aiProOnly('finals', ctx);
-        const rows = await aiSchedule(ctx);
+        /* نهائيات ترم الدراسة: من جدوله لهالترم — وجدول فاضي (أو لترم ثاني) يُقال، لا «ما عندك نهائيات» */
+        const rows = await aiSchedule(ctx, undefined, activeTerm());
+        if (!rows.length) return Object.assign({ scope: 'mine', count: 0, exams: [] }, aiSchedEmpty(rows));
         const crns = new Set(rows.map(r => String(r.crn)));
         const mine = all.filter(e => crns.has(String(e.crn)));
         return { scope: 'mine', count: mine.length, exams: mine.map(aiExam),
@@ -10497,7 +11116,7 @@ const AI_TOOLS = {
       const rows = all.filter(e => crn
         ? String(e.crn) === crn
         : String(e.code || '').toUpperCase().replace(/\s+/g, ' ').trim() === want);
-      if (!rows.length) return { count: 0, exams: [], error: AI_UNKNOWN };
+      if (!rows.length) return Object.assign({ count: 0, exams: [], error: AI_UNKNOWN }, aiExamPeriod(aiToday()));
       return { count: rows.length, exams: rows.map(aiExam) };
     },
   },
@@ -10911,7 +11530,7 @@ const aiUsedOf = q => ({ day: q.day, dayCap: q.cap.day,
    ما فيها ولا حرف يخص طالباً بعينه — فالبادئة (التعليمات + الأدوات)
    واحدة لكل الطلاب، والتخزين المؤقت مشترك بينهم كلهم. بيانات الطالب
    تروح في رسالته لا هنا. */
-const AI_SYSTEM = `أنت «مساعد جدولك» — مستشار أكاديمي ذكي داخل موقع جدولك لطلاب جامعة الأمير محمد بن فهد (PMU).
+const AI_SYSTEM = `أنت «Jadwalik AI» — مستشار أكاديمي ذكي داخل موقع جدولك لطلاب جامعة الأمير محمد بن فهد (PMU).
 هدفك الأول: **يتخرّج الطالب بأسرع وقت ممكن وبلا مفاجآت.** وأي سؤال ثاني — جدوله، يومه،
 قاعة، دكتور، تذكير، استعمال الموقع — تجاوبه بنفس الإتقان.
 
@@ -10976,6 +11595,17 @@ const AI_SYSTEM = `أنت «مساعد جدولك» — مستشار أكادي�
   السبب الوحيد اللي تقوله هو السبب المكتوب في النتيجة نفسها.
 - **تعرف التاريخ والساعة** من سياق الرسالة — لا تسأل الطالب عنهما.
   «بعد ٣ دقايق» و«بكرة الساعة ٧» تحسبها بنفسك من الوقت المكتوب لك.
+- **مواعيد الجامعة** (متى يبدأ التسجيل · يومي في التسجيل · بداية الدراسة · الحذف والإضافة · الإجازات ·
+  آخر يوم انسحاب · النهائيات) ⇒ registration_calendar للتسجيل وacademic_calendar للباقي. «الترم الجاي» = ترم
+  التسجيل الجاي في سياقك. كل موعد يجيك معه فات ولا جاي وكم باقي عليه — انقله كما هو ولا تحسب الأيام بنفسك.
+  أيام المستويات ما نزلت (levels: null)؟ قل فترة التسجيل كاملة، وإن الأيام حسب المستوى تنعلن قبلها، ومستواه
+  من ساعاته (you) لو رجع — ولا تخترع يوماً. وجدول النهائيات بالمواد ما نزل؟ قل فترة النهائيات (examPeriod).
+- **«الترم الجاي» في الشعب والدكاترة والجدول** ⇒ مرّر term = ترم التسجيل الجاي من سياقك (باني الجداول افتراضه
+  هو). ما نزل جدوله؟ قلها كما رجعت، ولا تعرض شعب الترم الحالي كأنها للجاي — كل نتيجة فيها termName، سمّ الترم.
+  و«تنطرح المادة الترم الجاي؟» ⇒ course_offering: unknown = ما نعرف (لا تقول تُطرح) · offered/no_sections من جدول الجامعة.
+- **«وش عندي بكرة/الأحد/يوم كذا»** ⇒ my_day بـdate (التاريخ من سياقك — «بكرة» = اليوم + 1). ترجع الإجازة والنهائيات
+  وما بين الترمين من التقويم (holiday · examPeriod · classesStart): قلها كما هي — لا «ما عندك محاضرات» كأنه يوم عادي.
+  وotherTerm = جدوله في موقعنا لترم ثاني.
 - **الطالب ما يسمّي المواد كأسماء الجامعة.** يقول «ثيرمو ١» و«دوائر»
   و«تفاضل». استعمل أداة البحث عن المادة أول شي — لا تخمّن الكود ولا
   تسأله عنه قبل ما تحاول. ولو رجّعت أكثر من مرشّح ومو واضح أيّها يقصد،
@@ -10985,6 +11615,9 @@ const AI_SYSTEM = `أنت «مساعد جدولك» — مستشار أكادي�
 - سؤال عن **استعمال الموقع** (كيف أثبّته على الجوال، كيف أراقب شعبة،
   كيف أضيف موعد)؟ استعمل أداة الدليل — لا تجاوب من عندك ولا تقول
   «ما عندي أداة» قبل ما تجرّبها.
+- **«فيه تطبيق؟» · «أحمّل التطبيق؟» · «كيف أثبّته؟»** ⇒ جدولك موقع ما له تطبيق في المتجر، ويتثبّت على الشاشة
+  الرئيسية ويفتح مثل التطبيق. أعطه الخطوات على طول من أداة الدليل («ثبّته على جوالك»)، وبالصور jadwalik.com/guide —
+  بلا «ما أقدر أأكد» ولا تذكرة دعم.
 - الأداة تقول إن بيانات الجامعة مو جاهزة؟ قل له يجرّب بعد شوي — ولا تعطيه رقماً قديماً من عندك.
 - **جدوله فاضي في موقعنا (scheduleEmpty)؟** قلها بسطر واحثّه يضيفه — أسرع طريقة
   «📥 استورد جدولك من بانر» في «جدولي» (ملف أو صورة من بانر، أو أرقام CRN) — عشان الجواب يطلع على جدوله هو.
@@ -11162,7 +11795,6 @@ async function aiThreadReset(userId) {
 
 /* سطر السياق فوق سؤال الطالب. ما يدخل التعليمات حتى تبقى البادئة
    واحدة للجميع، وما يُحفظ في المحادثة — يُبنى جديداً كل مرة. */
-const AI_DAYS_AR = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 function aiHeader(ctx, th) {
   const p = ctx.plan || {};
   let h = `[سياق صاحب السؤال — للاستعمال لا للعرض: التخصص ${p.major || '—'}`
@@ -11208,7 +11840,7 @@ async function aiSpendAlert() {
   AI_ALERTED = ym;
   await saveState().catch(() => {});
   await sendMsg(ADMIN_CHAT_ID,
-    '⚠️ <b>مساعد جدولك — ٧٥٪ من سقف الشهر</b>\n\n'
+    '⚠️ <b>Jadwalik AI — ٧٥٪ من سقف الشهر</b>\n\n'
     + `انصرف ${aiSar(AI_MONTH.micro)} ريال من ${AI_CAPS.monthSar}.\n`
     + 'عند ١٠٠٪ يتوقف المساعد ويشرح للطلاب بهدوء، وباقي الموقع يكمّل عادي.\n\n'
     + '📊 jadwalik.com/admin').catch(() => {});
@@ -12107,7 +12739,7 @@ function aiTgLeaveAi(chatId) {
 /* مقدمة /ai: «اكتب سؤالك بكلامك» أولاً — والأمثلة نصاً لا أزراراً (قرار محمد:
    أزرار الأمثلة توهم إنه يضغط وبس) — وإن جدوله وخطته من اللي عبّاه، فالفاضي
    ما يُفهم غلطاً */
-const AI_TG_INTRO = '✨ <b>مساعد جدولك</b>\n\n'
+const AI_TG_INTRO = '✨ <b>Jadwalik AI</b>\n\n'
   + '<b>اكتب سؤالك هنا بكلامك</b> — أي شي عن دراستك، وأنا أجاوبك.\n\n'
   + 'أمثلة تقدر تكتبها:\n'
   + '🎓 وش أنزل الترم الجاي عشان أتخرج أسرع؟\n'
@@ -12120,7 +12752,7 @@ const AI_TG_INTRO = '✨ <b>مساعد جدولك</b>\n\n'
   + '📌 جدولك وخطتك من اللي عبّيته في jadwalik.com — لو ما عبّيتها، عبّها أول '
   + 'عشان يطلع كلامي صح.\n\n'
   + '<i>🚪 زر «خروج» تحت يطلّعك متى ما خلصت.</i>';
-const AI_TG_INTRO_GUEST = '✨ <b>مساعد جدولك</b>\n\n'
+const AI_TG_INTRO_GUEST = '✨ <b>Jadwalik AI</b>\n\n'
   + 'أساعدك الحين في استعمال الموقع: كيف تراقب شعبة، كيف تضيف جدولك، '
   + 'كيف تعبّي خطتك — اسألني أي شي عنه.\n\n'
   + AI_TG_LINK + '\n\n'
@@ -12401,7 +13033,7 @@ async function remindersTick() {
       OPS.remindersSent = (OPS.remindersSent || 0) + 1;
       await sendMsg(p.telegram_chat_id,
         '⏰ <b>تذكير</b>\n\n' + esc(String(r.body || '').slice(0, 300))
-        + '\n\n<i>طلبته من مساعد جدولك</i>').catch(() => {});
+        + '\n\n<i>طلبته من Jadwalik AI</i>').catch(() => {});
       /* ومعه التنبيه الطارئ لو طلبه (قرار محمد) — الحارس هنا وقت الإرسال: الطالب
          يكتب صفّه بنفسه، فـurgent منه ما يكفي. pushoverAllowed وحدها (الوضع ·
          الإضافة · مفتاحه). يرن ولو صامت ويعيد لين يأكّده — ربع ساعة أقصى */
@@ -14128,6 +14760,8 @@ server.listen(PORT, () => {
   setInterval(() => { prewarmTick().catch(() => {}) }, 20000);
   /* ساعة التأكيد: تفحص الطابور كل 5 دقائق، وما تسحب إلا لو نضج صفّ */
   setInterval(() => { confirmTick().catch(() => {}) }, CONFIRM_TICK);
+  /* تنبيه تغيّر الاختبارات النهائية — الإنتاج وحده (الحارس داخلها) */
+  setInterval(() => { finalsWatchTick().catch(() => {}) }, FIN_TICK_MS);
   /* تنبيهات جدولك: فحص كل 10 دقائق، وما ترسل إلا الساعة 5 العصر مرة واحدة */
   setInterval(() => { notifyTick().catch(() => {}) }, 10 * 60 * 1000);
   /* البلاغات: فحص خفيف كل 3 دقائق — صف واحد لا أكثر */

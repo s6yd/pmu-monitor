@@ -94,7 +94,8 @@ const acts = m => (((m && m.markup) || {}).inline_keyboard || [])
   c = makeCtx();
   eq(await c.aiTgRoute(7, '/ai'), true, '/ai وحده يدخل الوضع');
   eq(ASKED.length, 0, 'وما يسأل النموذج بلا سؤال');
-  ok(/مساعد جدولك/.test(SENT[0].text), 'ويشرح');
+  /* **قاعدة تغيّرت عمداً — قرار محمد (١٩ نوفمبر ٢٠٢٦):** اسمه في البوت «Jadwalik AI» مثل الموقع */
+  ok(/Jadwalik AI/.test(SENT[0].text) && !/مساعد جدولك/.test(SENT[0].text), 'ويشرح — باسمه Jadwalik AI');
   ok(/خروج/.test(SENT[0].text), 'ويقول كيف يخرج');
   eq(await c.aiTgRoute(7, 'كم باقي لي؟'), true, 'وبعده الكلام يروح للمساعد');
   eq(ASKED[0].q, 'كم باقي لي؟', 'كما هو');
@@ -480,6 +481,11 @@ const acts = m => (((m && m.markup) || {}).inline_keyboard || [])
      '**كتابة وحدة من البوت: التذكير** — وباقي الأفعال حراساتها في الصفحة');
   ok(/aiRemindCheck\(/.test(CODE), 'والتثبيت يعيد فحوص الاقتراح نفسها — لا فحص ثانٍ');
   ok(/telegram_chat_id=eq\./.test(CODE), 'والهوية من الربط لا من الرسالة');
+  /* اسمه واحد: «Jadwalik AI» — قرار محمد (١٩ نوفمبر ٢٠٢٦). ولا نص ينرسل (بين علامتي تنصيص) فيه الاسم القديم:
+     قائمة الأوامر · مقدمة /ai للمربوط والزائر · ذيل التذكير · تنبيه السقف. (علامة كتلة المحادثة تعليق — تبقى) */
+  const OLDNAME = (src.replace(/\/\*[\s\S]*?\*\//g, '').match(/['"`][^'"`\n]*مساعد جدولك[^'"`\n]*['"`]/g) || []);
+  eq(OLDNAME, [], '**ولا رسالة من السيرفر تسمّيه «مساعد جدولك»**');
+  ok(/command: 'ai',\s*description: '[^']*Jadwalik AI/.test(src), 'وأمر /ai في قائمة البوت باسمه «Jadwalik AI»');
 
   done();
 })().catch(e => { console.log('انهار: ' + (e && e.stack || e)); fail++; done() });

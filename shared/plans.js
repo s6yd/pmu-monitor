@@ -1579,6 +1579,8 @@ const REG_CAL={
      بعدها التسجيل مفتوح للجميع، فالجدول يصير معلومة ميتة تشغل
      أهم مساحة في الصفحة. أما بقية المواعيد فتبقى في «مواعيد تهمك». */
   hideAfter:'2026-08-27',
+  /* لأي ترم هالأيام — المساعد ما يقولها عن ترم ثاني (تسجيل الربيع كان يطلع بأيام الخريف) */
+  term:'202710',
   termAr:'الترم الأول 2026–2027', termEn:'Fall 2026–2027',
   rows:[
     {k:'eve', d:'2026-08-23', ar:'مسائي · دراسات عليا · تحضيري',
@@ -1604,7 +1606,15 @@ sections:[
 {ic:'🚀',name:'ابدأ من هنا',open:1,items:[
  {t:'اختر تخصصك',d:'من <b>⚙️ الإعدادات</b> اختر تخصصك — <b>20 تخصص</b>، كل كليات الجامعة. الخطة والساعات والمتطلبات تتغيّر معك تلقائياً.'},
  {t:'علّم اللي خلصته',d:'في <b>📋 خطتي</b> اضغط المربّع جنب كل مادة درستها. المواد اللي متطلبها ناقص تظهر <b>مقفلة</b>، وتنفتح أول ما تعلّم متطلبها.'},
- {t:'ابحث وابنِ جدولك',d:'في <b>🔍 البحث</b> اختر الترم واضغط ابحث. الفلتر يقبل <b>كود المادة</b> أو <b>CRN</b> أو <b>اسم المادة</b> أو <b>اسم الدكتور</b>. اضغط المادة تنفتح شعبها، و<b>+ أضف</b> على الشعبة اللي تبيها.'}]},
+ {t:'ابحث وابنِ جدولك',d:'في <b>🔍 البحث</b> اختر الترم واضغط ابحث. الفلتر يقبل <b>كود المادة</b> أو <b>CRN</b> أو <b>اسم المادة</b> أو <b>اسم الدكتور</b>. اضغط المادة تنفتح شعبها، و<b>+ أضف</b> على الشعبة اللي تبيها.'},
+ {t:'جدولك من بانر بضغطة',isNew:1,d:'مسجّل موادك في بانر؟ في <b>📅 جدولي</b> اضغط <b>📥 استورد جدولك من بانر</b> وارفع ملف PDF أو صورة لجدولك، أو الصق أرقام CRN — تشوف كل شعبة قبل ما تنضاف.'},
+ {t:'خطتك من Degree Works',isNew:1,d:'في <b>📋 خطتي</b> اضغط <b>📥 استورد درجاتك من Degree Works</b> وارفع ملفه من بانر — الخطوات مكتوبة لك هناك. نعلّم المواد اللي خلصتها ودرجاتها، وتراجعها قبل الحفظ.'},
+ {t:'ثبّته على جوالك',d:'ما يحتاج تحمّل تطبيق من المتجر: من المتصفح اضغط زر <b>المشاركة</b> واختر <b>Add to Home Screen</b> ثم <b>Add</b> — يفتح بضغطة وحدة مثل التطبيق. في أندرويد: <b>⋮</b> ثم <b>تثبيت التطبيق</b>. وبالصور في <a href="/guide">دليل الصور</a>.'}]},
+
+{ic:'✨',name:'Jadwalik AI',isNew:1,items:[
+ {t:'اسأل بدل ما تدوّر',isNew:1,d:'اضغط <b>؟</b> فوق جنب ⚙️ أو الشريط أعلى صفحة <b>اليوم</b>، أو اكتب <b dir="ltr">/ai</b> في بوت تيليغرام — واسأله بكلامك: «وش عندي بكرة؟» · «متى أتخرج؟» · «ابن لي جدول بدون خميس» · «فيه قاعة فاضية الحين؟».'},
+ {t:'يجهّز وأنت تأكّد',isNew:1,d:'يقدر يجهّز لك غياب أو موعد أو تذكير أو شعبة لجدولك أو مراقبة — وما ينحفظ شي إلا لما تضغط <b>تأكيد</b>.'},
+ {t:'وش يعرف عنك',isNew:1,d:'الأسئلة العامة (الشعب، الدكاترة، القاعات، التقويم، النهائيات) متاحة للكل. والأسئلة عن جدولك وغيابك وخطتك تحتاج <b>اشتراك الترم</b> بعد الفترة المجانية، وبياناتك عنده هي اللي أدخلتها أنت في الموقع. وإجاباته <b>إرشادية</b> — المرجع الرسمي الجامعة.'}]},
 
 {ic:'☀️',name:'يومك',isNew:1,items:[
  {t:'وين أنت من يومك',isNew:1,d:'تبويب <b>اليوم</b> يرتّب محاضراتك بالترتيب: الجارية تتلوّن أخضر ومعها شريط يمشي، و<b>خط «الآن»</b> يتحرك بينها مع الساعة، واللي خلص يبهت لحاله.'},
@@ -1614,7 +1624,8 @@ sections:[
  {t:'مواعيد المادة',isNew:1,d:'كويز · واجب · مشروع · ميدتيرم · نهائي. تكتبه مرة ويطلع في يومه ويذكّرك قبله. وتقدر تعدّله أو تأجّله.'},
  {t:'صور وملفات المادة',isNew:1,d:'صوّر السبورة أو ارفع الملخص — ينحفظ على المادة نفسها وتلقاه وقت المذاكرة، بدل ما يضيع بين ألف صورة في ألبومك. الصور تُضغط تلقائياً، والحد 10 ميغا للملف.'},
  {t:'شارك مع شعبتك',isNew:1,d:'أي موعد أو ملف تقدر تشاركه بضغطة <b>📢</b> فيوصل لزملائك في <b>نفس الشعبة</b> وبدون اسمك.<br>🔒 وكل شي ترفعه <b>خاص فيك</b> ما لم تختر تشاركه.'},
- {t:'أسبوعك كامل',isNew:1,d:'بدّل لـ<b>الأسبوع</b> تشوف الخمسة أيام: عدد محاضرات كل يوم ووقت أول وآخر وحدة، ومواعيدك في يومها، وتواريخ الحذف والانسحاب. وتقدر تتنقل بين أسابيع الترم.'}]},
+ {t:'أسبوعك كامل',isNew:1,d:'بدّل لـ<b>الأسبوع</b> تشوف الخمسة أيام: عدد محاضرات كل يوم ووقت أول وآخر وحدة، ومواعيدك في يومها، وتواريخ الحذف والانسحاب. وتقدر تتنقل بين أسابيع الترم.'},
+ {t:'قاعة فاضية',isNew:1,d:'في <b>اليوم</b> اضغط <b>🚪 قاعة فاضية</b>: القاعات الفاضية الحين ولين متى، والأقرب لمحاضرتك الجاية أول. وبين محاضرتين يطلع لك نفس الزر للفراغ اللي أنت فيه.'}]},
 
 {ic:'📅',name:'جدولك',items:[
  {t:'ثلاثة جداول تجرّب فيها',d:'<b>جدول 1 · 2 · 3</b> — جرّب توزيعات مختلفة قبل ما تقرر، وبدّل بينها بضغطة.'},
@@ -1622,6 +1633,7 @@ sections:[
  {t:'الشبكة واضغط أي مادة',isNew:1,d:'حوّل لـ<b>شبكة</b> تشوف أسبوعك كجدول ملوّن، كل مادة بلونها، بثلاثة أحجام. اضغط أي مادة تطلع لك بطاقتها من تحت: الاسم والقاعة والدكتور كاملة، ومواعيدها وغيابك فيها.'},
  {t:'اطبع جدولك',d:'<b>🖨️ اطبع</b> يطلع ورقة واحدة منظّمة — شبكة أسبوعية ملوّنة تبيّن فراغاتك، ومعها اختباراتك النهائية.'},
  {t:'اختباراتك النهائية',d:'اضغط <b>اعرض</b> تحت «اختباراتك النهائية» — موعد وقاعة كل اختبار، وتنبيه لو صار اختبارين بنفس الوقت.'},
+ {t:'انشر اختباراتك لقروبك',isNew:1,d:'تحت «اختباراتك النهائية» اضغط <b>📤 شارك جدول اختباراتك</b>: صورة مرتبة فيها أيام اختباراتك وأوقاتها وقاعاتها — بدون اسمك. شاركها لقروبك أو احفظها أو اطبعها، أو انسخها نص.'},
  {t:'مواعيد تهمك',d:'أقرب المواعيد بعدّاد أيام: التسجيل، بداية الدراسة، <b>آخر يوم انسحاب</b>، والاختبارات. القريبة تتلوّن تنبيهاً.'}]},
 
 {ic:'📋',name:'خطتك ومعدلك',items:[
@@ -1631,9 +1643,11 @@ sections:[
  {t:'اضغط مادة تشوف شعبها',d:'من الخطة أو المقترح — اضغط أي مادة ينقلك للبحث ويوريك شعبها وأوقاتها ودكاترتها في <b>ترم التسجيل القادم</b>.'}]},
 
 {ic:'🔔',name:'تنبيهاتك',items:[
- {t:'راقب المواد المسكّرة',d:'أي مادة <code>CLOSE</code> جنبها <b>🔕</b> — اضغطه يصير <b>🔔</b>. السيرفر يفحص كل 5 دقائق <b>حتى والموقع مسكّر</b>، فما تحتاج تفتح الصفحة.'},
+ {t:'راقب المواد المسكّرة',d:'أي مادة <code>CLOSE</code> جنبها <b>🔕</b> — اضغطه يصير <b>🔔</b>. السيرفر يفحص كل 5 دقائق (وكل دقيقتين أيام التسجيل) <b>حتى والموقع مسكّر</b>، فما تحتاج تفتح الصفحة.'},
+ {t:'«مراقبتك» فوق البحث',isNew:1,d:'وقت التسجيل تطلع فوق <b>🔍 البحث</b> بطاقة <b>مراقبتك</b>: كم مادة <b>تراقبها</b>، وكم منها <b>مفتوحة الحين</b>، ومتى <b>الفحص الجاي</b> — وتوقف أي مراقبة منها.'},
  {t:'اربط تيليغرام',d:'من <b>⚙️ الإعدادات</b> اضغط «ربط» → يفتح البوت → Start. أول ما تنفتح مادتك يوصلك إشعار فيه الـCRN والوقت والقاعة.'},
  {t:'لو تغيّر جدولك',isNew:1,d:'غيّرت الجامعة دكتور أو قاعة أو وقت مادة عندك؟ يوصلك إشعار، ويظهر تنبيه على المادة في جدولك يبيّن لك <b>وش كان ووش صار</b>.'},
+ {t:'لو تغيّر موعد اختبارك',isNew:1,d:'غيّرت الجامعة موعد اختبار نهائي أو قاعته لمادة في جدولك؟ يوصلك على تيليغرام <b>وش كان ووش صار</b>، وتنبيه لو صار بنفس وقت اختبار ثاني عندك.'},
  {t:'تحكّم بالتنبيهات',isNew:1,d:'من <b>⚙️ الإعدادات</b> اختر أي إشعار تبيه وأيهم لا — كل نوع بمفتاح مستقل.'}]},
 
 {ic:'👨‍🏫',name:'الدكاترة ورأيك',items:[
@@ -1648,7 +1662,15 @@ sections:[
 {ic:'🚀',name:'Start here',open:1,items:[
  {t:'Pick your major',d:'In <b>⚙️ Settings</b> choose your major — <b>20 programs</b>, every college. Your plan, credits and prerequisites switch automatically.'},
  {t:'Mark what you finished',d:'In <b>📋 My Plan</b> tick the box next to each course you passed. Courses missing a prerequisite show as <b>locked</b> and open the moment you tick it.'},
- {t:'Search and build',d:'In <b>🔍 Search</b> pick the term and hit search. The filter accepts a <b>course code</b>, <b>CRN</b>, <b>course title</b> or <b>instructor name</b>. Tap a course to open its sections, then <b>+ Add</b> on the one you want.'}]},
+ {t:'Search and build',d:'In <b>🔍 Search</b> pick the term and hit search. The filter accepts a <b>course code</b>, <b>CRN</b>, <b>course title</b> or <b>instructor name</b>. Tap a course to open its sections, then <b>+ Add</b> on the one you want.'},
+ {t:'Your schedule from Banner',isNew:1,d:'Already registered in Banner? In <b>📅 Schedule</b> tap <b>📥 Import from Banner</b> and upload a PDF or a photo of your schedule, or paste the CRNs — you see every section before it is added.'},
+ {t:'Your plan from Degree Works',isNew:1,d:'In <b>📋 My Plan</b> tap <b>📥 Import grades from Degree Works</b> and upload its file from Banner — the steps are listed there. We tick the courses you finished with their grades, and you review them before saving.'},
+ {t:'Install it on your phone',d:'No app store download needed: in your browser tap <b>Share</b>, choose <b>Add to Home Screen</b>, then <b>Add</b> — it opens in one tap like an app. On Android: <b>⋮</b> then <b>Install app</b>. Step by step with pictures in the <a href="/guide">photo guide</a>.'}]},
+
+{ic:'✨',name:'Jadwalik AI',isNew:1,items:[
+ {t:'Ask instead of searching',isNew:1,d:'Tap <b>?</b> at the top next to ⚙️ or the bar at the top of <b>Today</b>, or type <b>/ai</b> in the Telegram bot — and ask in your own words: “What do I have tomorrow?” · “When do I graduate?” · “Build me a schedule with no Thursday” · “Any free room now?”.'},
+ {t:'It prepares, you confirm',isNew:1,d:'It can prepare an absence, a deadline, a reminder, a section for your schedule or a watch — nothing is saved until you tap <b>Confirm</b>.'},
+ {t:'What it knows about you',isNew:1,d:'General questions (sections, instructors, rooms, the calendar, finals) are open to everyone. Questions about your schedule, absences and plan need the <b>term subscription</b> after the free period, and what it knows about you is what you entered on the site. Its answers are <b>guidance</b> — the university is the official reference.'}]},
 
 {ic:'☀️',name:'Your day',isNew:1,items:[
  {t:'Where you are in your day',isNew:1,d:'The <b>Today</b> tab lays out your lectures in order: the running one turns green with a bar that moves, a <b>“now” line</b> travels between them with the clock, and finished ones fade on their own.'},
@@ -1658,7 +1680,8 @@ sections:[
  {t:'Course deadlines',isNew:1,d:'Quiz · homework · project · midterm · final. Enter it once and it appears on its day and reminds you beforehand. You can edit it or snooze it.'},
  {t:'Photos and files',isNew:1,d:'Snap the board or upload the summary — it is saved on the course itself and waiting when you revise, instead of getting lost among a thousand photos. Images are compressed automatically; the limit is 10 MB per file.'},
  {t:'Share with your section',isNew:1,d:'Any deadline or file can be shared with one <b>📢</b> tap — it reaches classmates in <b>your own section</b>, without your name.<br>🔒 Everything you upload is <b>private to you</b> unless you choose to share it.'},
- {t:'Your whole week',isNew:1,d:'Switch to <b>Week</b> for all five days: how many lectures each day and its first and last time, your deadlines on their day, and add/drop and withdrawal dates. You can move between the term\'s weeks.'}]},
+ {t:'Your whole week',isNew:1,d:'Switch to <b>Week</b> for all five days: how many lectures each day and its first and last time, your deadlines on their day, and add/drop and withdrawal dates. You can move between the term\'s weeks.'},
+ {t:'A free room',isNew:1,d:'In <b>Today</b> tap <b>🚪 Free room</b>: rooms free right now and until when, nearest to your next lecture first. Between two lectures the same button appears for the gap you are in.'}]},
 
 {ic:'📅',name:'Your schedule',items:[
  {t:'Three schedules to try',d:'<b>Schedule 1 · 2 · 3</b> — try different arrangements before you commit, and switch with one tap.'},
@@ -1666,6 +1689,7 @@ sections:[
  {t:'Grid view, and tap any course',isNew:1,d:'Switch to <b>Grid</b> to see your week as a color-coded timetable, each course in its own color, in three sizes. Tap any course and its card slides up: full name, room and instructor, plus its dates and your absences.'},
  {t:'Print your schedule',d:'<b>🖨️ Print</b> gives you one clean page — a colour-coded weekly grid showing your gaps, with your final exams underneath.'},
  {t:'Your final exams',d:'Tap <b>Show</b> under “Your final exams” — the date and room for every exam, and a warning if two collide.'},
+ {t:'Share your exams with your group',isNew:1,d:'Under “Your final exams” tap <b>📤 Share your exam schedule</b>: a clean image with your exam days, times and rooms — without your name. Share it to your group, save it, print it, or copy it as text.'},
  {t:'Dates that matter',d:'Upcoming dates with a countdown: registration, first day of class, <b>the withdrawal deadline</b>, and finals. Near dates turn amber.'}]},
 
 {ic:'📋',name:'Your plan and GPA',items:[
@@ -1675,9 +1699,11 @@ sections:[
  {t:'Tap a course for its sections',d:'From the plan or the suggestion — tap any course and it jumps to Search showing its sections, times and instructors for the <b>upcoming registration term</b>.'}]},
 
 {ic:'🔔',name:'Your alerts',items:[
- {t:'Monitor closed sections',d:'Any <code>CLOSE</code> course has a <b>🔕</b> — tap it to make it <b>🔔</b>. The server checks every 5 minutes <b>even with the site closed</b>, so you never keep the page open.'},
+ {t:'Monitor closed sections',d:'Any <code>CLOSE</code> course has a <b>🔕</b> — tap it to make it <b>🔔</b>. The server checks every 5 minutes (every 2 minutes on registration days) <b>even with the site closed</b>, so you never keep the page open.'},
+ {t:'“Your watches” above Search',isNew:1,d:'During registration a <b>Your watches</b> card sits above <b>🔍 Search</b>: how many you are <b>Watching</b>, how many are <b>Open now</b>, and the <b>Next check</b> — and you can stop any watch from there.'},
  {t:'Link Telegram',d:'In <b>⚙️ Settings</b> tap “Link” → the bot opens → Start. When your course opens you get an alert with the CRN, time and room.'},
  {t:'If your schedule changes',isNew:1,d:'Did the university change an instructor, room or time on one of your courses? You get an alert, and a notice appears on that course showing <b>what it was and what it became</b>.'},
+ {t:'If an exam moves',isNew:1,d:'Did the university move a final exam, or change its room, for a course in your schedule? You get a Telegram message showing <b>what it was and what it became</b>, and a warning if it now clashes with another exam of yours.'},
  {t:'Control your alerts',isNew:1,d:'In <b>⚙️ Settings</b> choose which notifications you want and which you do not — each type has its own switch.'}]},
 
 {ic:'👨‍🏫',name:'Faculty and feedback',items:[
