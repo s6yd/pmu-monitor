@@ -9365,6 +9365,31 @@ function aiExam(e) {
 /* ═══ سجل الأدوات ═══
    كل أداة: وصفها للنموذج · مخطط وسائطها · حصتها · ودالتها.
    المخطط هو نفسه اللي يُرسل للنموذج في §٩-أ-٣. */
+/* ═══ المواعيد: فات · الحين · جاي — وكم باقي ═══
+   لقاها محمد (١٩ نوفمبر ٢٠٢٦): «متى يبدأ التسجيل؟» ⇒ «ما عندي تواريخ تسجيل الربيع، اللي رجع لي جدول الخريف وقد
+   انتهى» — والتقويم الموحّد (ACAD_CAL) فيه تسجيل الربيع ١٠–١٤ يناير. registration_calendar كانت ترجّع REG_CAL كما
+   هو (أيام المستويات لتسجيل الخريف — أغسطس، ثابتة في الكود)، فالنموذج قال الصدق عن بيانات غلط. صارت المواعيد من
+   ACAD_CAL (المصدر الوحيد) ولترم التسجيل الجاي، وكل موعد معه حالته وكم باقي — النموذج ما يحسب تواريخ بنفسه. */
+function aiWhen(s, e, today) {
+  return today < s ? 'upcoming' : today > (e || s) ? 'past' : 'now';
+}
+function aiDaysTo(s, today) {
+  return Math.round((Date.parse(s + 'T00:00:00Z') - Date.parse(today + 'T00:00:00Z')) / 864e5);
+}
+function aiCalEvent(e, today) {
+  const o = { term: e.term, termName: payTermName(e.term), start: e.s, end: e.e || null, kind: e.t, ar: e.ar,
+    when: aiWhen(e.s, e.e, today) };
+  if (o.when === 'upcoming') o.daysLeft = aiDaysTo(e.s, today);
+  if (o.when === 'now' && e.e) o.daysToEnd = aiDaysTo(e.e, today);
+  return o;
+}
+/* فترة النهائيات الجاية من التقويم — لما جدول النهائيات بالمواد ما نزل أو ما فيه المادة */
+function aiExamPeriod(today) {
+  const x = ACAD_CAL.filter(e => e.t === 'exam' && (e.e || e.s) >= today)
+    .sort((a, b) => (a.s < b.s ? -1 : a.s > b.s ? 1 : 0))[0];
+  return x ? { examPeriod: aiCalEvent(x, today) } : {};
+}
+
 const AI_TOOLS = {
 
   guide: {
@@ -9385,32 +9410,73 @@ const AI_TOOLS = {
 
   academic_calendar: {
     tier: 'free',
-    description: 'التقويم الأكاديمي: بداية الدراسة، الإجازات، النهائيات، '
-      + 'الحذف والإضافة. معلومة عامة لكل الطلاب.',
+    description: 'التقويم الأكاديمي: التسجيل · بداية الدراسة · الحذف والإضافة · الإجازات · آخر يوم انسحاب · '
+      + 'النهائيات · التظلم. كل موعد معه when (past · now · upcoming) وكم باقي عليه (daysLeft)، '
+      + 'و next = أقرب موعد جاي من كل نوع. بلا ترم: كل الترمات اللي عندنا.',
     input_schema: { type: 'object', properties: {
-      term: { type: 'string', description: 'كود الترم مثل 202710 — اتركه لترم الدراسة الحالي' } },
+      term: { type: 'string', description: 'كود الترم مثل 202720 — اتركه للكل' } },
       required: [] },
     run: (ctx, a) => {
       const t = a.term ? String(a.term) : null;
       const rows = ACAD_CAL.filter(e => !t || e.term === t);
       if (!rows.length) return { error: AI_UNKNOWN, term: t };
-      return { term: t || 'الكل', events: rows.map(e => ({
-        start: e.s, end: e.e || null, kind: e.t, ar: e.ar, en: e.en })) };
+      const today = aiToday();
+      const events = rows.slice().sort((x, y) => (x.s < y.s ? -1 : x.s > y.s ? 1 : 0))
+        .map(e => aiCalEvent(e, today));
+      const next = {};
+      for (const e of events) if (e.when !== 'past' && !next[e.kind]) next[e.kind] = e;
+      return { term: t || 'الكل', today,
+        currentTerm: activeTerm(), currentTermName: payTermName(activeTerm()),
+        nextRegTerm: nextRegTerm(), nextRegTermName: payTermName(nextRegTerm()), next, events };
     },
   },
 
   registration_calendar: {
     tier: 'free',
-    description: 'تواريخ التسجيل حسب المستوى (سينيور/جونيور/سوفومور/فريشمان) '
-      + 'وفترات الحذف والإضافة للترم القادم.',
-    input_schema: { type: 'object', properties: {}, required: [] },
-    run: () => {
+    description: 'التسجيل: متى يفتح ويقفل وكم باقي، وبداية الدراسة، والحذف والإضافة، وأيام المستويات '
+      + '(سينيور/جونيور/سوفومور/فريشمان) لو نزلت، ومستوى الطالب ويومه من ساعاته. افتراضياً ترم التسجيل الجاي، '
+      + 'وأي ترم برمزه (مثل 202730 للصيفي).',
+    input_schema: { type: 'object', properties: {
+      term: { type: 'string', description: 'كود الترم — اتركه لترم التسجيل الجاي' } },
+      required: [] },
+    run: (ctx, a) => {
+      const today = aiToday();
+      const want = String((a && a.term) || '').trim();
+      if (want && !/^\d{4}(10|20|30)$/.test(want)) return { error: AI_UNKNOWN, term: want };
+      const term = want || nextRegTerm();
+      const ev = ACAD_CAL.filter(e => e.term === term);
+      /* الصيفي فيه موعدان (التسجيل المبكر في أبريل · التأكيد في يونيو): الأقرب اللي ما فات، والكل معه */
+      const regs = ev.filter(e => e.t === 'reg').map(e => aiCalEvent(e, today));
+      if (!regs.length) return { error: AI_UNKNOWN, term, termName: payTermName(term) };
+      const start = ev.find(e => e.t === 'start');
+      const out = { term, termName: payTermName(term), today,
+        registration: regs.find(r => r.when !== 'past') || regs[regs.length - 1],
+        classesStart: start ? start.s : null,
+        addDrop: ev.filter(e => e.t === 'add').map(e => aiCalEvent(e, today)) };
+      if (regs.length > 1) out.registrations = regs;
+      /* أيام المستويات من REG_CAL **لو هي لنفس الترم** — كانت ترجع جدول ترم خلص كأنه الجاي */
       const R = PLANS_DATA.REG_CAL;
-      if (!R || !Array.isArray(R.rows)) return { error: AI_UNKNOWN };
-      return { termAr: R.termAr, termEn: R.termEn, hideAfter: R.hideAfter,
-        rows: R.rows.map(r => ({ key: r.k, date: r.d, minCredits: r.min,
-          ar: r.ar, en: r.en, hintAr: r.hAr, hintEn: r.hEn })),
-        addDrop: R.addDrop || null, drop: R.drop || null };
+      const lv = R && R.term === term && Array.isArray(R.rows) ? R.rows : null;
+      if (lv) out.levels = lv.map(r => ({ key: r.k, date: r.d, minCredits: r.min, ar: r.ar, hintAr: r.hAr }));
+      else {
+        out.levels = null;
+        out.levelsNote = 'توزيع أيام التسجيل على المستويات لهذا الترم ما نزل عندنا للحين — التسجيل كله داخل '
+          + 'فترة التسجيل فوق، والأيام حسب المستوى تنعلن قبلها.';
+        /* الترتيب من آخر إعلان عندنا — بلا تواريخ: ما نخترع يوماً */
+        if (R && Array.isArray(R.rows))
+          out.lastOrder = { termAr: R.termAr, order: R.rows.map(r => r.ar + ' (' + r.hAr + ')') };
+      }
+      /* مستواه من ساعاته في «خطتي» (اللي علّمها هو) — ويومه لو أيام المستويات معروفة */
+      if (ctx && ctx.plan && ctx.majorSet !== false && !aiPlanEmpty(ctx)) {
+        const cr = PLANS_DATA.doneCredits(ctx.plan);
+        out.you = { credits: cr, level: PLANS_DATA.level(cr), source: 'من المواد اللي علّمها في «خطتي»' };
+        if (lv) {
+          const day = ctx.prep ? lv.find(r => r.k === 'eve')
+            : lv.filter(r => typeof r.min === 'number').sort((x, y) => y.min - x.min).find(r => cr >= r.min);
+          if (day) out.you.day = day.d;
+        }
+      }
+      return out;
     },
   },
 
@@ -10471,7 +10537,9 @@ const AI_TOOLS = {
       mine: { type: 'boolean', description: 'نهائيات مواد جدولي — للمشتركين' } },
       required: [] },
     run: async (ctx, a) => {
-      if (!FINALS_ON) return { available: false, error: 'جدول النهائيات مو معروضاً الآن' };
+      /* جدول المواد ما نزل؟ فترة النهائيات من التقويم على الأقل — كانت «مو معروض» وبس */
+      if (!FINALS_ON) return Object.assign({ available: false, error: 'جدول النهائيات بالمواد مو معروض الحين' },
+        aiExamPeriod(aiToday()));
       /* بارد ⇒ نسحبه مرة (بحرّاس aiWarmOnce) */
       await aiFinalsWarm();
       const all = [];
@@ -10479,7 +10547,7 @@ const AI_TOOLS = {
         const c = finalsCache[g];
         if (c && Array.isArray(c.exams)) all.push(...c.exams);
       }
-      if (!all.length) return { available: false, error: AI_CACHE_COLD };
+      if (!all.length) return Object.assign({ available: false, error: AI_CACHE_COLD }, aiExamPeriod(aiToday()));
 
       if (a.mine) {
         if (ctx.guest) return { error: AI_SIGN_IN, signIn: true };
@@ -10497,7 +10565,7 @@ const AI_TOOLS = {
       const rows = all.filter(e => crn
         ? String(e.crn) === crn
         : String(e.code || '').toUpperCase().replace(/\s+/g, ' ').trim() === want);
-      if (!rows.length) return { count: 0, exams: [], error: AI_UNKNOWN };
+      if (!rows.length) return Object.assign({ count: 0, exams: [], error: AI_UNKNOWN }, aiExamPeriod(aiToday()));
       return { count: rows.length, exams: rows.map(aiExam) };
     },
   },
@@ -10976,6 +11044,11 @@ const AI_SYSTEM = `أنت «مساعد جدولك» — مستشار أكادي�
   السبب الوحيد اللي تقوله هو السبب المكتوب في النتيجة نفسها.
 - **تعرف التاريخ والساعة** من سياق الرسالة — لا تسأل الطالب عنهما.
   «بعد ٣ دقايق» و«بكرة الساعة ٧» تحسبها بنفسك من الوقت المكتوب لك.
+- **مواعيد الجامعة** (متى يبدأ التسجيل · يومي في التسجيل · بداية الدراسة · الحذف والإضافة · الإجازات ·
+  آخر يوم انسحاب · النهائيات) ⇒ registration_calendar للتسجيل وacademic_calendar للباقي. «الترم الجاي» = ترم
+  التسجيل الجاي في سياقك. كل موعد يجيك معه فات ولا جاي وكم باقي عليه — انقله كما هو ولا تحسب الأيام بنفسك.
+  أيام المستويات ما نزلت (levels: null)؟ قل فترة التسجيل كاملة، وإن الأيام حسب المستوى تنعلن قبلها، ومستواه
+  من ساعاته (you) لو رجع — ولا تخترع يوماً. وجدول النهائيات بالمواد ما نزل؟ قل فترة النهائيات (examPeriod).
 - **الطالب ما يسمّي المواد كأسماء الجامعة.** يقول «ثيرمو ١» و«دوائر»
   و«تفاضل». استعمل أداة البحث عن المادة أول شي — لا تخمّن الكود ولا
   تسأله عنه قبل ما تحاول. ولو رجّعت أكثر من مرشّح ومو واضح أيّها يقصد،

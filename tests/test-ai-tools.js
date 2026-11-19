@@ -1081,9 +1081,13 @@ function fakeModel(ctx) {
     ok(!!bad.error, 'ترم غير موجود: «ما لقيتها» لا اختراع');
   }
   {
+    /* **قاعدة تغيّرت عمداً — لقاها محمد (١٩ نوفمبر ٢٠٢٦):** كانت الأداة ترجّع REG_CAL كما هو (`rows`: أيام
+       مستويات الخريف) لأي سؤال، فـ«متى يبدأ التسجيل؟» في نوفمبر طلع «ما عندي تواريخ الربيع». صارت المواعيد من
+       ACAD_CAL لترم التسجيل الجاي، وأيام المستويات (`levels`) لو هي لنفس الترم وحده (test-ai-dates). هنا ترم
+       التسجيل الجاي الخريف (NEXT_REG) — فنفس الفحص: مستويات بتاريخ واسم */
     const r = await call('registration_calendar', '{}');
-    ok(Array.isArray(r.rows) && r.rows.length > 0, 'تقويم التسجيل يرجع مستويات');
-    ok(r.rows.every(x => x.date && x.ar), 'لكل مستوى تاريخ واسم');
+    ok(Array.isArray(r.levels) && r.levels.length > 0, 'تقويم التسجيل يرجع مستويات');
+    ok(Array.isArray(r.levels) && r.levels.every(x => x.date && x.ar), 'لكل مستوى تاريخ واسم');
   }
   {
     const r = await callFree('guide', '{"lang":"ar"}');
