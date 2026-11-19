@@ -8998,6 +8998,8 @@ function aiRemindNote(ctx) {
 
 /* تاريخ اليوم بتوقيت الرياض — تستعمله أدوات الاقتراح وكتلة المحادثة */
 const aiToday = () => riyadhNow().toISOString().slice(0, 10);
+/* أسماء الأيام بترتيب getUTCDay — سطر السياق (كتلة المحادثة) وmy_day */
+const AI_DAYS_AR = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 
 /* نص «ما أعرف» موحّد — الأداة تقولها، والنموذج ينقلها */
 const AI_UNKNOWN = 'ما لقيتها في بيانات جدولك';
@@ -9070,18 +9072,37 @@ function aiCourse(ctx, code) {
    الـSQL) أول جدول **فيه مواد** — كان الأول دائماً ولو فاضياً، فطالب
    جدوله كله في الثاني يجيه «جدولك فاضي».
    ورقم صريح من الطالب («جدول ٢») يغلب الاثنين. */
-async function aiSchedule(ctx, slot) {
+async function aiSchedule(ctx, slot, term) {
   const id = encodeURIComponent(ctx.userId);
   const rows = await sb('GET', 'user_schedule',
     { query: `?user_id=eq.${id}&select=*&order=crn.asc` });
   if (!Array.isArray(rows)) return [];
   const want = Number.isFinite(slot) ? Number(slot) : null;
   const saved = Number(ctx.profile && ctx.profile.active_slot);
-  const pick = want !== null ? want
+  let pick = want !== null ? want
     : (saved >= 1 && saved <= 3) ? saved
     : Math.min(...rows.map(r => Number(r.slot) || 1).concat([3]));
-  const out = rows.filter(r => (Number(r.slot) || 1) === pick);
+  const inSlot = n => rows.filter(r => (Number(r.slot) || 1) === n);
+  /* يوم بتاريخه (my_day): الجدول المختار ما فيه ترم اليوم وجدول ثانٍ فيه ⇒ ذاك. طالب حط الربيع في جدوله الأول
+     (النشط) والخريف في الثاني، وسأل في نوفمبر «وش عندي بكرة؟» — ورقم صريح منه يغلب */
+  let moved = false;
+  if (want === null && term && !inSlot(pick).some(r => r.term === term)) {
+    const alt = rows.filter(r => r.term === term).map(r => Number(r.slot) || 1);
+    if (alt.length) { pick = Math.min(...alt); moved = true }
+  }
+  let out = inSlot(pick);
+  /* بترم: صفوف ترمه وحدها — وجدول كله لترم ثاني ⇒ فاضي ومعه otherTerm: محاضرات الربيع ليوم في الخريف كذبة،
+     وغياب الخريف ما ينقرأ بترم الربيع */
+  let other = null;
+  if (term && out.length) {
+    const terms = [...new Set(out.map(r => r.term).filter(Boolean))];
+    if (terms.length && !terms.includes(term)) other = terms[0];
+    out = out.filter(r => !r.term || r.term === term);
+  }
   out.slot = pick;          /* عشان الأداة تقول «من جدولك ٢» لا تسكت */
+  out.moved = moved;
+  out.term = term || null;
+  out.otherTerm = other;
   /* كل صفوفه في الجداول الثلاثة: صفر = ما أضاف مواده في موقعنا أصلاً،
      وهذا غير «جدولك هذا فاضي» وغير «ما عندك محاضرات هذا اليوم» */
   out.total = rows.length;
@@ -9170,7 +9191,14 @@ function aiGradChains(plan, terms) {
     .map(ch => ch.map(c => ({ code: c, term: name(c) })));
 }
 /* جدول فاضي: أي الحالتين؟ */
-const aiSchedEmptyNote = rows => rows.total ? AI_SLOT_EMPTY : AI_SCHED_EMPTY;
+const aiSchedEmptyNote = rows => rows.otherTerm
+  ? 'جدوله في موقعنا (جدول ' + rows.slot + ') لـ' + payTermName(rows.otherTerm) + ' — ما عندنا جدوله لـ'
+    + payTermName(rows.term) + '. قل له يضيفه: أسرع طريقة «📥 استورد جدولك من بانر» في «جدولي». ولا تقل '
+    + '«ما عندك …» كأنها حقيقة'
+  : rows.total ? AI_SLOT_EMPTY : AI_SCHED_EMPTY;
+/* حقول الجدول الفاضي في نتيجة الأداة — بنفس الشكل في كلها */
+const aiSchedEmpty = rows => Object.assign({ scheduleEmpty: !rows.total, note: aiSchedEmptyNote(rows) },
+  rows.otherTerm ? { slot: rows.slot, otherTerm: { term: rows.otherTerm, termName: payTermName(rows.otherTerm) } } : {});
 
 /* صف جدول → ما يراه النموذج. ولا حقل يخصّ طالباً آخر. */
 function aiSchedRow(r) {
@@ -9417,6 +9445,40 @@ function aiExamPeriod(today) {
   const x = ACAD_CAL.filter(e => e.t === 'exam' && (e.e || e.s) >= today)
     .sort((a, b) => (a.s < b.s ? -1 : a.s > b.s ? 1 : 0))[0];
   return x ? { examPeriod: aiCalEvent(x, today) } : {};
+}
+
+/* ═══ «وش عندي بكرة؟» بالتاريخ — مراجعة المساعد (١٩ نوفمبر ٢٠٢٦) ═══
+   my_day كانت تاخذ حرف اليوم وحده، فما تعرف التاريخ: «وش عندي بكرة؟» والأحد إجازة منتصف الترم ⇒ محاضرات يوم عادي،
+   ووقت النهائيات وبين الترمين كذلك. صار اليوم بتاريخه (date — أو أقرب يوم بالحرف من اليوم)، والتاريخ يُفحص في التقويم
+   (ACAD_CAL — نفس اللي تقرأه صفحة «اليوم»). وتاريخ برّا التقويم يوم عادي بلا ترم: ما نعرف عنه شي. */
+const AI_WD = 'UMTWRFS';
+/* تاريخ من النموذج: YYYY-MM-DD حقيقي وحده (٣٠ فبراير يُرفض) */
+const aiDateArg = v => {
+  const x = String(v == null ? '' : v).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(x)) return null;
+  const d = new Date(x + 'T00:00:00Z');
+  return !isNaN(d) && d.toISOString().slice(0, 10) === x ? x : null;
+};
+/* أقرب تاريخ بهالحرف من اليوم — اليوم نفسه لو هو */
+function aiDateOf(day, today) {
+  const d = new Date(today + 'T00:00:00Z');
+  return new Date(d.getTime() + ((AI_WD.indexOf(day) - d.getUTCDay() + 7) % 7) * 864e5).toISOString().slice(0, 10);
+}
+/* اليوم في التقويم: off إجازة · exam نهائيات · break بين ترمين (e = بداية الدراسة الجاية) · class يوم دراسة بترمه */
+function aiDayCal(date) {
+  let start = null, next = null, exam = null;
+  for (const e of ACAD_CAL) if (e.t === 'start') {
+    if (e.s <= date && (!start || e.s > start.s)) start = e;
+    if (e.s > date && (!next || e.s < next.s)) next = e;
+  }
+  if (start) for (const e of ACAD_CAL)
+    if (e.t === 'exam' && e.s > start.s && (!exam || e.s < exam.s)) exam = e;
+  if (exam && exam.s <= date && date <= (exam.e || exam.s)) return { kind: 'exam', e: exam };
+  const off = ACAD_CAL.find(e => e.t === 'off' && e.s <= date && date <= (e.e || e.s));
+  if (off) return { kind: 'off', e: off };
+  /* قبل أول ترم في التقويم، أو بعد نهائيات ترم وقبل اللي بعده */
+  if (!start || (exam && date > (exam.e || exam.s))) return next ? { kind: 'break', e: next } : { kind: 'class', term: null };
+  return { kind: 'class', term: exam ? start.term : null };
 }
 
 const AI_TOOLS = {
@@ -9847,30 +9909,58 @@ const AI_TOOLS = {
 
   my_day: {
     tier: 'pro',
-    description: 'محاضرات الطالب في يوم معيّن بالترتيب، ومعها الفراغات بينها '
-      + 'بالدقائق. للسؤال عن «وش عندي اليوم» أو «كم فراغ عندي الثلاثاء».',
+    description: 'محاضرات الطالب في يوم بتاريخه، بالترتيب ومعها الفراغات بينها بالدقائق — ويقول لو '
+      + 'اليوم إجازة أو نهائيات أو بين ترمين (من التقويم الأكاديمي). للسؤال عن «وش عندي اليوم/بكرة» '
+      + 'أو «كم فراغ عندي الثلاثاء».',
     input_schema: { type: 'object', properties: {
+      date: { type: 'string', description: 'التاريخ YYYY-MM-DD — «بكرة» = تاريخ اليوم في سياقك + 1. يغلب day' },
       day: { type: 'string', enum: ['U', 'M', 'T', 'W', 'R', 'F', 'S'],
-             description: 'U أحد · M اثنين · T ثلاثاء · W أربعاء · R خميس' },
+             description: 'بدل التاريخ: حرف اليوم (U أحد · M اثنين · T ثلاثاء · W أربعاء · R خميس) = أقرب يوم '
+               + 'بهالحرف من اليوم' },
       slot: { type: 'integer', description: 'رقم الجدول ١–٣' } },
-      required: ['day'] },
+      required: [] },
     run: async (ctx, a) => {
-      const day = String(a.day || '').toUpperCase();
-      if (!'UMTWRFS'.includes(day) || day.length !== 1)
-        return { error: 'يوم غير معروف — استعمل U M T W R F S' };
-      const rows = await aiSchedule(ctx, a.slot);
+      const now = aiToday();
+      let date = now;
+      let day = AI_WD[new Date(now + 'T00:00:00Z').getUTCDay()];
+      if (a.date != null && String(a.date).trim() !== '') {
+        date = aiDateArg(a.date);
+        if (!date) return { error: 'تاريخ غير معروف — بصيغة YYYY-MM-DD (اليوم ' + now + ')' };
+        day = AI_WD[new Date(date + 'T00:00:00Z').getUTCDay()];
+      } else if (a.day != null && String(a.day).trim() !== '') {
+        day = String(a.day).toUpperCase();
+        if (!AI_WD.includes(day) || day.length !== 1)
+          return { error: 'يوم غير معروف — استعمل U M T W R F S' };
+        date = aiDateOf(day, now);
+      }
+      const head = { date, day, dayName: AI_DAYS_AR[AI_WD.indexOf(day)] };
+      const none = extra => Object.assign(head, { count: 0, lectures: [], gaps: [] }, extra);
+      /* التقويم قبل الجدول: الإجازة حقيقة ولو جدوله فاضي */
+      const cal = aiDayCal(date);
+      if (cal.kind === 'off') return none({
+        holiday: { name: cal.e.ar, start: cal.e.s, end: cal.e.e || cal.e.s },
+        note: 'إجازة في التقويم الأكاديمي — ما فيه محاضرات هاليوم' });
+      if (cal.kind === 'exam') return none({
+        examPeriod: { start: cal.e.s, end: cal.e.e || cal.e.s, termName: payTermName(cal.e.term) },
+        note: 'فترة النهائيات — المحاضرات العادية وقفت. نهائياته بالمواد من أداة finals' });
+      if (cal.kind === 'break') return none({
+        classesStart: { date: cal.e.s, term: cal.e.term, termName: payTermName(cal.e.term) },
+        note: 'ما فيه دراسة في هالتاريخ (بين ترمين) — الدراسة تبدأ ' + cal.e.s });
+      const rows = await aiSchedule(ctx, a.slot, cal.term);
       /* جدول فاضي غير «يوم فاضي»: «ما عندك محاضرات بكرة» لطالب ما
-         أضاف جدوله أصلاً كذبة تخلّيه يظن الموقع غلطان */
-      if (!rows.length) return { day, count: 0, lectures: [], gaps: [],
-        scheduleEmpty: !rows.total, note: aiSchedEmptyNote(rows) };
+         أضاف جدوله أصلاً كذبة تخلّيه يظن الموقع غلطان — ومثله جدوله لترم ثاني (otherTerm) */
+      if (!rows.length) return none(aiSchedEmpty(rows));
+      const slotNote = rows.moved ? { note: 'من جدوله رقم ' + rows.slot + ' — جدول ' + payTermName(cal.term)
+        + ' (جدوله النشط في الموقع لترم ثاني)' } : {};
       const today = rows
         .filter(r => schedDays(r.course_date).includes(day))
         .map(r => ({ row: r, t: schedTime(r.course_timing) }))
         .filter(x => x.t)
         .sort((x, y) => x.t.start - y.t.start);
 
-      if (!today.length) return { day, count: 0, lectures: [], gaps: [],
-        note: 'ما فيه محاضرات هذا اليوم في جدوله على موقعنا' };
+      if (!today.length) return none(Object.assign({ slot: rows.slot,
+        note: 'ما فيه محاضرات هذا اليوم في جدوله على موقعنا' }, rows.moved ? { note: slotNote.note
+          + ' — وما فيه محاضرات هذا اليوم' } : {}));
 
       /* الفراغ بين نهاية محاضرة وبداية اللي بعدها — بالدقيقة لا بالساعة،
          فمحاضرة تنتهي ٨:٥٠ وأخرى تبدأ ٩:٠٠ فراغها ١٠ دقائق لا صفر. */
@@ -9884,13 +9974,13 @@ const AI_TOOLS = {
           minutes: mins });
       }
       const first = today[0].t.start, last = today[today.length - 1].t.end;
-      return { day, count: today.length,
+      return Object.assign(head, { slot: rows.slot, count: today.length,
         firstAt: aiHHMM(first), lastEndsAt: aiHHMM(last),
         onCampusMinutes: last - first,
         gapMinutes: gaps.reduce((s, g) => s + g.minutes, 0),
         lectures: today.map(x => Object.assign(aiSchedRow(x.row),
           { startsAt: aiHHMM(x.t.start), endsAt: aiHHMM(x.t.end) })),
-        gaps };
+        gaps }, slotNote);
     },
   },
 
@@ -9902,11 +9992,12 @@ const AI_TOOLS = {
       code: { type: 'string', description: 'كود مادة بعينها — اتركه لكل المواد' } },
       required: [] },
     run: async (ctx, a) => {
-      const rows = await aiSchedule(ctx);
-      if (!rows.length) return { count: 0, courses: [],
-        scheduleEmpty: !rows.total, note: aiSchedEmptyNote(rows) };
+      /* بترم الدراسة مثل الصفحة (activeTermCode): كان ترم أول صف في الجدول النشط — طالب حط الربيع في جدوله
+         الأول يجيه «ما غبت ولا مرة» وغيابه كله في الخريف */
+      const term = activeTerm();
+      const rows = await aiSchedule(ctx, undefined, term);
+      if (!rows.length) return Object.assign({ count: 0, courses: [] }, aiSchedEmpty(rows));
       const id = encodeURIComponent(ctx.userId);
-      const term = rows[0].term || regTerm();
       const abs = await sb('GET', 'absences',
         { query: `?user_id=eq.${id}&term=eq.${encodeURIComponent(term)}&select=crn,on_date` });
       const A = Array.isArray(abs) ? abs : [];
@@ -9938,8 +10029,9 @@ const AI_TOOLS = {
       code: { type: 'string', description: 'كود مادة بعينها' } },
       required: [] },
     run: async (ctx, a) => {
-      const rows = await aiSchedule(ctx);
-      const term = (rows[0] && rows[0].term) || regTerm();
+      /* بترم الدراسة مثل الصفحة — نفس خطأ الغياب */
+      const term = activeTerm();
+      const rows = await aiSchedule(ctx, undefined, term);
       const id = encodeURIComponent(ctx.userId);
       const ev = await sb('GET', 'course_events',
         { query: `?user_id=eq.${id}&term=eq.${encodeURIComponent(term)}`
@@ -10598,7 +10690,9 @@ const AI_TOOLS = {
       if (a.mine) {
         if (ctx.guest) return { error: AI_SIGN_IN, signIn: true };
         if (!ctx.pro) return aiProOnly('finals', ctx);
-        const rows = await aiSchedule(ctx);
+        /* نهائيات ترم الدراسة: من جدوله لهالترم — وجدول فاضي (أو لترم ثاني) يُقال، لا «ما عندك نهائيات» */
+        const rows = await aiSchedule(ctx, undefined, activeTerm());
+        if (!rows.length) return Object.assign({ scope: 'mine', count: 0, exams: [] }, aiSchedEmpty(rows));
         const crns = new Set(rows.map(r => String(r.crn)));
         const mine = all.filter(e => crns.has(String(e.crn)));
         return { scope: 'mine', count: mine.length, exams: mine.map(aiExam),
@@ -11098,6 +11192,9 @@ const AI_SYSTEM = `أنت «مساعد جدولك» — مستشار أكادي�
 - **«الترم الجاي» في الشعب والدكاترة والجدول** ⇒ مرّر term = ترم التسجيل الجاي من سياقك (باني الجداول افتراضه
   هو). ما نزل جدوله؟ قلها كما رجعت، ولا تعرض شعب الترم الحالي كأنها للجاي — كل نتيجة فيها termName، سمّ الترم.
   و«تنطرح المادة الترم الجاي؟» ⇒ course_offering: unknown = ما نعرف (لا تقول تُطرح) · offered/no_sections من جدول الجامعة.
+- **«وش عندي بكرة/الأحد/يوم كذا»** ⇒ my_day بـdate (التاريخ من سياقك — «بكرة» = اليوم + 1). ترجع الإجازة والنهائيات
+  وما بين الترمين من التقويم (holiday · examPeriod · classesStart): قلها كما هي — لا «ما عندك محاضرات» كأنه يوم عادي.
+  وotherTerm = جدوله في موقعنا لترم ثاني.
 - **الطالب ما يسمّي المواد كأسماء الجامعة.** يقول «ثيرمو ١» و«دوائر»
   و«تفاضل». استعمل أداة البحث عن المادة أول شي — لا تخمّن الكود ولا
   تسأله عنه قبل ما تحاول. ولو رجّعت أكثر من مرشّح ومو واضح أيّها يقصد،
@@ -11284,7 +11381,6 @@ async function aiThreadReset(userId) {
 
 /* سطر السياق فوق سؤال الطالب. ما يدخل التعليمات حتى تبقى البادئة
    واحدة للجميع، وما يُحفظ في المحادثة — يُبنى جديداً كل مرة. */
-const AI_DAYS_AR = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 function aiHeader(ctx, th) {
   const p = ctx.plan || {};
   let h = `[سياق صاحب السؤال — للاستعمال لا للعرض: التخصص ${p.major || '—'}`
