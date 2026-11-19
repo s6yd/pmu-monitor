@@ -1609,7 +1609,7 @@ sections:[
  {t:'ابحث وابنِ جدولك',d:'في <b>🔍 البحث</b> اختر الترم واضغط ابحث. الفلتر يقبل <b>كود المادة</b> أو <b>CRN</b> أو <b>اسم المادة</b> أو <b>اسم الدكتور</b>. اضغط المادة تنفتح شعبها، و<b>+ أضف</b> على الشعبة اللي تبيها.'},
  {t:'جدولك من بانر بضغطة',isNew:1,d:'مسجّل موادك في بانر؟ في <b>📅 جدولي</b> اضغط <b>📥 استورد جدولك من بانر</b> وارفع ملف PDF أو صورة لجدولك، أو الصق أرقام CRN — تشوف كل شعبة قبل ما تنضاف.'},
  {t:'خطتك من Degree Works',isNew:1,d:'في <b>📋 خطتي</b> اضغط <b>📥 استورد درجاتك من Degree Works</b> وارفع ملفه من بانر — الخطوات مكتوبة لك هناك. نعلّم المواد اللي خلصتها ودرجاتها، وتراجعها قبل الحفظ.'},
- {t:'ثبّته على جوالك',d:'من المتصفح اضغط زر <b>المشاركة</b> واختر <b>Add to Home Screen</b> ثم <b>Add</b> — يفتح بضغطة وحدة مثل التطبيق. في أندرويد: <b>⋮</b> ثم <b>تثبيت التطبيق</b>. وبالصور في <a href="/guide">دليل الصور</a>.'}]},
+ {t:'ثبّته على جوالك',d:'ما يحتاج تحمّل تطبيق من المتجر: من المتصفح اضغط زر <b>المشاركة</b> واختر <b>Add to Home Screen</b> ثم <b>Add</b> — يفتح بضغطة وحدة مثل التطبيق. في أندرويد: <b>⋮</b> ثم <b>تثبيت التطبيق</b>. وبالصور في <a href="/guide">دليل الصور</a>.'}]},
 
 {ic:'✨',name:'Jadwalik AI',isNew:1,items:[
  {t:'اسأل بدل ما تدوّر',isNew:1,d:'اضغط <b>؟</b> فوق جنب ⚙️ أو الشريط أعلى صفحة <b>اليوم</b>، أو اكتب <b dir="ltr">/ai</b> في بوت تيليغرام — واسأله بكلامك: «وش عندي بكرة؟» · «متى أتخرج؟» · «ابن لي جدول بدون خميس» · «فيه قاعة فاضية الحين؟».'},
@@ -1663,7 +1663,7 @@ sections:[
  {t:'Search and build',d:'In <b>🔍 Search</b> pick the term and hit search. The filter accepts a <b>course code</b>, <b>CRN</b>, <b>course title</b> or <b>instructor name</b>. Tap a course to open its sections, then <b>+ Add</b> on the one you want.'},
  {t:'Your schedule from Banner',isNew:1,d:'Already registered in Banner? In <b>📅 Schedule</b> tap <b>📥 Import from Banner</b> and upload a PDF or a photo of your schedule, or paste the CRNs — you see every section before it is added.'},
  {t:'Your plan from Degree Works',isNew:1,d:'In <b>📋 My Plan</b> tap <b>📥 Import grades from Degree Works</b> and upload its file from Banner — the steps are listed there. We tick the courses you finished with their grades, and you review them before saving.'},
- {t:'Install it on your phone',d:'In your browser tap <b>Share</b>, choose <b>Add to Home Screen</b>, then <b>Add</b> — it opens in one tap like an app. On Android: <b>⋮</b> then <b>Install app</b>. Step by step with pictures in the <a href="/guide">photo guide</a>.'}]},
+ {t:'Install it on your phone',d:'No app store download needed: in your browser tap <b>Share</b>, choose <b>Add to Home Screen</b>, then <b>Add</b> — it opens in one tap like an app. On Android: <b>⋮</b> then <b>Install app</b>. Step by step with pictures in the <a href="/guide">photo guide</a>.'}]},
 
 {ic:'✨',name:'Jadwalik AI',isNew:1,items:[
  {t:'Ask instead of searching',isNew:1,d:'Tap <b>?</b> at the top next to ⚙️ or the bar at the top of <b>Today</b>, or type <b>/ai</b> in the Telegram bot — and ask in your own words: “What do I have tomorrow?” · “When do I graduate?” · “Build me a schedule with no Thursday” · “Any free room now?”.'},
