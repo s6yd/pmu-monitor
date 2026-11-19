@@ -651,13 +651,13 @@ async function loadAllInner(silent){
    الوضع والنموذج والسقوف والإنفاق ومربّع تجربة. كل شي من هنا بلا نشر:
    اسم النموذج يتقدّم على متغيّر Render، والسقوف تُحفظ في القاعدة.
    التكلفة تجي محسوبة من السيرفر — اللوحة تعرض ما يُرجعه ولا تحسب سعراً. */
-let AI=null, AITOP=null, AIMSGS=[], AIBUSY=false, AIIMP=null;
+let AI=null, AITOP=null, AIMSGS=[], AIBUSY=false, AIIMP=null, AIRATE=null;
 
 async function loadAi(){
   try{
-    const [a,t,im]=await Promise.all([api('ai'),api('ai-top').catch(()=>null),
-      api('import-log').catch(()=>null)]);
-    AI=a; AITOP=t; AIIMP=im; renderAi();
+    const [a,t,im,rt]=await Promise.all([api('ai'),api('ai-top').catch(()=>null),
+      api('import-log').catch(()=>null),api('ai-rate').catch(()=>null)]);
+    AI=a; AITOP=t; AIIMP=im; AIRATE=rt; renderAi();
   }catch(e){ toast(e.message,'err'); }
 }
 
@@ -736,8 +736,10 @@ function renderAi(){
     </div>
 
     ${aiChannelCard()}
+    ${aiRateCard()}
     ${aiImportCard()}
     ${aiTopCard()}
+    ${aiThreadCard()}
     ${aiChatCard()}`;
   renderAiChat();
 }
@@ -849,8 +851,53 @@ function aiTopCard(){
         <span>آخر سؤال <b><span class="ltr">${esc(u.last||'—')}</span></b></span>
         ${u.email?`<span><span class="ltr">${esc(u.email)}</span></span>`:''}
         <button class="mini" onclick="aiThread('${esc(u.id)}')">💬 محادثته</button>
-      </div></div>`).join('')}
-    ${aiThreadCard()}`;
+      </div></div>`).join('')}`;
+}
+
+/* تقييم المساعد بعد المحادثة — طلب محمد (١٨ نوفمبر ٢٠٢٦: «ودي الي يستعمل المساعد يجيه تقييم سريع بعد المحادثه»).
+   الأرقام والنسبة كما رجّعها السيرفر، و«💬 محادثته» تفتح محادثة صاحب التقييم (المسجّل وحده — الزائر ما له
+   محادثة محفوظة). المحادثة نفسها اللي تحت «أكثر الطلاب استهلاكاً» — بطاقتها برّا القائمتين فتبان من أي وحدة. */
+const RATE_WHY={wrong:'معلومة غلط',misread:'ما فهم سؤاله',cant:'ما قدر يسوي اللي طلبه',slow:'بطيء'};
+const RATE_CH={web:'🌐 الموقع',tg:'✈️ تلقرام'};
+function aiRateCard(){
+  const R=AIRATE;
+  const head=`<div class="sec-title">⭐ تقييم المساعد — آخر ${(R&&R.days)||30} يوم</div>`;
+  if(!R||!R.ok)return head+`<div class="gauge-sub" style="margin-bottom:12px;color:var(--warn)">${
+    esc((R&&R.error)||'ما قدرنا نقرأ التقييمات')}</div>`;
+  const S=R.summary||{};
+  if(!(S.up||S.down))return head+`<div class="empty" style="padding:24px"><div class="empty-icon">⭐</div>
+    <div class="empty-t">ما أحد قيّم المساعد للحين</div>
+    <div class="empty-s">بعد المحادثة يطلع للطالب سؤال صغير: أفاده ولا لا</div></div>`;
+  const tags=(o,lab)=>Object.entries(o||{}).sort((a,b)=>b[1]-a[1]).map(([k,n])=>
+    `<span class="tag">${lab?esc(lab[k]||k):`<span class="ltr">${esc(k)}</span>`} <span class="ltr">×${n}</span></span>`).join(' ');
+  const hot=S.pct==null?'':S.pct>=80?'good':S.pct>=60?'warn':'bad';
+  const chLine=k=>{ const c=(S.ch||{})[k]||{}; return (c.up||c.down)?`<div class="kv"><span>${RATE_CH[k]}</span>
+    <b>👍 <span class="ltr">${c.up||0}</span> · 👎 <span class="ltr">${c.down||0}</span></b></div>`:'' };
+  const sums=`<div class="gauge" style="margin-bottom:10px">
+    <div class="kv"><span>👍 أفادهم</span><b class="good"><span class="ltr">${S.up||0}</span></b></div>
+    <div class="kv"><span>👎 ما أفادهم</span><b class="${S.down?'bad':''}"><span class="ltr">${S.down||0}</span></b></div>
+    <div class="kv"><span>الرضا</span><b class="${hot}"><span class="ltr">${S.pct==null?'—':S.pct+'%'}</span></b></div>
+    <div class="kv"><span>قيّموا</span><b><span class="ltr">${S.raters||0}</span> طالب${
+      S.guest?` · <span class="ltr">${S.guest}</span> تقييم زوار`:''}</b></div>
+    ${chLine('web')}${chLine('tg')}
+    ${Object.keys(S.reasons||{}).length?`<div class="gauge-sub" style="margin:9px 0 5px">ليش ما أفادهم:</div>
+      <div class="tags">${tags(S.reasons,RATE_WHY)}</div>`:''}
+    ${Object.keys(S.tools||{}).length?`<div class="gauge-sub" style="margin:9px 0 5px">الأدوات اللي اشتغلت في المحادثات اللي ما أفادت:</div>
+      <div class="tags">${tags(S.tools)}</div>`:''}
+    <div class="gauge-sub">بعد المحادثة يطلع للطالب سؤال صغير (مرة باليوم على الأكثر)، ومع 👎 يقدر يقول وش كان ناقص.
+      اضغط «💬 محادثته» تحت أي تقييم وتقرأ وش صار.</div>
+  </div>`;
+  const rows=(R.recent||[]).map(e=>`<div class="row">
+    <div class="row-top"><b>${esc(e.guest?'زائر':(e.name||e.email||'—'))}</b>
+      <span class="${e.rate==='up'?'good':'bad'}">${e.rate==='up'?'👍 أفاده':'👎 ما أفاده'}</span></div>
+    ${e.note?`<div style="font-size:13px;line-height:1.75;margin:7px 0 2px;white-space:pre-wrap;overflow-wrap:break-word">«<bdi>${esc(e.note)}</bdi>»</div>`:''}
+    <div class="row-meta"><span>${esc(RATE_CH[e.ch]||e.ch||'')}</span><span>${esc(impWhen(e.at))}</span>
+      ${e.why?`<span>${esc(RATE_WHY[e.why]||e.why)}</span>`:''}
+      ${e.turns?`<span>الأسئلة <b><span class="ltr">${e.turns}</span></b></span>`:''}
+      ${e.tools&&e.tools.length?`<span><span class="ltr">${esc(e.tools.join(' · '))}</span></span>`:''}
+      ${e.email&&e.name?`<span><span class="ltr">${esc(e.email)}</span></span>`:''}
+      ${e.user?`<button class="mini" onclick="aiThread('${esc(e.user)}')">💬 محادثته</button>`:''}</div></div>`).join('');
+  return head+sums+`<div class="sec-title" style="font-size:12px">آخر التقييمات</div>`+rows;
 }
 
 /* محادثة طالب بعينه — رقم الاستهلاك وحده ما يقول هل جاوبه صح.
