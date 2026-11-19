@@ -9383,6 +9383,35 @@ function aiCalEvent(e, today) {
   if (o.when === 'now' && e.e) o.daysToEnd = aiDaysTo(e.e, today);
   return o;
 }
+/* ═══ «الترم الجاي» في الشعب والدكاترة والباني والطرح — مراجعة المساعد (١٩ نوفمبر ٢٠٢٦) ═══
+   كانت الشعب ومين يدرّس المادة تقرأ ترم الدراسة وحده (بلا وسيط ترم)، والباني ترم التسجيل اللي خارج النافذة = ترم
+   الدراسة: «وش شعب الماث الترم الجاي؟» في نوفمبر ⇒ شعب الخريف الشغّال كأنها للربيع، و«ابن لي جدول» ⇒ جدول للخريف اللي
+   انقفل تسجيله. صار للأدوات ترم (رمز الجامعة)، والباني افتراضه ترم التسجيل الجاي (مثل المقترح — قرار محمد ٢٢ أكتوبر).
+   وجدول ترم مو عندنا ما نعوّضه بغيره: نقول إنه ما نزل عندنا (aiTermMissing) — وشعب ترم ثاني تبان كأنها هو. */
+/* الترم من قائمة قصيرة لا أي رمز: كل ترم جديد سحبة من الجامعة (aiCacheWarm)، وترم ما له جدول عندهم يرجع فاضي
+   فيُحسب «ما يستجيب». الحالي وترم التسجيل والجاي — هذي اللي يسأل عنها الطالب. */
+const aiTermsOk = () => [...new Set([activeTerm(), regTerm(), nextRegTerm()])];
+const aiTermArg = v => { const x = String(v == null ? '' : v).trim(); return aiTermsOk().includes(x) ? x : null };
+const aiTermBad = v => ({ error: 'نشوف جدول ' + aiTermsOk().map(payTermName).join(' و') + ' بس', term: String(v) });
+function aiTermMissing(c, t) {
+  if (!t || t === activeTerm()) return c;
+  return { available: false, term: t, termName: payTermName(t),
+    error: 'جدول ' + payTermName(t) + ' ما عندنا للحين — يمكن ما نزل من الجامعة بعد. '
+      + 'وشعب الترم الحالي (' + payTermName(activeTerm()) + ') موجودة لو تبيها.' };
+}
+/* الطرح لتخصص ما عندنا جدول طرحه: من جدول الجامعة للترم نفسه لو نزل — لا «ما فيه تحذير» (يفهمها «تُطرح») */
+async function aiOfferLive(term, code) {
+  const c = await aiCacheWarm(term);
+  if (!c.available) return { status: 'unknown',
+    note: 'جدول الطرح لتخصصه ما عندنا، وجدول ' + payTermName(term) + (term === activeTerm() ? ' مو متاح عندنا الحين'
+      : ' ما نزل عندنا للحين') + ' — ما نقدر نقول تُطرح ولا لا.' };
+  const want = aiCodeNorm(code);
+  const n = new Set(c.courses.filter(x => aiCodeNorm(x.courseCode) === want).map(x => String(x.crn))).size;
+  return n ? { status: 'offered', sections: n, source: 'جدول الجامعة' }
+    : { status: 'no_sections', source: 'جدول الجامعة',
+        note: 'ما لها شعب في جدول ' + payTermName(term) + ' الحين — يمكن ما تنطرح، أو تنضاف شعبها بعدين.' };
+}
+
 /* فترة النهائيات الجاية من التقويم — لما جدول النهائيات بالمواد ما نزل أو ما فيه المادة */
 function aiExamPeriod(today) {
   const x = ACAD_CAL.filter(e => e.t === 'exam' && (e.e || e.s) >= today)
@@ -9565,13 +9594,16 @@ const AI_TOOLS = {
     input_schema: { type: 'object', properties: {
       code: { type: 'string', description: 'كود المادة' } },
       required: ['code'] },
-    run: (ctx, a) => {
+    run: async (ctx, a) => {
       if (!PLANS_DATA.findPlanCourse(ctx.plan, a.code))
         return { known: false, error: AI_UNKNOWN, code: a.code };
       const w = PLANS_DATA.offerWarn(ctx.plan, a.code);
       const term = ctx.plan.term, termName = payTermName(term);
+      /* بلا جدول طرح لتخصصه: «ما فيه تحذير» كان يفهمها النموذج «تُطرح» — وحنا ما نعرف. الجواب من جدول الجامعة */
+      if (!w && !PLANS_DATA.OFFER_MAJORS.includes(ctx.plan.major))
+        return Object.assign({ known: true, code: a.code, term, termName }, await aiOfferLive(term, a.code));
       if (!w) return { known: true, code: a.code, term, termName,
-        status: 'ok', note: 'ما فيه تحذير طرح لهذي المادة' };
+        status: 'ok', note: 'تُطرح في ' + termName + ' حسب جدول الطرح' };
       /* مواد تنتهي من الخطة القديمة (إعلان التسجيل ٩ نوفمبر ٢٠٢٦ — LAST_OFFER): آخر ترم لها، ولا ترجع */
       if (w.last) return { known: true, code: a.code, term, termName,
         status: w.kind === 'gone' ? 'phased_out' : w.kind === 'ends' ? 'offered_until' : 'final_offering',
@@ -9949,13 +9981,17 @@ const AI_TOOLS = {
     input_schema: { type: 'object', properties: {
       code: { type: 'string', description: 'كود المادة مثل "MATH 1422"' },
       instructor: { type: 'string', description: 'اسم الدكتور أو جزء منه — بدل كود المادة' },
+      term: { type: 'string', description: 'كود الترم — اتركه للترم الحالي. سأل عن «الترم الجاي»؟ '
+        + 'حط ترم التسجيل الجاي من سياقك' },
       openOnly: { type: 'boolean', description: 'المفتوحة فقط' } },
       required: [] },
     run: async (ctx, a) => {
       if (!a.code && !a.instructor)
         return { error: 'حدّد كود مادة أو اسم دكتور' };
-      const c = await aiCacheWarm();
-      if (!c.available) return c;
+      const t = aiTermArg(a.term);
+      if (a.term && !t) return aiTermBad(a.term);
+      const c = await aiCacheWarm(t || undefined);
+      if (!c.available) return aiTermMissing(c, t);
       const want = String(a.code || '').toUpperCase().replace(/\s+/g, ' ').trim();
       const who = String(a.instructor || '').trim();
       /* اسم الدكتور في كاش الجامعة لاتيني والطالب يكتبه عربياً */
@@ -9974,8 +10010,8 @@ const AI_TOOLS = {
       });
       if (a.openOnly) rows = rows.filter(x => String(x.status || '').toUpperCase() !== 'CLOSE');
       if (!rows.length) return { found: 0, sections: [],
-        note: AI_UNKNOWN + ' في جدول ' + c.term, term: c.term };
-      return { found: rows.length, term: c.term, ...(aiStatusOld(c) ? { statusOld: true } : {}),
+        note: AI_UNKNOWN + ' في جدول ' + payTermName(c.term), term: c.term, termName: payTermName(c.term) };
+      return { found: rows.length, term: c.term, termName: payTermName(c.term), ...(aiStatusOld(c) ? { statusOld: true } : {}),
         sections: rows.slice(0, 40).map(x => ({
           crn: x.crn, code: x.courseCode, title: x.courseTitle, section: x.section,
           instructor: x.instructor, days: x.courseDate, time: x.courseTiming,
@@ -10008,15 +10044,20 @@ const AI_TOOLS = {
       labs: { type: 'boolean', description: 'يضمّ المعمل مع المادة اللي لها معمل — الافتراضي نعم' },
       openOnly: { type: 'boolean', description: 'المفتوحة فقط — الافتراضي نعم' },
       keepCurrent: { type: 'boolean',
-        description: 'يبني حول مواد جدوله الحالي بدل ما يبدأ من فاضي' } },
+        description: 'يبني حول مواد جدوله الحالي بدل ما يبدأ من فاضي' },
+      term: { type: 'string', description: 'كود الترم — اتركه لترم التسجيل الجاي' } },
       required: [] },
     run: async (ctx, a) => {
       /* ترم **التسجيل** هو اللي يبني له، لا ترم الدراسة — ويختلفان في
          التسجيل المبكر للصيفي. وإن كان كاشه بارداً رجعنا لترم الدراسة،
          والترم يرجع في الرد فالنموذج يقوله للطالب. */
-      let c = await aiCacheWarm(regTerm());
-      if (!c.available && regTerm() !== activeTerm()) c = await aiCacheWarm();
-      if (!c.available) return c;
+      /* ترم التسجيل الجاي (مثل المقترح) — لا ترم الدراسة الشغّال خارج النافذة. وجدوله ما نزل؟ نقولها، ولا نبني
+         على جدول ترم ثاني (كان يرجع لترم الدراسة: جدول لترم انقفل تسجيله) */
+      const want = aiTermArg(a.term);
+      if (a.term && !want) return aiTermBad(a.term);
+      const target = want || nextRegTerm();
+      const c = await aiCacheWarm(target);
+      if (!c.available) return aiTermMissing(c, target);
 
       let codes = (Array.isArray(a.codes) ? a.codes : []).map(String)
         .map(x => x.trim()).filter(Boolean);
@@ -10388,12 +10429,16 @@ const AI_TOOLS = {
       + 'وتقييم أو تقييمين ما يكفي حكماً. وللتعليقات نفسها: instructor_reviews.',
     input_schema: { type: 'object', properties: {
       codes: { type: 'array', items: { type: 'string' },
-        description: 'أكواد المواد مثل ["MEEN 4392","COMM 2311"] — حتى 15' } },
+        description: 'أكواد المواد مثل ["MEEN 4392","COMM 2311"] — حتى 15' },
+      term: { type: 'string', description: 'كود الترم لمين يدرّسها — اتركه للترم الحالي، '
+        + 'و«الترم الجاي» = ترم التسجيل الجاي من سياقك' } },
       required: ['codes'] },
     run: async (ctx, a) => {
       const codes = [...new Set((Array.isArray(a.codes) ? a.codes : [a.codes])
         .map(aiCodeNorm).filter(c => /^[A-Z]{2,5} \d{3,4}[A-Z]?$/.test(c)))].slice(0, 15);
       if (!codes.length) return { error: 'مرّر أكواد المواد، مثل ["MEEN 4392"]' };
+      const t = aiTermArg(a.term);
+      if (a.term && !t) return aiTermBad(a.term);
       const q = v => encodeURIComponent('"' + String(v).replace(/"/g, '') + '"');
       /* بلا user_id في select ولا في الناتج — التقييم مجهول للقارئ */
       const COLS = 'select=instructor_name,rating,course_code,tags';
@@ -10401,7 +10446,7 @@ const AI_TOOLS = {
         `?course_code=in.(${codes.map(q).join(',')})&hidden=is.false&${COLS}&limit=1000` });
       if (!Array.isArray(inCourse)) return { error: 'تعذّر قراءة التقييمات' };
       /* مين يدرّسها في جدول الترم — الكاش بحرّاس تسخينه، وما توفّر؟ نكمل بالتقييمات */
-      const c = await aiCacheWarm();
+      const c = await aiCacheWarm(t || undefined);
       let gender = null;
       if (!ctx.guest && ctx.userId) { try { gender = aiGender(await aiSchedule(ctx)) } catch (e) {} }
       const teaching = {};
@@ -10448,7 +10493,8 @@ const AI_TOOLS = {
         campus: gender, courses,
         note: 'ترتيب بتقييم الطلاب — رأيهم لا رأينا. قل عدد التقييمات، وتقييم أو تقييمين ما '
           + 'يكفي حكماً. teaching من جدول الترم المذكور، والترم الجاي ممكن يتغيّر' };
-      if (!c.available) out.scheduleNote = 'جدول الترم مو متاح الحين — القائمة من التقييمات وحدها';
+      if (!c.available) out.scheduleNote = (t && t !== activeTerm() ? 'جدول ' + payTermName(t) + ' ما نزل عندنا للحين'
+        : 'جدول الترم مو متاح الحين') + ' — القائمة من التقييمات وحدها';
       return out;
     },
   },
@@ -11049,6 +11095,9 @@ const AI_SYSTEM = `أنت «مساعد جدولك» — مستشار أكادي�
   التسجيل الجاي في سياقك. كل موعد يجيك معه فات ولا جاي وكم باقي عليه — انقله كما هو ولا تحسب الأيام بنفسك.
   أيام المستويات ما نزلت (levels: null)؟ قل فترة التسجيل كاملة، وإن الأيام حسب المستوى تنعلن قبلها، ومستواه
   من ساعاته (you) لو رجع — ولا تخترع يوماً. وجدول النهائيات بالمواد ما نزل؟ قل فترة النهائيات (examPeriod).
+- **«الترم الجاي» في الشعب والدكاترة والجدول** ⇒ مرّر term = ترم التسجيل الجاي من سياقك (باني الجداول افتراضه
+  هو). ما نزل جدوله؟ قلها كما رجعت، ولا تعرض شعب الترم الحالي كأنها للجاي — كل نتيجة فيها termName، سمّ الترم.
+  و«تنطرح المادة الترم الجاي؟» ⇒ course_offering: unknown = ما نعرف (لا تقول تُطرح) · offered/no_sections من جدول الجامعة.
 - **الطالب ما يسمّي المواد كأسماء الجامعة.** يقول «ثيرمو ١» و«دوائر»
   و«تفاضل». استعمل أداة البحث عن المادة أول شي — لا تخمّن الكود ولا
   تسأله عنه قبل ما تحاول. ولو رجّعت أكثر من مرشّح ومو واضح أيّها يقصد،
