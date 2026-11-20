@@ -2439,7 +2439,7 @@ async function noticePublish(){
   if(!D.until){ toast('اختر متى ينشال الإعلان','err'); return }
   const t=new Date(D.until);
   if(isNaN(t)){ toast('وقت الانتهاء مو مفهوم','err'); return }
-  if(!confirm('ينطلع هالإعلان فوق الموقع لكل الزوار لين '+ntWhen(t.toISOString())+'؟\n\n'+ar))return;
+  if(!confirm('يطلع هالإعلان فوق الموقع لكل الزوار لين '+ntWhen(t.toISOString())+'؟\n\n'+ar))return;
   try{
     await api('site-notice',{body:{ar,en:(D.en||'').trim(),until:t.toISOString()}});
     NT_DRAFT=null;
