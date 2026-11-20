@@ -361,6 +361,32 @@ function pushover(title, message, opts) {
 let MAINTENANCE = (process.env.MAINTENANCE || '').trim() === 'on';
 let MAINT_MSG = (process.env.MAINTENANCE_MSG || '').trim();
 
+/* ═══ إعلان فوق الموقع — طلب محمد (٢٠ نوفمبر ٢٠٢٦) ═══
+   صيانة بانر عند الجامعة (١٩–٢٥ نوفمبر) وقّفت موقع جدولهم، والطلاب يحسبون البحث خربان عندنا: «ودي نحط اعلان صغير
+   فوق في موقعنا عن انه المشكلة مو من عندنا» — و«خليه بس اعلان بسيط فوق اقدر احطه واطفيه من لوحة التحكم». سطر رفيع
+   فوق كل الشاشات: نص واحد، يحطه ويطفيه من اللوحة («النظام» ← «📢 إعلان فوق الموقع») — بلا وقت انتهاء ولا نص ثانٍ.
+   **غير وضع الصيانة**: ذاك يقفل الموقع، وهذا سطر والموقع شغّال. لكل بيئة إعلانها (مع الحالة بمفتاحها)، ويوصل الصفحة
+   مع حالة الموقع (`/api/monitor-status` — مخزّن دقيقتين). v وقت النشر: الطالب يقفله بـ✕ لين ينشر غيره. «أطفه» يخلّي
+   نصّه للوحة (تعيد نشره بضغطة) */
+let SITE_NOTICE = null;                       /* { ar, on, v } */
+const NOTICE_MAX_LEN = 300;
+/* سطر واحد: الأسطر مسافة، وبلا محارف تحكم ولا تضمين اتجاه (اللصق من رسالة على الجوال يجيبها، والصفحة تعزل
+   اتجاه النص بنفسها) */
+const noticeText = s => String(s == null ? '' : s)
+  .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\ufeff]+/g, ' ')
+  .replace(/\s+/g, ' ').trim();
+function noticeClean(b, now) {
+  const ar = noticeText(b && b.ar);
+  if (!ar) return { error: 'اكتب نص الإعلان' };
+  if (ar.length > NOTICE_MAX_LEN) return { error: `النص طويل — ${NOTICE_MAX_LEN} حرف بالكثير` };
+  return { notice: { ar, on: true, v: now || Date.now() } };
+}
+/* المعروض الحين — المطفي ما يطلع (ونصّه يبقى للوحة) */
+function noticeLive() {
+  const n = SITE_NOTICE;
+  return n && n.on && n.ar ? { ar: n.ar, v: n.v } : null;
+}
+
 /* عرض جدول الاختبارات النهائية: FINALS_ENABLED=off في Render يوقفه.
    نوقفه بين الترمين لأن موقع الجامعة يبقي جدول الترم الماضي منشوراً،
    وأسماء المواد والشعب تتكرر فيطلع للطالب جدول قديم كأنه جديد.
@@ -2995,7 +3021,9 @@ async function saveState() {
                  /* «الشعبة اختفت» انقالت لصاحبها — بلا حفظه تتكرر مع كل نشر */
                  monGone: [...MON_GONE_TOLD].slice(-3000),
                  /* احتياط بانر: مفتاحه من اللوحة، ومصدر آخر دورة (رجوع الجدول بعده يسجّل بلا إشعار) */
-                 bannerOn: BANNER_ON, monSource: MON_SOURCE },
+                 bannerOn: BANNER_ON, monSource: MON_SOURCE,
+                 /* إعلان فوق الموقع: بلا حفظه ينشال مع كل نشر */
+                 siteNotice: SITE_NOTICE },
       ops: { searches: OPS.searches, feedback: OPS.feedback,
              pmuFails: OPS.pmuFails, tgFails: OPS.tgFails,
              searchesCached: OPS.searchesCached, searchStale: OPS.searchStale,
@@ -3068,6 +3096,11 @@ async function restoreState() {
   if (Array.isArray(g.poLicNoted))
     for (const [id, at] of g.poLicNoted) if (isUuid(String(id))) PO_LIC.noted.set(String(id), Number(at) || 0);
   if ('bannerOn' in g) BANNER_ON = !!g.bannerOn;
+  /* إعلان فوق الموقع — بشكله وحده (النص يتنظّف ثانية) */
+  if (g.siteNotice && typeof g.siteNotice === 'object') {
+    const n = g.siteNotice, ar = noticeText(n.ar).slice(0, NOTICE_MAX_LEN);
+    if (ar) SITE_NOTICE = { ar, on: !!n.on, v: Number(n.v) || 0 };
+  }
   if (g.monSource === 'pmu' || g.monSource === 'banner') MON_SOURCE = g.monSource;
   if (Array.isArray(g.monGone)) g.monGone.forEach(k => { if (/^\d+\|\d{3,8}$/.test(String(k))) MON_GONE_TOLD.add(String(k)) });
   if ('termOverride' in g) TERM_OVERRIDE = g.termOverride || null;
@@ -6673,6 +6706,8 @@ async function adminHealth() {
     env: SITE_ENV,
     maintenance: MAINTENANCE,
     maintenanceMsg: MAINT_MSG,
+    /* إعلان فوق الموقع: آخر واحد (ولو مطفي — نصّه للوحة) وهل يطلع الحين */
+    siteNotice: SITE_NOTICE, siteNoticeLive: !!noticeLive(),
     finalsOn: FINALS_ON,
     monitorPaused: MONITOR_PAUSED,
 
@@ -13361,8 +13396,16 @@ const server = http.createServer(async (req, res) => {
         sendCourses({ courses: stale.courses, cached: true,
                       age: Date.now() - stale.at, at: stale.at }, null);
       } else {
+        /* بلا نسخة ولا بانر: الطالب كان يشوف «PMU token timeout» (لقاها محمد وقت صيانة بانر، ١٩ نوفمبر ٢٠٢٦)
+           ويحسب الموقع خربان عندنا. نقول له من وين المشكلة — وreason للصفحة (عنوانها والإنجليزي). وخطأ برمجي عندنا
+           (نوعه من أخطاء JS) ما ننسبه للجامعة. والسبب الفني في الإنذار فوق */
+        const ours = err instanceof TypeError || err instanceof ReferenceError || err instanceof RangeError ||
+                     err instanceof SyntaxError;
         res.writeHead(500);
-        res.end(JSON.stringify({ success: false, error: err.message }));
+        res.end(JSON.stringify(ours
+          ? { success: false, reason: 'server', error: 'صار خطأ عندنا في البحث — جرّب بعد شوي، وبلّغنا لو تكرر.' }
+          : { success: false, reason: 'pmu-down',
+              error: 'موقع جدول الجامعة ما يرد الحين — المشكلة من الجامعة مو من جدولك. جرّب بعد شوي.' }));
       }
     }
     return;
@@ -14037,6 +14080,22 @@ const server = http.createServer(async (req, res) => {
         return send(200, { on: FINALS_ON });
       }
 
+      /* إعلان فوق الموقع (فوق — SITE_NOTICE). on:false = «أطفه»: نصّه يبقى للوحة */
+      if (act === 'site-notice') {
+        if (req.method === 'POST') {
+          const b = await readBody(req);
+          if (b && b.on === false) {
+            if (SITE_NOTICE) SITE_NOTICE = Object.assign({}, SITE_NOTICE, { on: false });
+          } else {
+            const c = noticeClean(b);
+            if (c.error) return send(400, { error: c.error });
+            SITE_NOTICE = c.notice;
+          }
+          await saveState().catch(() => {});
+        }
+        return send(200, { notice: SITE_NOTICE, live: !!noticeLive() });
+      }
+
       if (act === 'maintenance') {
         if (req.method === 'POST') {
           const b = await readBody(req);
@@ -14529,6 +14588,8 @@ const server = http.createServer(async (req, res) => {
          تشمل بصمة الخطط: الخطط صارت ملفاً منفصلاً، فتعديل خطة لا يغيّر
          الصفحة — وبلا هذا ما يوصل المثبِّت تحديث خطة أبداً. */
       build: buildTag(),
+      /* إعلان فوق الموقع من اللوحة — null لو ما فيه أو مطفي */
+      notice: noticeLive(),
       next: st.next || nextWindow(),
       dataTtlMin: Math.round(coursesTTL() / 60000),
       ar: st.ar, en: st.en,
