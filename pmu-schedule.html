@@ -1013,6 +1013,14 @@ padding:7px 13px;font-size:12px;font-weight:700;font-family:inherit;cursor:point
 .env-bar{display:none;background:#f59e0b;color:#1a1200;text-align:center;
 padding:6px 12px;font-size:12px;font-weight:700;position:relative;z-index:1}
 .env-bar.on{display:block}
+/* إعلان فوق الموقع (من اللوحة — طلب محمد ٢٠ نوفمبر ٢٠٢٦): سطر رفيع يمرّ مع الصفحة مثل .tg-bar، بلون غير التحذيرين */
+.notice-bar[hidden]{display:none!important}
+.notice-bar{position:relative;display:flex;align-items:flex-start;gap:6px;
+padding-block:7px;padding-inline:14px 4px;background:rgba(61,111,255,.10);
+border-bottom:1px solid rgba(61,111,255,.28);font-size:12.5px;line-height:1.7;color:var(--text)}
+.notice-bar .nb-t{flex:1;min-width:0;padding-top:1px;overflow-wrap:break-word}
+.notice-bar .nb-x{flex-shrink:0;background:none;border:none;color:var(--text2);font-family:inherit;
+font-size:14px;line-height:1;padding:8px 11px;margin-block:-4px;border-radius:9px;cursor:pointer}
 .pro-soon{display:none;font-size:11.5px;line-height:1.75;margin-top:12px;
 padding:11px 13px;border-radius:11px;background:rgba(61,111,255,.10);
 border:1px solid rgba(61,111,255,.28);color:var(--text2)}
@@ -1805,7 +1813,7 @@ margin:0!important;padding:0!important;min-height:0!important}
 .ai-ask,.guide-overlay,.toast,.state-box,.sync-note,.next-check,.reg-card,.crn-panel,
 .slot-bar,#slotBar,
 .vw-switch,#schedView,#schedGrid,.gr-zoom,.gr-hint,
-.env-bar,.tg-bar,.pick-hint,#schedPickHint,
+.env-bar,.tg-bar,.notice-bar,.pick-hint,#schedPickHint,
 #schedDays,.modal,.overlay,.finals-card,.cal-card,.legal-foot{display:none!important}
 .page{display:none!important}
 .main{padding:0!important;max-width:none!important;margin:0!important}
@@ -1951,6 +1959,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
 </noscript>
 
 <div class="env-bar" id="envBar"></div>
+<div class="notice-bar" id="noticeBar" role="note" hidden></div>
 <div class="tg-bar" id="tgBar" hidden></div>
 <div class="topbar">
   <div class="tb-side">
@@ -3091,7 +3100,7 @@ async function doSearch(){
     const kq=PRO_KEY?`&key=${encodeURIComponent(PRO_KEY)}`:'';
     const r=await fetch(`${API}?term=${term}&college=${college}&gender=${gender}&filter=${encodeURIComponent(filter)}${kq}`);
     const d=await r.json();
-    if(!d.success){ const er=new Error(d.error); er.fromServer=!!d.error; throw er }
+    if(!d.success){ const er=new Error(d.error); er.fromServer=!!d.error; er.reason=d.reason||''; throw er }
     RES_SRC=r.headers.get('X-Source')==='banner'?'banner':'';
     RES_ALLCOL=RES_SRC==='banner'&&r.headers.get('X-Banner-Colleges')==='all';
     allCourses=d.courses;RES_ANIM=true;RES_EXP.clear();renderResults();setStatus(`${d.count} ${t('courseUnit')}`);
@@ -3100,10 +3109,13 @@ async function doSearch(){
     showLoading(false);setStatus(LANG==='ar'?'خطأ':'Error');
     dataAge(null);
     const b=document.getElementById('initialBox');b.classList.add('visible');
-    b.querySelector('.state-icon').textContent='❌';
-    b.querySelector('.state-title').textContent=t('errConn');
-    /* «مزحوم — جرّب بعد دقيقة» · «موقع الجامعة مو متاح لنا الحين» من السيرفر نفسه أوضح من العام */
-    b.querySelector('.state-sub').textContent=(LANG==='ar'&&e&&e.fromServer&&e.message)?e.message:t('errConnSub');
+    /* موقع جدول الجامعة واقف (reason من السيرفر): كان «خطأ في الاتصال» و«PMU token timeout» — والطالب يحسبه منّا */
+    const pmuDown=!!(e&&e.reason==='pmu-down');
+    b.querySelector('.state-icon').textContent=pmuDown?'🏛️':'❌';
+    b.querySelector('.state-title').textContent=t(pmuDown?'errPmuT':'errConn');
+    /* «مزحوم — جرّب بعد دقيقة» · «موقع الجامعة مو متاح لنا الحين» من السيرفر نفسه أوضح من العام. والجامعة واقفة:
+       العنوان يقولها، فالسطر تحته «المشكلة من الجامعة» بس (رسالة السيرفر تعيد العنوان) */
+    b.querySelector('.state-sub').textContent=pmuDown?t('errPmuS'):(LANG==='ar'&&e&&e.fromServer&&e.message)?e.message:t('errConnSub');
   }
 }
 
@@ -6016,6 +6028,7 @@ async function loadMonitorState(){
   try{ MON_STATE=await (await fetch(API_BASE+'/api/monitor-status')).json(); }
   catch(e){ MON_STATE=null; }
   if(MON_READY_RES){ MON_READY_RES(); MON_READY_RES=null }
+  try{ renderNotice() }catch(e){}
   poCheckUnlock();
   poHandleReturn().catch(()=>{});
   /* بطاقة التنبيه الطارئ تعتمد على هالحالة — الإعدادات المفتوحة قبل وصولها
@@ -8606,6 +8619,7 @@ async function checkBuildNow(){
                                 {cache:'no-store'})).json();
     MON_STATE=st;
     checkBuild(st);
+    try{ renderNotice() }catch(e){}
     enforceSlotAndRedraw();
   }catch(e){ /* شبكة متعثّرة لحظة الفتح — نتركها للمرة القادمة */ }
   finally{ BUILD_CHECKING=false }
@@ -8634,7 +8648,7 @@ async function resumeSync(){
     /* بصمة النسخة: المثبَّت قد يكون على بناء قديم من أيام */
     try{
       const st=await (await fetch(API_BASE+'/api/monitor-status')).json();
-      MON_STATE=st; checkBuild(st);
+      MON_STATE=st; checkBuild(st); renderNotice();
     }catch(e){}
     renderResults();renderSettings();
   }catch(e){ /* الشبكة قد تكون منقطعة لحظة الفتح — نبقي المعروض */ }
@@ -8665,6 +8679,38 @@ async function loadMonitored(){
   /* قراءة فشلت (شبكة لحظة) ما تمسح القائمة: كانت تصير [] فتختفي الأجراس وبطاقة «مراقبتك» لين القراءة الجاية */
   if(error||!Array.isArray(data))return;
   monitored=data;
+}
+
+/* ═══ إعلان فوق الموقع — من اللوحة (طلب محمد ٢٠ نوفمبر ٢٠٢٦: صيانة بانر عند الجامعة، والطلاب يحسبون البحث خربان
+   عندنا) ═══ يوصل مع حالة الموقع (MON_STATE.notice) وينشال في وقته — الرد مخزّن دقيقتين، فالصفحة تخفيه بنفسها.
+   ✕ يقفله لهالإعلان بس (رقمه v): إعلان جديد يطلع ثانية. النص من الإدارة ⇒ escapeHtml، والإنجليزي اختياري (بلاه العربي) */
+const NOTICE_OFF='pmu_notice_off';
+let NOTICE_TIMER=null;
+function noticeNow(){
+  const n=MON_STATE&&MON_STATE.notice;
+  if(!n||typeof n!=='object'||!n.ar)return null;
+  const u=Date.parse(n.until||'');
+  return Number.isFinite(u)&&u>Date.now()?n:null;
+}
+function renderNotice(){
+  const bar=document.getElementById('noticeBar');
+  if(!bar)return;
+  clearTimeout(NOTICE_TIMER); NOTICE_TIMER=null;
+  const n=noticeNow();
+  let off='';
+  try{ off=localStorage.getItem(NOTICE_OFF)||'' }catch(e){}
+  if(!n||off===String(n.v)){ bar.hidden=true; bar.innerHTML=''; return }
+  const ar=LANG==='ar';
+  bar.innerHTML='<span class="nb-t" dir="auto">'+escapeHtml(ar||!n.en?n.ar:n.en)+'</span>'+
+    '<button class="nb-x" onclick="noticeHide()" aria-label="'+(ar?'إخفاء الإعلان':'Dismiss')+'">✕</button>';
+  bar.hidden=false;
+  /* ينشال في وقته والصفحة مفتوحة (setTimeout ما يقبل أبعد من ٢٤ يوماً — نعيد الحساب كل يوم) */
+  NOTICE_TIMER=setTimeout(renderNotice,Math.min(864e5,Date.parse(n.until)-Date.now()+500));
+}
+function noticeHide(){
+  const n=noticeNow();
+  try{ if(n)localStorage.setItem(NOTICE_OFF,String(n.v)) }catch(e){}
+  renderNotice();
 }
 
 /* شريط ثابت أعلى كل الصفحات — حالتان يستحيل اجتماعهما،
@@ -10579,6 +10625,7 @@ addedTo:'✓ أضفت',removed:'أزلت',toSchedule:'للجدول',
 cantAdd:'🔒 ما تقدر تسجلها — ينقصك:',addedButClash:'⚠️ أضفتها — بس تتعارض مع',
 clearedSched:'مسحت الجدول',markedAnyway:'سجّلتها كمكتملة رغم إن متطلبها ناقص',
 errConn:'خطأ في الاتصال',errConnSub:'السيرفر قد يكون نايم — انتظر 30 ثانية وجرب مرة ثانية',
+errPmuT:'موقع جدول الجامعة ما يرد',errPmuS:'المشكلة من الجامعة مو من جدولك — جرّب بعد شوي.',
 crn:'CRN',sec:'شعبة',
 days:{U:'الأحد',M:'الاثنين',T:'الثلاثاء',W:'الأربعاء',R:'الخميس',F:'الجمعة',S:'السبت'},
 daysShort:{U:'أحد',M:'اثنين',T:'ثلاثاء',W:'أربعاء',R:'خميس',F:'جمعة',S:'سبت'},
@@ -10755,6 +10802,7 @@ addedTo:'✓ Added',removed:'Removed',toSchedule:'to schedule',
 cantAdd:'🔒 Cannot register — you need:',addedButClash:'⚠️ Added — but conflicts with',
 clearedSched:'Schedule cleared',markedAnyway:'Marked complete although a prerequisite is missing',
 errConn:'Connection error',errConnSub:'The server may be asleep — wait 30 seconds and try again',
+errPmuT:'University schedule site is down',errPmuS:'The problem is on the university side, not Jadwalik — try again later.',
 crn:'CRN',sec:'Sec',
 days:{U:'Sunday',M:'Monday',T:'Tuesday',W:'Wednesday',R:'Thursday',F:'Friday',S:'Saturday'},
 daysShort:{U:'Sun',M:'Mon',T:'Tue',W:'Wed',R:'Thu',F:'Fri',S:'Sat'},
@@ -10876,6 +10924,7 @@ function applyLang(){
   setPlanTitle();
   if(FINALS)renderFinals();
   if(typeof fsOpen==='function'&&fsOpen()){ FS.dataUrl=''; FS.file=null; fsPrintClear(); fsPaint(); fsBuild() }
+  try{ renderNotice() }catch(e){}
   try{ moveTabInd(true) }catch(e){}           /* الاتجاه انقلب (عربي ⇄ إنجليزي) — الخط لمكانه */
 }
 
