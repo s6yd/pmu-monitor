@@ -127,6 +127,13 @@ padding:14px;margin-bottom:12px}
 .maint.on .maint-t{color:var(--warn)}
 .maint-s{font-size:11.5px;color:var(--text2);margin-top:5px;line-height:1.6}
 .maint-msg{margin-top:11px;padding:9px 11px;background:var(--bg);border-radius:9px;font-size:12px;color:var(--text2);line-height:1.7}
+/* إعلان فوق الموقع — الخانات 16px: سفاري الجوال يزوّم على الأصغر */
+.maint.nt-on{background:rgba(61,111,255,.10);border-color:rgba(61,111,255,.35)}
+.maint.nt-on .maint-t{color:var(--accent2)}
+.nt-form{margin-top:12px;display:grid;gap:8px}
+.nt-form textarea{width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);
+border-radius:9px;color:var(--text);font-family:inherit;font-size:16px;line-height:1.6;padding:8px 10px;
+resize:vertical;min-height:58px}
 .mon-grid{margin-top:12px;padding-top:11px;border-top:1px solid var(--border)}
 .mon-row{display:flex;justify-content:space-between;gap:12px;padding:6px 0;
 font-size:12px;line-height:1.7;align-items:flex-start}
@@ -615,6 +622,9 @@ function paintAuto(){
 }
 function autoTick(){
   if(!AUTO||document.hidden||loading)return;
+  /* تكتب في خانة بـ«النظام» (الإعلان · الأسعار · الموسم)؟ التحديث يعيد رسمها ويقفل لوحة المفاتيح — ننتظرك */
+  const a=document.activeElement, sys=document.getElementById('sysBody');
+  if(a&&sys&&sys.contains(a)&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))return;
   loadAll(true);
 }
 document.addEventListener('visibilitychange',()=>{ if(AUTO&&!document.hidden)autoTick() });
@@ -2406,6 +2416,30 @@ async function toggleBeta(on){
   }catch(e){ toast(e.message,'err') }
 }
 
+/* ══ إعلان فوق الموقع ══ المسودّة تحفظ اللي كتبته: البطاقة تنرسم من جديد مع كل تحديث (تلقائي أو بعد أي زر) */
+let NT_DRAFT=null;
+function ntInput(){ const e=document.getElementById('ntAr'); NT_DRAFT=e?e.value:null }
+async function noticePublish(){
+  ntInput();
+  const ar=(NT_DRAFT||'').trim();
+  if(!ar){ toast('اكتب نص الإعلان','err'); return }
+  if(!confirm('يطلع هالإعلان فوق الموقع لكل الزوار لين تطفيه؟\n\n'+ar))return;
+  try{
+    await api('site-notice',{body:{ar}});
+    NT_DRAFT=null;
+    toast('📢 الإعلان منشور — يبان للطلاب خلال دقيقتين','ok');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+async function noticeOff(){
+  if(!confirm('تطفي الإعلان من فوق الموقع؟'))return;
+  try{
+    await api('site-notice',{body:{on:false}});
+    toast('طفّيت الإعلان — يختفي عند الطلاب خلال دقيقتين','ok');
+    await loadAll();
+  }catch(e){ toast(e.message,'err') }
+}
+
 async function toggleFinals(on){
   if(on){
     if(!confirm('تشغيل جدول النهائيات؟ تأكد أن الجامعة نشرت جدول الترم الحالي — وإلا بيشوف الطلاب جدول الترم الماضي.'))return;
@@ -2729,6 +2763,27 @@ function renderSys(){
         ${mOn?'▶️ شغّل الموقع':'⏸️ اقفل الموقع'}</button>
     </div>
     ${mOn&&h.maintenanceMsg?`<div class="maint-msg">${esc(h.maintenanceMsg)}</div>`:''}
+  </div>`;
+
+  /* ── إعلان فوق الموقع ── سطر فوق كل الشاشات والموقع شغّال (غير الصيانة): تحطه وتطفيه من هنا */
+  const N=h.siteNotice||null, nLive=!!h.siteNoticeLive;
+  const ntText=NT_DRAFT!==null?NT_DRAFT:(N&&N.ar)||'';
+  const notice=`<div class="maint ${nLive?'nt-on':''}" id="ntCard">
+    <div class="maint-top">
+      <div>
+        <div class="maint-t">${nLive?'📢 الإعلان طالع فوق الموقع':'📢 إعلان فوق الموقع'}</div>
+        <div class="maint-s">${nLive
+          ?'يشوفه كل زائر فوق كل الشاشات لين تطفيه. والطالب يقدر يقفله عنده بـ✕.'
+          :'سطر صغير فوق كل الشاشات والموقع شغّال (غير «اقفل الموقع»). اكتبه وانشره، وطفّه لما تخلص.'}${
+          h.env&&h.env!=='prod'?' <b>هذي نسخة التجربة: الإعلان يطلع فيها بس.</b>':''}</div>
+      </div>
+      ${nLive?`<button class="mini no" onclick="noticeOff()">⏸️ أطفه</button>`:''}
+    </div>
+    <div class="nt-form">
+      <textarea id="ntAr" maxlength="300" rows="3" dir="auto" oninput="ntInput()" aria-label="نص الإعلان"
+        placeholder="مثال: ⚠️ أنظمة الجامعة متوقفة للصيانة لين …">${esc(ntText)}</textarea>
+      <div class="row-meta"><button class="mini go" onclick="noticePublish()">${nLive?'📢 حدّث النص':'📢 انشر'}</button></div>
+    </div>
   </div>`;
 
   /* ── الفترة المجانية ── مفتاح يوم الإطلاق */
@@ -3205,7 +3260,7 @@ function renderSys(){
     </div>
   </div>`;
 
-  box.innerHTML=maint+beta+pricing+`<div id="payCard">${payCardHTML()}</div>`+
+  box.innerHTML=maint+notice+beta+pricing+`<div id="payCard">${payCardHTML()}</div>`+
     `<div id="poLicCard">${poLicCardHTML()}</div>`+
     monCard+pwCard+cacheCard+finals+alerts+liveBox+gauge+spark+detail;
   loadPay();
