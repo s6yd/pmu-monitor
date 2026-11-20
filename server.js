@@ -363,35 +363,28 @@ let MAINT_MSG = (process.env.MAINTENANCE_MSG || '').trim();
 
 /* ═══ إعلان فوق الموقع — طلب محمد (٢٠ نوفمبر ٢٠٢٦) ═══
    صيانة بانر عند الجامعة (١٩–٢٥ نوفمبر) وقّفت موقع جدولهم، والطلاب يحسبون البحث خربان عندنا: «ودي نحط اعلان صغير
-   فوق في موقعنا عن انه المشكلة مو من عندنا». سطر رفيع فوق كل الشاشات، يكتبه وينشره من اللوحة («النظام» ←
-   «📢 إعلان فوق الموقع») **وينتهي لحاله في وقت يختاره** (إلزامي — إعلان منسي يبقى أسابيع). **غير وضع الصيانة**: ذاك
-   يقفل الموقع، وهذا سطر والموقع شغّال. لكل بيئة إعلانها (مع الحالة بمفتاحها)، ويوصل الصفحة مع حالة الموقع
-   (`/api/monitor-status` — مخزّن دقيقتين). v وقت النشر: الطالب يقفله بـ✕ لين ينشر غيره. «شيله» ينهيه الحين ويبقى
+   فوق في موقعنا عن انه المشكلة مو من عندنا» — و«خليه بس اعلان بسيط فوق اقدر احطه واطفيه من لوحة التحكم». سطر رفيع
+   فوق كل الشاشات: نص واحد، يحطه ويطفيه من اللوحة («النظام» ← «📢 إعلان فوق الموقع») — بلا وقت انتهاء ولا نص ثانٍ.
+   **غير وضع الصيانة**: ذاك يقفل الموقع، وهذا سطر والموقع شغّال. لكل بيئة إعلانها (مع الحالة بمفتاحها)، ويوصل الصفحة
+   مع حالة الموقع (`/api/monitor-status` — مخزّن دقيقتين). v وقت النشر: الطالب يقفله بـ✕ لين ينشر غيره. «أطفه» يخلّي
    نصّه للوحة (تعيد نشره بضغطة) */
-let SITE_NOTICE = null;                       /* { ar, en, until, v } */
-const NOTICE_MAX_LEN = 300, NOTICE_MAX_DAYS = 60;
+let SITE_NOTICE = null;                       /* { ar, on, v } */
+const NOTICE_MAX_LEN = 300;
 /* سطر واحد: الأسطر مسافة، وبلا محارف تحكم ولا تضمين اتجاه (اللصق من رسالة على الجوال يجيبها، والصفحة تعزل
    اتجاه النص بنفسها) */
 const noticeText = s => String(s == null ? '' : s)
   .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\ufeff]+/g, ' ')
   .replace(/\s+/g, ' ').trim();
 function noticeClean(b, now) {
-  now = now || Date.now();
-  const ar = noticeText(b && b.ar), en = noticeText(b && b.en);
-  if (!ar) return { error: 'اكتب نص الإعلان بالعربي' };
-  if (ar.length > NOTICE_MAX_LEN || en.length > NOTICE_MAX_LEN)
-    return { error: `النص طويل — ${NOTICE_MAX_LEN} حرف بالكثير` };
-  const t = Date.parse(String((b && b.until) || ''));
-  if (!Number.isFinite(t)) return { error: 'اختر متى ينتهي الإعلان' };
-  if (t <= now + 60e3) return { error: 'وقت الانتهاء فات — اختر وقتاً جاياً' };
-  if (t > now + NOTICE_MAX_DAYS * 864e5) return { error: `وقت الانتهاء بعيد — ${NOTICE_MAX_DAYS} يوم بالكثير` };
-  return { notice: { ar, en, until: new Date(t).toISOString(), v: now } };
+  const ar = noticeText(b && b.ar);
+  if (!ar) return { error: 'اكتب نص الإعلان' };
+  if (ar.length > NOTICE_MAX_LEN) return { error: `النص طويل — ${NOTICE_MAX_LEN} حرف بالكثير` };
+  return { notice: { ar, on: true, v: now || Date.now() } };
 }
-/* المعروض الحين — اللي خلص وقته ما يطلع (ونصّه يبقى للوحة) */
-function noticeLive(now) {
+/* المعروض الحين — المطفي ما يطلع (ونصّه يبقى للوحة) */
+function noticeLive() {
   const n = SITE_NOTICE;
-  if (!n || !n.ar || !(Date.parse(n.until) > (now || Date.now()))) return null;
-  return { ar: n.ar, en: n.en || '', until: n.until, v: n.v };
+  return n && n.on && n.ar ? { ar: n.ar, v: n.v } : null;
 }
 
 /* عرض جدول الاختبارات النهائية: FINALS_ENABLED=off في Render يوقفه.
@@ -3103,12 +3096,10 @@ async function restoreState() {
   if (Array.isArray(g.poLicNoted))
     for (const [id, at] of g.poLicNoted) if (isUuid(String(id))) PO_LIC.noted.set(String(id), Number(at) || 0);
   if ('bannerOn' in g) BANNER_ON = !!g.bannerOn;
-  /* إعلان فوق الموقع — بشكله وحده (النص يتنظّف ثانية · الوقت مفهوم) */
+  /* إعلان فوق الموقع — بشكله وحده (النص يتنظّف ثانية) */
   if (g.siteNotice && typeof g.siteNotice === 'object') {
-    const n = g.siteNotice, ar = noticeText(n.ar).slice(0, NOTICE_MAX_LEN), t = Date.parse(n.until);
-    if (ar && Number.isFinite(t))
-      SITE_NOTICE = { ar, en: noticeText(n.en).slice(0, NOTICE_MAX_LEN), until: new Date(t).toISOString(),
-                      v: Number(n.v) || t };
+    const n = g.siteNotice, ar = noticeText(n.ar).slice(0, NOTICE_MAX_LEN);
+    if (ar) SITE_NOTICE = { ar, on: !!n.on, v: Number(n.v) || 0 };
   }
   if (g.monSource === 'pmu' || g.monSource === 'banner') MON_SOURCE = g.monSource;
   if (Array.isArray(g.monGone)) g.monGone.forEach(k => { if (/^\d+\|\d{3,8}$/.test(String(k))) MON_GONE_TOLD.add(String(k)) });
@@ -6715,7 +6706,7 @@ async function adminHealth() {
     env: SITE_ENV,
     maintenance: MAINTENANCE,
     maintenanceMsg: MAINT_MSG,
-    /* إعلان فوق الموقع: آخر واحد (ولو انتهى — نصّه للوحة) وهل يطلع الحين */
+    /* إعلان فوق الموقع: آخر واحد (ولو مطفي — نصّه للوحة) وهل يطلع الحين */
     siteNotice: SITE_NOTICE, siteNoticeLive: !!noticeLive(),
     finalsOn: FINALS_ON,
     monitorPaused: MONITOR_PAUSED,
@@ -14089,12 +14080,12 @@ const server = http.createServer(async (req, res) => {
         return send(200, { on: FINALS_ON });
       }
 
-      /* إعلان فوق الموقع (فوق — SITE_NOTICE). on:false = «شيله»: ينتهي الحين ونصّه يبقى للوحة */
+      /* إعلان فوق الموقع (فوق — SITE_NOTICE). on:false = «أطفه»: نصّه يبقى للوحة */
       if (act === 'site-notice') {
         if (req.method === 'POST') {
           const b = await readBody(req);
           if (b && b.on === false) {
-            if (noticeLive()) SITE_NOTICE = Object.assign({}, SITE_NOTICE, { until: new Date(Date.now()).toISOString() });
+            if (SITE_NOTICE) SITE_NOTICE = Object.assign({}, SITE_NOTICE, { on: false });
           } else {
             const c = noticeClean(b);
             if (c.error) return send(400, { error: c.error });
@@ -14597,8 +14588,8 @@ const server = http.createServer(async (req, res) => {
          تشمل بصمة الخطط: الخطط صارت ملفاً منفصلاً، فتعديل خطة لا يغيّر
          الصفحة — وبلا هذا ما يوصل المثبِّت تحديث خطة أبداً. */
       build: buildTag(),
-      /* إعلان فوق الموقع من اللوحة — null لو ما فيه أو خلص وقته (والصفحة تخفيه بوقته كذلك: الرد مخزّن دقيقتين) */
-      notice: noticeLive(nowMs),
+      /* إعلان فوق الموقع من اللوحة — null لو ما فيه أو مطفي */
+      notice: noticeLive(),
       next: st.next || nextWindow(),
       dataTtlMin: Math.round(coursesTTL() / 60000),
       ar: st.ar, en: st.en,

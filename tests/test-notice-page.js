@@ -1,13 +1,14 @@
 /* إعلان فوق الموقع — الصفحة واللوحة في Chromium على ٣٩٠ (طلب محمد ٢٠ نوفمبر ٢٠٢٦: «ودي نحط اعلان صغير فوق في موقعنا عن
-   انه المشكلة مو من عندنا» — صيانة بانر عند الجامعة وقّفت موقع جدولهم).
+   انه المشكلة مو من عندنا» ثم «خليه بس اعلان بسيط فوق اقدر احطه واطفيه من لوحة التحكم» — صيانة بانر عند الجامعة).
    الصفحة (بالثيمين):
    ١) الإعلان من حالة الموقع يطلع سطراً فوق الشريط العلوي (ما يغطيه)، نصّه **مهرّب** (من الإدارة)، وبلا تمرير أفقي.
-   ٢) ✕ يقفله لهالإعلان بس: يبقى مقفول بعد التحميل، وإعلان جديد (رقم ثاني) يطلع.
-   ٣) الإنجليزي: نصّه، وبلاه العربي.   ٤) ينشال لحاله في وقته والصفحة مفتوحة.   ٥) ما يطلع في الطباعة.
+   ٢) ✕ يقفله لهالإعلان بس: يبقى مقفول بعد التحميل، وإعلان جديد (رقم ثاني) يطلع.   ٣) الإنجليزي: نفس النص.
+   ٤) أطفاه ⇒ يختفي مع الحالة الجديدة.   ٥) ما يطلع في الطباعة.
    ٦) البحث وموقع الجامعة واقف (reason من السيرفر): «موقع جدول الجامعة ما يرد» و«المشكلة من الجامعة» — لا «خطأ في الاتصال»
       و«PMU token timeout».
    اللوحة («النظام»):
-   ٧) البطاقة تقول إنه طالع ولين متى، ونصّه، و«شيله».   ٨) النشر يرسل النص والوقت (ISO من وقت الجوال)، وبلا نص ما يرسل.
+   ٧) طالع: البطاقة تقولها ونصّه في الخانة (مهرّب) و«أطفه». مطفي: «إعلان فوق الموقع» ونصّه الأخير في الخانة وبلا «أطفه».
+   ٨) «انشر» يرسل النص وبس، وبلا نص ما يرسل. «أطفه» يرسل on:false.
    ٩) اللي تكتبه يبقى مع إعادة الرسم، والتحديث التلقائي ما يمسحه وأنت تكتب.
    SHOT_DIR للصور.   node tests/test-notice-page.js [pmu-schedule.html] [admin.html] */
 const { chromium } = require('playwright');
@@ -29,7 +30,6 @@ const refresh = pg => pg.evaluate(async () => { MON_STATE = await (await fetch('
   if (typeof renderNotice === 'function') renderNotice() });
 
 const AR = '⚠️ أنظمة الجامعة (بانر وموقع جدول المواد) متوقفة للصيانة لين الأربعاء 25 نوفمبر الساعة 8 الصبح — المشكلة من الجامعة <b>مو منّا</b>.';
-const EN = 'University systems are down for maintenance until Wed 25 Nov, 8 AM.';
 const ST = { notice: null, courses: 'down' };
 const status = () => ({ active: false, reason: 'offseason', env: 'prod', freeBeta: true, term: '202710', regTerm: '202710',
   nextRegTerm: '202720', canWatch: false, window: null, build: '"x"', notice: ST.notice,
@@ -58,8 +58,8 @@ const SUPA = 'window.supabase={createClient:()=>({auth:{getSession:async()=>({da
   'channel:()=>({on(){return this},subscribe(){return this}}),' +
   'storage:{from:()=>({list:async()=>({data:[],error:null})})}})};';
 
-async function openPage(browser, theme, ctx) {
-  ctx = ctx || await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: theme });
+async function openPage(browser, theme) {
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: theme });
   const page = await ctx.newPage();
   await page.route('**/fonts.googleapis.com/**', r => r.fulfill({ status: 200, contentType: 'text/css', body: '' }));
   await page.route('**/cdn.jsdelivr.net/**', r => r.fulfill({ status: 200, contentType: 'application/javascript', body: SUPA }));
@@ -67,11 +67,15 @@ async function openPage(browser, theme, ctx) {
   page.on('pageerror', e => errs.push(String(e)));
   await page.addInitScript(t => { try { localStorage.setItem('theme', t); localStorage.setItem('pmu_seen_guide', 'true') } catch (e) {} }, theme);
   await page.goto(`http://127.0.0.1:${server.address().port}/`, { waitUntil: 'load' });
-  await page.waitForFunction(() => typeof window.doSearch === 'function' && window.MON_STATE !== undefined, null, { timeout: 15000 }).catch(() => {});
-  await page.waitForFunction(() => !!MON_STATE, null, { timeout: 5000 }).catch(() => {});
+  await page.waitForFunction(() => typeof window.doSearch === 'function' && !!window.MON_STATE, null, { timeout: 15000 }).catch(() => {});
   await wait(200);
   return { page, errs, ctx };
 }
+const reload = async page => {
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForFunction(() => !!window.MON_STATE, null, { timeout: 5000 }).catch(() => {});
+  await wait(200);
+};
 const bar = page => page.evaluate(() => {
   const b = document.getElementById('noticeBar'), tb = document.querySelector('.topbar');
   if (!b) return { missing: true, shown: false, text: '', bold: false, below: -1, xHit: false, xw: 0, xh: 0, over: 0 };
@@ -88,12 +92,11 @@ const bar = page => page.evaluate(() => {
   await new Promise(r => server.listen(0, r));
   const browser = await chromium.launch();
   const shots = process.env.SHOT_DIR;
-  const until = () => new Date(Date.now() + 3 * 864e5).toISOString();
 
   for (const theme of ['dark', 'light']) {
     /* ١ */
-    ST.notice = { ar: AR, en: EN, until: until(), v: 1001 };
-    let { page, errs, ctx } = await openPage(browser, theme);
+    ST.notice = { ar: AR, v: 1001 };
+    const { page, errs, ctx } = await openPage(browser, theme);
     let b = await bar(page);
     ok(b.shown && b.text === AR, `[${theme}] **الإعلان من حالة الموقع يطلع فوق** — ${JSON.stringify(b)}`);
     ok(!b.bold && b.text.includes('<b>'), `[${theme}] نصّه مهرّب (من الإدارة — الوسوم نص لا HTML)`);
@@ -104,12 +107,7 @@ const bar = page => page.evaluate(() => {
     /* ٣ */
     await page.evaluate(() => toggleLang());
     b = await bar(page);
-    ok(b.shown && b.text === EN, `[${theme}] الإنجليزي: نصّه — ${b.text}`);
-    if (shots && theme === 'dark') await page.screenshot({ path: path.join(shots, `notice-en-${theme}.png`) });
-    ST.notice = { ar: AR, en: '', until: until(), v: 1001 };
-    await refresh(page);
-    b = await bar(page);
-    ok(b.shown && b.text === AR, `[${theme}] وبلا إنجليزي: العربي — ${b.text.slice(0, 30)}`);
+    ok(b.shown && b.text === AR, `[${theme}] الإنجليزي: نفس النص — ${b.text.slice(0, 30)}`);
     await page.evaluate(() => toggleLang());
     /* ٥ */
     await page.emulateMedia({ media: 'print' });
@@ -118,29 +116,17 @@ const bar = page => page.evaluate(() => {
     await page.emulateMedia({ media: 'screen' });
     /* ٢ */
     await click(page, '#noticeBar .nb-x');
-    b = await bar(page);
-    ok(!b.shown, `[${theme}] **✕ يقفله**`);
-    await page.reload({ waitUntil: 'load' });
-    await page.waitForFunction(() => !!MON_STATE, null, { timeout: 5000 }).catch(() => {});
-    await wait(200);
-    b = await bar(page);
-    ok(!b.shown, `[${theme}] ويبقى مقفول بعد التحميل (لهالإعلان)`);
-    ST.notice = { ar: 'إعلان ثاني', en: '', until: until(), v: 2002 };
-    await page.reload({ waitUntil: 'load' });
-    await page.waitForFunction(() => !!MON_STATE, null, { timeout: 5000 }).catch(() => {});
-    await wait(200);
+    ok(!(await bar(page)).shown, `[${theme}] **✕ يقفله**`);
+    await reload(page);
+    ok(!(await bar(page)).shown, `[${theme}] ويبقى مقفول بعد التحميل (لهالإعلان)`);
+    ST.notice = { ar: 'إعلان ثاني', v: 2002 };
+    await reload(page);
     b = await bar(page);
     ok(b.shown && b.text === 'إعلان ثاني', `[${theme}] **وإعلان جديد يطلع** — ${JSON.stringify(b.text)}`);
     /* ٤ */
-    ST.notice = { ar: 'ينتهي بعد شوي', en: '', until: new Date(Date.now() + 1500).toISOString(), v: 3003 };
-    await refresh(page);
-    const b1 = await bar(page);
-    await wait(2600);
-    const b2 = await bar(page);
-    ok(b1.shown && !b2.shown, `[${theme}] **ينشال لحاله في وقته والصفحة مفتوحة** — ${b1.shown}→${b2.shown}`);
     ST.notice = null;
     await refresh(page);
-    ok(!(await bar(page)).shown, `[${theme}] بلا إعلان: ما فيه شريط`);
+    ok(!(await bar(page)).shown, `[${theme}] **أطفاه: يختفي مع الحالة الجديدة**`);
 
     /* ٦ */
     ST.courses = 'down';
@@ -165,7 +151,6 @@ const bar = page => page.evaluate(() => {
 
   /* ═══ اللوحة ═══ */
   const A = { health: 0, posts: [], live: true };
-  const NOW = Date.now();
   const adm = http.createServer((req, res) => {
     const u = req.url.split('?')[0];
     if (u === '/' || u === '/admin.html') { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); return res.end(fs.readFileSync(ADMIN)) }
@@ -174,8 +159,7 @@ const bar = page => page.evaluate(() => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       if (u.endsWith('/health')) { A.health++;
         return res.end(JSON.stringify({ env: 'prod', telegramOk: true, warnings: [], cache: [], uptimeHours: 1, cycles: [], lastCycle: {},
-          siteNotice: { ar: 'إعلان <i>شغّال</i>', en: '', until: new Date(NOW + 2 * 864e5).toISOString(), v: 5 },
-          siteNoticeLive: A.live })) }
+          siteNotice: { ar: 'إعلان <i>شغّال</i>', on: A.live, v: 5 }, siteNoticeLive: A.live })) }
       if (u.endsWith('/site-notice')) { A.posts.push(JSON.parse(body || '{}')); return res.end(JSON.stringify({ live: true })) }
       if (u.endsWith('/monitors')) return res.end(JSON.stringify({ monitors: [] }));
       if (u.endsWith('/users')) return res.end(JSON.stringify({ users: [] }));
@@ -193,31 +177,35 @@ const bar = page => page.evaluate(() => {
   await ap.evaluate(() => { sessionStorage.setItem('jdw_admin', 'x'.repeat(16)) });
   await ap.reload({ waitUntil: 'load' });
   await ap.waitForFunction(() => typeof window.renderSys === 'function' && !!HEALTH, null, { timeout: 15000 }).catch(() => {});
-  const card = () => ap.evaluate(() => { go('sys'); renderSys(); const c = document.getElementById('ntCard');
-    return c ? { text: c.innerText, italic: !!c.querySelector('.maint-msg i'), off: !!c.querySelector('button[onclick="noticeOff()"]') } : null });
+  const card = () => ap.evaluate(() => { go('sys'); renderSys(); const c = document.getElementById('ntCard'), t = document.getElementById('ntAr');
+    return c ? { text: c.innerText, val: t ? t.value : null, tags: !!c.querySelector('i'),
+      off: !!c.querySelector('button[onclick="noticeOff()"]') } : null });
+  /* ٧ */
   let cd = await card();
-  ok(cd && /الإعلان طالع فوق الموقع/.test(cd.text) && /لين/.test(cd.text) && cd.text.includes('إعلان <i>شغّال</i>') && !cd.italic && cd.off,
-    '**اللوحة: البطاقة تقول إنه طالع ولين متى، ونصّه (مهرّب)، و«شيله»** — ' + (cd && cd.text.slice(0, 140)));
+  ok(cd && /الإعلان طالع فوق الموقع/.test(cd.text) && /لين تطفيه/.test(cd.text) && cd.val === 'إعلان <i>شغّال</i>' && !cd.tags && cd.off,
+    '**اللوحة: طالع — البطاقة تقولها ونصّه في الخانة (مهرّب) و«أطفه»** — ' + JSON.stringify(cd));
   if (shots && cd) { await ap.evaluate(() => document.getElementById('ntCard').scrollIntoView()); await ap.screenshot({ path: path.join(shots, 'notice-admin.png') }) }
+  A.live = false;
+  await ap.evaluate(async () => { await loadAll() });
+  cd = await card();
+  ok(cd && /📢 إعلان فوق الموقع/.test(cd.text) && !/طالع/.test(cd.text) && !cd.off && cd.val === 'إعلان <i>شغّال</i>',
+    'مطفي: «إعلان فوق الموقع» ونصّه الأخير في الخانة (تعيد نشره) وبلا «أطفه» — ' + JSON.stringify(cd));
   /* ٨ */
   await fill(ap, '#ntAr', '');
   await click(ap, '#ntCard .nt-form button');
   await wait(200);
   ok(A.posts.length === 0, 'بلا نص: ما يرسل شي');
   await fill(ap, '#ntAr', 'أنظمة الجامعة متوقفة');
-  await fill(ap, '#ntEn', 'University systems are down');
-  await fill(ap, '#ntUntil', '2026-11-25T08:00');
-  const iso = await ap.evaluate(() => new Date('2026-11-25T08:00').toISOString());
   await click(ap, '#ntCard .nt-form button');
   await wait(400);
-  const p = A.posts[A.posts.length - 1] || {};
-  ok(p.ar === 'أنظمة الجامعة متوقفة' && p.en === 'University systems are down' && p.until === iso,
-    '**«انشر» يرسل النص والوقت (ISO من وقت الجوال)** — ' + JSON.stringify(p));
-  /* ٧ — شيله */
+  ok(JSON.stringify(A.posts[A.posts.length - 1]) === '{"ar":"أنظمة الجامعة متوقفة"}',
+    '**«انشر» يرسل النص وبس** — ' + JSON.stringify(A.posts[A.posts.length - 1]));
+  A.live = true;
+  await ap.evaluate(async () => { await loadAll() });
   await ap.evaluate(() => { go('sys'); renderSys() });
   await click(ap, '#ntCard button[onclick="noticeOff()"]');
   await wait(300);
-  ok(JSON.stringify(A.posts[A.posts.length - 1]) === '{"on":false}', '«شيله» يرسل on:false — ' + JSON.stringify(A.posts[A.posts.length - 1]));
+  ok(JSON.stringify(A.posts[A.posts.length - 1]) === '{"on":false}', '«أطفه» يرسل on:false — ' + JSON.stringify(A.posts[A.posts.length - 1]));
   /* ٩ */
   await fill(ap, '#ntAr', 'مسودّة ما انتشرت');
   const kept = await ap.evaluate(() => { document.activeElement && document.activeElement.blur(); renderSys();

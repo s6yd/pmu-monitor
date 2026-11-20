@@ -8682,30 +8682,24 @@ async function loadMonitored(){
 }
 
 /* ═══ إعلان فوق الموقع — من اللوحة (طلب محمد ٢٠ نوفمبر ٢٠٢٦: صيانة بانر عند الجامعة، والطلاب يحسبون البحث خربان
-   عندنا) ═══ يوصل مع حالة الموقع (MON_STATE.notice) وينشال في وقته — الرد مخزّن دقيقتين، فالصفحة تخفيه بنفسها.
-   ✕ يقفله لهالإعلان بس (رقمه v): إعلان جديد يطلع ثانية. النص من الإدارة ⇒ escapeHtml، والإنجليزي اختياري (بلاه العربي) */
+   عندنا — «خليه بس اعلان بسيط فوق اقدر احطه واطفيه من لوحة التحكم») ═══ يوصل مع حالة الموقع (MON_STATE.notice)،
+   ويختفي لما يطفيه (أول ما توصل الحالة الجديدة — مع كل رجوع للصفحة). ✕ يقفله لهالإعلان بس (رقمه v): إعلان جديد يطلع
+   ثانية. النص من الإدارة ⇒ escapeHtml، ونص واحد بالعربي في اللغتين (اتجاهه معزول — dir=auto) */
 const NOTICE_OFF='pmu_notice_off';
-let NOTICE_TIMER=null;
 function noticeNow(){
   const n=MON_STATE&&MON_STATE.notice;
-  if(!n||typeof n!=='object'||!n.ar)return null;
-  const u=Date.parse(n.until||'');
-  return Number.isFinite(u)&&u>Date.now()?n:null;
+  return n&&typeof n==='object'&&n.ar?n:null;
 }
 function renderNotice(){
   const bar=document.getElementById('noticeBar');
   if(!bar)return;
-  clearTimeout(NOTICE_TIMER); NOTICE_TIMER=null;
   const n=noticeNow();
   let off='';
   try{ off=localStorage.getItem(NOTICE_OFF)||'' }catch(e){}
   if(!n||off===String(n.v)){ bar.hidden=true; bar.innerHTML=''; return }
-  const ar=LANG==='ar';
-  bar.innerHTML='<span class="nb-t" dir="auto">'+escapeHtml(ar||!n.en?n.ar:n.en)+'</span>'+
-    '<button class="nb-x" onclick="noticeHide()" aria-label="'+(ar?'إخفاء الإعلان':'Dismiss')+'">✕</button>';
+  bar.innerHTML='<span class="nb-t" dir="auto">'+escapeHtml(n.ar)+'</span>'+
+    '<button class="nb-x" onclick="noticeHide()" aria-label="'+(LANG==='ar'?'إخفاء الإعلان':'Dismiss')+'">✕</button>';
   bar.hidden=false;
-  /* ينشال في وقته والصفحة مفتوحة (setTimeout ما يقبل أبعد من ٢٤ يوماً — نعيد الحساب كل يوم) */
-  NOTICE_TIMER=setTimeout(renderNotice,Math.min(864e5,Date.parse(n.until)-Date.now()+500));
 }
 function noticeHide(){
   const n=noticeNow();

@@ -1,12 +1,11 @@
 /* إعلان فوق الموقع — طلب محمد (٢٠ نوفمبر ٢٠٢٦: صيانة بانر عند الجامعة من ١٩ لين ٢٥ نوفمبر وقّفت موقع جدولهم، والطلاب
-   يحسبون البحث خربان عندنا — «ودي نحط اعلان صغير فوق في موقعنا عن انه المشكلة مو من عندنا»). نسخ سيرفر حقيقية و«خارج»
-   مشترك (الجدول · بانر · القاعدة · تيليغرام):
+   يحسبون البحث خربان عندنا — «ودي نحط اعلان صغير فوق في موقعنا عن انه المشكلة مو من عندنا»، ثم «خليه بس اعلان بسيط فوق
+   اقدر احطه واطفيه من لوحة التحكم»). نسخ سيرفر حقيقية و«خارج» مشترك (الجدول · بانر · القاعدة · تيليغرام):
    ١) publish — ينشره من اللوحة (برمزها وحده) ويوصل الصفحة في حالة الموقع، بنص نظيف (سطر واحد · بلا محارف تحكم ولا
-                تضمين اتجاه) ووقت انتهاء **إلزامي** (فات ⇒ لا · أبعد من ٦٠ يوم ⇒ لا)، وينحفظ مع الحالة.
-   ٢) restore — نشر جديد (نسخة جديدة على نفس القاعدة): الإعلان باقٍ بنفس رقمه (✕ الطالب يبقى مقفول).
-   ٣) expire  — خلص وقته: ما يطلع للصفحة، ونصّه باقٍ للوحة.   ٤) remove — «شيله»: ينتهي الحين ونصّه باقٍ.
-   ٥) env     — لكل بيئة إعلانها (القاعدة مشتركة): إعلان dev ما يطلع في الإنتاج.
-   ٦) search  — موقع الجدول واقف وما عندنا نسخة ولا بانر: «المشكلة من الجامعة» بدل «PMU token timeout» (وreason للصفحة).
+                تضمين اتجاه · ٣٠٠ حرف بالكثير)، وينحفظ مع الحالة، ونشر جديد للموقع ما يشيله (بنفس رقمه).
+   ٢) off     — «أطفه»: ما يطلع للصفحة، ونصّه باقٍ للوحة، ويبقى مطفي بعد نشر للموقع، ونشره ثانية برقم جديد.
+   ٣) env     — لكل بيئة إعلانها (القاعدة مشتركة): إعلان dev ما يطلع في الإنتاج.
+   ٤) search  — موقع الجدول واقف وما عندنا نسخة ولا بانر: «المشكلة من الجامعة» بدل «PMU token timeout» (وreason للصفحة).
 
    node tests/test-site-notice.js [server.js] */
 const path = require('path');
@@ -163,7 +162,6 @@ const ready = async c => {
 const base = () => ({ monitored_courses: [], profiles: [], app_events: [], user_schedule: [], pending_changes: [],
   app_state: [{ key: 'runtime', value: { toggles: { monitorPaused: true } } },
               { key: 'runtime-dev', value: { toggles: { monitorPaused: true } } }] });
-const inDays = d => new Date(Date.parse(NOW) + d * 864e5).toISOString();
 const savedOf = (st, key) => ((((st.DB.app_state || []).find(x => x.key === (key || 'runtime')) || {}).value || {}).toggles || {}).siteNotice;
 /* محارف ما تنكتب حرفياً في المصدر (§ الصفحة): نبنيها برقمها */
 const CH = n => String.fromCharCode(n);
@@ -174,68 +172,63 @@ const SCEN = {
     const st = await makeOutside({ DB: base() });
     const c = instance(st); await ready(c);
     t.eq((await c.status()).notice, null, 'قبل النشر: ما فيه إعلان في حالة الموقع');
-    let r = await c.notice({ ar: 'نص', until: inDays(2) }, {});
+    let r = await c.notice({ ar: 'نص' }, {});
     t.eq(r.status, 401, 'بلا رمز اللوحة: مرفوض');
-    r = await c.notice({ ar: '   ', until: inDays(2) });
-    t.ok(r.status === 400 && /بالعربي/.test(r.j && r.j.error), 'بلا نص عربي: «اكتب نص الإعلان بالعربي» — ' + JSON.stringify(r.j));
-    r = await c.notice({ ar: 'نص' });
-    t.ok(r.status === 400 && /متى ينتهي/.test(r.j && r.j.error), '**وقت الانتهاء إلزامي** (إعلان منسي يبقى أسابيع) — ' + JSON.stringify(r.j));
-    r = await c.notice({ ar: 'نص', until: inDays(-1) });
-    t.ok(r.status === 400 && /فات/.test(r.j && r.j.error), 'وقت فات: مرفوض');
-    r = await c.notice({ ar: 'نص', until: inDays(61) });
-    t.ok(r.status === 400 && /60 يوم/.test(r.j && r.j.error), 'أبعد من ٦٠ يوم: مرفوض');
-    r = await c.notice({ ar: 'ا'.repeat(301), until: inDays(2) });
+    r = await c.notice({ ar: '   ' });
+    t.ok(r.status === 400 && /اكتب نص الإعلان/.test(r.j && r.j.error), 'بلا نص: «اكتب نص الإعلان» — ' + JSON.stringify(r.j));
+    r = await c.notice({ ar: 'ا'.repeat(301) });
     t.ok(r.status === 400 && /طويل/.test(r.j && r.j.error), 'فوق ٣٠٠ حرف: مرفوض');
     t.eq((await c.status()).notice, null, 'والمرفوض ما ينشر شي');
 
     const raw = '⚠️ أنظمة الجامعة متوقفة' + '\n\n' + CH(0x202e) + 'للصيانة' + CH(7) + ' <b>لين</b>   الأربعاء';
-    r = await c.notice({ ar: raw, en: '  University systems are down  ', until: '2026-11-25T05:00:00.000Z' });
-    t.eq(r.status, 200, 'النشر برمز اللوحة');
+    r = await c.notice({ ar: raw });
+    t.eq(r.status, 200, '**النشر برمز اللوحة — نص وبس** (بلا وقت انتهاء)');
     const n = (await c.status()).notice || {};
     t.eq(n.ar, '⚠️ أنظمة الجامعة متوقفة للصيانة <b>لين</b> الأربعاء',
       '**يوصل الصفحة في حالة الموقع، سطراً واحداً بلا محارف تحكم ولا تضمين اتجاه** (والصفحة تهرّب الوسوم)');
-    t.eq([n.en, n.until], ['University systems are down', '2026-11-25T05:00:00.000Z'], 'والإنجليزي ووقت الانتهاء');
-    t.ok(n.v > 0, 'ورقم نسخة (v) — ✕ الطالب يقفل هالإعلان بس');
+    t.ok(n.v > 0 && Object.keys(n).sort().join() === 'ar,v', 'ومعه رقم (v) — ✕ الطالب يقفل هالإعلان بس — ' + JSON.stringify(n));
     const h = await c.health();
     t.ok(h.siteNoticeLive === true && h.siteNotice && h.siteNotice.ar === n.ar, 'اللوحة تشوفه (siteNotice · siteNoticeLive)');
     const sv = savedOf(st);
-    t.ok(sv && sv.ar === n.ar && sv.v === n.v, '**ينحفظ مع الحالة** (بلاه ينشال مع كل نشر) — ' + JSON.stringify(sv));
+    t.ok(sv && sv.ar === n.ar && sv.v === n.v && sv.on === true, '**ينحفظ مع الحالة** (بلاه ينشال مع كل نشر) — ' + JSON.stringify(sv));
     await c.stop();
 
-    /* ٢ — نشر جديد: نفس الإعلان بنفس رقمه */
     const c2 = instance(st); await ready(c2);
     const n2 = (await c2.status()).notice || {};
-    t.eq([n2.ar, n2.until, n2.v], [n.ar, n.until, n.v], '**نشر جديد للموقع: الإعلان باقٍ بنفس رقمه** (اللي قفله يبقى مقفول)');
-
-    /* ٣ — خلص وقته */
-    c2.warp(5.5 * 864e5);
+    t.eq([n2.ar, n2.v], [n.ar, n.v], '**نشر جديد للموقع: الإعلان باقٍ بنفس رقمه** (اللي قفله يبقى مقفول)');
+    c2.warp(30 * 864e5);
     await wait(150);
-    t.eq((await c2.status()).notice, null, '**خلص وقته: ما يطلع للصفحة**');
-    const h2 = await c2.health();
-    t.ok(h2.siteNoticeLive === false && h2.siteNotice && h2.siteNotice.ar === n.ar, 'ونصّه باقٍ للوحة (تعيد نشره)');
+    t.eq(((await c2.status()).notice || {}).ar, n.ar, '**ويبقى لين يطفيه** (ما ينتهي لحاله — بعد ٣٠ يوم باقٍ)');
     await c2.stop(); st.server.close();
   },
 
-  async remove(t) {
+  async off(t) {
     const st = await makeOutside({ DB: base() });
     const c = instance(st); await ready(c);
-    await c.notice({ ar: 'إعلان تجربة', until: inDays(3) });
-    t.ok(!!(await c.status()).notice, 'منشور');
+    await c.notice({ ar: 'إعلان تجربة' });
+    const n = (await c.status()).notice || {};
+    t.ok(n.ar === 'إعلان تجربة', 'منشور');
     const r = await c.notice({ on: false });
-    t.ok(r.status === 200 && r.j && r.j.live === false, '«شيله» من اللوحة');
-    t.eq((await c.status()).notice, null, '**بعد «شيله» ما يطلع للصفحة**');
+    t.ok(r.status === 200 && r.j && r.j.live === false, '«أطفه» من اللوحة');
+    t.eq((await c.status()).notice, null, '**بعد «أطفه» ما يطلع للصفحة**');
     const h = await c.health();
-    t.ok(h.siteNotice && h.siteNotice.ar === 'إعلان تجربة' && Date.parse(h.siteNotice.until) <= Date.parse(NOW) + 60e3,
-      'وينتهي الحين ونصّه باقٍ — ' + JSON.stringify(h.siteNotice));
-    const sv = savedOf(st);
-    t.ok(sv && Date.parse(sv.until) <= Date.parse(NOW) + 60e3, 'والمحفوظ منتهٍ (نشر بعده ما يرجّعه)');
-    await c.stop(); st.server.close();
+    t.ok(h.siteNoticeLive === false && h.siteNotice && h.siteNotice.ar === 'إعلان تجربة',
+      'ونصّه باقٍ للوحة (تعيد نشره بضغطة) — ' + JSON.stringify(h.siteNotice));
+    t.ok((savedOf(st) || {}).on === false, 'والمحفوظ مطفي');
+    await c.stop();
+    const c2 = instance(st); await ready(c2);
+    t.eq((await c2.status()).notice, null, '**ويبقى مطفي بعد نشر للموقع**');
+    c2.warp(3600e3); await wait(150);                      /* بعد ساعة */
+    await c2.notice({ ar: 'إعلان تجربة' });
+    const n2 = (await c2.status()).notice || {};
+    t.ok(n2.ar === 'إعلان تجربة' && n2.v !== n.v, '**ونشره ثانية يرجّعه برقم جديد** (يطلع حتى للي قفله) — ' + JSON.stringify([n.v, n2.v]));
+    await c2.stop(); st.server.close();
   },
 
   async env(t) {
     const st = await makeOutside({ DB: base() });
     const d = instance(st, { env: 'dev' }); await ready(d);
-    await d.notice({ ar: 'إعلان نسخة التجربة', until: inDays(2) });
+    await d.notice({ ar: 'إعلان نسخة التجربة' });
     t.ok(((await d.status()).notice || {}).ar === 'إعلان نسخة التجربة', 'dev: الإعلان في نسخته');
     t.ok(savedOf(st, 'runtime-dev') && !savedOf(st, 'runtime'), 'ينحفظ بمفتاح dev وحده — ' +
       JSON.stringify((st.DB.app_state || []).map(x => x.key)));

@@ -130,12 +130,10 @@ padding:14px;margin-bottom:12px}
 /* إعلان فوق الموقع — الخانات 16px: سفاري الجوال يزوّم على الأصغر */
 .maint.nt-on{background:rgba(61,111,255,.10);border-color:rgba(61,111,255,.35)}
 .maint.nt-on .maint-t{color:var(--accent2)}
-.nt-form{margin-top:12px;padding-top:11px;border-top:1px solid var(--border);display:grid;gap:7px}
-.nt-form label{font-size:12px;color:var(--text2)}
-.nt-form textarea,.nt-form input{width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);
-border-radius:9px;color:var(--text);font-family:inherit;font-size:16px;line-height:1.6;padding:8px 10px}
-.nt-form textarea{resize:vertical;min-height:58px}
-.nt-form input{color-scheme:dark}
+.nt-form{margin-top:12px;display:grid;gap:8px}
+.nt-form textarea{width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);
+border-radius:9px;color:var(--text);font-family:inherit;font-size:16px;line-height:1.6;padding:8px 10px;
+resize:vertical;min-height:58px}
 .mon-grid{margin-top:12px;padding-top:11px;border-top:1px solid var(--border)}
 .mon-row{display:flex;justify-content:space-between;gap:12px;padding:6px 0;
 font-size:12px;line-height:1.7;align-items:flex-start}
@@ -2420,38 +2418,24 @@ async function toggleBeta(on){
 
 /* ══ إعلان فوق الموقع ══ المسودّة تحفظ اللي كتبته: البطاقة تنرسم من جديد مع كل تحديث (تلقائي أو بعد أي زر) */
 let NT_DRAFT=null;
-const ntWhen=iso=>{ const d=new Date(iso); return isNaN(d)?'':d.toLocaleString('ar-u-ca-gregory-nu-latn',
-  {weekday:'long',day:'numeric',month:'long',hour:'numeric',minute:'2-digit'}) };
-/* datetime-local بوقت جوالك (بلا منطقة) */
-function ntLocal(iso){
-  const d=new Date(iso); if(isNaN(d))return '';
-  const p=n=>String(n).padStart(2,'0');
-  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-function ntInput(){
-  const v=id=>{ const e=document.getElementById(id); return e?e.value:'' };
-  NT_DRAFT={ar:v('ntAr'),en:v('ntEn'),until:v('ntUntil')};
-}
+function ntInput(){ const e=document.getElementById('ntAr'); NT_DRAFT=e?e.value:null }
 async function noticePublish(){
   ntInput();
-  const D=NT_DRAFT||{}, ar=(D.ar||'').trim();
-  if(!ar){ toast('اكتب نص الإعلان بالعربي','err'); return }
-  if(!D.until){ toast('اختر متى ينشال الإعلان','err'); return }
-  const t=new Date(D.until);
-  if(isNaN(t)){ toast('وقت الانتهاء مو مفهوم','err'); return }
-  if(!confirm('يطلع هالإعلان فوق الموقع لكل الزوار لين '+ntWhen(t.toISOString())+'؟\n\n'+ar))return;
+  const ar=(NT_DRAFT||'').trim();
+  if(!ar){ toast('اكتب نص الإعلان','err'); return }
+  if(!confirm('يطلع هالإعلان فوق الموقع لكل الزوار لين تطفيه؟\n\n'+ar))return;
   try{
-    await api('site-notice',{body:{ar,en:(D.en||'').trim(),until:t.toISOString()}});
+    await api('site-notice',{body:{ar}});
     NT_DRAFT=null;
     toast('📢 الإعلان منشور — يبان للطلاب خلال دقيقتين','ok');
     await loadAll();
   }catch(e){ toast(e.message,'err') }
 }
 async function noticeOff(){
-  if(!confirm('تشيل الإعلان من فوق الموقع الحين؟'))return;
+  if(!confirm('تطفي الإعلان من فوق الموقع؟'))return;
   try{
     await api('site-notice',{body:{on:false}});
-    toast('شلت الإعلان — يختفي عند الطلاب خلال دقيقتين','ok');
+    toast('طفّيت الإعلان — يختفي عند الطلاب خلال دقيقتين','ok');
     await loadAll();
   }catch(e){ toast(e.message,'err') }
 }
@@ -2781,31 +2765,24 @@ function renderSys(){
     ${mOn&&h.maintenanceMsg?`<div class="maint-msg">${esc(h.maintenanceMsg)}</div>`:''}
   </div>`;
 
-  /* ── إعلان فوق الموقع ── سطر فوق كل الشاشات والموقع شغّال (غير الصيانة)، وينشال لحاله في وقته */
-  const N=h.siteNotice||null, nLive=!!h.siteNoticeLive, ND=NT_DRAFT||{};
-  const ntVal=k=>ND[k]!==undefined?ND[k]:!N?'':k==='until'?(nLive?ntLocal(N.until):''):(N[k]||'');
+  /* ── إعلان فوق الموقع ── سطر فوق كل الشاشات والموقع شغّال (غير الصيانة): تحطه وتطفيه من هنا */
+  const N=h.siteNotice||null, nLive=!!h.siteNoticeLive;
+  const ntText=NT_DRAFT!==null?NT_DRAFT:(N&&N.ar)||'';
   const notice=`<div class="maint ${nLive?'nt-on':''}" id="ntCard">
     <div class="maint-top">
       <div>
         <div class="maint-t">${nLive?'📢 الإعلان طالع فوق الموقع':'📢 إعلان فوق الموقع'}</div>
         <div class="maint-s">${nLive
-          ?`يشوفه كل زائر فوق كل الشاشات لين <b>${esc(ntWhen(N.until))}</b> وبعدها ينشال لحاله. والطالب يقدر يقفله بـ✕.`
-          :`سطر صغير فوق كل الشاشات والموقع شغّال (غير «اقفل الموقع»)، وينشال لحاله في الوقت اللي تختاره.${
-            N&&N.ar?' آخر إعلان خلص — نصّه تحت لو تبي تنشره ثانية.':''}`}${
+          ?'يشوفه كل زائر فوق كل الشاشات لين تطفيه. والطالب يقدر يقفله عنده بـ✕.'
+          :'سطر صغير فوق كل الشاشات والموقع شغّال (غير «اقفل الموقع»). اكتبه وانشره، وأطفه لما تخلص.'}${
           h.env&&h.env!=='prod'?' <b>هذي نسخة التجربة: الإعلان يطلع فيها بس.</b>':''}</div>
       </div>
-      ${nLive?`<button class="mini no" onclick="noticeOff()">🗑️ شيله</button>`:''}
+      ${nLive?`<button class="mini no" onclick="noticeOff()">⏸️ أطفه</button>`:''}
     </div>
-    ${nLive?`<div class="maint-msg" dir="auto">${esc(N.ar)}</div>`:''}
     <div class="nt-form">
-      <label for="ntAr">النص بالعربي</label>
-      <textarea id="ntAr" maxlength="300" rows="3" dir="auto" oninput="ntInput()"
-        placeholder="مثال: ⚠️ أنظمة الجامعة متوقفة للصيانة لين …">${esc(ntVal('ar'))}</textarea>
-      <label for="ntEn">بالإنجليزي — اختياري (بلاه يطلع العربي لمن الموقع عنده إنجليزي)</label>
-      <textarea id="ntEn" maxlength="300" rows="2" dir="auto" oninput="ntInput()">${esc(ntVal('en'))}</textarea>
-      <label for="ntUntil">ينشال لحاله في</label>
-      <input id="ntUntil" type="datetime-local" value="${esc(ntVal('until'))}" oninput="ntInput()">
-      <div class="row-meta"><button class="mini go" onclick="noticePublish()">${nLive?'📢 حدّث الإعلان':'📢 انشر'}</button></div>
+      <textarea id="ntAr" maxlength="300" rows="3" dir="auto" oninput="ntInput()" aria-label="نص الإعلان"
+        placeholder="مثال: ⚠️ أنظمة الجامعة متوقفة للصيانة لين …">${esc(ntText)}</textarea>
+      <div class="row-meta"><button class="mini go" onclick="noticePublish()">${nLive?'📢 حدّث النص':'📢 انشر'}</button></div>
     </div>
   </div>`;
 
