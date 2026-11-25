@@ -161,6 +161,10 @@ const run = async (name, args, who) => aiRunTool(name, args || {}, who === 'gues
   ok(nx.off && nx.off.start === '2026-11-22' && nx.off.daysLeft === 3, '**أقرب إجازة: منتصف الترم بعد 3 أيام** — ' + JSON.stringify(nx.off));
   ok(nx.exam && nx.exam.start === '2026-12-20' && nx.exam.daysLeft === 31, 'وأقرب نهائيات: 20 ديسمبر');
   ok(nx.reg && nx.reg.start === '2027-01-10' && nx.reg.termName === 'ربيع 2026/2027', '**وأقرب تسجيل: الربيع 10 يناير**');
+  /* أقساط الرسوم — طلب الطلاب عبر محمد (٢٥ نوفمبر ٢٠٢٦): «متى آخر يوم للسداد؟» من نفس التقويم، بالغرامة وبلا مبلغ */
+  ok(nx.pay && nx.pay.start === '2026-12-01' && nx.pay.end === '2026-12-10' && nx.pay.daysLeft === 12 &&
+     /القسط الثالث/.test(nx.pay.ar || '') && /750/.test(nx.pay.ar || ''),
+     '**وأقرب قسط رسوم: الثالث 1–10 ديسمبر، باقي 12 يوم، ومعه غرامة التأخير** — ' + JSON.stringify(nx.pay));
   const w = ev.find(e => e.start === '2026-11-05') || {};
   ok(w.when === 'past' && !('daysLeft' in w), 'وموعد فات «past» بلا «باقي»');
   NOW = '2026-11-23T09:00:00Z';
