@@ -1694,7 +1694,7 @@ white-space:nowrap;flex-shrink:0;padding:3px 9px;border-radius:20px;
 background:var(--bg);border:1px solid var(--border)}
 .cal-row.soon .cal-badge{color:var(--warn);border-color:rgba(245,158,11,.35);background:var(--warn-bg)}
 .cal-row.live .cal-badge{color:var(--open);border-color:rgba(16,185,129,.35);background:var(--open-bg)}
-.cal-row.warn .cal-name{color:var(--warn)}
+.cal-row.warn .cal-name,.cal-row.pay .cal-name{color:var(--warn)}   /* قسط الرسوم حرج مثل warn — بعده غرامة */
 .cal-row.exam .cal-name{color:var(--close)}
 
 /* ---- أرقام التسجيل (CRN) ---- */
@@ -2142,7 +2142,7 @@ display:flex;justify-content:space-between;font-size:6pt;color:#9aa3b0}
     <div class="fin-head">
       <div>
         <div class="fin-title" data-i18n="calTitle">🗓️ مواعيد تهمك</div>
-        <div class="fin-sub" data-i18n="calSub">من التقويم الأكاديمي المعتمد</div>
+        <div class="fin-sub" data-i18n="calSub">من التقويم الأكاديمي المعتمد وجدول سداد الرسوم</div>
       </div>
       <button class="cal-fold" id="calFold" onclick="toggleCal()" style="display:none">›</button>
     </div>
@@ -6199,7 +6199,7 @@ function updateFbCount(){
    يأتي من السيرفر عبر /calendar.js (يُحمَّل قبل هذا السكربت) — مصدر واحد
    للصفحة والتنبيهات. كان هنا نسخة ثانية تختلف عن نسخة السيرفر، فتحذيرات
    الحرمان في تلقرام كانت بتنحسب على غير ما يعرضه الموقع. */
-const CAL_ICON={reg:'📝',start:'🎓',add:'🔁',off:'🌴',warn:'⚠️',exam:'📕',note:'📌'};
+const CAL_ICON={reg:'📝',start:'🎓',add:'🔁',off:'🌴',warn:'⚠️',exam:'📕',note:'📌',pay:'💳'};
 
 /* REG_CAL — تواريخ التسجيل حسب المستوى انتقلت لـshared/plans.js وتُحمَّل من /plans.js —
    مصدر واحد للصفحة والسيرفر. لا تعرّفها هنا مرة ثانية. */
@@ -10577,10 +10577,10 @@ optGroup:'⚪ اختيارية — لك الخيار تنزلها أو تأجل�
 unlocks:'يفتح',unlocks2:'مادة',
 acctSection:'الحساب',legalAbout:'عن جدولك',legalPrivacy:'سياسة الخصوصية',legalTerms:'الشروط والأحكام',
 legalNote:'موقع مستقل غير تابع لجامعة الأمير محمد بن فهد',
-calTitle:'🗓️ مواعيد تهمك',calSub:'من التقويم الأكاديمي المعتمد',
+calTitle:'🗓️ مواعيد تهمك',calSub:'من التقويم الأكاديمي المعتمد وجدول سداد الرسوم',
 calNow:'جارٍ الآن',calToday:'اليوم',calTomorrow:'بكرة',calIn:'بعد',calDays:'يوم',
 calDone:'ما في مواعيد قادمة في التقويم الحالي.',
-calSource:'المصدر: التقويم الأكاديمي المعتمد 2026/2027. التقويم قابل للتعديل — راجع موقع الجامعة.',
+calSource:'المصدر: التقويم الأكاديمي المعتمد وجدول سداد الرسوم 2026/2027 (مبلغ القسط حسب فئتك في إيميل الجامعة). المواعيد قابلة للتعديل — راجع موقع الجامعة.',
 tapTip:'👆 <b>اضغط أي مادة</b> عشان تشوف شعبها وأوقاتها في ترم التسجيل القادم',
 retakeBadge:'أعدها',
 internOnly:'🎓 <b>التطبيق العملي ينزل لحاله</b> — ما ينفع تسجّل معه أي مادة ثانية.',
@@ -10754,10 +10754,10 @@ optGroup:'⚪ Optional — take them or postpone',
 unlocks:'unlocks',unlocks2:'courses',
 acctSection:'Account',legalAbout:'About',legalPrivacy:'Privacy Policy',legalTerms:'Terms of Service',
 legalNote:'An independent site, not affiliated with Prince Mohammad Bin Fahd University',
-calTitle:'🗓️ Dates that matter',calSub:'From the official academic calendar',
+calTitle:'🗓️ Dates that matter',calSub:'From the official academic calendar and tuition schedule',
 calNow:'Now',calToday:'Today',calTomorrow:'Tomorrow',calIn:'in',calDays:'days',
 calDone:'No upcoming dates in the current calendar.',
-calSource:'Source: official 2026/2027 academic calendar. Dates may change — check the university website.',
+calSource:'Source: official 2026/2027 academic calendar and tuition payment schedule (your installment amount is in the university email). Dates may change — check the university website.',
 tapTip:'👆 <b>Tap any course</b> to see its sections and times for the upcoming term',
 retakeBadge:'Retake',
 internOnly:'🎓 <b>Internship is taken alone</b> — you cannot register any other course with it.',

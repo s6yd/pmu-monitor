@@ -1635,7 +1635,7 @@ sections:[
  {t:'اطبع جدولك',d:'<b>🖨️ اطبع</b> يطلع ورقة واحدة منظّمة — شبكة أسبوعية ملوّنة تبيّن فراغاتك، ومعها اختباراتك النهائية.'},
  {t:'اختباراتك النهائية',d:'اضغط <b>اعرض</b> تحت «اختباراتك النهائية» — موعد وقاعة كل اختبار، وتنبيه لو صار اختبارين بنفس الوقت.'},
  {t:'انشر اختباراتك لقروبك',isNew:1,d:'تحت «اختباراتك النهائية» اضغط <b>📤 شارك جدول اختباراتك</b>: صورة مرتبة فيها أيام اختباراتك وأوقاتها وقاعاتها — بدون اسمك. شاركها لقروبك أو احفظها أو اطبعها، أو انسخها نص.'},
- {t:'مواعيد تهمك',d:'أقرب المواعيد بعدّاد أيام: التسجيل، بداية الدراسة، <b>آخر يوم انسحاب</b>، والاختبارات. القريبة تتلوّن تنبيهاً.'}]},
+ {t:'مواعيد تهمك',d:'أقرب المواعيد بعدّاد أيام: التسجيل، بداية الدراسة، <b>آخر يوم انسحاب</b>، <b>أقساط الرسوم</b> (وغرامة التأخير)، والاختبارات. القريبة تتلوّن تنبيهاً.'}]},
 
 {ic:'📋',name:'خطتك ومعدلك',items:[
  {t:'مقترح الترم الجاي',d:'فوق الخطة يطلع لك مقترح جاهز بناءً على اللي خلصته.'},
@@ -1692,7 +1692,7 @@ sections:[
  {t:'Print your schedule',d:'<b>🖨️ Print</b> gives you one clean page — a colour-coded weekly grid showing your gaps, with your final exams underneath.'},
  {t:'Your final exams',d:'Tap <b>Show</b> under “Your final exams” — the date and room for every exam, and a warning if two collide.'},
  {t:'Share your exams with your group',isNew:1,d:'Under “Your final exams” tap <b>📤 Share your exam schedule</b>: a clean image with your exam days, times and rooms — without your name. Share it to your group, save it, print it, or copy it as text.'},
- {t:'Dates that matter',d:'Upcoming dates with a countdown: registration, first day of class, <b>the withdrawal deadline</b>, and finals. Near dates turn amber.'}]},
+ {t:'Dates that matter',d:'Upcoming dates with a countdown: registration, first day of class, <b>the withdrawal deadline</b>, <b>tuition installments</b> (and the late fee), and finals. Near dates turn amber.'}]},
 
 {ic:'📋',name:'Your plan and GPA',items:[
  {t:'Next term suggestion',d:'A ready plan appears above your degree plan, based on what you have finished.'},
