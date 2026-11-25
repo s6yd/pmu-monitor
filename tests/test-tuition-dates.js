@@ -6,8 +6,9 @@
    ٢) موعد حرج: التنبيه العام قبل **آخر يوم** بيومين (8 ديسمبر) لا قبل أوّله، ونصّه يقول «آخر يوم».
    ٣) **بموافقة محمد**: 7 ديسمبر يوصله السؤال وما يطلع لطالب، والموافَق عليه يطلع 8 ديسمبر للطلاب.
    الصفحة (Chromium على ٣٩٠ بالثيمين، بساعة مثبّتة):
-   ٤) 25 نوفمبر: «💳 سداد القسط الثالث…» بـ1–10 ديسمبر و«بعد 6 يوم» ملوّن، والقسطان اللي فاتوا ما يطلعون.
-   ٥) 5 ديسمبر «جارٍ الآن» · 11 ديسمبر اختفى · بالإنجليزي نصّه · عنوان البطاقة يقول من وين.
+   ٤) 25 نوفمبر: «💳 سداد القسط الثالث…» بـ1–10 ديسمبر و«بعد 6 أيام» ملوّن، أول سطر تحت «اليوم»، والقسطان اللي فاتوا
+      فوقه بـ«قبل …» (البطاقة صارت كل المواعيد بالتمرير — طلب محمد نفس اليوم، test-cal-scroll).
+   ٥) 5 ديسمبر «جارٍ الآن» · 11 ديسمبر صار فوق «اليوم» «أمس» · بالإنجليزي نصّه · عنوان البطاقة يقول من وين.
 
    node tests/test-tuition-dates.js [server.js] [pmu-schedule.html] */
 const fs = require('fs');
@@ -195,7 +196,7 @@ function makeCtx({ db, today, hour = 17 }) {
       ic: (r.querySelector('.cal-ic') || {}).textContent, name: (r.querySelector('.cal-name') || {}).textContent || '',
       date: (r.querySelector('.cal-date') || {}).textContent || '', badge: (r.querySelector('.cal-badge') || {}).textContent || '' }));
     return { rows, sub: (document.querySelector('#calCard .fin-sub') || {}).textContent || '',
-      note: (document.querySelector('#calBody .fin-note') || {}).textContent || '' };
+      note: [...document.querySelectorAll('#calBody .fin-note')].map(n => n.textContent).join(' | ') };
   });
   const payRows = c => c.rows.filter(r => /القسط|installment/i.test(r.name));
   const shots = process.env.SHOT_DIR;
@@ -203,13 +204,16 @@ function makeCtx({ db, today, hour = 17 }) {
   for (const theme of ['dark', 'light']) {
     const p = await openAt('2026-11-25T06:00:00Z', theme);       /* 9 الصبح بالرياض */
     let c = await card(p);
-    const pr = payRows(c);
+    const pr = payRows(c).filter(r => !/\bpast\b/.test(r.cls));
     ok(pr.length === 1 && /\bpay\b/.test(pr[0].cls) && pr[0].ic === '💳' && /القسط الثالث/.test(pr[0].name) && /750/.test(pr[0].name),
       `[${theme}] **25 نوفمبر: «💳 سداد القسط الثالث من الرسوم — غرامة التأخير 750 ريال» في «مواعيد تهمك»** — ` + JSON.stringify(pr));
     ok(pr[0] && /1 ديسمبر/.test(pr[0].date) && /10 ديسمبر/.test(pr[0].date), `[${theme}] بمدته 1–10 ديسمبر — ${pr[0] && pr[0].date}`);
     ok(pr[0] && /بعد 6/.test(pr[0].badge) && /\bsoon\b/.test(pr[0].cls), `[${theme}] وعدّاده «بعد 6» ملوّن (قريب) — ${pr[0] && pr[0].badge}`);
-    ok(c.rows[0] && /القسط الثالث/.test(c.rows[0].name), `[${theme}] وهو أقرب موعد (أول سطر)`);
-    ok(!/القسط الأول|القسط الثاني/.test(c.rows.map(r => r.name).join(' ')), `[${theme}] والقسطان اللي فاتوا ما يطلعون`);
+    const up = c.rows.filter(r => !/\bpast\b/.test(r.cls));
+    ok(up[0] && /القسط الثالث/.test(up[0].name), `[${theme}] وهو أقرب موعد جاي (أول سطر تحت «اليوم»)`);
+    const gone = payRows(c).filter(r => /\bpast\b/.test(r.cls));
+    ok(gone.length === 2 && /القسط الأول/.test(gone[0].name) && /القسط الثاني/.test(gone[1].name) && /قبل/.test(gone[1].badge),
+      `[${theme}] والقسطان اللي فاتوا فوق «اليوم» بـ«قبل …» (التمرير لفوق) — ` + JSON.stringify(gone.map(r => [r.name.slice(0, 20), r.badge])));
     ok(/الرسوم/.test(c.sub) && /الرسوم/.test(c.note), `[${theme}] **البطاقة تقول من وين: التقويم وجدول سداد الرسوم** — ${c.sub}`);
     const over = await p.evaluate(() => { switchTab('sched'); const el = document.getElementById('calCard'); if (el) el.scrollIntoView({ block: 'center' });
       return document.documentElement.scrollWidth - innerWidth });
@@ -227,13 +231,15 @@ function makeCtx({ db, today, hour = 17 }) {
   }
   {
     const p = await openAt('2026-12-05T06:00:00Z');
-    const r = payRows(await card(p));
+    const r = payRows(await card(p)).filter(x => !/\bpast\b/.test(x.cls));
     ok(r.length === 1 && /جارٍ الآن/.test(r[0].badge) && /\blive\b/.test(r[0].cls), '**5 ديسمبر: «جارٍ الآن»** — ' + JSON.stringify(r));
     await p.ctx.close();
   }
   {
     const p = await openAt('2026-12-11T06:00:00Z');
-    ok(payRows(await card(p)).length === 0, '**11 ديسمبر: خلص واختفى**');
+    const r = payRows(await card(p));
+    ok(r.length === 3 && r.every(x => /\bpast\b/.test(x.cls)) && /القسط الثالث/.test(r[2].name) && r[2].badge === 'أمس',
+      '**11 ديسمبر: خلص — صار فوق «اليوم» «أمس»** — ' + JSON.stringify(r.map(x => [x.cls, x.badge])));
     await p.ctx.close();
   }
   await browser.close(); server.close();

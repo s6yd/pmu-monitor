@@ -55,6 +55,7 @@ run test-import-grades  "$S" "$F"
 run test-ai-rate        "$S" "$F" "$A"
 run test-finals-watch   "$S"
 run test-tuition-dates  "$S" "$F"
+run test-cal-scroll     "$S" "$F"
 run test-pushover-addon "$S" "$F" "$A"
 run test-static-pages   "$S"
 run test-legal          .

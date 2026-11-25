@@ -1695,6 +1695,14 @@ background:var(--bg);border:1px solid var(--border)}
 .cal-row.soon .cal-badge{color:var(--warn);border-color:rgba(245,158,11,.35);background:var(--warn-bg)}
 .cal-row.live .cal-badge{color:var(--open);border-color:rgba(16,185,129,.35);background:var(--open-bg)}
 .cal-row.warn .cal-name,.cal-row.pay .cal-name{color:var(--warn)}   /* قسط الرسوم حرج مثل warn — بعده غرامة */
+/* «مواعيد تهمك» كلها — طلب محمد (٢٥ نوفمبر ٢٠٢٦: «لا تحد الطالب في المواعيد القادمة الخمسة… تقدر تسوي سكرول للمواعيد
+   القادمة والي فاتت»): قائمة تمرير بطول خمسة تقريباً تفتح على «اليوم» — فوقه اللي فاتت وتحته الجاية. اللي فاتت بلون ثانوي
+   لا بشفافية (تنقرأ — CLAUDE.md «النص الثالثي»)، والأيقونة وحدها باهتة */
+.cal-list{position:relative;max-height:300px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.cal-now{display:flex;align-items:center;gap:8px;padding:7px 0 3px;font-size:11px;font-weight:700;color:var(--accent2)}
+.cal-now::before,.cal-now::after{content:'';flex:1;height:1px;background:var(--border2)}
+.cal-row.past .cal-name{color:var(--text2);font-weight:500}
+.cal-row.past .cal-ic{filter:grayscale(1);opacity:.55}
 .cal-row.exam .cal-name{color:var(--close)}
 
 /* ---- أرقام التسجيل (CRN) ---- */
@@ -6326,30 +6334,37 @@ function calFmt(d){
     {day:'numeric',month:'short'});
 }
 
+/* «مواعيد تهمك»: كل مواعيد التقويم (كانت أقرب خمسة جاية وبس) في قائمة تمرير تفتح على «اليوم» — طلب محمد (٢٥ نوفمبر
+   ٢٠٢٦). اللي فاتت فوق بـ«قبل …»، والجاية تحت بعدّادها. والقائمة تنفتح على «اليوم» أول ما تبان (calWatch): لو انرسمت
+   وتبويبها مخفي أو البطاقة مطوية، حجمها صفر فما نقدر نمرّرها — ننتظرها تبان */
 function renderCalendar(){
   const box=document.getElementById('calBody');
   if(!box)return;
 
-  const items=ACAD_CAL.map(e=>{
+  const all=ACAD_CAL.map(e=>{
     const dS=calDays(e.s), dE=e.e?calDays(e.e):dS;
     return {...e,dS,dE,live:dS<=0&&dE>=0};
-  }).filter(e=>e.dE>=0)                       /* نخفي اللي انتهى */
-    .sort((a,b)=>a.dS-b.dS)
-    .slice(0,5);
+  }).sort((a,b)=>a.dS-b.dS||a.dE-b.dE);
 
-  if(!items.length){
+  if(!all.length){
     box.innerHTML=`<div class="fin-empty">${t('calDone')}</div>`;
     return;
   }
+  const past=all.filter(e=>e.dE<0), next=all.filter(e=>e.dE>=0);
 
-  box.innerHTML=items.map(e=>{
+  const row=e=>{
     const label=LANG==='ar'?e.ar:e.en;
     const range=e.e?`${calFmt(e.s)} – ${calFmt(e.e)}`:calFmt(e.s);
     let badge,cls='';
-    if(e.live){ badge=t('calNow'); cls='live'; }
+    if(e.dE<0){
+      const n=-e.dE;
+      badge=n===1?t('calYesterday'):LANG==='ar'?`${t('calAgo')} ${nOf(n,'day')}`:`${nOf(n,'day')} ${t('calAgo')}`;
+      cls='past';
+    }
+    else if(e.live){ badge=t('calNow'); cls='live'; }
     else if(e.dS===0){ badge=t('calToday'); cls='live'; }
     else if(e.dS===1){ badge=t('calTomorrow'); cls='soon'; }
-    else { badge=`${t('calIn')} ${e.dS} ${t('calDays')}`; cls=e.dS<=7?'soon':''; }
+    else { badge=`${t('calIn')} ${nOf(e.dS,'day')}`; cls=e.dS<=7?'soon':''; }
     return `<div class="cal-row ${e.t} ${cls}">
       <div class="cal-ic">${CAL_ICON[e.t]||'•'}</div>
       <div class="cal-mid">
@@ -6358,7 +6373,34 @@ function renderCalendar(){
       </div>
       <div class="cal-badge">${badge}</div>
     </div>`;
-  }).join('')+`<div class="fin-note">${t('calSource')}</div>`;
+  };
+
+  box.innerHTML=`<div class="cal-list" id="calList">${past.map(row).join('')}`+
+    (past.length?`<div class="cal-now">${t('calToday')}</div>`:'')+
+    (next.length?next.map(row).join(''):`<div class="fin-empty">${t('calDone')}</div>`)+
+    `</div>`+
+    (past.length||next.length>5?`<div class="fin-note">${t('calScroll')}</div>`:'')+
+    `<div class="fin-note">${t('calSource')}</div>`;
+  calWatch(document.getElementById('calList'));
+}
+/* القائمة تفتح على «اليوم»: الخط فوق أول موعد جاي. مرة لكل رسم — بعدها تمريره هو */
+function calScrollNow(list){
+  if(!list||list.dataset.pos==='1'||!list.clientHeight)return;
+  const mark=list.querySelector('.cal-now');
+  list.scrollTop=mark?mark.offsetTop:0;
+  list.dataset.pos='1';
+}
+let CAL_RO=null;
+function calWatch(list){
+  if(CAL_RO){ CAL_RO.disconnect(); CAL_RO=null }
+  if(!list)return;
+  calScrollNow(list);
+  if(list.dataset.pos==='1'||typeof ResizeObserver==='undefined')return;
+  CAL_RO=new ResizeObserver(()=>{
+    calScrollNow(list);
+    if(list.dataset.pos==='1'&&CAL_RO){ CAL_RO.disconnect(); CAL_RO=null }
+  });
+  CAL_RO.observe(list);
 }
 
 /* ═══════════ جدول الاختبارات النهائية ═══════════ */
@@ -10579,6 +10621,7 @@ acctSection:'الحساب',legalAbout:'عن جدولك',legalPrivacy:'سياسة
 legalNote:'موقع مستقل غير تابع لجامعة الأمير محمد بن فهد',
 calTitle:'🗓️ مواعيد تهمك',calSub:'من التقويم الأكاديمي المعتمد وجدول سداد الرسوم',
 calNow:'جارٍ الآن',calToday:'اليوم',calTomorrow:'بكرة',calIn:'بعد',calDays:'يوم',
+calAgo:'قبل',calYesterday:'أمس',calScroll:'⇅ مرّر القائمة: فوق اللي فاتت، وتحت الجاية',
 calDone:'ما في مواعيد قادمة في التقويم الحالي.',
 calSource:'المصدر: التقويم الأكاديمي المعتمد وجدول سداد الرسوم 2026/2027 (مبلغ القسط حسب فئتك في إيميل الجامعة). المواعيد قابلة للتعديل — راجع موقع الجامعة.',
 tapTip:'👆 <b>اضغط أي مادة</b> عشان تشوف شعبها وأوقاتها في ترم التسجيل القادم',
@@ -10756,6 +10799,7 @@ acctSection:'Account',legalAbout:'About',legalPrivacy:'Privacy Policy',legalTerm
 legalNote:'An independent site, not affiliated with Prince Mohammad Bin Fahd University',
 calTitle:'🗓️ Dates that matter',calSub:'From the official academic calendar and tuition schedule',
 calNow:'Now',calToday:'Today',calTomorrow:'Tomorrow',calIn:'in',calDays:'days',
+calAgo:'ago',calYesterday:'Yesterday',calScroll:'⇅ Scroll the list: past dates above, upcoming below',
 calDone:'No upcoming dates in the current calendar.',
 calSource:'Source: official 2026/2027 academic calendar and tuition payment schedule (your installment amount is in the university email). Dates may change — check the university website.',
 tapTip:'👆 <b>Tap any course</b> to see its sections and times for the upcoming term',
